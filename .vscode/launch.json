@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Rodar Frontend (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "java",
+      "name": "Rodar Backend (Java)",
+      "request": "launch",
+      "mainClass": "com.imobiflow.ImobiFlowApplication",
+      "projectName": "imobiflow-ai",
+      "env": {
+        "VITE_SUPABASE_URL": "sua-url-do-supabase",
+        "SUPABASE_DB_PASSWORD": "sua-senha-db"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Rodar MVP Completo",
+      "configurations": ["Rodar Frontend (Vite)", "Rodar Backend (Java)"]
+    }
+  ]
+}

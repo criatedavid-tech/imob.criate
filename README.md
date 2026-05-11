@@ -1,11 +1,25 @@
-<div align="center">
+# ImobiFlow AI - MVP
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Este é o seu MVP automatizado para corretores.
 
-  <h1>Built with AI Studio</h2>
+## Como funciona o fluxo:
+1. **Cadastro**: O corretor preenche o formulário no Dashboard.
+2. **Backend**: O servidor processa os dados, gera o link único da Landing Page.
+3. **Gatilho**: O sistema envia os dados para o seu **n8n** via Webhook.
+4. **IA (WhatsApp)**: O n8n recebe o link e aciona o agente de IA para começar a prospecção.
+5. **Conversão**: O cliente acessa a Landing Page exclusiva e agenda a visita.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Para rodar Localmente:
+### Frontend + Hub (Node.js)
+1. `npm install`
+2. `npm run dev`
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+### Backend Java (Spring Boot)
+1. Certifique-se de ter o Java 17 instalado.
+2. `./gradlew bootRun`
 
-</div>
+## Variáveis de Ambiente Necessárias:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `N8N_WEBHOOK_URL`
+- `GEMINI_API_KEY` (Já configurado no AI Studio)
