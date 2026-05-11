@@ -99,7 +99,7 @@ export default function PropertyForm({
     
     // Limite de 15 fotos
     if (currentImages.length + files.length > 15) {
-      alert("Você pode enviar no máximo 15 fotos.");
+      setErrorMsg("Você pode enviar no máximo 15 fotos.");
       return;
     }
 
