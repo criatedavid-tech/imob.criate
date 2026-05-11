@@ -174,6 +174,43 @@ async function startServer() {
     }
   }
 
+  // --- UPLOAD DE FOTO DO CORRETOR ---
+  app.post("/api/brokers/upload-photo", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const { imageData } = req.body;
+      if (!imageData) return res.status(400).json({ error: "No image data" });
+
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const fileName = `broker-${userId}.jpg`;
+
+      // Garante que o bucket existe
+      await supabase.storage.createBucket('broker-photos', {
+        public: true,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        fileSizeLimit: 5242880
+      }).catch(() => {}); // ignora erro se bucket já existe
+
+      const { error: uploadError } = await supabase.storage
+        .from('broker-photos')
+        .upload(fileName, buffer, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('broker-photos')
+        .getPublicUrl(fileName);
+
+      res.json({ url: publicUrl });
+    } catch (err: any) {
+      console.error("Erro upload foto corretor:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- ROTAS DE INTELIGÊNCIA ARTIFICIAL (GEMINI) ---
   /**
    * Rota para aprimorar textos de descrições de imóveis.

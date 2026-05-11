@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, 
   Home, 
@@ -24,13 +24,6 @@ import AISettings from '../components/AISettings';
 import { authService } from '../services/auth';
 import MagicWandTextarea from '../components/MagicWandTextarea';
 
-const data = [
-  { name: 'Jan', value: 400 },
-  { name: 'Feb', value: 300 },
-  { name: 'Mar', value: 600 },
-  { name: 'Apr', value: 800 },
-  { name: 'May', value: 500 },
-];
 
 /**
  * Componente Principal do Dashboard.
@@ -56,6 +49,7 @@ export default function Dashboard() {
   });
   const [recentLeads, setRecentLeads] = useState<any[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [chartData, setChartData] = useState<{name: string, value: number}[]>([]);
 
   // PERFIL DO CORRETOR
   const [brokerProfile, setBrokerProfile] = useState<any>({
@@ -195,7 +189,7 @@ export default function Dashboard() {
 
       const response = await fetch('/api/brokers/settings', {
         method: 'POST',
-        headers: authService.getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
         body: JSON.stringify(settingsToSave)
       });
       
@@ -222,10 +216,76 @@ export default function Dashboard() {
     return `${diffInDays}d atrás`;
   };
 
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const SIZE = 600;
+        const ratio = Math.min(SIZE / img.width, SIZE / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL('image/jpeg', 0.82);
+
+        // Tenta enviar ao servidor para armazenar no Supabase Storage
+        setUploadingPhoto(true);
+        try {
+          const res = await fetch('/api/brokers/upload-photo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+            body: JSON.stringify({ imageData: base64 })
+          });
+          if (res.ok) {
+            const { url } = await res.json();
+            setBrokerProfile((prev: any) => ({ ...prev, photoUrl: url }));
+          } else {
+            // Fallback: usa base64 localmente se o storage falhar
+            setBrokerProfile((prev: any) => ({ ...prev, photoUrl: base64 }));
+          }
+        } catch {
+          setBrokerProfile((prev: any) => ({ ...prev, photoUrl: base64 }));
+        } finally {
+          setUploadingPhoto(false);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSafeReload = async () => {
     // FIX AUTH STATE 30/04/2026
     if (loading || loadingMetrics) return; // Evita recarregar com fetch pendente
     window.location.replace('/'); // FIX AUTH STATE 30/04/2026
+  };
+
+  const fetchChartData = async () => {
+    try {
+      const response = await fetch('/api/dashboard/charts', {
+        headers: authService.getAuthHeaders()
+      });
+      if (!response.ok) throw new Error('Falha');
+      const data = await response.json();
+      setChartData(data);
+    } catch {
+      // fallback: últimos 5 meses com dados de métricas
+      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai'];
+      const now = new Date();
+      setChartData(months.map((_, i) => ({
+        name: new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(
+          new Date(now.getFullYear(), now.getMonth() - (4 - i), 1)
+        ),
+        value: 0
+      })));
+    }
   };
 
   useEffect(() => {
@@ -233,6 +293,7 @@ export default function Dashboard() {
     fetchDashboardMetrics();
     fetchRecentLeads();
     fetchBrokerProfile();
+    fetchChartData();
     const intervalId = setInterval(checkBackend, 5000);
     return () => clearInterval(intervalId);
   }, []);
@@ -343,7 +404,7 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <header className="h-20 bg-white border-bottom border-[#E5E7EB] flex items-center justify-between px-10">
+        <header className="h-20 bg-white border-b border-[#E5E7EB] flex items-center justify-between px-10">
           <div className="flex items-center gap-6">
             <div className="relative w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={18} />
@@ -405,7 +466,7 @@ export default function Dashboard() {
                   </div>
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data}>
+                      <BarChart data={chartData}>
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF'}} />
                         <YAxis axisLine={false} tickLine={false} tick={{fill: '#9CA3AF'}} />
                         <Tooltip 
@@ -505,15 +566,49 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <label className="block text-sm font-semibold text-[#6B7280]">URL da Foto de Perfil</label>
-                    <input 
-                      type="url" 
-                      value={brokerProfile.photoUrl || ''}
-                      onChange={e => setBrokerProfile({...brokerProfile, photoUrl: e.target.value})}
-                      className="w-full px-4 py-3 bg-[#F8F9FA] rounded-xl border-none outline-none focus:ring-2 focus:ring-black"
-                      placeholder="https://..."
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-[#6B7280]">Foto de Perfil</label>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoUpload}
                     />
+                    <div className="flex items-center gap-5">
+                      <div className="relative shrink-0">
+                        <div className="w-20 h-20 rounded-full overflow-hidden bg-[#F3F4F6] border-2 border-[#E5E7EB] flex items-center justify-center">
+                          {brokerProfile.photoUrl ? (
+                            <img src={brokerProfile.photoUrl} alt="Foto de perfil" className="w-full h-full object-cover" />
+                          ) : (
+                            <svg className="w-8 h-8 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => photoInputRef.current?.click()}
+                          disabled={uploadingPhoto}
+                          className="px-5 py-2.5 bg-black text-white text-sm font-semibold rounded-xl hover:bg-[#333] transition-colors disabled:opacity-60 flex items-center gap-2"
+                        >
+                          {uploadingPhoto && <Loader2 size={14} className="animate-spin" />}
+                          {uploadingPhoto ? 'Enviando...' : brokerProfile.photoUrl ? 'Trocar Foto' : 'Carregar Foto'}
+                        </button>
+                        {brokerProfile.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setBrokerProfile((prev: any) => ({ ...prev, photoUrl: '' }))}
+                            className="px-5 py-2 text-sm font-medium text-red-500 hover:text-red-600 transition-colors text-left"
+                          >
+                            Remover
+                          </button>
+                        )}
+                        <p className="text-xs text-[#9CA3AF]">JPG, PNG ou WEBP · Máx. 5MB</p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -578,6 +673,103 @@ export default function Dashboard() {
                     {isSavingProfile ? <Loader2 className="animate-spin" size={20} /> : 'Salvar Alterações'}
                   </button>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'leads' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Leads</h2>
+              {loadingMetrics && (
+                <div className="flex items-center gap-3 text-[#6B7280] py-10">
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>Carregando leads...</span>
+                </div>
+              )}
+              {!loadingMetrics && recentLeads.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-16 h-16 bg-[#F3F4F6] rounded-2xl flex items-center justify-center mb-4">
+                    <Users size={28} className="text-[#9CA3AF]" />
+                  </div>
+                  <h3 className="font-bold text-lg mb-1">Nenhum lead ainda</h3>
+                  <p className="text-[#6B7280] text-sm max-w-xs">Os leads aparecem aqui quando alguém demonstra interesse em um imóvel via landing page.</p>
+                </div>
+              )}
+              {!loadingMetrics && recentLeads.length > 0 && (
+                <div className="bg-white rounded-3xl border border-[#E5E7EB] overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#F3F4F6]">
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Nome</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Imóvel</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Recebido</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentLeads.map((lead) => (
+                        <tr key={lead.id} className="border-b border-[#F9FAFB] last:border-b-0 hover:bg-[#FAFAFA] transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-[#F3F4F6] rounded-full flex items-center justify-center text-xs font-bold text-[#6B7280]">
+                                {lead.name?.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="font-semibold text-sm">{lead.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-[#6B7280]">{lead.property || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#9CA3AF]">{formatTimeAgo(lead.time)}</td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase tracking-wide">
+                              {lead.status || 'Novo'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Agenda</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-3xl border border-[#E5E7EB] p-8">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-[#F3F4F6] rounded-xl flex items-center justify-center">
+                      <Calendar size={20} className="text-purple-500" />
+                    </div>
+                    <h3 className="font-bold text-lg">Visitas Agendadas</h3>
+                  </div>
+                  {dashboardMetrics.scheduledVisits > 0 ? (
+                    <p className="text-3xl font-bold mb-2">{dashboardMetrics.scheduledVisits}</p>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <Calendar size={32} className="text-[#E5E7EB] mb-3" />
+                      <p className="text-sm text-[#6B7280]">Nenhuma visita agendada no momento.</p>
+                      <p className="text-xs text-[#9CA3AF] mt-1">As visitas aparecem aqui quando leads agendam via landing page.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="bg-white rounded-3xl border border-[#E5E7EB] p-8">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-[#F3F4F6] rounded-xl flex items-center justify-center">
+                      <Users size={20} className="text-green-500" />
+                    </div>
+                    <h3 className="font-bold text-lg">Leads Ativos</h3>
+                  </div>
+                  <p className="text-3xl font-bold mb-1">{dashboardMetrics.activeLeads}</p>
+                  <p className="text-sm text-[#6B7280]">leads aguardando retorno</p>
+                  <button
+                    onClick={() => setActiveTab('leads')}
+                    className="mt-6 w-full py-3 border border-[#E5E7EB] rounded-2xl text-sm font-semibold hover:bg-[#F3F4F6] transition-colors flex items-center justify-center gap-2"
+                  >
+                    Ver todos os leads <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
             </div>
           )}
