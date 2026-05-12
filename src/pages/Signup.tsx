@@ -29,7 +29,14 @@ export default function Signup() {
     }
     
     try {
-      await authService.signup(formData.email, formData.password, formData.name, formData.phone);
+      const data = await authService.signup(formData.email, formData.password, formData.name, formData.phone);
+      // Se o backend retornou uma session, loga automaticamente e vai ao dashboard
+      if (data?.session?.access_token && data?.user) {
+        localStorage.setItem('token', data.session.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        navigate('/');
+        return;
+      }
       setSuccess(true);
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {

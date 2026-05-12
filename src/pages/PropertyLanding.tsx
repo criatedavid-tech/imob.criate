@@ -39,7 +39,7 @@ export default function PropertyLanding() {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [contactStep, setContactStep] = useState<'form' | 'success'>('form');
   const [contactLoading, setContactLoading] = useState(false);
-  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
+  const [contactForm, setContactForm] = useState({ name: '', phone: '', email: '', message: '' });
 
   const [navScrolled, setNavScrolled] = useState(false);
 
@@ -113,10 +113,29 @@ export default function PropertyLanding() {
     finally { setSubmittingLead(false); }
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setContactLoading(true);
-    setTimeout(() => { setContactLoading(false); setContactStep('success'); setContactForm({ name: '', email: '', message: '' }); }, 1500);
+    try {
+      await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          property_id: property.id,
+          name: contactForm.name,
+          phone: contactForm.phone,
+          email: contactForm.email,
+          status: 'contato',
+          notes: contactForm.message
+        })
+      });
+    } catch (err) {
+      console.error('Erro ao salvar contato:', err);
+    } finally {
+      setContactLoading(false);
+      setContactStep('success');
+      setContactForm({ name: '', phone: '', email: '', message: '' });
+    }
   };
 
   // ── Loading / not found ────────────────────────────────────────────────────
@@ -791,9 +810,15 @@ export default function PropertyLanding() {
                       <User size={16} className="absolute left-5 top-[22px] -translate-y-1/2 text-[#9CA3AF]" />
                       <input required type="text" placeholder="Nome Completo" value={contactForm.name} onChange={e => setContactForm({ ...contactForm, name: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
                     </div>
-                    <div className="relative">
-                      <Mail size={16} className="absolute left-5 top-[22px] -translate-y-1/2 text-[#9CA3AF]" />
-                      <input required type="email" placeholder="E-mail" value={contactForm.email} onChange={e => setContactForm({ ...contactForm, email: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="relative">
+                        <Phone size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+                        <input required type="tel" placeholder="Telefone" value={contactForm.phone} onChange={e => setContactForm({ ...contactForm, phone: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
+                      </div>
+                      <div className="relative">
+                        <Mail size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+                        <input required type="email" placeholder="E-mail" value={contactForm.email} onChange={e => setContactForm({ ...contactForm, email: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
+                      </div>
                     </div>
                     <div className="relative">
                       <MessageCircle size={16} className="absolute left-5 top-5 text-[#9CA3AF]" />

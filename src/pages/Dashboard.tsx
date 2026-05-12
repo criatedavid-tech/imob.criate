@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  BarChart3, 
-  Home, 
-  Users, 
-  Calendar, 
-  Plus, 
+import {
+  BarChart3,
+  Home,
+  Users,
+  Calendar,
+  Plus,
   TrendingUp,
   Search,
   Settings,
@@ -13,8 +13,17 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Smartphone,
+  CreditCard,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Crown
 } from 'lucide-react';
+import WhatsAppSetup from './WhatsAppSetup';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import PropertyForm from '../components/PropertyForm';
@@ -48,7 +57,11 @@ export default function Dashboard() {
     scheduledVisits: 0
   });
   const [recentLeads, setRecentLeads] = useState<any[]>([]);
+  const [allLeads, setAllLeads] = useState<any[]>([]);
+  const [scheduledVisits, setScheduledVisits] = useState<any[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [loadingAllLeads, setLoadingAllLeads] = useState(false);
+  const [loadingVisits, setLoadingVisits] = useState(false);
   const [chartData, setChartData] = useState<{name: string, value: number}[]>([]);
 
   // PERFIL DO CORRETOR
@@ -148,6 +161,49 @@ export default function Dashboard() {
       console.error("Erro ao carregar leads:", error);
     } finally {
       setLoadingMetrics(false);
+    }
+  };
+
+  const fetchScheduledVisits = async () => {
+    setLoadingVisits(true);
+    try {
+      const response = await fetch('/api/agenda/visits', {
+        headers: authService.getAuthHeaders()
+      });
+      if (!response.ok) throw new Error('Falha');
+      setScheduledVisits(await response.json());
+    } catch {
+      setScheduledVisits([]);
+    } finally {
+      setLoadingVisits(false);
+    }
+  };
+
+  const fetchAllLeads = async () => {
+    setLoadingAllLeads(true);
+    try {
+      const response = await fetch('/api/leads', {
+        headers: authService.getAuthHeaders()
+      });
+      if (!response.ok) throw new Error('Falha ao carregar leads');
+      setAllLeads(await response.json());
+    } catch (error) {
+      console.error("Erro ao carregar todos os leads:", error);
+    } finally {
+      setLoadingAllLeads(false);
+    }
+  };
+
+  const updateLeadStatus = async (leadId: string, status: string): Promise<void> => {
+    try {
+      await fetch(`/api/leads/${leadId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ status })
+      });
+      setAllLeads(prev => prev.map(l => l.id === leadId ? { ...l, status } : l));
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error);
     }
   };
 
@@ -292,11 +348,31 @@ export default function Dashboard() {
     fetchProperties();
     fetchDashboardMetrics();
     fetchRecentLeads();
+    fetchAllLeads();
+    fetchScheduledVisits();
     fetchBrokerProfile();
     fetchChartData();
     const intervalId = setInterval(checkBackend, 5000);
     return () => clearInterval(intervalId);
   }, []);
+
+  const updatePropertyStatus = async (propertyId: string, status: string) => {
+    try {
+      await fetch(`/api/properties/${propertyId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ status })
+      });
+      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, status } : p));
+    } catch (error) {
+      showToast('Erro ao atualizar status.', 'error');
+    }
+  };
+
+  const copyLink = (slug: string) => {
+    const url = `${window.location.origin}/p/${slug}`;
+    navigator.clipboard.writeText(url).then(() => showToast('Link copiado!'));
+  };
 
   const handleOpenEdit = (property: any) => {
     setEditingProperty(property);
@@ -378,18 +454,30 @@ export default function Dashboard() {
             active={activeTab === 'leads'} 
             onClick={() => setActiveTab('leads')} 
           />
-          <NavItem 
-            icon={<Calendar size={20} />} 
-            label="Agenda" 
-            active={activeTab === 'calendar'} 
-            onClick={() => setActiveTab('calendar')} 
+          <NavItem
+            icon={<Calendar size={20} />}
+            label="Agenda"
+            active={activeTab === 'calendar'}
+            onClick={() => setActiveTab('calendar')}
+          />
+          <NavItem
+            icon={<Smartphone size={20} />}
+            label="WhatsApp"
+            active={activeTab === 'whatsapp'}
+            onClick={() => setActiveTab('whatsapp')}
           />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-[#E5E7EB] space-y-2">
-          <NavItem 
-            icon={<Settings size={20} />} 
-            label="Meu Perfil" 
+          <NavItem
+            icon={<Crown size={20} />}
+            label="Assinatura"
+            active={activeTab === 'subscription'}
+            onClick={() => setActiveTab('subscription')}
+          />
+          <NavItem
+            icon={<Settings size={20} />}
+            label="Meu Perfil"
             active={activeTab === 'profile'}
             onClick={() => setActiveTab('profile')}
           />
@@ -521,16 +609,18 @@ export default function Dashboard() {
               {!loading && properties.length === 0 && <p className="text-[#6B7280]">Nenhum imóvel cadastrado ainda.</p>}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {properties.map((prop) => (
-                  <PropertyCard 
+                  <PropertyCard
                     key={prop.id}
-                    title={prop.title} 
-                    location={prop.location} 
-                    price={prop.price} 
+                    title={prop.title}
+                    location={prop.location}
+                    price={prop.price}
                     image={prop.imageUrl || "https://picsum.photos/seed/placeholder/800/600"}
                     slug={prop.slug}
-                    description={prop.description}
+                    status={prop.status || 'disponivel'}
                     onEdit={() => handleOpenEdit(prop)}
                     onDelete={() => setDeleteConfirmId(prop.id)}
+                    onCopyLink={() => copyLink(prop.slug)}
+                    onStatusChange={(s: string) => updatePropertyStatus(prop.id, s)}
                     isDeleting={deletingId === prop.id}
                   />
                 ))}
@@ -679,14 +769,17 @@ export default function Dashboard() {
 
           {activeTab === 'leads' && (
             <div>
-              <h2 className="text-2xl font-bold mb-6">Leads</h2>
-              {loadingMetrics && (
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold">Leads</h2>
+                <span className="text-sm text-[#6B7280]">{allLeads.length} {allLeads.length === 1 ? 'contato' : 'contatos'}</span>
+              </div>
+              {loadingAllLeads && (
                 <div className="flex items-center gap-3 text-[#6B7280] py-10">
                   <Loader2 className="animate-spin" size={20} />
                   <span>Carregando leads...</span>
                 </div>
               )}
-              {!loadingMetrics && recentLeads.length === 0 && (
+              {!loadingAllLeads && allLeads.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-24 text-center">
                   <div className="w-16 h-16 bg-[#F3F4F6] rounded-2xl flex items-center justify-center mb-4">
                     <Users size={28} className="text-[#9CA3AF]" />
@@ -695,34 +788,55 @@ export default function Dashboard() {
                   <p className="text-[#6B7280] text-sm max-w-xs">Os leads aparecem aqui quando alguém demonstra interesse em um imóvel via landing page.</p>
                 </div>
               )}
-              {!loadingMetrics && recentLeads.length > 0 && (
+              {!loadingAllLeads && allLeads.length > 0 && (
                 <div className="bg-white rounded-3xl border border-[#E5E7EB] overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-[#F3F4F6]">
-                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Nome</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Contato</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Telefone</th>
                         <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Imóvel</th>
                         <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Recebido</th>
                         <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recentLeads.map((lead) => (
+                      {allLeads.map((lead) => (
                         <tr key={lead.id} className="border-b border-[#F9FAFB] last:border-b-0 hover:bg-[#FAFAFA] transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-[#F3F4F6] rounded-full flex items-center justify-center text-xs font-bold text-[#6B7280]">
+                              <div className="w-8 h-8 bg-[#F3F4F6] rounded-full flex items-center justify-center text-xs font-bold text-[#6B7280] shrink-0">
                                 {lead.name?.charAt(0).toUpperCase()}
                               </div>
-                              <span className="font-semibold text-sm">{lead.name}</span>
+                              <div>
+                                <p className="font-semibold text-sm">{lead.name}</p>
+                                {lead.email && <p className="text-xs text-[#9CA3AF]">{lead.email}</p>}
+                              </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-[#6B7280]">{lead.property || '—'}</td>
-                          <td className="px-6 py-4 text-sm text-[#9CA3AF]">{formatTimeAgo(lead.time)}</td>
+                          <td className="px-6 py-4 text-sm text-[#6B7280] font-mono">{lead.phone || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#6B7280] max-w-[160px] truncate">{lead.property || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#9CA3AF] whitespace-nowrap">{formatTimeAgo(lead.created_at)}</td>
                           <td className="px-6 py-4">
-                            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase tracking-wide">
-                              {lead.status || 'Novo'}
-                            </span>
+                            <select
+                              value={lead.status || 'new'}
+                              onChange={e => updateLeadStatus(lead.id, e.target.value)}
+                              className={cn(
+                                "px-3 py-1.5 text-xs font-bold rounded-full uppercase tracking-wide border-none outline-none cursor-pointer",
+                                lead.status === 'new' && "bg-blue-100 text-blue-700",
+                                lead.status === 'contato' && "bg-purple-100 text-purple-700",
+                                lead.status === 'visita_agendada' && "bg-yellow-100 text-yellow-700",
+                                lead.status === 'contacted' && "bg-green-100 text-green-700",
+                                lead.status === 'archived' && "bg-gray-100 text-gray-500",
+                                !['new','contato','visita_agendada','contacted','archived'].includes(lead.status) && "bg-blue-100 text-blue-700"
+                              )}
+                            >
+                              <option value="new">Novo</option>
+                              <option value="contato">Contato</option>
+                              <option value="visita_agendada">Visita Agendada</option>
+                              <option value="contacted">Contactado</option>
+                              <option value="archived">Arquivado</option>
+                            </select>
                           </td>
                         </tr>
                       ))}
@@ -735,46 +849,99 @@ export default function Dashboard() {
 
           {activeTab === 'calendar' && (
             <div>
-              <h2 className="text-2xl font-bold mb-6">Agenda</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-3xl border border-[#E5E7EB] p-8">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-[#F3F4F6] rounded-xl flex items-center justify-center">
-                      <Calendar size={20} className="text-purple-500" />
-                    </div>
-                    <h3 className="font-bold text-lg">Visitas Agendadas</h3>
-                  </div>
-                  {dashboardMetrics.scheduledVisits > 0 ? (
-                    <p className="text-3xl font-bold mb-2">{dashboardMetrics.scheduledVisits}</p>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-10 text-center">
-                      <Calendar size={32} className="text-[#E5E7EB] mb-3" />
-                      <p className="text-sm text-[#6B7280]">Nenhuma visita agendada no momento.</p>
-                      <p className="text-xs text-[#9CA3AF] mt-1">As visitas aparecem aqui quando leads agendam via landing page.</p>
-                    </div>
-                  )}
-                </div>
-                <div className="bg-white rounded-3xl border border-[#E5E7EB] p-8">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-[#F3F4F6] rounded-xl flex items-center justify-center">
-                      <Users size={20} className="text-green-500" />
-                    </div>
-                    <h3 className="font-bold text-lg">Leads Ativos</h3>
-                  </div>
-                  <p className="text-3xl font-bold mb-1">{dashboardMetrics.activeLeads}</p>
-                  <p className="text-sm text-[#6B7280]">leads aguardando retorno</p>
-                  <button
-                    onClick={() => setActiveTab('leads')}
-                    className="mt-6 w-full py-3 border border-[#E5E7EB] rounded-2xl text-sm font-semibold hover:bg-[#F3F4F6] transition-colors flex items-center justify-center gap-2"
-                  >
-                    Ver todos os leads <ChevronRight size={16} />
-                  </button>
-                </div>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold">Agenda</h2>
+                <span className="text-sm text-[#6B7280]">{scheduledVisits.length} {scheduledVisits.length === 1 ? 'visita pendente' : 'visitas pendentes'}</span>
               </div>
+
+              {loadingVisits && (
+                <div className="flex items-center gap-3 text-[#6B7280] py-10">
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>Carregando agenda...</span>
+                </div>
+              )}
+
+              {!loadingVisits && scheduledVisits.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-16 h-16 bg-[#F3F4F6] rounded-2xl flex items-center justify-center mb-4">
+                    <Calendar size={28} className="text-[#9CA3AF]" />
+                  </div>
+                  <h3 className="font-bold text-lg mb-1">Nenhuma visita agendada</h3>
+                  <p className="text-[#6B7280] text-sm max-w-xs">As visitas aparecem aqui quando leads escolhem um horário via landing page.</p>
+                </div>
+              )}
+
+              {!loadingVisits && scheduledVisits.length > 0 && (
+                <div className="bg-white rounded-3xl border border-[#E5E7EB] overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#F3F4F6]">
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Visitante</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Telefone</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Imóvel</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Observação</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Solicitado</th>
+                        <th className="text-left px-6 py-4 text-xs font-bold text-[#9CA3AF] uppercase tracking-wider">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduledVisits.map((visit) => (
+                        <tr key={visit.id} className="border-b border-[#F9FAFB] last:border-b-0 hover:bg-[#FAFAFA] transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center text-xs font-bold text-yellow-700 shrink-0">
+                                {visit.name?.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-sm">{visit.name}</p>
+                                {visit.email && <p className="text-xs text-[#9CA3AF]">{visit.email}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-mono text-[#6B7280]">{visit.phone || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#6B7280] max-w-[160px] truncate">{visit.property || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#6B7280] max-w-[200px] truncate">{visit.notes || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-[#9CA3AF] whitespace-nowrap">{formatTimeAgo(visit.created_at)}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={async () => { await updateLeadStatus(visit.id, 'contacted'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
+                                className="px-3 py-1.5 bg-green-100 text-green-700 text-xs font-bold rounded-full hover:bg-green-200 transition-colors"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                onClick={async () => { await updateLeadStatus(visit.id, 'archived'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
+                                className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-bold rounded-full hover:bg-gray-200 transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'settings' && <AISettings />}
+
+          {/* ─── ABA WHATSAPP ─── */}
+          {activeTab === 'whatsapp' && (
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-2xl font-bold mb-2">WhatsApp</h2>
+              <p className="text-[#6B7280] mb-8">Conecte seu número e ative o agente IA para responder clientes automaticamente.</p>
+              <WhatsAppSetup />
+            </div>
+          )}
+
+          {/* ─── ABA ASSINATURA ─── */}
+          {activeTab === 'subscription' && (
+            <SubscriptionTab />
+          )}
         </div>
       </main>
 
@@ -843,6 +1010,92 @@ export default function Dashboard() {
   );
 }
 
+function SubscriptionTab() {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/subscription', { headers: (authService as any).getAuthHeaders() })
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-[#9CA3AF]" /></div>;
+
+  const broker = data?.broker;
+  const sub = data?.lastSubscription;
+  const isActive = broker?.status === 'ativo';
+  const validUntil = broker?.valid_until ? new Date(broker.valid_until).toLocaleDateString('pt-BR') : null;
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <h2 className="text-2xl font-bold">Assinatura</h2>
+
+      {/* Status card */}
+      <div className={`rounded-3xl p-8 ${isActive ? 'bg-black text-white' : 'bg-[#FEF3C7] text-[#92400E]'}`}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Crown className="w-6 h-6" />
+            <span className="text-lg font-bold">{isActive ? 'Plano Ativo' : 'Aguardando Pagamento'}</span>
+          </div>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${isActive ? 'bg-white/20' : 'bg-[#FDE68A]'}`}>
+            {broker?.plan || 'mensal'}
+          </span>
+        </div>
+        {isActive && validUntil && (
+          <p className="text-sm opacity-70">Válido até {validUntil}</p>
+        )}
+        {!isActive && (
+          <a href="/payment" className="mt-4 inline-flex items-center gap-2 bg-white text-[#92400E] px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-yellow-50 transition-all">
+            <CreditCard className="w-4 h-4" /> Ativar assinatura
+          </a>
+        )}
+      </div>
+
+      {/* Último pagamento */}
+      {sub && (
+        <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6">
+          <h3 className="font-bold text-[#1A1A1A] mb-4">Último pagamento</h3>
+          <div className="space-y-3 text-sm">
+            {[
+              ['Status', <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-bold">{sub.status}</span>],
+              ['Plano', sub.plan],
+              ['Valor', sub.amount ? `R$ ${(sub.amount / 100).toFixed(2).replace('.', ',')}` : '—'],
+              ['Pago em', sub.paid_at ? new Date(sub.paid_at).toLocaleDateString('pt-BR') : '—'],
+              ['Válido até', sub.valid_until ? new Date(sub.valid_until).toLocaleDateString('pt-BR') : '—'],
+            ].map(([label, value]: any) => (
+              <div key={label} className="flex justify-between items-center py-2 border-b border-[#F3F4F6] last:border-0">
+                <span className="text-[#6B7280]">{label}</span>
+                <span className="font-medium text-[#1A1A1A]">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* IDs Z-PRO */}
+      {broker?.zpro_tenant_id && (
+        <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6">
+          <h3 className="font-bold text-[#1A1A1A] mb-4 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Plataforma WhatsApp</h3>
+          <div className="space-y-2 text-sm">
+            {[
+              ['Tenant ID', broker.zpro_tenant_id],
+              ['Canal ID', broker.zpro_channel_id || '—'],
+            ].map(([label, value]: any) => (
+              <div key={label} className="flex justify-between py-2 border-b border-[#F3F4F6] last:border-0">
+                <span className="text-[#6B7280]">{label}</span>
+                <span className="font-mono text-xs text-[#374151]">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavItem({ icon, label, active, onClick, className }: any) {
   return (
     <button 
@@ -889,61 +1142,90 @@ function LeadItem({ name, property, time }: any) {
   );
 }
 
-function PropertyCard({ title, location, price, image, slug, onEdit, onDelete, isDeleting }: any) {
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  disponivel: { label: 'Disponível', className: 'bg-green-100 text-green-700' },
+  vendido:    { label: 'Vendido',    className: 'bg-gray-200 text-gray-600' },
+  alugado:    { label: 'Alugado',    className: 'bg-blue-100 text-blue-700' },
+};
+
+function PropertyCard({ title, location, price, image, slug, status, onEdit, onDelete, onCopyLink, onStatusChange, isDeleting }: any) {
+  const s = STATUS_CONFIG[status] || STATUS_CONFIG.disponivel;
+
   return (
-    <motion.div 
-      whileHover={{ y: -5 }}
-      onClick={onEdit}
-      className="bg-white rounded-3xl overflow-hidden border border-[#E5E7EB] group cursor-pointer"
+    <motion.div
+      whileHover={{ y: -4 }}
+      className="bg-white rounded-3xl overflow-hidden border border-[#E5E7EB] group flex flex-col"
     >
-      <div className="h-48 relative overflow-hidden">
-        <img 
-          src={image} 
-          alt={title} 
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+      <div className="h-48 relative overflow-hidden cursor-pointer" onClick={onEdit}>
+        <img
+          src={image}
+          alt={title}
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           referrerPolicy="no-referrer"
         />
         <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-xs font-bold shadow-sm">
           {price}
         </div>
+        <div className={cn("absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide shadow-sm", s.className)}>
+          {s.label}
+        </div>
       </div>
-      <div className="p-6">
-        <h3 className="font-bold text-lg mb-1 leading-tight">{title}</h3>
-        <p className="text-sm text-[#6B7280] flex items-center gap-1 mb-4">
-          <TrendingUp size={14} /> {location}
+
+      <div className="p-5 flex flex-col flex-1">
+        <h3 className="font-bold text-base mb-1 leading-tight cursor-pointer" onClick={onEdit}>{title}</h3>
+        <p className="text-sm text-[#6B7280] flex items-center gap-1 mb-4 truncate">
+          <TrendingUp size={13} className="shrink-0" /> {location}
         </p>
-        <div className="flex items-center justify-between">
-          <a 
-            href={`/p/${slug}`} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()} // Prevent card click
-            className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1"
-          >
-            Ver Landing Page <ChevronRight size={14} />
-          </a>
-          <div className="flex items-center gap-2">
-            <button 
+
+        {/* Status selector */}
+        <select
+          value={status || 'disponivel'}
+          onChange={e => { e.stopPropagation(); onStatusChange(e.target.value); }}
+          className={cn("w-full px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wide border-none outline-none cursor-pointer mb-4", s.className)}
+        >
+          <option value="disponivel">Disponível</option>
+          <option value="vendido">Vendido</option>
+          <option value="alugado">Alugado</option>
+        </select>
+
+        <div className="flex items-center justify-between mt-auto pt-3 border-t border-[#F3F4F6]">
+          <div className="flex items-center gap-1">
+            <a
+              href={`/p/${slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-black transition-all"
+              title="Abrir landing page"
+            >
+              <ExternalLink size={16} />
+            </a>
+            <button
+              onClick={e => { e.stopPropagation(); onCopyLink(); }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-black transition-all"
+              title="Copiar link"
+            >
+              <Copy size={16} />
+            </button>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
               disabled={isDeleting}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
+              onClick={e => { e.stopPropagation(); onDelete(); }}
               className={cn(
-                "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+                "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
                 isDeleting ? "bg-gray-100 text-[#9CA3AF]" : "text-[#9CA3AF] hover:bg-red-50 hover:text-red-500"
               )}
+              title="Excluir"
             >
-              {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
             </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-black transition-all"
+            <button
+              onClick={e => { e.stopPropagation(); onEdit(); }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-black transition-all"
+              title="Editar"
             >
-              <Settings size={18} />
+              <Settings size={16} />
             </button>
           </div>
         </div>
