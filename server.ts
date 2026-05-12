@@ -5,6 +5,8 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import Stripe from "stripe";
+import nodemailer from "nodemailer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +18,21 @@ dotenv.config({ override: true });
 // Fallback manual para as chaves do .env.example (Padrão do Sistema)
 const FALLBACK_URL = "https://umvbrahsqvqeondwtikm.supabase.co";
 const FALLBACK_KEY = "SUPABASE_SERVICE_ROLE_KEY_REDACTED";
+
+// ─── VARIÁVEIS DE AMBIENTE EXTERNAS ───────────────────────────────────────────
+const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
+const STRIPE_SECRET_KEY   = process.env.STRIPE_SECRET_KEY   || "";
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+const STRIPE_PRICE_ID     = process.env.STRIPE_PRICE_ID     || "";
+const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
+const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
+const UAZAPI_URL          = process.env.UAZAPI_URL          || "";
+const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN        || "";
+const SMTP_HOST           = process.env.SMTP_HOST           || "";
+const SMTP_PORT           = parseInt(process.env.SMTP_PORT  || "587");
+const SMTP_USER           = process.env.SMTP_USER           || "";
+const SMTP_PASS           = process.env.SMTP_PASS           || "";
+const SMTP_FROM           = process.env.SMTP_FROM           || "ImobiFlow <noreply@imobiflow.com>";
 
 async function startServer() {
   const app = express();
@@ -49,17 +66,27 @@ async function startServer() {
       
       if (error) throw error;
       if (data.user) {
+        // Auto-confirmar e-mail via admin API para login imediato
+        await supabase.auth.admin.updateUserById(data.user.id, { email_confirm: true }).catch(e => console.error("Auto-confirm error:", e));
+
         // Create initial broker profile
         const { error: profileError } = await supabase.from('brokers').insert([
-          { 
-            user_id: data.user.id, 
-            name: name || '', 
+          {
+            user_id: data.user.id,
+            name: name || '',
             phone: phone || '',
+            email: email || '',
             ai_name: 'Minha Assistente IA',
-            broker_address: ''
+            broker_address: '',
+            status: 'pendente'
           }
         ]);
         if (profileError) console.error("Error creating profile:", profileError);
+
+        // Login automático após signup para retornar session
+        const authClient2 = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+        const { data: loginData } = await authClient2.auth.signInWithPassword({ email, password });
+        return res.json({ user: loginData?.user || data.user, session: loginData?.session || data.session });
       }
 
       res.json({ user: data.user, session: data.session });
@@ -239,7 +266,7 @@ async function startServer() {
       
       // Chamada para geração de conteúdo com instrução de sistema
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         config: {
           systemInstruction: "Você é um especialista em redação imobiliária de alto padrão.\nReescreva a descrição abaixo com linguagem sofisticada, clara e atrativa,\nadequada para apresentação de residências premium.\nMantenha as informações originais, melhore a estrutura, o vocabulário\ne a formatação. Responda apenas com o texto melhorado, sem explicações adicionais."
         },
@@ -365,17 +392,18 @@ async function startServer() {
       // Lista de colunas permitidas no banco de dados (Whitelisting)
       // Adicionada a coluna 'link' para persistência da URL da Landing Page
       const validColumns = [
-        'id', 
-        'title', 
-        'price', 
-        'location', 
-        'description', 
-        'image_url', 
-        'slug', 
-        'created_at', 
-        'updated_at', 
-        'broker_id', 
-        'link' // <--- Nova coluna para o link da landing page
+        'id',
+        'title',
+        'price',
+        'location',
+        'description',
+        'image_url',
+        'slug',
+        'created_at',
+        'updated_at',
+        'broker_id',
+        'link',
+        'status'
       ];
 
       const filteredProperty = Object.keys(property)
@@ -432,24 +460,28 @@ async function startServer() {
       const ids = (propIds || []).map(p => p.id);
       
       let activeLeads = 0;
+      let scheduledVisits = 0;
+
       if (ids.length > 0) {
-        const { count: leadsCount, error: leadsError } = await supabase
+        const { count: leadsCount } = await supabase
           .from('leads')
           .select('*', { count: 'exact', head: true })
           .in('property_id', ids)
-          .neq('status', 'archived'); // Assuming 'archived' as inactive
+          .neq('status', 'archived');
+        activeLeads = leadsCount || 0;
 
-        if (leadsError) {
-          console.error("Error fetching leads count:", leadsError);
-        } else {
-          activeLeads = leadsCount || 0;
-        }
+        const { count: visitsCount } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .in('property_id', ids)
+          .in('status', ['visita_agendada', 'agendado']);
+        scheduledVisits = visitsCount || 0;
       }
 
       res.json({
         totalProperties: propertyCount || 0,
-        activeLeads: activeLeads,
-        scheduledVisits: 0 // Default fallback as per requirement
+        activeLeads,
+        scheduledVisits
       });
     } catch (err: any) {
       console.error("Erro GET /api/dashboard/metrics:", err);
@@ -457,7 +489,62 @@ async function startServer() {
     }
   });
 
-  // NOVO: implementado em 30/04/2026 - não altera legado
+  app.get("/api/dashboard/charts", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.json([]);
+
+      const { data: propIds } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('broker_id', brokerId);
+
+      const ids = (propIds || []).map((p: any) => p.id);
+
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+      sixMonthsAgo.setDate(1);
+      sixMonthsAgo.setHours(0, 0, 0, 0);
+
+      let leads: any[] = [];
+      if (ids.length > 0) {
+        const { data } = await supabase
+          .from('leads')
+          .select('created_at')
+          .in('property_id', ids)
+          .gte('created_at', sixMonthsAgo.toISOString());
+        leads = data || [];
+      }
+
+      const counts: Record<string, number> = {};
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        counts[key] = 0;
+      }
+      for (const lead of leads) {
+        const d = new Date(lead.created_at);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (key in counts) counts[key]++;
+      }
+
+      const result = Object.entries(counts).map(([key, value]) => {
+        const [year, month] = key.split('-');
+        const name = new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(parseInt(year), parseInt(month) - 1, 1));
+        return { name: name.replace('.', ''), value };
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("Erro GET /api/dashboard/charts:", err);
+      res.json([]);
+    }
+  });
+
   app.get("/api/leads/recent", async (req, res) => {
     try {
       const userId = req.headers['x-user-id'] as string;
@@ -466,7 +553,6 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.json([]);
 
-      // Get property IDs first to filter leads
       const { data: propIds, error: idsError } = await supabase
         .from('properties')
         .select('id, title')
@@ -474,24 +560,25 @@ async function startServer() {
 
       if (idsError) throw idsError;
 
-      const propertiesMap = new Map((propIds || []).map(p => [p.id, p.title]));
+      const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
       const ids = Array.from(propertiesMap.keys());
-      
-      if (ids.length === 0) return res.json([]);
 
-      const { data: leads, error: leadsError } = await supabase
-        .from('leads')
-        .select('*')
-        .in('property_id', ids)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      let leads: any[] = [];
+      if (ids.length > 0) {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .in('property_id', ids)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (error) throw error;
+        leads = data || [];
+      }
 
-      if (leadsError) throw leadsError;
-
-      const formattedLeads = (leads || []).map(l => ({
+      const formattedLeads = leads.map((l: any) => ({
         id: l.id,
-        name: l.name,
-        property: propertiesMap.get(l.property_id) || "Imóvel desconhecido",
+        name: l.name || l.client_name || 'Sem nome',
+        property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido',
         time: l.created_at,
         status: l.status
       }));
@@ -499,7 +586,7 @@ async function startServer() {
       res.json(formattedLeads);
     } catch (err: any) {
       console.error("Erro GET /api/leads/recent:", err);
-      res.json([]); // Fallback
+      res.json([]);
     }
   });
 
@@ -633,6 +720,135 @@ async function startServer() {
     }
   });
 
+  app.get("/api/agenda/visits", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.json([]);
+
+      const { data: propIds } = await supabase
+        .from('properties')
+        .select('id, title')
+        .eq('broker_id', brokerId);
+
+      const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
+      const ids = Array.from(propertiesMap.keys());
+
+      let visits: any[] = [];
+      if (ids.length > 0) {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .in('property_id', ids)
+          .in('status', ['visita_agendada', 'agendado'])
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        visits = data || [];
+      }
+
+      res.json(visits.map((l: any) => ({
+        ...l,
+        name: l.name || l.client_name || 'Sem nome',
+        phone: l.phone || l.client_phone || '',
+        property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
+      })));
+    } catch (err: any) {
+      console.error("Erro GET /api/agenda/visits:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/leads", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.json([]);
+
+      const { data: propIds, error: idsError } = await supabase
+        .from('properties')
+        .select('id, title')
+        .eq('broker_id', brokerId);
+
+      if (idsError) throw idsError;
+
+      const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
+      const ids = Array.from(propertiesMap.keys());
+
+      let leads: any[] = [];
+      if (ids.length > 0) {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .in('property_id', ids)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        leads = data || [];
+      }
+
+      res.json(leads.map((l: any) => ({
+        ...l,
+        name: l.name || l.client_name || 'Sem nome',
+        phone: l.phone || l.client_phone || '',
+        property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
+      })));
+    } catch (err: any) {
+      console.error("Erro GET /api/leads:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Atualiza o status de um imóvel (disponivel / vendido / alugado)
+  app.patch("/api/properties/:id/status", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { status } = req.body;
+      if (!status) return res.status(400).json({ error: "Status é obrigatório." });
+
+      const { data, error } = await supabase
+        .from('properties')
+        .update({ status })
+        .eq('id', req.params.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      console.error("Erro PATCH /api/properties/:id/status:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Atualiza o status de um lead
+  app.patch("/api/leads/:id/status", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { status } = req.body;
+      if (!status) return res.status(400).json({ error: "Status é obrigatório." });
+
+      const { data, error } = await supabase
+        .from('leads')
+        .update({ status })
+        .eq('id', req.params.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      console.error("Erro PATCH /api/leads/:id/status:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // NOVO LANDING 30/04/2026 - Endpoint para buscar agenda
   app.get("/api/agenda", async (req, res) => {
     try {
@@ -650,6 +866,384 @@ async function startServer() {
       res.json([]);
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STRIPE — CHECKOUT E WEBHOOK
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Cria sessão de pagamento no Stripe e retorna a URL do checkout
+  app.post("/api/checkout", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!STRIPE_SECRET_KEY) {
+      return res.status(503).json({ error: "Pagamento ainda não configurado. Aguarde." });
+    }
+
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+
+      const stripe = new Stripe(STRIPE_SECRET_KEY);
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        mode: 'subscription',
+        line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+        metadata: { broker_id: brokerId, user_id: userId },
+        customer_email: broker?.email || '',
+        success_url: `${APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${APP_URL}/payment/cancelled`,
+      });
+
+      res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("Erro ao criar checkout:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Retorna status da assinatura do corretor
+  app.get("/api/subscription", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers')
+        .select('status, plan, valid_until, stripe_customer_id, zpro_tenant_id, zpro_channel_id, zpro_qr_code')
+        .eq('id', brokerId).single();
+
+      const { data: lastSub } = await supabase.from('subscriptions')
+        .select('*').eq('broker_id', brokerId)
+        .order('created_at', { ascending: false }).limit(1).single();
+
+      res.json({ broker, lastSubscription: lastSub });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Retorna status e QR Code do WhatsApp do corretor
+  app.get("/api/whatsapp/status", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers')
+        .select('zpro_tenant_id, zpro_channel_id, zpro_qr_code, zpro_channel_name, status')
+        .eq('id', brokerId).single();
+
+      if (!broker?.zpro_channel_id) {
+        return res.json({ connected: false, qr_code: null, message: "Canal WhatsApp ainda não criado." });
+      }
+
+      // Se Z-PRO estiver configurado, consulta status em tempo real
+      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN && broker.zpro_tenant_id) {
+        try {
+          const r = await fetch(`${ZPRO_ADMIN_URL}/api/channels/${broker.zpro_channel_id}/status`, {
+            headers: { Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` }
+          });
+          const status = await r.json();
+          return res.json({ connected: status.connected || false, qr_code: status.qr_code || broker.zpro_qr_code, channel_name: broker.zpro_channel_name });
+        } catch {
+          // fallback: retorna dados do banco
+        }
+      }
+
+      res.json({ connected: false, qr_code: broker.zpro_qr_code, channel_name: broker.zpro_channel_name });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Webhook do Stripe — precisa do body raw para validar assinatura
+  app.post("/api/webhooks/stripe",
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+      const sig = req.headers['stripe-signature'] as string;
+      let event: any;
+
+      try {
+        if (STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET) {
+          const stripe = new Stripe(STRIPE_SECRET_KEY);
+          event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+        } else {
+          // Modo desenvolvimento sem secret configurado
+          event = JSON.parse(req.body.toString());
+        }
+      } catch (err: any) {
+        console.error("Webhook signature error:", err.message);
+        return res.status(400).json({ error: `Webhook inválido: ${err.message}` });
+      }
+
+      // Loga o webhook recebido
+      await supabase.from('webhook_logs').insert({
+        source: 'stripe',
+        event_type: event.type,
+        payload: event,
+        status: 'received'
+      }).catch(() => {});
+
+      // Processa eventos relevantes
+      if (event.type === 'checkout.session.completed') {
+        await handleStripeCheckoutCompleted(event.data.object);
+      } else if (event.type === 'customer.subscription.deleted') {
+        await handleStripeSubscriptionCancelled(event.data.object);
+      }
+
+      res.json({ received: true });
+    }
+  );
+
+  // Endpoint de teste para simular webhook (apenas em desenvolvimento)
+  app.post("/api/webhooks/stripe/test", async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: "Não disponível em produção." });
+    }
+    const { broker_id } = req.body;
+    if (!broker_id) return res.status(400).json({ error: "broker_id obrigatório." });
+
+    const fakeSession = {
+      id: `cs_test_${Date.now()}`,
+      customer: `cus_test_${Date.now()}`,
+      subscription: `sub_test_${Date.now()}`,
+      payment_intent: `pi_test_${Date.now()}`,
+      amount_total: 9700,
+      currency: 'brl',
+      metadata: { broker_id }
+    };
+
+    await handleStripeCheckoutCompleted(fakeSession);
+    res.json({ success: true, message: "Webhook de teste processado.", session: fakeSession });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FUNÇÕES DE AUTOMAÇÃO — ATIVAÇÃO, Z-PRO, E-MAIL
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleStripeCheckoutCompleted(session: any) {
+    const brokerId = session.metadata?.broker_id;
+    if (!brokerId) { console.error("Webhook sem broker_id nos metadados."); return; }
+
+    try {
+      // 1. Calcula validade (1 mês a partir de hoje)
+      const validUntil = new Date();
+      validUntil.setMonth(validUntil.getMonth() + 1);
+
+      // 2. Ativa o corretor no banco
+      await supabase.from('brokers').update({
+        status: 'ativo',
+        stripe_customer_id: session.customer,
+        stripe_subscription_id: session.subscription,
+        plan: 'mensal',
+        valid_until: validUntil.toISOString()
+      }).eq('id', brokerId);
+
+      // 3. Registra o pagamento em subscriptions
+      await supabase.from('subscriptions').insert({
+        broker_id: brokerId,
+        stripe_session_id: session.id,
+        stripe_customer_id: session.customer,
+        stripe_subscription_id: session.subscription,
+        stripe_payment_intent_id: session.payment_intent,
+        plan: 'mensal',
+        amount: session.amount_total,
+        currency: session.currency || 'brl',
+        status: 'paid',
+        paid_at: new Date().toISOString(),
+        valid_until: validUntil.toISOString()
+      });
+
+      // 4. Busca dados completos do corretor
+      const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+      if (!broker) return;
+
+      // 5. Cria tenant + canal no Z-PRO (se configurado)
+      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN) {
+        await createZproTenantAndChannel(broker);
+      }
+
+      // 6. Envia e-mail de boas-vindas (se configurado)
+      if (SMTP_HOST && SMTP_USER) {
+        await sendWelcomeEmail(broker);
+      }
+
+      // 7. Atualiza log do webhook
+      await supabase.from('webhook_logs')
+        .update({ status: 'processed', broker_id: brokerId })
+        .eq('source', 'stripe').eq('event_type', 'checkout.session.completed');
+
+      console.log(`✅ Corretor ${brokerId} ativado com sucesso.`);
+    } catch (err: any) {
+      console.error("Erro ao ativar corretor:", err);
+      await supabase.from('webhook_logs')
+        .update({ status: 'error', error_msg: err.message })
+        .eq('source', 'stripe').eq('event_type', 'checkout.session.completed');
+    }
+  }
+
+  async function handleStripeSubscriptionCancelled(subscription: any) {
+    try {
+      await supabase.from('brokers')
+        .update({ status: 'inativo' })
+        .eq('stripe_subscription_id', subscription.id);
+
+      await supabase.from('subscriptions')
+        .update({ status: 'cancelled' })
+        .eq('stripe_subscription_id', subscription.id);
+
+      console.log(`⚠️ Assinatura ${subscription.id} cancelada.`);
+    } catch (err: any) {
+      console.error("Erro ao cancelar assinatura:", err);
+    }
+  }
+
+  async function createZproTenantAndChannel(broker: any) {
+    try {
+      // 1. Cria o tenant exclusivo
+      const tenantResp = await fetch(`${ZPRO_ADMIN_URL}/api/tenants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` },
+        body: JSON.stringify({
+          name: broker.name || `Corretor ${broker.id}`,
+          email: broker.email || '',
+          plan: 'basic'
+        })
+      });
+
+      if (!tenantResp.ok) throw new Error(`Z-PRO tenant error: ${await tenantResp.text()}`);
+      const tenant = await tenantResp.json();
+      const tenantId = tenant.id || tenant.tenant_id;
+      const tenantApiKey = tenant.api_key || tenant.apiKey || '';
+
+      // Salva tenant no banco
+      await supabase.from('brokers').update({
+        zpro_tenant_id: tenantId,
+        zpro_api_key: tenantApiKey
+      }).eq('id', broker.id);
+
+      // 2. Cria o canal WhatsApp via UAZapi
+      if (UAZAPI_URL && UAZAPI_TOKEN) {
+        const channelResp = await fetch(`${ZPRO_ADMIN_URL}/api/tenants/${tenantId}/channels`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` },
+          body: JSON.stringify({
+            name: `WhatsApp - ${broker.name}`,
+            connector: 'uazapi',
+            uazapi_url: UAZAPI_URL,
+            uazapi_token: UAZAPI_TOKEN
+          })
+        });
+
+        if (!channelResp.ok) throw new Error(`Z-PRO channel error: ${await channelResp.text()}`);
+        const channel = await channelResp.json();
+        const channelId = channel.id || channel.channel_id;
+        const qrCode = channel.qr_code || channel.qrCode || null;
+
+        // Salva canal no banco
+        await supabase.from('brokers').update({
+          zpro_channel_id: channelId,
+          zpro_channel_name: `WhatsApp - ${broker.name}`,
+          zpro_qr_code: qrCode
+        }).eq('id', broker.id);
+
+        console.log(`📱 Canal WhatsApp criado para corretor ${broker.id}: ${channelId}`);
+      }
+
+      await supabase.from('webhook_logs').insert({
+        source: 'zpro',
+        event_type: 'tenant_created',
+        payload: { tenant_id: tenantId, broker_id: broker.id },
+        status: 'processed',
+        broker_id: broker.id
+      });
+
+    } catch (err: any) {
+      console.error("Erro ao criar Z-PRO tenant/canal:", err);
+      await supabase.from('webhook_logs').insert({
+        source: 'zpro',
+        event_type: 'tenant_creation_failed',
+        payload: { error: err.message, broker_id: broker.id },
+        status: 'error',
+        broker_id: broker.id
+      });
+    }
+  }
+
+  async function sendWelcomeEmail(broker: any) {
+    if (!SMTP_HOST || !SMTP_USER || !broker.email) return;
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS }
+      });
+
+      const dashboardUrl = APP_URL;
+      const zpro_url = ZPRO_ADMIN_URL ? `${ZPRO_ADMIN_URL}/tenant/${broker.zpro_tenant_id}` : '(em breve)';
+
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: broker.email,
+        subject: '🏠 Bem-vindo ao ImobiFlow! Seu acesso está pronto.',
+        html: `
+          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#fff;">
+            <div style="text-align:center;margin-bottom:32px;">
+              <h1 style="font-size:28px;font-weight:900;color:#111;">🏠 ImobiFlow</h1>
+              <p style="color:#6b7280;font-size:16px;">Sua plataforma imobiliária está pronta!</p>
+            </div>
+
+            <h2 style="font-size:20px;color:#111;margin-bottom:8px;">Olá, ${broker.name}!</h2>
+            <p style="color:#374151;line-height:1.6;">
+              Seu cadastro foi ativado com sucesso. Abaixo estão todos os seus acessos:
+            </p>
+
+            <div style="background:#f9fafb;border-radius:16px;padding:24px;margin:24px 0;">
+              <h3 style="color:#111;margin:0 0 16px;">📊 Plataforma Imobiliária</h3>
+              <p style="margin:4px 0;color:#374151;"><strong>Acesso:</strong> <a href="${dashboardUrl}" style="color:#000;">${dashboardUrl}</a></p>
+              <p style="margin:4px 0;color:#374151;"><strong>E-mail:</strong> ${broker.email}</p>
+              <p style="margin:4px 0;color:#374151;"><strong>Senha:</strong> A que você cadastrou no signup</p>
+            </div>
+
+            ${broker.zpro_tenant_id ? `
+            <div style="background:#f0fdf4;border-radius:16px;padding:24px;margin:24px 0;border:1px solid #bbf7d0;">
+              <h3 style="color:#111;margin:0 0 16px;">📱 Plataforma WhatsApp (Criate)</h3>
+              <p style="margin:4px 0;color:#374151;"><strong>Acesso:</strong> <a href="${zpro_url}" style="color:#000;">${zpro_url}</a></p>
+              <p style="margin:4px 0;color:#374151;"><strong>Login:</strong> ${broker.email}</p>
+            </div>
+
+            <div style="background:#fffbeb;border-radius:16px;padding:24px;margin:24px 0;border:1px solid #fde68a;">
+              <h3 style="color:#111;margin:0 0 8px;">🔗 Conectar seu WhatsApp</h3>
+              <ol style="color:#374151;line-height:2;margin:0;padding-left:20px;">
+                <li>Acesse o link da plataforma WhatsApp acima</li>
+                <li>Clique em <strong>"Conectar WhatsApp"</strong></li>
+                <li>Escaneie o QR Code com seu celular</li>
+                <li>Pronto! Seu agente estará respondendo automaticamente ✅</li>
+              </ol>
+            </div>
+            ` : ''}
+
+            <p style="color:#9ca3af;font-size:13px;text-align:center;margin-top:32px;">
+              ImobiFlow — Plataforma Imobiliária Inteligente
+            </p>
+          </div>
+        `
+      });
+
+      console.log(`📧 E-mail de boas-vindas enviado para ${broker.email}`);
+    } catch (err: any) {
+      console.error("Erro ao enviar e-mail:", err);
+    }
+  }
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
