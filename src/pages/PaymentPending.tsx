@@ -11,8 +11,6 @@ interface CardForm {
   expiryMonth: string;
   expiryYear: string;
   cvv: string;
-  postalCode: string;
-  addressNumber: string;
 }
 
 const BENEFITS = [
@@ -28,8 +26,7 @@ export default function PaymentPending() {
   const [error, setError] = useState('');
   const [form, setForm] = useState<CardForm>({
     cpfCnpj: '', cardHolder: '', cardNumber: '',
-    expiryMonth: '', expiryYear: '', cvv: '',
-    postalCode: '', addressNumber: ''
+    expiryMonth: '', expiryYear: '', cvv: ''
   });
 
   const set = (field: keyof CardForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -45,12 +42,7 @@ export default function PaymentPending() {
     return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{1,2})/, '$1.$2.$3/$4-$5').replace(/(\d{2})(\d{3})(\d{3})(\d{1,4})/, '$1.$2.$3/$4').replace(/(\d{2})(\d{3})(\d{1,3})/, '$1.$2.$3').replace(/(\d{2})(\d{1,3})/, '$1.$2');
   };
 
-  const formatCep = (v: string) => {
-    const d = v.replace(/\D/g, '').slice(0, 8);
-    return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -64,9 +56,7 @@ export default function PaymentPending() {
           cardNumber: form.cardNumber.replace(/\s/g, ''),
           expiryMonth: form.expiryMonth,
           expiryYear: form.expiryYear,
-          cvv: form.cvv,
-          postalCode: form.postalCode.replace(/\D/g, ''),
-          addressNumber: form.addressNumber
+          cvv: form.cvv
         })
       });
       const data = await resp.json();
@@ -181,23 +171,6 @@ export default function PaymentPending() {
                 maxLength={4} type="password"
                 className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium text-center"
                 placeholder="•••" />
-            </div>
-          </div>
-
-          {/* CEP + Número */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">CEP</label>
-              <input required value={form.postalCode}
-                onChange={e => setForm(f => ({ ...f, postalCode: formatCep(e.target.value) }))}
-                className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
-                placeholder="00000-000" maxLength={9} />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Número</label>
-              <input required value={form.addressNumber} onChange={set('addressNumber')}
-                className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
-                placeholder="Ex: 100" />
             </div>
           </div>
 

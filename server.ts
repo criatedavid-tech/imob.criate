@@ -931,7 +931,7 @@ async function startServer() {
       return res.status(503).json({ error: "Pagamento ainda não configurado. Aguarde." });
     }
 
-    const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv, postalCode, addressNumber } = req.body;
+    const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv } = req.body;
     if (!cpfCnpj || !cardHolder || !cardNumber || !expiryMonth || !expiryYear || !cvv) {
       return res.status(400).json({ error: "Dados do cartão incompletos." });
     }
@@ -983,8 +983,8 @@ async function startServer() {
             name: cardHolder,
             email: broker.email,
             cpfCnpj: cpfCnpj.replace(/\D/g, ''),
-            postalCode: (postalCode || '').replace(/\D/g, '') || '00000000',
-            addressNumber: addressNumber || 'S/N',
+            postalCode: '00000000',
+            addressNumber: 'S/N',
             phone: (broker.phone || '').replace(/\D/g, '') || '00000000000'
           }
         })
