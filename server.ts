@@ -26,8 +26,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
 const STRIPE_PRICE_ID     = process.env.STRIPE_PRICE_ID     || "";
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
-const UAZAPI_URL          = process.env.UAZAPI_URL          || "";
-const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN        || "";
+// UAZAPI_URL e UAZAPI_TOKEN não são passados via código — configurados direto no painel Z-PRO
 const SMTP_HOST           = process.env.SMTP_HOST           || "";
 const SMTP_PORT           = parseInt(process.env.SMTP_PORT  || "587");
 const SMTP_USER           = process.env.SMTP_USER           || "";
@@ -945,13 +944,37 @@ async function startServer() {
       }
 
       // Se Z-PRO estiver configurado, consulta status em tempo real
-      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN && broker.zpro_tenant_id) {
+      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN && broker.zpro_api_key) {
         try {
-          const r = await fetch(`${ZPRO_ADMIN_URL}/api/channels/${broker.zpro_channel_id}/status`, {
-            headers: { Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` }
+          const apiHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` };
+
+          // Consulta status do canal — POST /v2/api/external/{apiId}/showChannelById
+          const statusResp = await fetch(`${ZPRO_ADMIN_URL}/v2/api/external/${broker.zpro_api_key}/showChannelById`, {
+            method: 'POST',
+            headers: apiHeaders,
+            body: JSON.stringify({ id: Number(broker.zpro_channel_id) })
           });
-          const status = await r.json();
-          return res.json({ connected: status.connected || false, qr_code: status.qr_code || broker.zpro_qr_code, channel_name: broker.zpro_channel_name });
+          const channelData = await statusResp.json();
+          const connected = channelData.status === 'CONNECTED' || channelData.connected === true;
+
+          if (connected) {
+            return res.json({ connected: true, qr_code: null, channel_name: broker.zpro_channel_name });
+          }
+
+          // Não conectado: busca QR code atualizado — POST /v2/api/external/{apiId}/qrCodeSession
+          const qrResp = await fetch(`${ZPRO_ADMIN_URL}/v2/api/external/${broker.zpro_api_key}/qrCodeSession`, {
+            method: 'POST',
+            headers: apiHeaders,
+            body: JSON.stringify({ whatsappId: Number(broker.zpro_channel_id) })
+          });
+          const qrData = await qrResp.json();
+          const freshQr = qrData.qrcode || qrData.qr_code || qrData.base64 || null;
+
+          if (freshQr) {
+            await supabase.from('brokers').update({ zpro_qr_code: freshQr }).eq('id', brokerId);
+          }
+
+          return res.json({ connected: false, qr_code: freshQr || broker.zpro_qr_code, channel_name: broker.zpro_channel_name });
         } catch {
           // fallback: retorna dados do banco
         }
@@ -1107,63 +1130,90 @@ async function startServer() {
 
   async function createZproTenantAndChannel(broker: any) {
     try {
-      // 1. Cria o tenant exclusivo
-      const tenantResp = await fetch(`${ZPRO_ADMIN_URL}/api/tenants`, {
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` };
+      const brokerName = broker.name || `Corretor ${broker.id}`;
+
+      // 1. Cria tenant exclusivo — POST /tenantApiStoreTenant
+      const tenantResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiStoreTenant`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` },
+        headers,
         body: JSON.stringify({
-          name: broker.name || `Corretor ${broker.id}`,
+          name: brokerName,
           email: broker.email || '',
-          plan: 'basic'
+          password: Math.random().toString(36).slice(-8) + 'A1!',
+          userName: (broker.email || broker.id).split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase(),
+          status: 'active',
+          maxUsers: 5,
+          maxConnections: 1,
+          acceptTerms: true,
+          profile: 'user'
         })
       });
 
       if (!tenantResp.ok) throw new Error(`Z-PRO tenant error: ${await tenantResp.text()}`);
       const tenant = await tenantResp.json();
-      const tenantId = tenant.id || tenant.tenant_id;
-      const tenantApiKey = tenant.api_key || tenant.apiKey || '';
+      const tenantId = tenant.id || tenant.tenant_id || tenant.tenantId;
 
-      // Salva tenant no banco
+      await supabase.from('brokers').update({ zpro_tenant_id: String(tenantId) }).eq('id', broker.id);
+
+      // 2. Cria sessão WhatsApp para o tenant — POST /tenantApiCreateSession
+      const sessionResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiCreateSession`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tenant: tenantId,
+          name: `WhatsApp - ${brokerName}`,
+          status: 'OPENING',
+          type: 'uazapi'
+        })
+      });
+
+      if (!sessionResp.ok) throw new Error(`Z-PRO session error: ${await sessionResp.text()}`);
+      const session = await sessionResp.json();
+      const whatsappId = session.id || session.whatsappId;
+
       await supabase.from('brokers').update({
-        zpro_tenant_id: tenantId,
-        zpro_api_key: tenantApiKey
+        zpro_channel_id: String(whatsappId),
+        zpro_channel_name: `WhatsApp - ${brokerName}`
       }).eq('id', broker.id);
 
-      // 2. Cria o canal WhatsApp via UAZapi
-      if (UAZAPI_URL && UAZAPI_TOKEN) {
-        const channelResp = await fetch(`${ZPRO_ADMIN_URL}/api/tenants/${tenantId}/channels`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` },
-          body: JSON.stringify({
-            name: `WhatsApp - ${broker.name}`,
-            connector: 'uazapi',
-            uazapi_url: UAZAPI_URL,
-            uazapi_token: UAZAPI_TOKEN
-          })
-        });
+      // 3. Cria API key para o tenant — POST /tenantCreateApi
+      const apiResp = await fetch(`${ZPRO_ADMIN_URL}/tenantCreateApi`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: `API - ${brokerName}`,
+          sessionId: whatsappId,
+          tenant: tenantId,
+          authToken: ZPRO_ADMIN_TOKEN,
+          userId: null,
+          urlServiceStatus: '',
+          urlMessageStatus: ''
+        })
+      });
 
-        if (!channelResp.ok) throw new Error(`Z-PRO channel error: ${await channelResp.text()}`);
-        const channel = await channelResp.json();
-        const channelId = channel.id || channel.channel_id;
-        const qrCode = channel.qr_code || channel.qrCode || null;
+      if (!apiResp.ok) throw new Error(`Z-PRO API key error: ${await apiResp.text()}`);
+      const apiData = await apiResp.json();
+      const apiId = apiData.id || apiData.apiId;
 
-        // Salva canal no banco
-        await supabase.from('brokers').update({
-          zpro_channel_id: channelId,
-          zpro_channel_name: `WhatsApp - ${broker.name}`,
-          zpro_qr_code: qrCode
-        }).eq('id', broker.id);
+      await supabase.from('brokers').update({ zpro_api_key: String(apiId) }).eq('id', broker.id);
 
-        console.log(`📱 Canal WhatsApp criado para corretor ${broker.id}: ${channelId}`);
-      }
+      // 4. Inicia sessão para disparar geração do QR code — POST /v2/api/external/{apiId}/startSession
+      await fetch(`${ZPRO_ADMIN_URL}/v2/api/external/${apiId}/startSession`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ whatsappId: Number(whatsappId) })
+      });
 
       await supabase.from('webhook_logs').insert({
         source: 'zpro',
         event_type: 'tenant_created',
-        payload: { tenant_id: tenantId, broker_id: broker.id },
+        payload: { tenant_id: tenantId, whatsapp_id: whatsappId, api_id: apiId, broker_id: broker.id },
         status: 'processed',
         broker_id: broker.id
       });
+
+      console.log(`✅ Z-PRO: tenant ${tenantId} | sessão ${whatsappId} | api ${apiId} — corretor ${broker.id}`);
 
     } catch (err: any) {
       console.error("Erro ao criar Z-PRO tenant/canal:", err);
