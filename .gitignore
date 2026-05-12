@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Java / Maven (backend legado removido)
+pom.xml
+src/main/
+target/
+
+# Claude / IDE
+.claude/
+.vscode/
