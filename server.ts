@@ -54,55 +54,107 @@ async function startServer() {
    */
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
       const { email, password, name, phone } = req.body;
-      const { data, error } = await authClient.auth.signUp({ email, password });
-      
+      if (!email || !password || !name) {
+        return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
+      }
+
+      // Verifica se já existe conta com este e-mail
+      const { data: existing } = await supabase.from('brokers').select('id').eq('email', email.toLowerCase().trim()).maybeSingle();
+      if (existing) {
+        return res.status(400).json({ error: 'Este e-mail já possui uma conta. Faça login ou recupere sua senha.' });
+      }
+
+      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data, error } = await authClient.auth.signUp({ email: email.toLowerCase().trim(), password });
       if (error) throw error;
+
       if (data.user) {
-        // Auto-confirmar e-mail via admin API para login imediato
         await supabase.auth.admin.updateUserById(data.user.id, { email_confirm: true }).catch(e => console.error("Auto-confirm error:", e));
 
-        // Create initial broker profile
-        const { error: profileError } = await supabase.from('brokers').insert([
-          {
-            user_id: data.user.id,
-            name: name || '',
-            phone: phone || '',
-            email: email || '',
-            ai_name: 'Minha Assistente IA',
-            broker_address: '',
-            status: 'pendente'
-          }
-        ]);
+        const { error: profileError } = await supabase.from('brokers').insert([{
+          user_id: data.user.id,
+          name: name.trim(),
+          phone: phone || '',
+          email: email.toLowerCase().trim(),
+          ai_name: 'Minha Assistente IA',
+          broker_address: '',
+          status: 'pendente'
+        }]);
         if (profileError) console.error("Error creating profile:", profileError);
 
-        // Login automático após signup para retornar session
         const authClient2 = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data: loginData } = await authClient2.auth.signInWithPassword({ email, password });
+        const { data: loginData } = await authClient2.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
         return res.json({ user: loginData?.user || data.user, session: loginData?.session || data.session });
       }
 
       res.json({ user: data.user, session: data.session });
     } catch (err: any) {
       console.error("Auth Signup Error:", err);
-      res.status(400).json({ error: err.message });
+      const msg = err.message?.includes('already registered')
+        ? 'Este e-mail já possui uma conta. Faça login ou recupere sua senha.'
+        : err.message;
+      res.status(400).json({ error: msg });
     }
   });
 
-  /**
-   * Realiza o login de um usuário existente.
-   */
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
       const { email, password } = req.body;
-      const { data, error } = await authClient.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (!email || !password) return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+
+      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data, error } = await authClient.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
+      if (error) {
+        const msg = error.message?.toLowerCase().includes('invalid')
+          ? 'E-mail ou senha incorretos.'
+          : error.message;
+        return res.status(401).json({ error: msg });
+      }
       res.json({ user: data.user, session: data.session });
     } catch (err: any) {
       console.error("Auth Login Error:", err);
       res.status(401).json({ error: err.message });
+    }
+  });
+
+  // Envia e-mail de recuperação de senha (via Supabase)
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'E-mail obrigatório.' });
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
+        redirectTo: `${APP_URL}/reset-password`
+      });
+      if (error) throw error;
+
+      res.json({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em instantes.' });
+    } catch (err: any) {
+      console.error("Forgot password error:", err);
+      // Sempre retorna sucesso para não revelar se o e-mail existe
+      res.json({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em instantes.' });
+    }
+  });
+
+  // Atualiza a senha usando o token do e-mail de recuperação
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { accessToken, newPassword } = req.body;
+      if (!accessToken || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios.' });
+      if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
+
+      const userClient = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${accessToken}` } }
+      });
+      const { error } = await userClient.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      res.json({ message: 'Senha atualizada com sucesso.' });
+    } catch (err: any) {
+      console.error("Reset password error:", err);
+      res.status(400).json({ error: 'Link expirado ou inválido. Solicite uma nova recuperação de senha.' });
     }
   });
 
