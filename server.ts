@@ -6,7 +6,6 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import Stripe from "stripe";
-import nodemailer from "nodemailer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,11 +26,7 @@ const STRIPE_PRICE_ID     = process.env.STRIPE_PRICE_ID     || "";
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
 // UAZAPI_URL e UAZAPI_TOKEN não são passados via código — configurados direto no painel Z-PRO
-const SMTP_HOST           = process.env.SMTP_HOST           || "";
-const SMTP_PORT           = parseInt(process.env.SMTP_PORT  || "587");
-const SMTP_USER           = process.env.SMTP_USER           || "";
-const SMTP_PASS           = process.env.SMTP_PASS           || "";
-const SMTP_FROM           = process.env.SMTP_FROM           || "ImobiFlow <noreply@imobiflow.com>";
+// E-mail de boas-vindas é enviado manualmente por um responsável humano
 
 async function startServer() {
   const app = express();
@@ -1093,10 +1088,6 @@ async function startServer() {
         await createZproTenantAndChannel(broker);
       }
 
-      // 6. Envia e-mail de boas-vindas (se configurado)
-      if (SMTP_HOST && SMTP_USER) {
-        await sendWelcomeEmail(broker);
-      }
 
       // 7. Atualiza log do webhook
       await supabase.from('webhook_logs')
@@ -1227,73 +1218,6 @@ async function startServer() {
     }
   }
 
-  async function sendWelcomeEmail(broker: any) {
-    if (!SMTP_HOST || !SMTP_USER || !broker.email) return;
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_PORT === 465,
-        auth: { user: SMTP_USER, pass: SMTP_PASS }
-      });
-
-      const dashboardUrl = APP_URL;
-      const zpro_url = ZPRO_ADMIN_URL ? `${ZPRO_ADMIN_URL}/tenant/${broker.zpro_tenant_id}` : '(em breve)';
-
-      await transporter.sendMail({
-        from: SMTP_FROM,
-        to: broker.email,
-        subject: '🏠 Bem-vindo ao ImobiFlow! Seu acesso está pronto.',
-        html: `
-          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#fff;">
-            <div style="text-align:center;margin-bottom:32px;">
-              <h1 style="font-size:28px;font-weight:900;color:#111;">🏠 ImobiFlow</h1>
-              <p style="color:#6b7280;font-size:16px;">Sua plataforma imobiliária está pronta!</p>
-            </div>
-
-            <h2 style="font-size:20px;color:#111;margin-bottom:8px;">Olá, ${broker.name}!</h2>
-            <p style="color:#374151;line-height:1.6;">
-              Seu cadastro foi ativado com sucesso. Abaixo estão todos os seus acessos:
-            </p>
-
-            <div style="background:#f9fafb;border-radius:16px;padding:24px;margin:24px 0;">
-              <h3 style="color:#111;margin:0 0 16px;">📊 Plataforma Imobiliária</h3>
-              <p style="margin:4px 0;color:#374151;"><strong>Acesso:</strong> <a href="${dashboardUrl}" style="color:#000;">${dashboardUrl}</a></p>
-              <p style="margin:4px 0;color:#374151;"><strong>E-mail:</strong> ${broker.email}</p>
-              <p style="margin:4px 0;color:#374151;"><strong>Senha:</strong> A que você cadastrou no signup</p>
-            </div>
-
-            ${broker.zpro_tenant_id ? `
-            <div style="background:#f0fdf4;border-radius:16px;padding:24px;margin:24px 0;border:1px solid #bbf7d0;">
-              <h3 style="color:#111;margin:0 0 16px;">📱 Plataforma WhatsApp (Criate)</h3>
-              <p style="margin:4px 0;color:#374151;"><strong>Acesso:</strong> <a href="${zpro_url}" style="color:#000;">${zpro_url}</a></p>
-              <p style="margin:4px 0;color:#374151;"><strong>Login:</strong> ${broker.email}</p>
-            </div>
-
-            <div style="background:#fffbeb;border-radius:16px;padding:24px;margin:24px 0;border:1px solid #fde68a;">
-              <h3 style="color:#111;margin:0 0 8px;">🔗 Conectar seu WhatsApp</h3>
-              <ol style="color:#374151;line-height:2;margin:0;padding-left:20px;">
-                <li>Acesse o link da plataforma WhatsApp acima</li>
-                <li>Clique em <strong>"Conectar WhatsApp"</strong></li>
-                <li>Escaneie o QR Code com seu celular</li>
-                <li>Pronto! Seu agente estará respondendo automaticamente ✅</li>
-              </ol>
-            </div>
-            ` : ''}
-
-            <p style="color:#9ca3af;font-size:13px;text-align:center;margin-top:32px;">
-              ImobiFlow — Plataforma Imobiliária Inteligente
-            </p>
-          </div>
-        `
-      });
-
-      console.log(`📧 E-mail de boas-vindas enviado para ${broker.email}`);
-    } catch (err: any) {
-      console.error("Erro ao enviar e-mail:", err);
-    }
-  }
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
