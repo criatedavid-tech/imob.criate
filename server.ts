@@ -5,7 +5,6 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import Stripe from "stripe";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,9 +19,10 @@ const FALLBACK_KEY = "SUPABASE_SERVICE_ROLE_KEY_REDACTED";
 
 // ─── VARIÁVEIS DE AMBIENTE EXTERNAS ───────────────────────────────────────────
 const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
-const STRIPE_SECRET_KEY   = process.env.STRIPE_SECRET_KEY   || "";
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
-const STRIPE_PRICE_ID     = process.env.STRIPE_PRICE_ID     || "";
+const ASAAS_API_KEY       = process.env.ASAAS_API_KEY       || "";
+const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
+  ? 'https://api.asaas.com/v3'
+  : 'https://sandbox.asaas.com/api/v3';
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
 // UAZAPI_URL e UAZAPI_TOKEN não são passados via código — configurados direto no painel Z-PRO
@@ -862,16 +862,26 @@ async function startServer() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STRIPE — CHECKOUT E WEBHOOK
+  // ASAAS — CHECKOUT E WEBHOOK
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Cria sessão de pagamento no Stripe e retorna a URL do checkout
+  const asaasHeaders = () => ({
+    'Content-Type': 'application/json',
+    'access_token': ASAAS_API_KEY
+  });
+
+  // Cria cobrança no Asaas (cartão de crédito) e ativa o corretor imediatamente
   app.post("/api/checkout", async (req, res) => {
     const userId = req.headers['x-user-id'] as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    if (!STRIPE_SECRET_KEY) {
+    if (!ASAAS_API_KEY) {
       return res.status(503).json({ error: "Pagamento ainda não configurado. Aguarde." });
+    }
+
+    const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv, postalCode, addressNumber } = req.body;
+    if (!cpfCnpj || !cardHolder || !cardNumber || !expiryMonth || !expiryYear || !cvv) {
+      return res.status(400).json({ error: "Dados do cartão incompletos." });
     }
 
     try {
@@ -879,22 +889,70 @@ async function startServer() {
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
       const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+      if (!broker) return res.status(404).json({ error: "Corretor não encontrado." });
 
-      const stripe = new Stripe(STRIPE_SECRET_KEY);
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        mode: 'subscription',
-        line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
-        metadata: { broker_id: brokerId, user_id: userId },
-        customer_email: broker?.email || '',
-        success_url: `${APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${APP_URL}/payment/cancelled`,
+      // 1. Cria cliente no Asaas
+      const customerResp = await fetch(`${ASAAS_BASE_URL}/customers`, {
+        method: 'POST',
+        headers: asaasHeaders(),
+        body: JSON.stringify({
+          name: broker.name || broker.email,
+          cpfCnpj: cpfCnpj.replace(/\D/g, ''),
+          email: broker.email,
+          phone: (broker.phone || '').replace(/\D/g, '')
+        })
       });
 
-      res.json({ url: session.url });
+      const customerData = await customerResp.json();
+      if (!customerResp.ok) {
+        throw new Error(customerData.errors?.[0]?.description || 'Erro ao registrar cliente');
+      }
+      const customerId = customerData.id;
+
+      // 2. Cria cobrança com cartão de crédito
+      const dueDate = new Date().toISOString().split('T')[0];
+      const paymentResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
+        method: 'POST',
+        headers: asaasHeaders(),
+        body: JSON.stringify({
+          customer: customerId,
+          billingType: 'CREDIT_CARD',
+          value: 97.00,
+          dueDate,
+          description: 'ImobiFlow - Plano Mensal',
+          creditCard: {
+            holderName: cardHolder,
+            number: cardNumber.replace(/\s/g, ''),
+            expiryMonth,
+            expiryYear,
+            ccv: cvv
+          },
+          creditCardHolderInfo: {
+            name: cardHolder,
+            email: broker.email,
+            cpfCnpj: cpfCnpj.replace(/\D/g, ''),
+            postalCode: (postalCode || '').replace(/\D/g, '') || '00000000',
+            addressNumber: addressNumber || 'S/N',
+            phone: (broker.phone || '').replace(/\D/g, '') || '00000000000'
+          }
+        })
+      });
+
+      const payment = await paymentResp.json();
+      if (!paymentResp.ok) {
+        throw new Error(payment.errors?.[0]?.description || payment.message || 'Pagamento recusado');
+      }
+      if (payment.status !== 'CONFIRMED' && payment.status !== 'RECEIVED') {
+        throw new Error('Pagamento não aprovado. Verifique os dados do cartão.');
+      }
+
+      // 3. Ativa o corretor imediatamente (cartão aprovado na hora)
+      await handleAsaasPaymentReceived({ id: payment.id, customerId, value: payment.value, brokerId });
+
+      res.json({ success: true, paymentId: payment.id });
     } catch (err: any) {
-      console.error("Erro ao criar checkout:", err);
-      res.status(500).json({ error: err.message });
+      console.error("Erro no checkout Asaas:", err);
+      res.status(400).json({ error: err.message });
     }
   });
 
@@ -908,7 +966,7 @@ async function startServer() {
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
       const { data: broker } = await supabase.from('brokers')
-        .select('status, plan, valid_until, stripe_customer_id, zpro_tenant_id, zpro_channel_id, zpro_qr_code')
+        .select('status, plan, valid_until, zpro_tenant_id, zpro_channel_id, zpro_qr_code')
         .eq('id', brokerId).single();
 
       const { data: lastSub } = await supabase.from('subscriptions')
@@ -931,7 +989,7 @@ async function startServer() {
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
       const { data: broker } = await supabase.from('brokers')
-        .select('zpro_tenant_id, zpro_channel_id, zpro_qr_code, zpro_channel_name, status')
+        .select('zpro_tenant_id, zpro_api_key, zpro_channel_id, zpro_qr_code, zpro_channel_name, status')
         .eq('id', brokerId).single();
 
       if (!broker?.zpro_channel_id) {
@@ -981,141 +1039,90 @@ async function startServer() {
     }
   });
 
-  // Webhook do Stripe — precisa do body raw para validar assinatura
-  app.post("/api/webhooks/stripe",
-    express.raw({ type: 'application/json' }),
-    async (req, res) => {
-      const sig = req.headers['stripe-signature'] as string;
-      let event: any;
+  // Webhook do Asaas — confirmação de pagamento, cancelamento
+  app.post("/api/webhooks/asaas", async (req, res) => {
+    const event = req.body;
 
-      try {
-        if (STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET) {
-          const stripe = new Stripe(STRIPE_SECRET_KEY);
-          event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-        } else {
-          // Modo desenvolvimento sem secret configurado
-          event = JSON.parse(req.body.toString());
-        }
-      } catch (err: any) {
-        console.error("Webhook signature error:", err.message);
-        return res.status(400).json({ error: `Webhook inválido: ${err.message}` });
+    await supabase.from('webhook_logs').insert({
+      source: 'asaas',
+      event_type: event.event,
+      payload: event,
+      status: 'received'
+    });
+
+    if (event.event === 'PAYMENT_RECEIVED' || event.event === 'PAYMENT_CONFIRMED') {
+      const p = event.payment;
+      const { data: broker } = await supabase.from('brokers')
+        .select('id').eq('asaas_customer_id', p.customer).single();
+      if (broker) {
+        await handleAsaasPaymentReceived({ id: p.id, customerId: p.customer, value: p.value, brokerId: broker.id });
       }
-
-      // Loga o webhook recebido
-      await supabase.from('webhook_logs').insert({
-        source: 'stripe',
-        event_type: event.type,
-        payload: event,
-        status: 'received'
-      }).catch(() => {});
-
-      // Processa eventos relevantes
-      if (event.type === 'checkout.session.completed') {
-        await handleStripeCheckoutCompleted(event.data.object);
-      } else if (event.type === 'customer.subscription.deleted') {
-        await handleStripeSubscriptionCancelled(event.data.object);
-      }
-
-      res.json({ received: true });
+    } else if (event.event === 'PAYMENT_DELETED' || event.event === 'PAYMENT_OVERDUE') {
+      const p = event.payment;
+      await supabase.from('brokers').update({ status: 'inativo' }).eq('asaas_customer_id', p.customer);
+      await supabase.from('subscriptions').update({ status: 'cancelled' }).eq('asaas_payment_id', p.id);
     }
-  );
 
-  // Endpoint de teste para simular webhook (apenas em desenvolvimento)
-  app.post("/api/webhooks/stripe/test", async (req, res) => {
+    res.json({ received: true });
+  });
+
+  // Endpoint de teste — simula ativação sem Asaas (apenas dev)
+  app.post("/api/webhooks/asaas/test", async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
       return res.status(403).json({ error: "Não disponível em produção." });
     }
     const { broker_id } = req.body;
     if (!broker_id) return res.status(400).json({ error: "broker_id obrigatório." });
 
-    const fakeSession = {
-      id: `cs_test_${Date.now()}`,
-      customer: `cus_test_${Date.now()}`,
-      subscription: `sub_test_${Date.now()}`,
-      payment_intent: `pi_test_${Date.now()}`,
-      amount_total: 9700,
-      currency: 'brl',
-      metadata: { broker_id }
-    };
-
-    await handleStripeCheckoutCompleted(fakeSession);
-    res.json({ success: true, message: "Webhook de teste processado.", session: fakeSession });
+    await handleAsaasPaymentReceived({
+      id: `pay_test_${Date.now()}`,
+      customerId: `cus_test_${Date.now()}`,
+      value: 97.00,
+      brokerId: broker_id
+    });
+    res.json({ success: true, message: "Corretor ativado via teste." });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FUNÇÕES DE AUTOMAÇÃO — ATIVAÇÃO, Z-PRO, E-MAIL
+  // FUNÇÕES DE AUTOMAÇÃO — ATIVAÇÃO E Z-PRO
   // ─────────────────────────────────────────────────────────────────────────
 
-  async function handleStripeCheckoutCompleted(session: any) {
-    const brokerId = session.metadata?.broker_id;
-    if (!brokerId) { console.error("Webhook sem broker_id nos metadados."); return; }
-
+  async function handleAsaasPaymentReceived({ id, customerId, value, brokerId }: {
+    id: string; customerId: string; value: number; brokerId: string;
+  }) {
     try {
-      // 1. Calcula validade (1 mês a partir de hoje)
       const validUntil = new Date();
       validUntil.setMonth(validUntil.getMonth() + 1);
 
-      // 2. Ativa o corretor no banco
       await supabase.from('brokers').update({
         status: 'ativo',
-        stripe_customer_id: session.customer,
-        stripe_subscription_id: session.subscription,
+        asaas_customer_id: customerId,
         plan: 'mensal',
         valid_until: validUntil.toISOString()
       }).eq('id', brokerId);
 
-      // 3. Registra o pagamento em subscriptions
       await supabase.from('subscriptions').insert({
         broker_id: brokerId,
-        stripe_session_id: session.id,
-        stripe_customer_id: session.customer,
-        stripe_subscription_id: session.subscription,
-        stripe_payment_intent_id: session.payment_intent,
+        asaas_payment_id: id,
+        asaas_customer_id: customerId,
         plan: 'mensal',
-        amount: session.amount_total,
-        currency: session.currency || 'brl',
+        amount: Math.round(value * 100),
+        currency: 'brl',
         status: 'paid',
         paid_at: new Date().toISOString(),
         valid_until: validUntil.toISOString()
       });
 
-      // 4. Busca dados completos do corretor
       const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
       if (!broker) return;
 
-      // 5. Cria tenant + canal no Z-PRO (se configurado)
       if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN) {
         await createZproTenantAndChannel(broker);
       }
 
-
-      // 7. Atualiza log do webhook
-      await supabase.from('webhook_logs')
-        .update({ status: 'processed', broker_id: brokerId })
-        .eq('source', 'stripe').eq('event_type', 'checkout.session.completed');
-
-      console.log(`✅ Corretor ${brokerId} ativado com sucesso.`);
+      console.log(`✅ Corretor ${brokerId} ativado — Asaas ${id}`);
     } catch (err: any) {
       console.error("Erro ao ativar corretor:", err);
-      await supabase.from('webhook_logs')
-        .update({ status: 'error', error_msg: err.message })
-        .eq('source', 'stripe').eq('event_type', 'checkout.session.completed');
-    }
-  }
-
-  async function handleStripeSubscriptionCancelled(subscription: any) {
-    try {
-      await supabase.from('brokers')
-        .update({ status: 'inativo' })
-        .eq('stripe_subscription_id', subscription.id);
-
-      await supabase.from('subscriptions')
-        .update({ status: 'cancelled' })
-        .eq('stripe_subscription_id', subscription.id);
-
-      console.log(`⚠️ Assinatura ${subscription.id} cancelada.`);
-    } catch (err: any) {
-      console.error("Erro ao cancelar assinatura:", err);
     }
   }
 
