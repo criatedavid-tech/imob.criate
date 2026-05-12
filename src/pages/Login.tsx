@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Home, Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { Home, Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion } from 'motion/react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -42,9 +43,9 @@ export default function Login() {
           Bem-vindo de volta
         </h2>
         <p className="mt-2 text-center text-sm text-[#6B7280]">
-          Ou{' '}
+          Não tem conta?{' '}
           <Link to="/signup" className="font-semibold text-black hover:underline underline-offset-4">
-            crie sua conta gratuitamente
+            Cadastre-se grátis
           </Link>
         </p>
       </motion.div>
@@ -86,9 +87,14 @@ export default function Login() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-bold text-[#1A1A1A] mb-2 uppercase tracking-wider">
-                Senha
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="password" className="block text-sm font-bold text-[#1A1A1A] uppercase tracking-wider">
+                  Senha
+                </label>
+                <Link to="/forgot-password" className="text-xs text-[#6B7280] hover:text-black hover:underline underline-offset-4 transition-colors">
+                  Esqueceu a senha?
+                </Link>
+              </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                   <Lock className="h-5 w-5 text-[#9CA3AF]" />
@@ -96,14 +102,17 @@ export default function Login() {
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPwd ? 'text' : 'password'}
                   autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-11 pr-4 py-3 border border-[#E5E7EB] rounded-2xl leading-5 bg-[#F9FAFB] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all sm:text-sm font-medium"
+                  className="block w-full pl-11 pr-11 py-3 border border-[#E5E7EB] rounded-2xl leading-5 bg-[#F9FAFB] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all sm:text-sm font-medium"
                   placeholder="••••••••"
                 />
+                <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-[#9CA3AF] hover:text-[#374151]">
+                  {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
 
