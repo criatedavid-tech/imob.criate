@@ -361,8 +361,9 @@ async function startServer() {
       if (error) throw error;
       
       const formattedData = (data || []).map(p => {
+        // --- Parse de imagens ---
         let imageUrlStr = p.image_url;
-        let imagesArray = [];
+        let imagesArray: string[] = [];
         try {
           if (imageUrlStr && imageUrlStr.startsWith('[')) {
              imagesArray = JSON.parse(imageUrlStr);
@@ -374,8 +375,24 @@ async function startServer() {
              imagesArray = imageUrlStr ? [imageUrlStr] : [];
         }
 
+        // --- Parse de campos estruturados embutidos na descrição ---
+        // O PropertyForm salva: "{descrição limpa}\n\n---DETALHES-GERADOS---\n{JSON}"
+        // Aqui separamos para que consumidores (N8N, frontend) recebam dados organizados.
+        let cleanDescription = p.description || '';
+        let details: Record<string, any> = {};
+        const SEPARATOR = '---DETALHES-GERADOS---';
+        if (cleanDescription.includes(SEPARATOR)) {
+          const parts = cleanDescription.split(SEPARATOR);
+          cleanDescription = parts[0].trim();
+          try {
+            details = JSON.parse(parts[1].trim());
+          } catch { /* JSON malformado - ignora */ }
+        }
+
         return {
           ...p,
+          description: cleanDescription,   // texto limpo, sem o bloco JSON
+          details,                          // { quartos, sala, cozinha, piscina, banheiros, area, varanda_gourmet }
           imageUrl: imageUrlStr,
           images: imagesArray,
         };
@@ -682,7 +699,19 @@ async function startServer() {
       }
       data.imageUrl = imageUrlStr;
       data.images = imagesArray;
-      
+
+      // Parse campos estruturados embutidos na descrição
+      const SEPARATOR = '---DETALHES-GERADOS---';
+      let cleanDescription = data.description || '';
+      let details: Record<string, any> = {};
+      if (cleanDescription.includes(SEPARATOR)) {
+        const parts = cleanDescription.split(SEPARATOR);
+        cleanDescription = parts[0].trim();
+        try { details = JSON.parse(parts[1].trim()); } catch { /* ignora */ }
+      }
+      data.description = cleanDescription;
+      data.details = details;
+
       res.json(data);
     } catch (err: any) {
       console.error("Erro GET /api/properties/:slug:", err);
