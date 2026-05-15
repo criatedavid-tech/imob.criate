@@ -24,6 +24,8 @@ export default function PaymentPending() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [acceptedRecurring, setAcceptedRecurring] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [form, setForm] = useState<CardForm>({
     cpfCnpj: '', cardHolder: '', cardNumber: '',
     expiryMonth: '', expiryYear: '', cvv: ''
@@ -86,7 +88,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 mb-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <span className="text-3xl font-black text-[#1A1A1A]">R$ 97</span>
+              <span className="text-3xl font-black text-[#1A1A1A]">R$ 5</span>
               <span className="text-[#6B7280] text-sm">/mês</span>
             </div>
             <span className="text-xs text-[#9CA3AF] bg-[#F9FAFB] px-3 py-1.5 rounded-full border border-[#E5E7EB]">Cancele quando quiser</span>
@@ -174,9 +176,42 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
           </div>
 
-          <button type="submit" disabled={loading}
+          {/* Checkboxes de consentimento */}
+          <div className="space-y-2.5 pt-1">
+            <label className="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={acceptedRecurring}
+                onChange={e => setAcceptedRecurring(e.target.checked)}
+                className="mt-0.5 w-4 h-4 shrink-0 accent-black cursor-pointer"
+              />
+              <span className="text-[10px] text-[#6B7280] leading-relaxed group-hover:text-[#374151] transition-colors">
+                Autorizo a cobrança mensal recorrente de <strong className="text-[#374151]">R$ 5,00</strong> no cartão informado, podendo cancelar a qualquer momento.
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={e => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 shrink-0 accent-black cursor-pointer"
+              />
+              <span className="text-[10px] text-[#6B7280] leading-relaxed group-hover:text-[#374151] transition-colors">
+                Li e aceito os{' '}
+                <a href="/termos" target="_blank" rel="noopener noreferrer" className="text-black font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity">
+                  Termos de Uso
+                </a>
+                {' '}e a{' '}
+                <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="text-black font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity">
+                  Política de Privacidade
+                </a>.
+              </span>
+            </label>
+          </div>
+
+          <button type="submit" disabled={loading || !acceptedRecurring || !acceptedTerms}
             className="w-full h-14 flex items-center justify-center gap-2 bg-black text-white rounded-2xl text-base font-bold hover:bg-[#222] transition-all disabled:opacity-50 shadow-lg shadow-black/10 mt-2">
-            {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <><CreditCard className="w-5 h-5" /> Pagar R$ 97,00</>}
+            {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <><CreditCard className="w-5 h-5" /> Pagar R$ 5,00</>}
           </button>
         </form>
 
