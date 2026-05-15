@@ -312,7 +312,7 @@ async function startServer() {
       
       // Chamada para geração de conteúdo com instrução de sistema
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.0-flash-lite",
         config: {
           systemInstruction: "Você é um especialista em redação imobiliária de alto padrão.\nReescreva a descrição abaixo com linguagem sofisticada, clara e atrativa,\nadequada para apresentação de residências premium.\nMantenha as informações originais, melhore a estrutura, o vocabulário\ne a formatação. Responda apenas com o texto melhorado, sem explicações adicionais."
         },
@@ -414,7 +414,7 @@ async function startServer() {
        * Gera o link completo da landing page exclusiva do imóvel.
        * O link segue o padrão: https://[dominio]/p/[slug-do-imovel]
        */
-      const origin = req.headers.origin || req.headers.referer || "https://elev-imoveis.com";
+      const origin = req.headers.origin || req.headers.referer || APP_URL;
       // Remove barra final se existir para garantir formatação limpa
       const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
       property.link = `${cleanOrigin}/p/${property.slug}`;
@@ -664,9 +664,10 @@ async function startServer() {
         .eq('slug', req.params.slug)
         .single();
       
+      if (error?.code === 'PGRST116') return res.status(404).json({ error: "Imóvel não encontrado" });
       if (error) throw error;
-      if (!data) return res.status(404).json({ error: "Not found" });
-      
+      if (!data) return res.status(404).json({ error: "Imóvel não encontrado" });
+
       let imageUrlStr = data.image_url;
       let imagesArray: string[] = [];
       try {
@@ -774,6 +775,16 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.json([]);
 
+      // Lê da tabela agenda (criada para o N8N gravar agendamentos)
+      const { data: agendaVisits, error: agendaError } = await supabase
+        .from('agenda')
+        .select('*')
+        .eq('broker_id', brokerId)
+        .order('scheduled_at', { ascending: true });
+
+      if (agendaError) throw agendaError;
+
+      // Retrocompat: lê também de leads com status de visita agendada (dados antigos)
       const { data: propIds } = await supabase
         .from('properties')
         .select('id, title')
@@ -782,24 +793,30 @@ async function startServer() {
       const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
       const ids = Array.from(propertiesMap.keys());
 
-      let visits: any[] = [];
+      let legacyVisits: any[] = [];
       if (ids.length > 0) {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('leads')
           .select('*')
           .in('property_id', ids)
           .in('status', ['visita_agendada', 'agendado'])
           .order('created_at', { ascending: false });
-        if (error) throw error;
-        visits = data || [];
+        legacyVisits = (data || []).map((l: any) => ({
+          ...l,
+          name: l.name || l.client_name || 'Sem nome',
+          phone: l.phone || l.client_phone || '',
+          scheduled_at: l.created_at,
+          property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
+        }));
       }
 
-      res.json(visits.map((l: any) => ({
-        ...l,
-        name: l.name || l.client_name || 'Sem nome',
-        phone: l.phone || l.client_phone || '',
-        property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
-      })));
+      const agendaFormatted = (agendaVisits || []).map((a: any) => ({
+        ...a,
+        name: a.title || 'Sem nome',
+        property: propertiesMap.get(a.property_id) || 'Imóvel desconhecido'
+      }));
+
+      res.json([...agendaFormatted, ...legacyVisits]);
     } catch (err: any) {
       console.error("Erro GET /api/agenda/visits:", err);
       res.status(500).json({ error: err.message });
@@ -969,7 +986,7 @@ async function startServer() {
         body: JSON.stringify({
           customer: customerId,
           billingType: 'CREDIT_CARD',
-          value: 97.00,
+          value: 5.00,
           dueDate,
           description: 'ImobiFlow - Plano Mensal',
           creditCard: {
@@ -1129,10 +1146,98 @@ async function startServer() {
     await handleAsaasPaymentReceived({
       id: `pay_test_${Date.now()}`,
       customerId: `cus_test_${Date.now()}`,
-      value: 97.00,
+      value: 1.00,
       brokerId: broker_id
     });
     res.json({ success: true, message: "Corretor ativado via teste." });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAINEL ADMIN
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function requireAdmin(req: any, res: any): Promise<boolean> {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return false; }
+    const { data } = await supabase.from('brokers').select('is_admin').eq('user_id', userId).single();
+    if (!data?.is_admin) { res.status(403).json({ error: "Acesso negado" }); return false; }
+    return true;
+  }
+
+  // Lista todos os corretores com dados de assinatura
+  app.get("/api/admin/brokers", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    try {
+      const { data, error } = await supabase
+        .from('brokers')
+        .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, zpro_tenant_id')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Métricas globais da plataforma
+  app.get("/api/admin/metrics", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    try {
+      const [brokersRes, propertiesRes, leadsRes, activeRes, revenueRes] = await Promise.all([
+        supabase.from('brokers').select('id', { count: 'exact', head: true }),
+        supabase.from('properties').select('id', { count: 'exact', head: true }),
+        supabase.from('leads').select('id', { count: 'exact', head: true }),
+        supabase.from('brokers').select('id', { count: 'exact', head: true }).eq('status', 'ativo'),
+        supabase.from('subscriptions').select('amount').eq('status', 'paid')
+      ]);
+      const totalRevenue = (revenueRes.data || []).reduce((sum: number, s: any) => sum + (s.amount || 0), 0);
+      res.json({
+        totalBrokers: brokersRes.count || 0,
+        activeBrokers: activeRes.count || 0,
+        totalProperties: propertiesRes.count || 0,
+        totalLeads: leadsRes.count || 0,
+        totalRevenueCents: totalRevenue
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Ativar ou bloquear um corretor
+  app.patch("/api/admin/brokers/:id/status", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    const { status } = req.body;
+    if (!['ativo', 'pendente', 'bloqueado'].includes(status)) {
+      return res.status(400).json({ error: "Status inválido" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from('brokers').update({ status }).eq('id', req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Detalhes de um corretor (imóveis, leads, assinaturas)
+  app.get("/api/admin/brokers/:id", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    try {
+      const [brokerRes, propsRes, subsRes] = await Promise.all([
+        supabase.from('brokers').select('*').eq('id', req.params.id).single(),
+        supabase.from('properties').select('id, title, status, created_at').eq('broker_id', req.params.id).order('created_at', { ascending: false }),
+        supabase.from('subscriptions').select('*').eq('broker_id', req.params.id).order('created_at', { ascending: false })
+      ]);
+      if (brokerRes.error) throw brokerRes.error;
+      res.json({
+        broker: brokerRes.data,
+        properties: propsRes.data || [],
+        subscriptions: subsRes.data || []
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────────────

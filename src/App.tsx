@@ -8,6 +8,7 @@ import PaymentPending from './pages/PaymentPending';
 import PaymentSuccess from './pages/PaymentSuccess';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Admin from './pages/Admin';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
 
@@ -34,8 +35,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -66,6 +67,11 @@ export default function App() {
           } />
           <Route path="/payment/cancelled" element={
             authService.isLoggedIn() ? <PaymentPending /> : <Navigate to="/login" />
+          } />
+
+          {/* Admin — apenas para is_admin=true */}
+          <Route path="/admin" element={
+            authService.isLoggedIn() ? <Admin /> : <Navigate to="/login" />
           } />
 
           {/* Dashboard Protegido (exige login + assinatura ativa) */}
