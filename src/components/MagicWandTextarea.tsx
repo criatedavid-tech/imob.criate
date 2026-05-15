@@ -1,12 +1,8 @@
 import React, { useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { authService } from '../services/auth';
 
-/**
- * Definições de propriedades para o componente MagicWandTextarea.
- * Utilizamos a interseção (&) para garantir que todos os atributos padrão de um textarea 
- * (como placeholder, rows, required, etc) sejam aceitos.
- */
 type MagicWandTextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   value: string;
   onApply: (text: string) => void;
@@ -14,102 +10,143 @@ type MagicWandTextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> 
 };
 
 /**
- * Componente de Textarea Inteligente ("Varinha Mágica").
- * Integra com a rota /api/ai/enhance-text para melhorar descrições usando IA.
+ * Textarea com botão de melhoria via IA (Gemini).
+ * O painel de sugestão é renderizado em fluxo normal (não absolute)
+ * para evitar clipping pelo overflow-hidden do modal pai.
  */
-export default function MagicWandTextarea({ 
-  value, 
-  onApply, 
-  className, 
+export default function MagicWandTextarea({
+  value,
+  onApply,
+  className,
   onChange,
-  ...props 
+  ...props
 }: MagicWandTextareaProps) {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [suggestedText, setSuggestedText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const safeValue = value || '';
 
-  /**
-   * Envia o conteúdo atual para o backend para ser reescrito pela IA.
-   */
-  const handleEnhanceContent = async () => {
+  const handleEnhance = async () => {
     if (!safeValue.trim()) return;
     setIsEnhancing(true);
     setSuggestedText(null);
+    setError(null);
     try {
-      // Chama a rota do servidor que integra com o Gemini
       const response = await fetch('/api/ai/enhance-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: safeValue })
+        headers: {
+          'Content-Type': 'application/json',
+          ...authService.getAuthHeaders(),
+        },
+        body: JSON.stringify({ text: safeValue }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Falha ao gerar sugestão');
-      }
+      if (!response.ok) throw new Error(data.error || 'Falha ao gerar sugestão');
       setSuggestedText(data.suggestedText);
     } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'Não foi possível gerar a sugestão. Tente novamente.');
+      setError(err.message || 'Não foi possível gerar a sugestão.');
     } finally {
       setIsEnhancing(false);
     }
   };
 
   return (
-    <div className="relative">
-      <textarea 
-        value={safeValue}
-        onChange={onChange}
-        className={`${className} pb-12`}
-        {...props}
-      />
-      <div className="absolute bottom-4 right-4 flex items-center">
-        <button
-          type="button"
-          onClick={handleEnhanceContent}
-          disabled={isEnhancing || !safeValue.trim()}
-          className={`flex items-center justify-center p-2 rounded-full transition-all ${
-            isEnhancing || !safeValue.trim() 
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-              : 'bg-black text-white hover:bg-[#333333] hover:scale-105'
-          }`}
-          title="Melhorar texto com IA ✨"
-        >
-          {isEnhancing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-        </button>
+    <div className="space-y-2">
+      {/* Textarea + botão ✨ */}
+      <div className="relative">
+        <textarea
+          value={safeValue}
+          onChange={onChange}
+          className={`${className} pb-12`}
+          {...props}
+        />
+        <div className="absolute bottom-3 right-3">
+          <button
+            type="button"
+            onClick={handleEnhance}
+            disabled={isEnhancing || !safeValue.trim()}
+            title="Melhorar texto com IA ✨"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all
+              ${isEnhancing || !safeValue.trim()
+                ? 'bg-white/5 text-white/20 cursor-not-allowed border border-white/10'
+                : 'bg-violet-500/30 hover:bg-violet-500/50 text-violet-200 border border-violet-400/40 hover:scale-105 active:scale-95'
+              }`}
+          >
+            {isEnhancing
+              ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
+              : <><Sparkles size={14} /> IA</>
+            }
+          </button>
+        </div>
       </div>
-      
+
+      {/* Erro inline */}
+      {error && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-red-500/15 border border-red-400/25">
+          <p className="text-xs text-red-300 leading-snug">{error}</p>
+          <button
+            type="button"
+            onClick={handleEnhance}
+            disabled={isEnhancing}
+            className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold
+              bg-white/10 border border-white/15 text-white/70 hover:bg-white/20 hover:text-white transition-all"
+          >
+            {isEnhancing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {/* Painel de sugestão — em fluxo normal, não absolute */}
       <AnimatePresence>
         {suggestedText && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute z-50 top-full left-0 right-0 mt-2 p-6 bg-white border border-[#E5E7EB] rounded-3xl shadow-xl space-y-4 max-h-[300px] overflow-y-auto"
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.18 }}
+            className="rounded-2xl overflow-hidden
+              backdrop-blur-2xl bg-white/10 border border-white/20
+              shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.3)]"
           >
-            <div className="flex items-center gap-2 text-black mb-2">
-              <Sparkles size={16} />
-              <span className="font-bold text-xs uppercase tracking-wider">Sugestão da IA</span>
-            </div>
-            <p className="text-sm text-[#333333] leading-relaxed whitespace-pre-wrap">{suggestedText}</p>
-            <div className="flex gap-3 pt-2">
-              <button 
-                type="button"
-                onClick={() => {
-                  onApply(suggestedText);
-                  setSuggestedText(null);
-                }}
-                className="flex-1 bg-black text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider hover:opacity-80 transition-opacity"
-              >
-                Aplicar
-              </button>
-              <button 
+            {/* Header do painel */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+              <div className="flex items-center gap-2 text-violet-300">
+                <Sparkles size={14} />
+                <span className="text-xs font-bold uppercase tracking-wider">Sugestão da IA</span>
+              </div>
+              <button
                 type="button"
                 onClick={() => setSuggestedText(null)}
-                className="flex-1 bg-[#F3F4F6] text-black py-3 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-[#E5E7EB] transition-colors"
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
               >
-                Descartar
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Texto sugerido */}
+            <div className="px-5 py-4 max-h-48 overflow-y-auto">
+              <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">{suggestedText}</p>
+            </div>
+
+            {/* Ações */}
+            <div className="flex border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => { onApply(suggestedText); setSuggestedText(null); }}
+                className="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold text-emerald-300
+                  hover:bg-emerald-500/15 transition-colors border-r border-white/10"
+              >
+                <Check size={14} /> Aplicar
+              </button>
+              <button
+                type="button"
+                onClick={() => setSuggestedText(null)}
+                className="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold text-white/50
+                  hover:bg-white/10 transition-colors"
+              >
+                <X size={14} /> Descartar
               </button>
             </div>
           </motion.div>

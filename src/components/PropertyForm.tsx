@@ -230,52 +230,77 @@ export default function PropertyForm({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 overflow-y-auto">
-      <motion.div 
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-6 px-4">
+      {/* Backdrop clicável para fechar */}
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl relative my-8"
+        className="relative w-full max-w-2xl my-auto rounded-[32px] overflow-hidden
+          backdrop-blur-2xl bg-white/12 border border-white/20
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]"
       >
-        <button 
-          onClick={onClose}
-          className="absolute top-8 right-8 text-[#9CA3AF] hover:text-black transition-colors z-10"
-        >
-          <X size={24} />
-        </button>
+        {/* Header sticky — sempre visível */}
+        <div className="sticky top-0 z-20 flex items-center justify-between px-8 py-5
+          backdrop-blur-xl bg-white/8 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center
+              backdrop-blur-md bg-white/15 border border-white/20">
+              <Home className="text-white w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white leading-tight">
+                {initialData ? 'Editar Imóvel' : 'Novo Imóvel'}
+              </h2>
+              <p className="text-white/50 text-xs">Preencha os dados e gere a landing page automaticamente.</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl flex items-center justify-center
+              text-white/50 hover:text-white hover:bg-white/15 transition-all"
+            title="Fechar"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-        <div className="p-8 md:p-12">
+        <div className="p-8 md:p-10">
           {successData ? (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               className="flex flex-col items-center justify-center py-10 text-center space-y-6"
             >
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                <Check className="text-green-600 w-10 h-10" />
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-4
+                backdrop-blur-md bg-emerald-500/20 border border-emerald-400/30">
+                <Check className="text-emerald-300 w-10 h-10" />
               </div>
-              <h2 className="text-3xl font-bold text-[#1A1A1A]">
-                Sucesso!
-              </h2>
-              <p className="text-[#6B7280] text-lg max-w-md">
+              <h2 className="text-3xl font-bold text-white">Sucesso!</h2>
+              <p className="text-white/60 text-lg max-w-md">
                 Imóvel {successData.isEdit ? 'atualizado' : 'cadastrado'} com sucesso. Sua landing page já está no ar!
               </p>
-              
-              <div className="bg-[#F3F4F6] w-full p-4 rounded-2xl flex items-center justify-between mt-4">
-                <span className="text-sm text-[#4B5563] truncate mr-4">{successData.url}</span>
-                <a 
-                  href={successData.url} 
-                  target="_blank" 
+
+              <div className="w-full p-4 rounded-2xl flex items-center justify-between mt-4
+                backdrop-blur-md bg-white/10 border border-white/15">
+                <span className="text-sm text-white/70 truncate mr-4">{successData.url}</span>
+                <a
+                  href={successData.url}
+                  target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-black text-white px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap hover:bg-[#333] transition-colors"
+                  className="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap text-white transition-all
+                    backdrop-blur-md bg-white/15 border border-white/25 hover:bg-white/25"
                 >
                   Abrir
                 </a>
               </div>
 
-              <div className="w-full pt-8">
-                <button 
+              <div className="w-full pt-4">
+                <button
                   onClick={onClose}
-                  className="w-full bg-[#E5E7EB] text-black py-4 rounded-2xl font-bold text-lg hover:bg-[#D1D5DB] transition-all"
+                  className="w-full py-4 rounded-2xl font-bold text-lg text-white transition-all
+                    backdrop-blur-md bg-white/10 border border-white/15 hover:bg-white/20"
                 >
                   Fechar
                 </button>
@@ -283,57 +308,48 @@ export default function PropertyForm({
             </motion.div>
           ) : (
             <>
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-12 h-12 bg-[#F8F9FA] rounded-2xl flex items-center justify-center">
-                  <Home className="text-black" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">{initialData ? 'Editar Imóvel' : 'Novo Imóvel'}</h2>
-                  <p className="text-[#6B7280] text-sm">Preencha os dados e gere a landing page automaticamente.</p>
-                </div>
-              </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {errorMsg && (
-                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium">
+                  <div className="bg-red-500/20 border border-red-400/30 text-red-300 p-4 rounded-xl text-sm font-medium">
                     {errorMsg}
                   </div>
                 )}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Título do Anúncio</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Título do Anúncio</label>
                   <input 
                     type="text" 
                     value={formData.title || ''}
                     onChange={(e) => setFormData({...formData, title: e.target.value})}
                     placeholder="Ex: Casa de Luxo no Jardins" 
-                    className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Preço (R$)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Preço (R$)</label>
                   <input 
                     type="text" 
                     value={formData.price || ''}
                     onChange={(e) => setFormData({...formData, price: e.target.value})}
                     placeholder="Ex: 4.500.000" 
-                    className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
                     required
                   />
                 </div>
              </div>
 
              <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Localização</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Localização</label>
               <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={18} />
-                <input 
-                  type="text" 
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                <input
+                  type="text"
                   value={formData.location || ''}
                   onChange={(e) => setFormData({...formData, location: e.target.value})}
-                  placeholder="Cidade, UF ou Endereço" 
-                  className="w-full pl-12 pr-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  placeholder="Cidade, UF ou Endereço"
+                  className="w-full pl-12 pr-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
                   required
                 />
               </div>
@@ -341,56 +357,56 @@ export default function PropertyForm({
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Quartos</label>
-                <input 
-                  type="number" 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Quartos</label>
+                <input
+                  type="number"
                   value={formData.quartos || ''}
                   onChange={(e) => setFormData({...formData, quartos: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Banheiros</label>
-                <input 
-                  type="number" 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Banheiros</label>
+                <input
+                  type="number"
                   value={formData.banheiros || ''}
                   onChange={(e) => setFormData({...formData, banheiros: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Área (m²)</label>
-                <input 
-                  type="number" 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Área (m²)</label>
+                <input
+                  type="number"
                   value={formData.area || ''}
                   onChange={(e) => setFormData({...formData, area: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Salas</label>
-                <input 
-                  type="number" 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Salas</label>
+                <input
+                  type="number"
                   value={formData.sala || ''}
                   onChange={(e) => setFormData({...formData, sala: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Cozinhas</label>
-                <input 
-                  type="number" 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Cozinhas</label>
+                <input
+                  type="number"
                   value={formData.cozinha || ''}
                   onChange={(e) => setFormData({...formData, cozinha: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Piscina</label>
-                <select 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Piscina</label>
+                <select
                   value={formData.piscina}
                   onChange={(e) => setFormData({...formData, piscina: e.target.value})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 >
                   <option value="Não">Não</option>
                   <option value="Sim">Sim</option>
@@ -399,11 +415,11 @@ export default function PropertyForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Varanda Gourmet</label>
-                <select 
+                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Varanda Gourmet</label>
+                <select
                   value={formData.varanda_gourmet}
                   onChange={(e) => setFormData({...formData, varanda_gourmet: e.target.value})}
-                  className="w-full px-5 py-3 bg-[#F3F4F6] border-none rounded-2xl focus:ring-2 focus:ring-black outline-none"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
                 >
                   <option value="Não">Não</option>
                   <option value="Sim">Sim</option>
@@ -412,7 +428,7 @@ export default function PropertyForm({
             </div>
 
             <div className="space-y-2 relative">
-              <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF] flex justify-between items-center">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50 flex justify-between items-center">
                 <span>Descrição Detalhada</span>
               </label>
               <MagicWandTextarea 
@@ -420,13 +436,13 @@ export default function PropertyForm({
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 onApply={(text) => setFormData({...formData, description: text})}
                 placeholder="Descreva os pontos fortes, acabamentos e diferenciais do imóvel..." 
-                className="w-full px-5 py-4 bg-[#F3F4F6] border-none rounded-3xl focus:ring-2 focus:ring-black outline-none min-h-[120px] resize-none"
+                className="w-full px-5 py-4 rounded-3xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 min-h-[120px] resize-none"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-[#9CA3AF]">Fotos (Máx 15)</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Fotos (Máx 15)</label>
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -437,7 +453,7 @@ export default function PropertyForm({
               />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {(formData.images || []).map((img, idx) => (
-                  <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border border-[#E5E7EB]">
+                  <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border border-white/20">
                     <img src={img} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
                     <button 
                       type="button"
@@ -450,23 +466,26 @@ export default function PropertyForm({
                 ))}
                 
                 {(!formData.images || formData.images.length < 15) && (
-                  <div 
+                  <div
                     onClick={handleImageClick}
-                    className="border-2 border-dashed border-[#E5E7EB] rounded-xl flex flex-col items-center justify-center gap-2 text-[#9CA3AF] hover:border-black hover:text-black transition-all cursor-pointer aspect-square bg-[#F9FAFB]"
+                    className="border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center gap-2 text-white/40 hover:border-white/50 hover:text-white/70 transition-all cursor-pointer aspect-square bg-white/5"
                   >
                     <Camera size={24} />
                     <span className="font-semibold text-[10px] uppercase tracking-wider">Adicionar</span>
                   </div>
                 )}
               </div>
-              <p className="text-[11px] text-[#9CA3AF] italic mt-1">{(formData.images?.length || 0)} / 15 fotos adicionadas.</p>
+              <p className="text-[11px] text-white/40 italic mt-1">{(formData.images?.length || 0)} / 15 fotos adicionadas.</p>
             </div>
 
             <div className="pt-4">
-              <button 
+              <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-black text-white py-4 rounded-2xl font-bold text-lg hover:bg-[#333] disabled:bg-gray-400 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-lg shadow-black/10"
+                className="w-full py-4 rounded-2xl font-bold text-lg text-white transition-all flex items-center justify-center gap-2
+                  backdrop-blur-md bg-white/15 border border-white/25
+                  shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_4px_16px_rgba(0,0,0,0.25)]
+                  hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]"
               >
                 {loading ? <Loader2 className="animate-spin" /> : (initialData ? 'Salvar Edição' : 'Cadastrar Imóvel')}
                 {!loading && <Check size={20} />}
