@@ -4,6 +4,11 @@ import { Home, Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from 'lucide-react
 import { authService } from '../services/auth';
 import { motion } from 'motion/react';
 
+const inputClass =
+  'block w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium ' +
+  'text-white placeholder:text-white/30 bg-white/10 border border-white/15 ' +
+  'focus:ring-2 focus:ring-white/25 focus:bg-white/15 [color-scheme:dark]';
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -16,10 +21,9 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
     try {
       await authService.login(email, password);
-      window.location.replace('/'); // FIX AUTH STATE 30/04/2026
+      window.location.replace('/');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -28,110 +32,102 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-      <motion.div 
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans relative overflow-hidden">
+      {/* Noise texture */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage:'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
+
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="sm:mx-auto sm:w-full sm:max-w-md"
+        className="relative z-10 sm:mx-auto sm:w-full sm:max-w-md"
       >
+        {/* Logo */}
         <div className="flex justify-center mb-6">
-          <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center
+            backdrop-blur-md bg-white/15 border border-white/25
+            shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_rgba(0,0,0,0.3)]">
             <Home className="text-white w-7 h-7" />
           </div>
         </div>
-        <h2 className="text-center text-3xl font-extrabold text-[#1A1A1A] tracking-tight">
+        <h2 className="text-center text-3xl font-extrabold text-white tracking-tight">
           Bem-vindo de volta
         </h2>
-        <p className="mt-2 text-center text-sm text-[#6B7280]">
+        <p className="mt-2 text-center text-sm text-white/50">
           Não tem conta?{' '}
-          <Link to="/signup" className="font-semibold text-black hover:underline underline-offset-4">
+          <Link to="/signup" className="font-semibold text-violet-300 hover:text-violet-200 transition-colors">
             Cadastre-se grátis
           </Link>
         </p>
       </motion.div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
-        className="mt-8 sm:mx-auto sm:w-full sm:max-w-md"
+        className="relative z-10 mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4"
       >
-        <div className="bg-white py-10 px-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:rounded-3xl border border-[#E5E7EB] sm:px-12">
-          <form className="space-y-6" onSubmit={handleSubmit}>
+        <div className="py-10 px-8 rounded-3xl
+          backdrop-blur-xl bg-white/10 border border-white/15
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.3)]">
+          <form className="space-y-5" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm font-medium border border-red-100 animate-shake">
+              <div className="bg-red-500/20 border border-red-400/30 text-red-300 p-4 rounded-2xl text-sm font-medium">
                 {error}
               </div>
             )}
-            
+
+            {/* E-mail */}
             <div>
-              <label htmlFor="email" className="block text-sm font-bold text-[#1A1A1A] mb-2 uppercase tracking-wider">
+              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">
                 E-mail
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-[#9CA3AF]" />
-                </div>
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/30 pointer-events-none" />
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-11 pr-4 py-3 border border-[#E5E7EB] rounded-2xl leading-5 bg-[#F9FAFB] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all sm:text-sm font-medium"
+                  type="email" autoComplete="email" required
+                  value={email} onChange={e => setEmail(e.target.value)}
+                  className={`${inputClass} pl-11 pr-4`}
                   placeholder="seu@email.com"
                 />
               </div>
             </div>
 
+            {/* Senha */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="password" className="block text-sm font-bold text-[#1A1A1A] uppercase tracking-wider">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest pl-1">
                   Senha
                 </label>
-                <Link to="/forgot-password" className="text-xs text-[#6B7280] hover:text-black hover:underline underline-offset-4 transition-colors">
+                <Link to="/forgot-password" className="text-xs text-white/40 hover:text-violet-300 transition-colors">
                   Esqueceu a senha?
                 </Link>
               </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-[#9CA3AF]" />
-                </div>
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/30 pointer-events-none" />
                 <input
-                  id="password"
-                  name="password"
-                  type={showPwd ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-11 pr-11 py-3 border border-[#E5E7EB] rounded-2xl leading-5 bg-[#F9FAFB] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all sm:text-sm font-medium"
+                  type={showPwd ? 'text' : 'password'} autoComplete="current-password" required
+                  value={password} onChange={e => setPassword(e.target.value)}
+                  className={`${inputClass} pl-11 pr-11`}
                   placeholder="••••••••"
                 />
-                <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-[#9CA3AF] hover:text-[#374151]">
+                <button type="button" onClick={() => setShowPwd(v => !v)}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/30 hover:text-white/70 transition-colors">
                   {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-14 flex justify-center items-center py-3 px-4 border border-transparent rounded-2xl shadow-sm text-base font-bold text-white bg-black hover:bg-[#333] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin h-5 w-5" />
-                ) : (
-                  <>
-                    Entrar
-                    <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Botão */}
+            <button type="submit" disabled={loading}
+              className="w-full h-14 flex justify-center items-center gap-2 rounded-2xl text-base font-bold text-white
+                transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed group
+                backdrop-blur-md bg-white/15 border border-white/25
+                shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)]
+                hover:bg-white/25">
+              {loading ? <Loader2 className="animate-spin h-5 w-5" /> : (
+                <>Entrar <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" /></>
+              )}
+            </button>
           </form>
         </div>
       </motion.div>

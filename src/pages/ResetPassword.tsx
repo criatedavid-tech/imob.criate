@@ -3,6 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Home, Lock, Loader2, CheckCircle2, Eye, EyeOff, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
+const inputClass =
+  'block w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium ' +
+  'text-white placeholder:text-white/30 bg-white/10 border border-white/15 ' +
+  'focus:ring-2 focus:ring-white/25 focus:bg-white/15 [color-scheme:dark]';
+
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState('');
@@ -14,12 +19,10 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Supabase envia o token no hash da URL: #access_token=XXX&type=recovery
     const hash = window.location.hash.substring(1);
     const params = new URLSearchParams(hash);
     const token = params.get('access_token');
     const type = params.get('type');
-
     if (!token || type !== 'recovery') {
       setError('Link inválido ou expirado. Solicite uma nova recuperação de senha.');
       return;
@@ -31,7 +34,6 @@ export default function ResetPassword() {
     e.preventDefault();
     if (password !== confirm) { setError('As senhas não coincidem.'); return; }
     if (password.length < 6) { setError('A senha deve ter pelo menos 6 caracteres.'); return; }
-
     setLoading(true);
     setError('');
     try {
@@ -52,76 +54,91 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col justify-center py-12 px-4 font-sans">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col justify-center py-12 px-4 font-sans relative overflow-hidden">
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage:'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className="relative z-10 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center mb-6">
-          <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center shadow-lg">
-            <Home className="text-white w-6 h-6" />
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center
+            backdrop-blur-md bg-white/15 border border-white/25
+            shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_rgba(0,0,0,0.3)]">
+            <Home className="text-white w-7 h-7" />
           </div>
         </div>
-        <h2 className="text-center text-2xl font-extrabold text-[#1A1A1A] tracking-tight">Nova senha</h2>
-        <p className="mt-2 text-center text-sm text-[#6B7280]">Crie uma senha forte para sua conta</p>
+        <h2 className="text-center text-2xl font-extrabold text-white tracking-tight">Nova senha</h2>
+        <p className="mt-2 text-center text-sm text-white/50">Crie uma senha forte para sua conta</p>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-10 px-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:rounded-3xl border border-[#E5E7EB]">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+        className="relative z-10 mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="py-10 px-8 rounded-3xl
+          backdrop-blur-xl bg-white/10 border border-white/15
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.3)]">
+
           {done ? (
             <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4
+                backdrop-blur-md bg-emerald-500/20 border border-emerald-400/30">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
               </div>
-              <h3 className="text-lg font-bold text-[#1A1A1A] mb-2">Senha atualizada!</h3>
-              <p className="text-sm text-[#6B7280]">Redirecionando para o login em instantes...</p>
+              <h3 className="text-lg font-bold text-white mb-2">Senha atualizada!</h3>
+              <p className="text-sm text-white/60">Redirecionando para o login em instantes...</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
-                <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-2xl text-sm border border-red-100">
+                <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/30 text-red-300 p-3 rounded-2xl text-sm">
                   <XCircle className="w-4 h-4 shrink-0" /> {error}
                 </div>
               )}
 
               {!accessToken && !error ? (
-                <p className="text-sm text-[#6B7280] text-center">Verificando link...</p>
+                <p className="text-sm text-white/50 text-center">Verificando link...</p>
               ) : accessToken ? (
                 <>
                   <div>
-                    <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Nova Senha</label>
+                    <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nova Senha</label>
                     <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
                       <input
                         autoFocus type={showPwd ? 'text' : 'password'} required minLength={6}
                         value={password} onChange={e => setPassword(e.target.value)}
-                        className="block w-full pl-11 pr-11 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
+                        className={`${inputClass} pl-11 pr-11`}
                         placeholder="Mínimo 6 caracteres"
                       />
-                      <button type="button" onClick={() => setShowPwd(v => !v)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-[#9CA3AF] hover:text-[#374151]">
+                      <button type="button" onClick={() => setShowPwd(v => !v)}
+                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/30 hover:text-white/70 transition-colors">
                         {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Confirmar Senha</label>
+                    <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Confirmar Senha</label>
                     <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
                       <input
                         type={showPwd ? 'text' : 'password'} required
                         value={confirm} onChange={e => setConfirm(e.target.value)}
-                        className="block w-full pl-11 pr-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
+                        className={`${inputClass} pl-11 pr-4`}
                         placeholder="Repita a senha"
                       />
                     </div>
                   </div>
 
                   <button type="submit" disabled={loading}
-                    className="w-full h-14 flex items-center justify-center gap-2 bg-black text-white rounded-2xl text-base font-bold hover:bg-[#222] transition-all disabled:opacity-50 shadow-lg shadow-black/10">
+                    className="w-full h-14 flex items-center justify-center gap-2 rounded-2xl text-base font-bold text-white
+                      transition-all active:scale-[0.99] disabled:opacity-50
+                      backdrop-blur-md bg-white/15 border border-white/25
+                      shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)]
+                      hover:bg-white/25">
                     {loading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Salvar nova senha'}
                   </button>
                 </>
               ) : (
                 <div className="text-center">
-                  <Link to="/forgot-password" className="text-sm font-semibold text-black hover:underline">
+                  <Link to="/forgot-password" className="text-sm font-semibold text-violet-300 hover:text-violet-200 transition-colors">
                     Solicitar novo link de recuperação
                   </Link>
                 </div>

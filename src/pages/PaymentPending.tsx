@@ -20,6 +20,10 @@ const BENEFITS = [
   'Dashboard com métricas em tempo real',
 ];
 
+const inputClass =
+  'w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder:text-white/30 ' +
+  'bg-white/10 border border-white/15 focus:ring-2 focus:ring-white/25 focus:bg-white/15 [color-scheme:dark]';
+
 export default function PaymentPending() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -44,7 +48,7 @@ export default function PaymentPending() {
     return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{1,2})/, '$1.$2.$3/$4-$5').replace(/(\d{2})(\d{3})(\d{3})(\d{1,4})/, '$1.$2.$3/$4').replace(/(\d{2})(\d{3})(\d{1,3})/, '$1.$2.$3').replace(/(\d{2})(\d{1,3})/, '$1.$2');
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -72,150 +76,204 @@ const handleSubmit = async (e: React.FormEvent) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-start py-10 px-4 font-sans">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col items-center justify-start py-10 px-4 font-sans relative overflow-hidden">
+      {/* Noise texture */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
 
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative z-10 w-full max-w-lg"
+      >
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <Home className="text-white w-6 h-6" />
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4
+            backdrop-blur-md bg-white/15 border border-white/25
+            shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_rgba(0,0,0,0.3)]">
+            <Home className="text-white w-7 h-7" />
           </div>
-          <h1 className="text-2xl font-black text-[#1A1A1A]">Ative seu plano</h1>
-          <p className="text-[#6B7280] text-sm mt-1">Preencha os dados do cartão para começar</p>
+          <h1 className="text-2xl font-black text-white">Ative seu plano</h1>
+          <p className="text-white/50 text-sm mt-1">Preencha os dados do cartão para começar</p>
         </div>
 
         {/* Preço + benefícios */}
-        <div className="bg-white rounded-3xl border border-[#E5E7EB] p-6 mb-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        <div className="rounded-3xl p-6 mb-5
+          backdrop-blur-xl bg-white/10 border border-white/15
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <span className="text-3xl font-black text-[#1A1A1A]">R$ 5</span>
-              <span className="text-[#6B7280] text-sm">/mês</span>
+              <span className="text-3xl font-black text-white">R$ 5</span>
+              <span className="text-white/50 text-sm">/mês</span>
             </div>
-            <span className="text-xs text-[#9CA3AF] bg-[#F9FAFB] px-3 py-1.5 rounded-full border border-[#E5E7EB]">Cancele quando quiser</span>
+            <span className="text-xs text-white/50 bg-white/10 border border-white/15 px-3 py-1.5 rounded-full">
+              Cancele quando quiser
+            </span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {BENEFITS.map(b => (
               <div key={b} className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                <span className="text-xs text-[#374151]">{b}</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-sm text-white/70">{b}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Formulário */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-[#E5E7EB] p-6 shadow-sm space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-3xl p-6 space-y-4
+          backdrop-blur-xl bg-white/10 border border-white/15
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+
           <div className="flex items-center gap-2 mb-1">
-            <Lock className="w-4 h-4 text-[#9CA3AF]" />
-            <span className="text-xs text-[#9CA3AF] font-medium">Pagamento seguro — seus dados são criptografados</span>
+            <Lock className="w-4 h-4 text-white/30" />
+            <span className="text-xs text-white/40 font-medium">Pagamento seguro — seus dados são criptografados</span>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-2xl text-sm border border-red-100">
+            <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/30 text-red-300 p-3 rounded-2xl text-sm">
               <XCircle className="w-4 h-4 shrink-0" /> {error}
             </div>
           )}
 
           {/* CPF/CNPJ */}
           <div>
-            <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">CPF / CNPJ</label>
+            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">CPF / CNPJ</label>
             <div className="relative">
-              <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
-              <input required value={form.cpfCnpj}
+              <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <input
+                required
+                value={form.cpfCnpj}
                 onChange={e => setForm(f => ({ ...f, cpfCnpj: formatCpfCnpj(e.target.value) }))}
-                className="w-full pl-11 pr-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
-                placeholder="000.000.000-00" />
+                className={`${inputClass} pl-11 pr-4`}
+                placeholder="000.000.000-00"
+              />
             </div>
           </div>
 
           {/* Nome no cartão */}
           <div>
-            <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Nome no Cartão</label>
+            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nome no Cartão</label>
             <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
-              <input required value={form.cardHolder} onChange={set('cardHolder')}
-                className="w-full pl-11 pr-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium"
-                placeholder="Como aparece no cartão" />
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <input
+                required
+                value={form.cardHolder}
+                onChange={set('cardHolder')}
+                className={`${inputClass} pl-11 pr-4`}
+                placeholder="Como aparece no cartão"
+              />
             </div>
           </div>
 
           {/* Número do cartão */}
           <div>
-            <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Número do Cartão</label>
+            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Número do Cartão</label>
             <div className="relative">
-              <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
-              <input required value={form.cardNumber}
+              <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <input
+                required
+                value={form.cardNumber}
                 onChange={e => setForm(f => ({ ...f, cardNumber: formatCard(e.target.value) }))}
-                className="w-full pl-11 pr-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium tracking-widest"
-                placeholder="0000 0000 0000 0000" maxLength={19} />
+                className={`${inputClass} pl-11 pr-4 tracking-widest`}
+                placeholder="0000 0000 0000 0000"
+                maxLength={19}
+              />
             </div>
           </div>
 
           {/* Validade + CVV */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Mês</label>
-              <input required value={form.expiryMonth} onChange={set('expiryMonth')}
+              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Mês</label>
+              <input
+                required
+                value={form.expiryMonth}
+                onChange={set('expiryMonth')}
                 maxLength={2}
-                className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium text-center"
-                placeholder="MM" />
+                className={`${inputClass} px-4 text-center`}
+                placeholder="MM"
+              />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">Ano</label>
-              <input required value={form.expiryYear} onChange={set('expiryYear')}
+              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Ano</label>
+              <input
+                required
+                value={form.expiryYear}
+                onChange={set('expiryYear')}
                 maxLength={4}
-                className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium text-center"
-                placeholder="AAAA" />
+                className={`${inputClass} px-4 text-center`}
+                placeholder="AAAA"
+              />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-[#9CA3AF] mb-1.5 uppercase tracking-widest pl-1">CVV</label>
-              <input required value={form.cvv} onChange={set('cvv')}
-                maxLength={4} type="password"
-                className="w-full px-4 py-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-medium text-center"
-                placeholder="•••" />
+              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">CVV</label>
+              <input
+                required
+                value={form.cvv}
+                onChange={set('cvv')}
+                maxLength={4}
+                type="password"
+                className={`${inputClass} px-4 text-center`}
+                placeholder="•••"
+              />
             </div>
           </div>
 
-          {/* Checkboxes de consentimento */}
-          <div className="space-y-2.5 pt-1">
-            <label className="flex items-start gap-2.5 cursor-pointer group">
+          {/* Checkboxes */}
+          <div className="space-y-3 pt-1">
+            <label className="flex items-start gap-3 cursor-pointer group">
               <input
                 type="checkbox"
                 checked={acceptedRecurring}
                 onChange={e => setAcceptedRecurring(e.target.checked)}
-                className="mt-0.5 w-4 h-4 shrink-0 accent-black cursor-pointer"
+                className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]"
               />
-              <span className="text-[10px] text-[#6B7280] leading-relaxed group-hover:text-[#374151] transition-colors">
-                Autorizo a cobrança mensal recorrente de <strong className="text-[#374151]">R$ 5,00</strong> no cartão informado, podendo cancelar a qualquer momento.
+              <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
+                Autorizo a cobrança mensal recorrente de <strong className="text-white/70">R$ 5,00</strong> no cartão informado, podendo cancelar a qualquer momento.
               </span>
             </label>
-            <label className="flex items-start gap-2.5 cursor-pointer group">
+            <label className="flex items-start gap-3 cursor-pointer group">
               <input
                 type="checkbox"
                 checked={acceptedTerms}
                 onChange={e => setAcceptedTerms(e.target.checked)}
-                className="mt-0.5 w-4 h-4 shrink-0 accent-black cursor-pointer"
+                className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]"
               />
-              <span className="text-[10px] text-[#6B7280] leading-relaxed group-hover:text-[#374151] transition-colors">
+              <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
                 Li e aceito os{' '}
-                <a href="/termos" target="_blank" rel="noopener noreferrer" className="text-black font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity">
+                <a href="/termos" target="_blank" rel="noopener noreferrer" className="text-violet-300 font-semibold hover:text-violet-200 transition-colors">
                   Termos de Uso
                 </a>
                 {' '}e a{' '}
-                <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="text-black font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity">
+                <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="text-violet-300 font-semibold hover:text-violet-200 transition-colors">
                   Política de Privacidade
                 </a>.
               </span>
             </label>
           </div>
 
-          <button type="submit" disabled={loading || !acceptedRecurring || !acceptedTerms}
-            className="w-full h-14 flex items-center justify-center gap-2 bg-black text-white rounded-2xl text-base font-bold hover:bg-[#222] transition-all disabled:opacity-50 shadow-lg shadow-black/10 mt-2">
-            {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <><CreditCard className="w-5 h-5" /> Pagar R$ 5,00</>}
+          {/* Botão pagar */}
+          <button
+            type="submit"
+            disabled={loading || !acceptedRecurring || !acceptedTerms}
+            className="w-full h-14 flex items-center justify-center gap-2 rounded-2xl text-base font-bold mt-2
+              transition-all active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed
+              backdrop-blur-md bg-white/15 border border-white/25 text-white
+              shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)]
+              hover:bg-white/25 enabled:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_8px_24px_rgba(0,0,0,0.35)]"
+          >
+            {loading
+              ? <Loader2 className="animate-spin w-5 h-5" />
+              : <><CreditCard className="w-5 h-5" /> Pagar R$ 5,00</>
+            }
           </button>
         </form>
 
-        <button onClick={() => authService.logout()} className="mt-4 w-full text-center text-sm text-[#9CA3AF] hover:text-[#374151] transition-colors">
+        <button
+          onClick={() => authService.logout()}
+          className="mt-5 w-full text-center text-sm text-white/30 hover:text-white/60 transition-colors"
+        >
           Sair da conta
         </button>
       </motion.div>
