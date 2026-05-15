@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users, Home, TrendingUp, DollarSign, Shield, CheckCircle2,
   XCircle, Clock, ChevronRight, Loader2, RefreshCw, LogOut,
-  BarChart3, Building2, X
+  Building2, X, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../services/auth';
@@ -36,20 +36,21 @@ interface BrokerDetail {
   subscriptions: any[];
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  ativo:     { label: 'Ativo',     color: 'bg-green-100 text-green-700',  icon: <CheckCircle2 className="w-3 h-3" /> },
-  pendente:  { label: 'Pendente',  color: 'bg-yellow-100 text-yellow-700', icon: <Clock className="w-3 h-3" /> },
-  bloqueado: { label: 'Bloqueado', color: 'bg-red-100 text-red-700',      icon: <XCircle className="w-3 h-3" /> },
+const STATUS: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
+  ativo:     { label: 'Ativo',     cls: 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300', icon: <CheckCircle2 className="w-3 h-3" /> },
+  pendente:  { label: 'Pendente',  cls: 'bg-amber-500/20 border-amber-400/30 text-amber-300',       icon: <Clock className="w-3 h-3" /> },
+  bloqueado: { label: 'Bloqueado', cls: 'bg-red-500/20 border-red-400/30 text-red-300',             icon: <XCircle className="w-3 h-3" /> },
 };
 
 function fmt(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
-
 function fmtDate(iso: string | null) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
 }
+
+const glassCard = 'rounded-2xl backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_4px_16px_rgba(0,0,0,0.2)]';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -118,11 +119,11 @@ export default function Admin() {
   );
 
   if (error) return (
-    <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex items-center justify-center">
       <div className="text-center">
         <Shield className="w-12 h-12 text-red-400 mx-auto mb-3" />
-        <p className="text-[#374151] font-semibold">{error}</p>
-        <button onClick={() => navigate('/')} className="mt-4 text-sm text-[#6B7280] hover:text-black">
+        <p className="text-white/70 font-semibold">{error}</p>
+        <button onClick={() => navigate('/')} className="mt-4 text-sm text-white/40 hover:text-white transition-colors">
           Voltar ao Dashboard
         </button>
       </div>
@@ -130,86 +131,91 @@ export default function Admin() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 font-sans relative">
+      {/* Noise */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage:'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
+
       {/* Header */}
-      <div className="bg-white border-b border-[#E5E7EB] px-6 py-4 flex items-center justify-between">
+      <div className="sticky top-0 z-30 backdrop-blur-2xl bg-white/8 border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-[0_1px_0_rgba(255,255,255,0.08),0_4px_16px_rgba(0,0,0,0.2)]">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-black rounded-xl flex items-center justify-center">
-            <Shield className="w-4 h-4 text-white" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center backdrop-blur-md bg-amber-500/20 border border-amber-400/30">
+            <Shield className="w-4 h-4 text-amber-300" />
           </div>
           <div>
-            <h1 className="text-base font-black text-[#1A1A1A]">Painel Admin</h1>
-            <p className="text-[10px] text-[#9CA3AF]">ImobiFlow</p>
+            <h1 className="text-base font-black text-white">Painel Admin</h1>
+            <p className="text-[10px] text-white/30">ImobiFlow</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={load} className="flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-black transition-colors">
+        <div className="flex items-center gap-2">
+          <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </button>
-          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-black transition-colors">
+          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
             <Home className="w-3.5 h-3.5" /> Dashboard
           </button>
-          <button onClick={() => authService.logout()} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 transition-colors">
+          <button onClick={() => authService.logout()} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
             <LogOut className="w-3.5 h-3.5" /> Sair
           </button>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
-
-        {/* Métricas */}
+      <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-8">
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[#9CA3AF]" /></div>
+          <div className="flex justify-center py-20">
+            <Loader2 className="animate-spin w-6 h-6 text-white/30" />
+          </div>
         ) : (
           <>
+            {/* Métricas */}
             {metrics && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                 {[
-                  { label: 'Corretores', value: metrics.totalBrokers, icon: <Users className="w-4 h-4" />, color: 'text-blue-600 bg-blue-50' },
-                  { label: 'Ativos', value: metrics.activeBrokers, icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600 bg-green-50' },
-                  { label: 'Imóveis', value: metrics.totalProperties, icon: <Building2 className="w-4 h-4" />, color: 'text-purple-600 bg-purple-50' },
-                  { label: 'Leads', value: metrics.totalLeads, icon: <TrendingUp className="w-4 h-4" />, color: 'text-orange-600 bg-orange-50' },
-                  { label: 'Receita', value: fmt(metrics.totalRevenueCents), icon: <DollarSign className="w-4 h-4" />, color: 'text-emerald-600 bg-emerald-50' },
+                  { label: 'Corretores',  value: metrics.totalBrokers,     icon: <Users className="w-4 h-4 text-blue-300" />,    bg: 'bg-blue-500/20 border-blue-400/30' },
+                  { label: 'Ativos',      value: metrics.activeBrokers,    icon: <CheckCircle2 className="w-4 h-4 text-emerald-300" />, bg: 'bg-emerald-500/20 border-emerald-400/30' },
+                  { label: 'Imóveis',     value: metrics.totalProperties,  icon: <Building2 className="w-4 h-4 text-violet-300" />, bg: 'bg-violet-500/20 border-violet-400/30' },
+                  { label: 'Leads',       value: metrics.totalLeads,       icon: <TrendingUp className="w-4 h-4 text-orange-300" />, bg: 'bg-orange-500/20 border-orange-400/30' },
+                  { label: 'Receita',     value: fmt(metrics.totalRevenueCents), icon: <DollarSign className="w-4 h-4 text-green-300" />, bg: 'bg-green-500/20 border-green-400/30' },
                 ].map(m => (
-                  <div key={m.label} className="bg-white rounded-2xl border border-[#E5E7EB] p-4 shadow-sm">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 ${m.color}`}>
+                  <div key={m.label} className={`${glassCard} p-4`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-2 border ${m.bg}`}>
                       {m.icon}
                     </div>
-                    <p className="text-xl font-black text-[#1A1A1A]">{m.value}</p>
-                    <p className="text-[11px] text-[#9CA3AF]">{m.label}</p>
+                    <p className="text-xl font-black text-white">{m.value}</p>
+                    <p className="text-[11px] text-white/40">{m.label}</p>
                   </div>
                 ))}
               </div>
             )}
 
             {/* Busca */}
-            <div className="mb-4">
+            <div className="mb-4 relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Buscar por nome, email ou telefone..."
-                className="w-full max-w-sm px-4 py-2.5 bg-white border border-[#E5E7EB] rounded-2xl text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none"
+                className="w-full pl-9 pr-4 py-2.5 rounded-2xl text-sm text-white placeholder:text-white/30 bg-white/10 border border-white/15 focus:ring-2 focus:ring-white/25 outline-none"
               />
             </div>
 
             {/* Tabela */}
-            <div className="bg-white rounded-3xl border border-[#E5E7EB] shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-[#F3F4F6] flex items-center justify-between">
-                <h2 className="text-sm font-bold text-[#1A1A1A]">Corretores ({filtered.length})</h2>
+            <div className={`${glassCard} overflow-hidden`}>
+              <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-white">Corretores <span className="text-white/40 font-normal">({filtered.length})</span></h2>
               </div>
 
               {filtered.length === 0 ? (
-                <div className="py-16 text-center text-sm text-[#9CA3AF]">Nenhum corretor encontrado</div>
+                <div className="py-16 text-center text-sm text-white/30">Nenhum corretor encontrado</div>
               ) : (
-                <div className="divide-y divide-[#F3F4F6]">
+                <div className="divide-y divide-white/5">
                   {filtered.map(broker => {
-                    const s = STATUS_LABELS[broker.status] || STATUS_LABELS.pendente;
+                    const s = STATUS[broker.status] || STATUS.pendente;
                     return (
-                      <div key={broker.id} className="px-6 py-4 flex items-center gap-4 hover:bg-[#F9FAFB] transition-colors">
+                      <div key={broker.id} className="px-6 py-4 flex items-center gap-4 hover:bg-white/5 transition-colors">
                         {/* Avatar */}
-                        <div className="w-9 h-9 bg-[#F3F4F6] rounded-full flex items-center justify-center shrink-0">
-                          <span className="text-sm font-bold text-[#374151]">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-white/10 border border-white/15">
+                          <span className="text-sm font-bold text-white/70">
                             {(broker.name || '?')[0].toUpperCase()}
                           </span>
                         </div>
@@ -217,58 +223,47 @@ export default function Admin() {
                         {/* Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-[#1A1A1A] truncate">{broker.name || '—'}</p>
+                            <p className="text-sm font-semibold text-white truncate">{broker.name || '—'}</p>
                             {broker.is_admin && (
-                              <span className="text-[10px] bg-black text-white px-1.5 py-0.5 rounded-full">admin</span>
+                              <span className="text-[10px] bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded-full">admin</span>
                             )}
                           </div>
-                          <p className="text-xs text-[#6B7280] truncate">{broker.email || broker.phone || '—'}</p>
+                          <p className="text-xs text-white/40 truncate">{broker.email || broker.phone || '—'}</p>
                         </div>
 
                         {/* Status badge */}
-                        <span className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${s.color}`}>
+                        <span className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0 ${s.cls}`}>
                           {s.icon} {s.label}
                         </span>
 
                         {/* Validade */}
-                        <span className="text-xs text-[#9CA3AF] shrink-0 hidden md:block w-24 text-right">
+                        <span className="text-xs text-white/30 shrink-0 hidden md:block w-24 text-right">
                           {broker.valid_until ? `até ${fmtDate(broker.valid_until)}` : 'sem plano'}
                         </span>
 
-                        {/* Ações rápidas */}
+                        {/* Ações */}
                         <div className="flex items-center gap-1 shrink-0">
-                          {broker.status !== 'ativo' && !broker.is_admin && (
-                            <button
-                              onClick={() => updateStatus(broker.id, 'ativo')}
-                              disabled={updatingId === broker.id}
-                              className="text-[11px] px-2.5 py-1 bg-green-50 text-green-700 rounded-full hover:bg-green-100 transition-colors disabled:opacity-50"
-                            >
+                          {!broker.is_admin && broker.status !== 'ativo' && (
+                            <button onClick={() => updateStatus(broker.id, 'ativo')} disabled={updatingId === broker.id}
+                              className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 rounded-full hover:bg-emerald-500/30 transition-colors disabled:opacity-40">
                               Ativar
                             </button>
                           )}
-                          {broker.status === 'ativo' && !broker.is_admin && (
-                            <button
-                              onClick={() => updateStatus(broker.id, 'bloqueado')}
-                              disabled={updatingId === broker.id}
-                              className="text-[11px] px-2.5 py-1 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors disabled:opacity-50"
-                            >
+                          {!broker.is_admin && broker.status === 'ativo' && (
+                            <button onClick={() => updateStatus(broker.id, 'bloqueado')} disabled={updatingId === broker.id}
+                              className="text-[11px] px-2.5 py-1 bg-red-500/20 border border-red-400/30 text-red-300 rounded-full hover:bg-red-500/30 transition-colors disabled:opacity-40">
                               Bloquear
                             </button>
                           )}
-                          {broker.status === 'bloqueado' && !broker.is_admin && (
-                            <button
-                              onClick={() => updateStatus(broker.id, 'pendente')}
-                              disabled={updatingId === broker.id}
-                              className="text-[11px] px-2.5 py-1 bg-yellow-50 text-yellow-700 rounded-full hover:bg-yellow-100 transition-colors disabled:opacity-50"
-                            >
+                          {!broker.is_admin && broker.status === 'bloqueado' && (
+                            <button onClick={() => updateStatus(broker.id, 'pendente')} disabled={updatingId === broker.id}
+                              className="text-[11px] px-2.5 py-1 bg-amber-500/20 border border-amber-400/30 text-amber-300 rounded-full hover:bg-amber-500/30 transition-colors disabled:opacity-40">
                               Desbloquear
                             </button>
                           )}
-                          <button
-                            onClick={() => openDetail(broker.id)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-[#F3F4F6] transition-colors"
-                          >
-                            <ChevronRight className="w-4 h-4 text-[#9CA3AF]" />
+                          <button onClick={() => openDetail(broker.id)}
+                            className="w-7 h-7 flex items-center justify-center rounded-full text-white/30 hover:bg-white/10 hover:text-white transition-all">
+                            <ChevronRight className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -287,28 +282,33 @@ export default function Admin() {
           <>
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/20 z-40"
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
               onClick={() => setDetail(null)}
             />
             <motion.div
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 overflow-y-auto"
+              className="fixed right-0 top-0 h-full w-full max-w-md z-50 overflow-y-auto
+                backdrop-blur-2xl bg-slate-900/95 border-l border-white/12
+                shadow-[-8px_0_32px_rgba(0,0,0,0.5)]"
             >
-              <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center justify-between">
-                <h3 className="text-sm font-bold text-[#1A1A1A]">Detalhes do Corretor</h3>
-                <button onClick={() => setDetail(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#F3F4F6]">
-                  <X className="w-4 h-4 text-[#6B7280]" />
+              <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between sticky top-0 backdrop-blur-xl bg-white/5">
+                <h3 className="text-sm font-bold text-white">Detalhes do Corretor</h3>
+                <button onClick={() => setDetail(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white transition-all">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               {loadingDetail ? (
-                <div className="flex justify-center py-20"><Loader2 className="animate-spin w-5 h-5 text-[#9CA3AF]" /></div>
+                <div className="flex justify-center py-20">
+                  <Loader2 className="animate-spin w-5 h-5 text-white/30" />
+                </div>
               ) : detail && (
                 <div className="px-6 py-5 space-y-6">
                   {/* Info básica */}
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest">Informações</h4>
+                  <div className={`${glassCard} p-4 space-y-1`}>
+                    <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-3">Informações</h4>
                     {[
                       ['Nome', detail.broker.name],
                       ['Email', detail.broker.email],
@@ -320,31 +320,31 @@ export default function Admin() {
                       ['Asaas ID', detail.broker.asaas_customer_id || '—'],
                       ['Z-PRO Tenant', detail.broker.zpro_tenant_id || '—'],
                     ].map(([k, v]) => (
-                      <div key={k} className="flex justify-between text-sm">
-                        <span className="text-[#9CA3AF]">{k}</span>
-                        <span className="text-[#374151] font-medium">{v || '—'}</span>
+                      <div key={k} className="flex justify-between text-sm py-1.5 border-b border-white/5 last:border-0">
+                        <span className="text-white/40">{k}</span>
+                        <span className="text-white/80 font-medium text-right max-w-[60%] truncate">{v || '—'}</span>
                       </div>
                     ))}
                   </div>
 
-                  {/* Ação de status */}
+                  {/* Ações */}
                   {!detail.broker.is_admin && (
                     <div className="flex gap-2">
                       {detail.broker.status !== 'ativo' && (
                         <button onClick={() => updateStatus(detail.broker.id, 'ativo')}
-                          className="flex-1 py-2 bg-green-50 text-green-700 text-sm font-semibold rounded-2xl hover:bg-green-100 transition-colors">
+                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30 transition-colors">
                           Ativar conta
                         </button>
                       )}
                       {detail.broker.status === 'ativo' && (
                         <button onClick={() => updateStatus(detail.broker.id, 'bloqueado')}
-                          className="flex-1 py-2 bg-red-50 text-red-600 text-sm font-semibold rounded-2xl hover:bg-red-100 transition-colors">
+                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-red-500/20 border border-red-400/30 text-red-300 hover:bg-red-500/30 transition-colors">
                           Bloquear conta
                         </button>
                       )}
                       {detail.broker.status === 'bloqueado' && (
                         <button onClick={() => updateStatus(detail.broker.id, 'pendente')}
-                          className="flex-1 py-2 bg-yellow-50 text-yellow-700 text-sm font-semibold rounded-2xl hover:bg-yellow-100 transition-colors">
+                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-300 hover:bg-amber-500/30 transition-colors">
                           Desbloquear
                         </button>
                       )}
@@ -353,17 +353,17 @@ export default function Admin() {
 
                   {/* Imóveis */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest mb-2">
+                    <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-3">
                       Imóveis ({detail.properties.length})
                     </h4>
                     {detail.properties.length === 0 ? (
-                      <p className="text-xs text-[#9CA3AF]">Nenhum imóvel cadastrado</p>
+                      <p className="text-xs text-white/30">Nenhum imóvel cadastrado</p>
                     ) : (
                       <div className="space-y-1.5">
                         {detail.properties.map((p: any) => (
-                          <div key={p.id} className="flex items-center justify-between bg-[#F9FAFB] rounded-xl px-3 py-2">
-                            <span className="text-xs text-[#374151] truncate">{p.title}</span>
-                            <span className="text-[10px] text-[#9CA3AF] shrink-0 ml-2">{fmtDate(p.created_at)}</span>
+                          <div key={p.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                            <span className="text-xs text-white/70 truncate">{p.title}</span>
+                            <span className="text-[10px] text-white/30 shrink-0 ml-2">{fmtDate(p.created_at)}</span>
                           </div>
                         ))}
                       </div>
@@ -372,20 +372,20 @@ export default function Admin() {
 
                   {/* Pagamentos */}
                   <div>
-                    <h4 className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest mb-2">
+                    <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-3">
                       Pagamentos ({detail.subscriptions.length})
                     </h4>
                     {detail.subscriptions.length === 0 ? (
-                      <p className="text-xs text-[#9CA3AF]">Nenhum pagamento registrado</p>
+                      <p className="text-xs text-white/30">Nenhum pagamento registrado</p>
                     ) : (
                       <div className="space-y-1.5">
                         {detail.subscriptions.map((s: any) => (
-                          <div key={s.id} className="flex items-center justify-between bg-[#F9FAFB] rounded-xl px-3 py-2">
+                          <div key={s.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-3 py-2">
                             <div>
-                              <p className="text-xs font-semibold text-[#374151]">{fmt(s.amount)}</p>
-                              <p className="text-[10px] text-[#9CA3AF]">{s.asaas_payment_id || s.stripe_session_id || '—'}</p>
+                              <p className="text-xs font-semibold text-white/80">{fmt(s.amount)}</p>
+                              <p className="text-[10px] text-white/30">{s.asaas_payment_id || s.stripe_session_id || '—'}</p>
                             </div>
-                            <span className="text-[10px] text-[#9CA3AF]">{fmtDate(s.paid_at)}</span>
+                            <span className="text-[10px] text-white/30">{fmtDate(s.paid_at)}</span>
                           </div>
                         ))}
                       </div>

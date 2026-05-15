@@ -23,7 +23,8 @@ import {
   RefreshCw,
   Crown,
   Menu,
-  X as XIcon
+  X as XIcon,
+  Shield
 } from 'lucide-react';
 import WhatsAppSetup from './WhatsAppSetup';
 import { motion } from 'motion/react';
@@ -76,7 +77,8 @@ export default function Dashboard() {
     bio2: '...',
     quote: '...',
     propertiesSold: '150+',
-    volumeSold: '$2B+'
+    volumeSold: '$2B+',
+    is_admin: false
   });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -229,6 +231,7 @@ export default function Dashboard() {
         ...prev,
         name: data.name,
         phone: data.phone || '',
+        is_admin: data.is_admin || false,
         ...parsedData
       }));
     } catch (error) {
@@ -459,6 +462,9 @@ export default function Dashboard() {
         <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
           <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
           <NavItem icon={<Settings size={20} />} label="Meu Perfil" active={activeTab === 'profile'}     onClick={() => handleTabChange('profile')} />
+          {brokerProfile.is_admin && (
+            <NavItem icon={<Shield size={20} />} label="Admin" className="text-amber-300 hover:bg-amber-500/15" onClick={() => window.location.href = '/admin'} />
+          )}
           <NavItem icon={<LogOut size={20} />}   label="Sair"       className="text-red-300 hover:bg-red-500/15" onClick={() => authService.logout()} />
         </div>
       </aside>
@@ -501,6 +507,9 @@ export default function Dashboard() {
             <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
               <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
               <NavItem icon={<Settings size={20} />} label="Meu Perfil" active={activeTab === 'profile'}     onClick={() => handleTabChange('profile')} />
+              {brokerProfile.is_admin && (
+                <NavItem icon={<Shield size={20} />} label="Admin" className="text-amber-300 hover:bg-amber-500/15" onClick={() => window.location.href = '/admin'} />
+              )}
               <NavItem icon={<LogOut size={20} />}   label="Sair"       className="text-red-300 hover:bg-red-500/15" onClick={() => authService.logout()} />
             </div>
           </motion.aside>
