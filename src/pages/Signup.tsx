@@ -28,6 +28,7 @@ export default function Signup() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const navigate = useNavigate();
 
   const progress = (step / STEPS.length) * 100;
@@ -50,6 +51,7 @@ export default function Signup() {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) { setError('As senhas não coincidem.'); return; }
     if (formData.password.length < 6) { setError('A senha deve ter pelo menos 6 caracteres.'); return; }
+    if (!acceptedTerms) { setError('Você precisa aceitar os Termos de Uso e a Política de Privacidade.'); return; }
     setLoading(true);
     setError('');
     try {
@@ -214,6 +216,20 @@ export default function Signup() {
                     </div>
                   </div>
                 </div>
+                <label className="flex items-start gap-3 pt-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={e => setAcceptedTerms(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded accent-violet-500 shrink-0"
+                  />
+                  <span className="text-xs text-white/55 leading-relaxed">
+                    Li e aceito os{' '}
+                    <a href="/termos" target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-300 hover:text-violet-200 underline">Termos de Uso</a>
+                    {' '}e a{' '}
+                    <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-300 hover:text-violet-200 underline">Política de Privacidade</a>.
+                  </span>
+                </label>
                 <div className="flex gap-3 pt-1">
                   <button type="button" onClick={() => setStep(2)} className={btnBack}>
                     <ArrowLeft className="w-4 h-4" />

@@ -37,18 +37,18 @@ export default function PaymentSuccess() {
           <CheckCircle2 className="text-emerald-400 w-10 h-10" />
         </div>
 
-        <h1 className="text-2xl font-black text-white mb-2">Obrigado!</h1>
+        <h1 className="text-2xl font-black text-white mb-2">Bem-vindo!</h1>
         <p className="text-lg font-semibold text-white/80 mb-3">Pagamento confirmado com sucesso</p>
         <p className="text-white/50 leading-relaxed mb-6 text-sm">
-          Sua conta está sendo ativada. Em instantes você terá acesso ao dashboard e seu canal WhatsApp será configurado automaticamente.
+          Sua conta está sendo ativada automaticamente. Estamos preparando seu ambiente.
         </p>
 
-        {/* Aviso WhatsApp */}
+        {/* Aviso credenciais */}
         <div className="rounded-2xl p-4 mb-6 flex items-start gap-3 text-left
           backdrop-blur-md bg-emerald-500/15 border border-emerald-400/25">
           <Smartphone className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
           <p className="text-sm text-emerald-300">
-            Após acessar o dashboard, vá em <strong>WhatsApp</strong> para escanear o QR Code e conectar seu agente IA.
+            Suas credenciais de acesso serão enviadas em até <strong>2 minutos</strong> para o número cadastrado via <strong>WhatsApp</strong>. Verifique também seu <strong>e-mail</strong>.
           </p>
         </div>
 

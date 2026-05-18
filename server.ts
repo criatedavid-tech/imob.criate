@@ -25,8 +25,30 @@ const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
   : 'https://sandbox.asaas.com/api/v3';
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
+const UAZAPI_HOST         = process.env.UAZAPI_HOST         || "https://criate.uazapi.com";
+const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN        || "d0R4HE6Vt0Y3eeej5W0NYTfz9rQlSjH85w61fNeZXcNxJNOEwi";
+const PROVISIONING_WEBHOOK_URL = process.env.PROVISIONING_WEBHOOK_URL
+  || "https://212hook.criate.online/webhook/f19c91c4-b826-4150-af8d-151200e619f0";
+const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
+  || "https://212hook.criate.online/webhook/edc20beb-c9c1-46c3-bbef-8fa81538cbb3";
+const SUBSCRIPTION_VALUE  = Number(process.env.SUBSCRIPTION_VALUE || "5.00");
 // UAZAPI_URL e UAZAPI_TOKEN não são passados via código — configurados direto no painel Z-PRO
 // E-mail de boas-vindas é enviado manualmente por um responsável humano
+
+// Normaliza telefone BR para o formato exigido pelo WhatsApp/Z-PRO:
+// DDI 55 + DDD (2) + 8 dígitos, sem o nono dígito.
+// Ex.: "(62)99159-2150" -> "556291592150"
+function normalizePhoneBR(raw: string): string {
+  let d = (raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  // Remove DDI 55 se já presente (12+ dígitos = 55 + DDD + 8/9)
+  if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+  const ddd = d.slice(0, 2);
+  let num = d.slice(2);
+  // Remove o nono dígito do celular (9 dígitos começando com 9 -> 8 dígitos)
+  if (num.length === 9 && num.startsWith('9')) num = num.slice(1);
+  return `55${ddd}${num}`;
+}
 
 async function startServer() {
   const app = express();
@@ -75,7 +97,7 @@ async function startServer() {
         const { error: profileError } = await supabase.from('brokers').insert([{
           user_id: data.user.id,
           name: name.trim(),
-          phone: phone || '',
+          phone: normalizePhoneBR(phone),
           email: email.toLowerCase().trim(),
           ai_name: 'Minha Assistente IA',
           broker_address: '',
@@ -193,6 +215,7 @@ async function startServer() {
       if (!brokerId) return res.status(404).json({ error: "Broker profile could not be found" });
 
       const settings = req.body;
+      if (settings.phone !== undefined) settings.phone = normalizePhoneBR(settings.phone);
       const { data, error } = await supabase.from('brokers').update({
         ...settings,
         updated_at: new Date()
@@ -280,6 +303,112 @@ async function startServer() {
       res.json({ url: publicUrl });
     } catch (err: any) {
       console.error("Erro upload foto corretor:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CORRETORA (imobiliária) — vínculo N:1 (broker → corretora)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Retorna a corretora vinculada ao corretor logado
+  app.get("/api/corretora", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers')
+        .select('corretora_id').eq('id', brokerId).single();
+
+      if (!broker?.corretora_id) return res.json({ corretora: null });
+
+      const { data: corretora } = await supabase.from('corretoras')
+        .select('*').eq('id', broker.corretora_id).single();
+
+      res.json({ corretora, isOwner: corretora?.owner_broker_id === brokerId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Cria/atualiza a corretora e vincula o corretor logado (upsert por CNPJ)
+  app.post("/api/corretora", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { razao_social, cnpj, creci_empresa, endereco, telefone, email } = req.body;
+      if (!razao_social || !cnpj) {
+        return res.status(400).json({ error: "Razão social e CNPJ são obrigatórios." });
+      }
+      const cnpjClean = String(cnpj).replace(/\D/g, '');
+
+      // Já existe corretora com este CNPJ? vincula a ela; senão cria
+      const { data: existing } = await supabase.from('corretoras')
+        .select('*').eq('cnpj', cnpjClean).maybeSingle();
+
+      let corretora = existing;
+      if (existing) {
+        // Só o owner pode editar os dados da corretora existente
+        if (existing.owner_broker_id === brokerId) {
+          const { data: upd } = await supabase.from('corretoras').update({
+            razao_social, creci_empresa: creci_empresa || null,
+            endereco: endereco || null, telefone: telefone ? normalizePhoneBR(telefone) : null,
+            email: email || null, updated_at: new Date().toISOString()
+          }).eq('id', existing.id).select().single();
+          corretora = upd || existing;
+        }
+      } else {
+        const { data: created, error: cErr } = await supabase.from('corretoras').insert({
+          razao_social, cnpj: cnpjClean, creci_empresa: creci_empresa || null,
+          endereco: endereco || null, telefone: telefone ? normalizePhoneBR(telefone) : null,
+          email: email || null, owner_broker_id: brokerId
+        }).select().single();
+        if (cErr) throw cErr;
+        corretora = created;
+      }
+
+      // Vincula o corretor logado à corretora
+      await supabase.from('brokers')
+        .update({ corretora_id: corretora.id, updated_at: new Date() })
+        .eq('id', brokerId);
+
+      res.json({ corretora, isOwner: corretora.owner_broker_id === brokerId });
+    } catch (err: any) {
+      console.error("Erro POST /api/corretora:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Lista os corretores vinculados à corretora (apenas o owner/admin da corretora vê)
+  app.get("/api/corretora/brokers", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers')
+        .select('corretora_id').eq('id', brokerId).single();
+      if (!broker?.corretora_id) return res.json({ brokers: [] });
+
+      const { data: corretora } = await supabase.from('corretoras')
+        .select('owner_broker_id').eq('id', broker.corretora_id).single();
+      if (corretora?.owner_broker_id !== brokerId) {
+        return res.status(403).json({ error: "Apenas o administrador da corretora pode ver os corretores vinculados." });
+      }
+
+      const { data: brokers } = await supabase.from('brokers')
+        .select('id, name, email, phone, status, created_at')
+        .eq('corretora_id', broker.corretora_id)
+        .order('created_at', { ascending: true });
+
+      res.json({ brokers: brokers || [] });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -408,7 +537,8 @@ async function startServer() {
   app.post("/api/properties", async (req, res) => {
     try {
       let property = req.body;
-      console.log("POST /api/properties payload:", property);
+      const imgCount = Array.isArray(property.images) ? property.images.length : (property.imageUrl ? 1 : 0);
+      console.log(`POST /api/properties: title="${property.title}" price="${property.price}" imgs=${imgCount}`);
       
       // Mapeamento de campos do frontend para o banco de dados
       if (property.images !== undefined) {
@@ -1007,17 +1137,18 @@ async function startServer() {
       }
       const customerId = customerData.id;
 
-      // 2. Cria cobrança com cartão de crédito
-      const dueDate = new Date().toISOString().split('T')[0];
-      const paymentResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
+      // 2. Cria assinatura RECORRENTE mensal com cartão de crédito
+      const nextDueDate = new Date().toISOString().split('T')[0];
+      const subscriptionResp = await fetch(`${ASAAS_BASE_URL}/subscriptions`, {
         method: 'POST',
         headers: asaasHeaders(),
         body: JSON.stringify({
           customer: customerId,
           billingType: 'CREDIT_CARD',
-          value: 5.00,
-          dueDate,
-          description: 'ImobiFlow - Plano Mensal',
+          value: SUBSCRIPTION_VALUE,
+          nextDueDate,
+          cycle: 'MONTHLY',
+          description: 'ImobiFlow - Assinatura Mensal',
           creditCard: {
             holderName: cardHolder,
             number: cardNumber.replace(/\s/g, ''),
@@ -1036,18 +1167,40 @@ async function startServer() {
         })
       });
 
-      const payment = await paymentResp.json();
-      if (!paymentResp.ok) {
-        throw new Error(payment.errors?.[0]?.description || payment.message || 'Pagamento recusado');
+      const subscription = await subscriptionResp.json();
+      if (!subscriptionResp.ok) {
+        throw new Error(subscription.errors?.[0]?.description || subscription.message || 'Assinatura recusada');
       }
-      if (payment.status !== 'CONFIRMED' && payment.status !== 'RECEIVED') {
+
+      // 3. Busca o primeiro payment gerado pela subscription
+      const firstPaymentResp = await fetch(
+        `${ASAAS_BASE_URL}/subscriptions/${subscription.id}/payments`,
+        { method: 'GET', headers: asaasHeaders() }
+      );
+      const firstPaymentList = await firstPaymentResp.json();
+      const firstPayment = firstPaymentList.data?.[0];
+
+      if (!firstPayment) {
+        throw new Error('Primeira cobrança da assinatura não foi gerada.');
+      }
+      if (firstPayment.status !== 'CONFIRMED' && firstPayment.status !== 'RECEIVED') {
         throw new Error('Pagamento não aprovado. Verifique os dados do cartão.');
       }
 
-      // 3. Ativa o corretor imediatamente (cartão aprovado na hora)
-      await handleAsaasPaymentReceived({ id: payment.id, customerId, value: payment.value, brokerId });
+      // 4. Salva subscription_id no broker e ativa imediatamente
+      await supabase.from('brokers')
+        .update({ asaas_subscription_id: subscription.id })
+        .eq('id', brokerId);
 
-      res.json({ success: true, paymentId: payment.id });
+      await handleAsaasPaymentReceived({
+        id: firstPayment.id,
+        customerId,
+        value: firstPayment.value,
+        brokerId,
+        subscriptionId: subscription.id
+      });
+
+      res.json({ success: true, paymentId: firstPayment.id, subscriptionId: subscription.id });
     } catch (err: any) {
       console.error("Erro no checkout Asaas:", err);
       res.status(400).json({ error: err.message });
@@ -1063,9 +1216,16 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      const { data: broker } = await supabase.from('brokers')
-        .select('status, plan, valid_until, zpro_tenant_id, zpro_channel_id, zpro_qr_code')
+      let { data: broker } = await supabase.from('brokers')
+        .select('status, plan, valid_until, grace_until, zpro_tenant_id, zpro_channel_id, zpro_qr_code')
         .eq('id', brokerId).single();
+
+      // Enforcement lazy do grace period: se passou de grace_until e ainda está
+      // 'ativo', suspende o acesso agora (cobre PAYMENT_OVERDUE sem cron job).
+      if (broker?.status === 'ativo' && broker?.grace_until && new Date(broker.grace_until) < new Date()) {
+        await supabase.from('brokers').update({ status: 'inativo' }).eq('id', brokerId);
+        broker = { ...broker, status: 'inativo' };
+      }
 
       const { data: lastSub } = await supabase.from('subscriptions')
         .select('*').eq('broker_id', brokerId)
@@ -1151,14 +1311,43 @@ async function startServer() {
     if (event.event === 'PAYMENT_RECEIVED' || event.event === 'PAYMENT_CONFIRMED') {
       const p = event.payment;
       const { data: broker } = await supabase.from('brokers')
-        .select('id').eq('asaas_customer_id', p.customer).single();
+        .select('id, asaas_subscription_id').eq('asaas_customer_id', p.customer).single();
       if (broker) {
-        await handleAsaasPaymentReceived({ id: p.id, customerId: p.customer, value: p.value, brokerId: broker.id });
+        await handleAsaasPaymentReceived({
+          id: p.id,
+          customerId: p.customer,
+          value: p.value,
+          brokerId: broker.id,
+          subscriptionId: p.subscription || broker.asaas_subscription_id || undefined
+        });
       }
-    } else if (event.event === 'PAYMENT_DELETED' || event.event === 'PAYMENT_OVERDUE') {
+    } else if (event.event === 'PAYMENT_OVERDUE') {
+      // Inadimplência: NÃO bloqueia na hora — concede grace period de 3 dias.
+      // A suspensão efetiva é aplicada lazy em GET /api/subscription quando grace_until expira.
+      const p = event.payment;
+      const graceUntil = new Date();
+      graceUntil.setDate(graceUntil.getDate() + 3);
+      await supabase.from('brokers')
+        .update({ grace_until: graceUntil.toISOString() })
+        .eq('asaas_customer_id', p.customer);
+      await supabase.from('subscriptions').update({ status: 'overdue' }).eq('asaas_payment_id', p.id);
+    } else if (event.event === 'PAYMENT_DELETED') {
       const p = event.payment;
       await supabase.from('brokers').update({ status: 'inativo' }).eq('asaas_customer_id', p.customer);
       await supabase.from('subscriptions').update({ status: 'cancelled' }).eq('asaas_payment_id', p.id);
+    } else if (
+      event.event === 'SUBSCRIPTION_DELETED' ||
+      event.event === 'SUBSCRIPTION_INACTIVATED' ||
+      event.event === 'SUBSCRIPTION_CANCELED'
+    ) {
+      // Assinatura cancelada → desativa o corretor e marca o tenant Z-PRO como desativado.
+      const sub = event.subscription || event.payment;
+      const subId = sub?.id || sub?.subscription;
+      if (subId) {
+        await supabase.from('brokers')
+          .update({ status: 'inativo', provisioning_status: 'disabled' })
+          .eq('asaas_subscription_id', subId);
+      }
     }
 
     res.json({ received: true });
@@ -1273,19 +1462,23 @@ async function startServer() {
   // FUNÇÕES DE AUTOMAÇÃO — ATIVAÇÃO E Z-PRO
   // ─────────────────────────────────────────────────────────────────────────
 
-  async function handleAsaasPaymentReceived({ id, customerId, value, brokerId }: {
-    id: string; customerId: string; value: number; brokerId: string;
+  async function handleAsaasPaymentReceived({ id, customerId, value, brokerId, subscriptionId }: {
+    id: string; customerId: string; value: number; brokerId: string; subscriptionId?: string;
   }) {
     try {
       const validUntil = new Date();
       validUntil.setMonth(validUntil.getMonth() + 1);
 
-      await supabase.from('brokers').update({
+      const brokerUpdate: any = {
         status: 'ativo',
         asaas_customer_id: customerId,
         plan: 'mensal',
-        valid_until: validUntil.toISOString()
-      }).eq('id', brokerId);
+        valid_until: validUntil.toISOString(),
+        grace_until: null   // pagamento confirmado limpa inadimplência/grace
+      };
+      if (subscriptionId) brokerUpdate.asaas_subscription_id = subscriptionId;
+
+      await supabase.from('brokers').update(brokerUpdate).eq('id', brokerId);
 
       await supabase.from('subscriptions').insert({
         broker_id: brokerId,
@@ -1302,7 +1495,7 @@ async function startServer() {
       const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
       if (!broker) return;
 
-      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN) {
+      if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN && broker.provisioning_status !== 'completed') {
         await createZproTenantAndChannel(broker);
       }
 
@@ -1312,75 +1505,242 @@ async function startServer() {
     }
   }
 
-  async function createZproTenantAndChannel(broker: any) {
+  function generateSecurePassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let pwd = '';
+    for (let i = 0; i < 12; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+    return pwd + 'A1!';
+  }
+
+  function buildZproUsername(broker: any): string {
+    const base = (broker.email || broker.id || 'corretor')
+      .split('@')[0]
+      .replace(/[^a-z0-9]/gi, '')
+      .toLowerCase()
+      .slice(0, 16);
+    const suffix = String(broker.id || '').replace(/-/g, '').slice(0, 4);
+    return `${base}${suffix}`;
+  }
+
+  async function fireProvisioningWebhook(payload: any) {
+    if (!PROVISIONING_WEBHOOK_URL) return;
     try {
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` };
-      const brokerName = broker.name || `Corretor ${broker.id}`;
-
-      // 1. Cria tenant exclusivo — POST /tenantApiStoreTenant
-      const tenantResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiStoreTenant`, {
+      const resp = await fetch(PROVISIONING_WEBHOOK_URL, {
         method: 'POST',
-        headers,
-        body: JSON.stringify({
-          name: brokerName,
-          email: broker.email || '',
-          password: Math.random().toString(36).slice(-8) + 'A1!',
-          userName: (broker.email || broker.id).split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase(),
-          status: 'active',
-          maxUsers: 5,
-          maxConnections: 1,
-          acceptTerms: true,
-          profile: 'user'
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-
-      if (!tenantResp.ok) throw new Error(`Z-PRO tenant error: ${await tenantResp.text()}`);
-      const tenant = await tenantResp.json();
-      const tenantId = tenant.id || tenant.tenant_id || tenant.tenantId;
-
-      await supabase.from('brokers').update({ zpro_tenant_id: String(tenantId) }).eq('id', broker.id);
-
-      // 2. Cria sessão WhatsApp para o tenant — POST /tenantApiCreateSession
-      const sessionResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiCreateSession`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          tenant: tenantId,
-          name: `WhatsApp - ${brokerName}`,
-          status: 'OPENING',
-          type: 'uazapi'
-        })
+      await supabase.from('webhook_logs').insert({
+        source: 'provisioning_webhook',
+        event_type: resp.ok ? 'webhook_delivered' : 'webhook_failed',
+        payload: { url: PROVISIONING_WEBHOOK_URL, status: resp.status, body: payload },
+        status: resp.ok ? 'processed' : 'error',
+        broker_id: payload.broker?.id || null
       });
+    } catch (err: any) {
+      await supabase.from('webhook_logs').insert({
+        source: 'provisioning_webhook',
+        event_type: 'webhook_failed',
+        payload: { url: PROVISIONING_WEBHOOK_URL, error: err.message, body: payload },
+        status: 'error',
+        broker_id: payload.broker?.id || null
+      });
+    }
+  }
 
-      if (!sessionResp.ok) throw new Error(`Z-PRO session error: ${await sessionResp.text()}`);
-      const session = await sessionResp.json();
-      const whatsappId = session.id || session.whatsappId;
+  // Aponta o webhook N8N do canal pro fluxo da IA. O painel Z-PRO salva isso via
+  // WebSocket; aqui tentamos a via REST equivalente. Não bloqueia o provisionamento:
+  // se a config N8N "para todos os tickets" estiver ON no tenant, o roteamento já
+  // funciona globalmente. Isolada pra trocar o endpoint sem tocar no fluxo.
+  async function setN8nWebhook(
+    tenantId: string | number,
+    whatsappId: string | number,
+    tenantHeaders: Record<string, string>
+  ): Promise<boolean> {
+    if (!N8N_WEBHOOK_URL) return false;
+    const attempts: Array<{ method: string; path: string; body: any }> = [
+      { method: 'PUT', path: `/whatsappN8nUrl/${whatsappId}`, body: { id: Number(whatsappId), n8nUrl: N8N_WEBHOOK_URL } },
+      { method: 'PUT', path: `/tenantsN8nUrl/${tenantId}`,     body: { id: Number(tenantId), n8nUrl: N8N_WEBHOOK_URL } },
+      { method: 'PUT', path: `/whatsapp/${whatsappId}`,        body: { id: Number(whatsappId), n8nUrl: N8N_WEBHOOK_URL } },
+    ];
+    for (const att of attempts) {
+      try {
+        const r = await fetch(`${ZPRO_ADMIN_URL}${att.path}`, {
+          method: att.method,
+          headers: tenantHeaders,
+          body: JSON.stringify(att.body)
+        });
+        if (r.ok) {
+          console.log(`[Z-PRO] N8N webhook do canal setado via ${att.method} ${att.path}`);
+          return true;
+        }
+      } catch { /* tenta próximo */ }
+    }
+    console.warn('[Z-PRO] N8N webhook do canal: endpoint REST não confirmado — '
+      + 'config "N8N para todos os tickets" no tenant cobre o roteamento globalmente');
+    return false;
+  }
+
+  async function createZproTenantAndChannel(broker: any) {
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${ZPRO_ADMIN_TOKEN}` };
+    const brokerName = broker.name || `Corretor ${broker.id}`;
+
+    // Gera credenciais ANTES — persistidas no Supabase imediatamente
+    const tenantPassword = broker.zpro_password || generateSecurePassword();
+    const tenantUsername = broker.zpro_username || buildZproUsername(broker);
+    const tenantEmail = broker.email || `${tenantUsername}@imobiflow.local`;
+
+    await supabase.from('brokers').update({
+      zpro_password: tenantPassword,
+      zpro_username: tenantUsername,
+      zpro_user_email: tenantEmail,
+      provisioning_status: broker.zpro_tenant_id ? 'tenant_created' : 'pending',
+      provisioning_error: null
+    }).eq('id', broker.id);
+
+    try {
+      let tenantId: number | string | undefined = broker.zpro_tenant_id && broker.zpro_tenant_id !== 'undefined'
+        ? broker.zpro_tenant_id
+        : undefined;
+      let adminUserId: number | undefined;
+
+      // 1. Cria tenant — pula se já existe (idempotente)
+      if (!tenantId) {
+        const tenantResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiStoreTenant`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            name: brokerName,
+            email: tenantEmail,
+            password: tenantPassword,
+            userName: tenantUsername,
+            status: 'active',
+            maxUsers: 5,
+            maxConnections: 1,
+            acceptTerms: true,
+            profile: 'admin',
+            uazapiHost: UAZAPI_HOST,
+            uazapiToken: UAZAPI_TOKEN
+          })
+        });
+
+        if (!tenantResp.ok) throw new Error(`Z-PRO tenant error: ${await tenantResp.text()}`);
+        const tenant = await tenantResp.json();
+        tenantId = tenant.id || tenant.tenant_id || tenant.tenantId
+          || tenant.data?.id || tenant.tenant?.id || tenant.result?.id;
+        adminUserId = tenant.user?.id || tenant.userId || tenant.adminUserId
+          || tenant.data?.user?.id || tenant.result?.user?.id;
+
+        if (!tenantId) throw new Error(`Z-PRO tenant ID ausente no response: ${JSON.stringify(tenant)}`);
+
+        await supabase.from('brokers').update({
+          zpro_tenant_id: String(tenantId),
+          provisioning_status: 'tenant_created'
+        }).eq('id', broker.id);
+      } else {
+        console.log(`[Z-PRO] Tenant ${tenantId} já existe — pulando StoreTenant`);
+      }
+
+      // 1b. Plano A — login como user admin do tenant pra obter token de sessão
+      let tenantUserToken: string | null = null;
+      try {
+        const loginResp = await fetch(`${ZPRO_ADMIN_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: tenantEmail, password: tenantPassword })
+        });
+        if (loginResp.ok) {
+          const loginData = await loginResp.json();
+          tenantUserToken = loginData.token || loginData.access_token || loginData.accessToken
+            || loginData.data?.token || null;
+          if (tenantUserToken) console.log(`[Z-PRO] Login user-tenant OK`);
+        }
+      } catch (e) {
+        console.warn('[Z-PRO] Login user-tenant falhou:', (e as any)?.message);
+      }
+      const tenantHeaders = tenantUserToken
+        ? { 'Content-Type': 'application/json', Authorization: `Bearer ${tenantUserToken}` }
+        : headers;
+
+      // 1c. Seta uazapiHost + uazapiToken — endpoint único, body com ambos os campos
+      //     PUT /tenantsUazapiHost/{tenantId}  body: {id, uazapiHost, uazapiToken}
+      let uazapiConfigOk = false;
+      try {
+        const r = await fetch(`${ZPRO_ADMIN_URL}/tenantsUazapiHost/${tenantId}`, {
+          method: 'PUT',
+          headers: tenantHeaders,
+          body: JSON.stringify({
+            id: Number(tenantId),
+            uazapiHost: UAZAPI_HOST,
+            uazapiToken: UAZAPI_TOKEN
+          })
+        });
+        uazapiConfigOk = r.ok;
+        console.log(`[Z-PRO] uazapi config status=${r.status} ok=${uazapiConfigOk}`);
+      } catch (e) {
+        console.warn('[Z-PRO] uazapi config falhou:', (e as any)?.message);
+      }
+      if (!uazapiConfigOk) console.warn(`[Z-PRO] tenantsUazapiHost rejeitou — sessão pode falhar`);
+
+      // 2. Cria sessão WhatsApp — já retorna canal + API + QR code juntos no Z-PRO
+      let whatsappId: number | string | undefined = broker.zpro_channel_id && broker.zpro_channel_id !== 'undefined'
+        ? broker.zpro_channel_id
+        : undefined;
+      let apiId: string | undefined;
+      let plainToken: string | undefined;
+      let initialQrCode: string | undefined;
+
+      if (!whatsappId) {
+        const sessionResp = await fetch(`${ZPRO_ADMIN_URL}/tenantApiCreateSession`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            tenantId: Number(tenantId),
+            tenant: Number(tenantId),
+            userId: adminUserId ? Number(adminUserId) : undefined,
+            name: `WhatsApp - ${brokerName}`,
+            status: 'OPENING',
+            type: 'uazapi'
+          })
+        });
+
+        if (!sessionResp.ok) throw new Error(`Z-PRO session error: ${await sessionResp.text()}`);
+        const session = await sessionResp.json();
+        whatsappId = session.whatsapp?.id || session.id || session.whatsappId;
+        apiId = session.api?.apiConfig?.id || session.api?.id;
+        plainToken = session.api?.plainToken || session.api?.apiConfig?.authToken;
+        initialQrCode = session.whatsapp?.qrcode;
+
+        if (!whatsappId) throw new Error(`Z-PRO whatsappId ausente: ${JSON.stringify(session)}`);
+        console.log(`[Z-PRO] Session criada — channel=${whatsappId} api=${apiId} token=${plainToken?.slice(0, 12)}...`);
+      } else {
+        console.log(`[Z-PRO] Session ${whatsappId} já existe — pulando CreateSession`);
+      }
 
       await supabase.from('brokers').update({
         zpro_channel_id: String(whatsappId),
-        zpro_channel_name: `WhatsApp - ${brokerName}`
+        zpro_channel_name: `WhatsApp - ${brokerName}`,
+        zpro_qr_code: initialQrCode || null,
+        provisioning_status: 'session_created'
       }).eq('id', broker.id);
 
-      // 3. Cria API key para o tenant — POST /tenantCreateApi
-      const apiResp = await fetch(`${ZPRO_ADMIN_URL}/tenantCreateApi`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          name: `API - ${brokerName}`,
-          sessionId: whatsappId,
-          tenant: tenantId,
-          authToken: ZPRO_ADMIN_TOKEN,
-          userId: null,
-          urlServiceStatus: '',
-          urlMessageStatus: ''
-        })
-      });
+      // 3. API já foi criada junto com a sessão pelo Z-PRO — só usa os IDs retornados
+      if (!apiId) apiId = broker.zpro_api_key && broker.zpro_api_key !== 'undefined'
+        ? broker.zpro_api_key
+        : undefined;
+      if (!apiId) throw new Error(`Z-PRO apiId ausente após CreateSession`);
+      const apiUrl = `${ZPRO_ADMIN_URL}/v2/api/external/${apiId}`;
 
-      if (!apiResp.ok) throw new Error(`Z-PRO API key error: ${await apiResp.text()}`);
-      const apiData = await apiResp.json();
-      const apiId = apiData.id || apiData.apiId;
+      await supabase.from('brokers').update({
+        zpro_api_key: String(apiId),
+        zpro_api_url: apiUrl,
+        zpro_api_token: plainToken || null,
+        provisioning_status: 'api_created'
+      }).eq('id', broker.id);
 
-      await supabase.from('brokers').update({ zpro_api_key: String(apiId) }).eq('id', broker.id);
+      // 3b. Configura N8N no canal (webhook da IA). Endpoint exato a confirmar —
+      //     setN8nWebhook é isolada pra ajuste fácil sem mexer no resto do fluxo.
+      await setN8nWebhook(tenantId, whatsappId, tenantHeaders);
 
       // 4. Inicia sessão para disparar geração do QR code — POST /v2/api/external/{apiId}/startSession
       await fetch(`${ZPRO_ADMIN_URL}/v2/api/external/${apiId}/startSession`, {
@@ -1388,6 +1748,12 @@ async function startServer() {
         headers,
         body: JSON.stringify({ whatsappId: Number(whatsappId) })
       });
+
+      const completedAt = new Date().toISOString();
+      await supabase.from('brokers').update({
+        provisioning_status: 'completed',
+        provisioning_completed_at: completedAt
+      }).eq('id', broker.id);
 
       await supabase.from('webhook_logs').insert({
         source: 'zpro',
@@ -1399,8 +1765,41 @@ async function startServer() {
 
       console.log(`✅ Z-PRO: tenant ${tenantId} | sessão ${whatsappId} | api ${apiId} — corretor ${broker.id}`);
 
+      // 5. Dispara webhook final com TUDO criado — só aqui, após sucesso completo
+      await fireProvisioningWebhook({
+        event: 'broker_provisioned',
+        provisioned_at: completedAt,
+        broker: {
+          id: broker.id,
+          name: broker.name,
+          email: broker.email,
+          phone: broker.phone
+        },
+        zpro: {
+          admin_url: ZPRO_ADMIN_URL,
+          tenant_id: String(tenantId),
+          username: tenantUsername,
+          password: tenantPassword,
+          email: tenantEmail,
+          channel_id: String(whatsappId),
+          channel_name: `WhatsApp - ${brokerName}`,
+          channel_type: 'uazapi',
+          api_id: String(apiId),
+          api_url: apiUrl,
+          api_token: plainToken || null
+        },
+        asaas: {
+          customer_id: broker.asaas_customer_id || null,
+          subscription_id: broker.asaas_subscription_id || null
+        }
+      });
+
     } catch (err: any) {
       console.error("Erro ao criar Z-PRO tenant/canal:", err);
+      await supabase.from('brokers').update({
+        provisioning_status: 'failed',
+        provisioning_error: err.message
+      }).eq('id', broker.id);
       await supabase.from('webhook_logs').insert({
         source: 'zpro',
         event_type: 'tenant_creation_failed',

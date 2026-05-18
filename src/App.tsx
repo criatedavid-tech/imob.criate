@@ -8,6 +8,8 @@ import PaymentPending from './pages/PaymentPending';
 import PaymentSuccess from './pages/PaymentSuccess';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Termos from './pages/Termos';
+import Privacidade from './pages/Privacidade';
 import Admin from './pages/Admin';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
@@ -56,6 +58,8 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/termos" element={<Termos />} />
+          <Route path="/privacidade" element={<Privacidade />} />
           <Route path="/p/:slug" element={<PropertyLanding />} />
 
           {/* Pagamento */}

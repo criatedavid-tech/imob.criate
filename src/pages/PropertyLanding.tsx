@@ -189,9 +189,7 @@ export default function PropertyLanding() {
     photoUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80',
     bio1: 'Para quem busca excelência no mercado imobiliário.',
     bio2: 'Com experiência e dedicação, garantimos a melhor experiência na compra ou venda do seu imóvel.',
-    quote: '',
-    propertiesSold: '150+',
-    volumeSold: 'R$ 500M+'
+    quote: ''
   };
   if (property.brokers?.broker_address) {
     try {
@@ -201,8 +199,6 @@ export default function PropertyLanding() {
       if (ep.bio1) brokerProfile.bio1 = ep.bio1;
       if (ep.bio2) brokerProfile.bio2 = ep.bio2;
       if (ep.quote) brokerProfile.quote = ep.quote.startsWith('"') ? ep.quote : `"${ep.quote}"`;
-      if (ep.propertiesSold) brokerProfile.propertiesSold = ep.propertiesSold;
-      if (ep.volumeSold) brokerProfile.volumeSold = ep.volumeSold;
     } catch { }
   }
 
@@ -557,16 +553,6 @@ export default function PropertyLanding() {
                 </motion.blockquote>
               )}
 
-              <motion.div variants={fadeUp} className="flex gap-10 border-t border-white/10 pt-6">
-                <div>
-                  <p className="font-serif text-3xl text-white">{brokerProfile.propertiesSold}</p>
-                  <p className="text-[9px] uppercase tracking-widest text-[#666] mt-1">Imóveis Vendidos</p>
-                </div>
-                <div>
-                  <p className="font-serif text-3xl text-white">{brokerProfile.volumeSold}</p>
-                  <p className="text-[9px] uppercase tracking-widest text-[#666] mt-1">Volume em Vendas</p>
-                </div>
-              </motion.div>
 
               <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-2">
                 <button
@@ -767,16 +753,6 @@ export default function PropertyLanding() {
                   {brokerProfile.quote && (
                     <blockquote className="border-l-2 border-[#E8E4E0] pl-6 italic text-[#1a1a1a] ml-2">{brokerProfile.quote}</blockquote>
                   )}
-                </div>
-                <div className="grid grid-cols-2 gap-8 border-t border-[#E8E4E0] pt-8">
-                  <div>
-                    <p className="font-serif text-4xl mb-1">{brokerProfile.propertiesSold}</p>
-                    <p className="text-[9px] uppercase tracking-widest text-[#9CA3AF]">Imóveis Vendidos</p>
-                  </div>
-                  <div>
-                    <p className="font-serif text-4xl mb-1">{brokerProfile.volumeSold}</p>
-                    <p className="text-[9px] uppercase tracking-widest text-[#9CA3AF]">Volume em Vendas</p>
-                  </div>
                 </div>
               </div>
             </motion.div>

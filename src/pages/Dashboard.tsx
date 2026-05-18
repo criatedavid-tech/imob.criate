@@ -24,11 +24,12 @@ import {
   Crown,
   Menu,
   X as XIcon,
-  Shield
+  Shield,
+  Building2
 } from 'lucide-react';
-import WhatsAppSetup from './WhatsAppSetup';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import CorretoraSettings from '../components/CorretoraSettings';
 import PropertyForm from '../components/PropertyForm';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -73,11 +74,7 @@ export default function Dashboard() {
     name: '',
     title: 'Principal Broker',
     photoUrl: '',
-    bio1: '...',
-    bio2: '...',
     quote: '...',
-    propertiesSold: '150+',
-    volumeSold: '$2B+',
     is_admin: false
   });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -454,9 +451,7 @@ export default function Dashboard() {
         <nav className="flex-1 space-y-1">
           <NavItem icon={<BarChart3 size={20} />}  label="Dashboard" active={activeTab === 'overview'}      onClick={() => handleTabChange('overview')} />
           <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
-          <NavItem icon={<Users size={20} />}       label="Leads"     active={activeTab === 'leads'}         onClick={() => handleTabChange('leads')} />
-          <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
-          <NavItem icon={<Smartphone size={20} />}  label="WhatsApp"  active={activeTab === 'whatsapp'}      onClick={() => handleTabChange('whatsapp')} />
+          <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
@@ -499,9 +494,7 @@ export default function Dashboard() {
             <nav className="flex-1 space-y-1">
               <NavItem icon={<BarChart3 size={20} />}  label="Dashboard" active={activeTab === 'overview'}      onClick={() => handleTabChange('overview')} />
               <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
-              <NavItem icon={<Users size={20} />}       label="Leads"     active={activeTab === 'leads'}         onClick={() => handleTabChange('leads')} />
-              <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
-              <NavItem icon={<Smartphone size={20} />}  label="WhatsApp"  active={activeTab === 'whatsapp'}      onClick={() => handleTabChange('whatsapp')} />
+              <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
             </nav>
 
             <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
@@ -531,30 +524,6 @@ export default function Dashboard() {
             >
               <Menu size={22} />
             </button>
-
-            {/* Search — oculto em telas muito pequenas */}
-            <div className="relative hidden sm:block w-48 md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
-              <input
-                type="text"
-                placeholder="Pesquisar..."
-                className="w-full pl-9 pr-4 py-2 rounded-full outline-none transition-all text-sm
-                  bg-white/10 border border-white/15 text-white placeholder:text-white/40
-                  focus:ring-2 focus:ring-white/25 focus:bg-white/15"
-              />
-            </div>
-
-            {/* Status backend — oculto no mobile */}
-            <div className={`hidden lg:flex flex-col gap-0.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border
-              ${backendStatus === 'online' ? 'bg-green-500/15 border-green-400/25 text-green-300'
-                : backendStatus === 'error' ? 'bg-yellow-500/15 border-yellow-400/25 text-yellow-300'
-                : 'bg-red-500/15 border-red-400/25 text-red-300'}`}>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-green-400 animate-pulse' : backendStatus === 'error' ? 'bg-yellow-400' : 'bg-red-400'}`} />
-                Backend {backendStatus === 'online' ? 'On-line' : backendStatus === 'error' ? 'Com Erro' : 'Off-line'}
-              </div>
-              <div className="text-[9px] opacity-70 lowercase font-mono">{dbStatus}</div>
-            </div>
           </div>
 
           <button
@@ -763,7 +732,7 @@ export default function Dashboard() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-white/70">Citação (Filosofia de Trabalho)</label>
+                    <label className="block text-sm font-semibold text-white/70">Trajetória</label>
                     <MagicWandTextarea
                       value={brokerProfile.quote}
                       onChange={e => setBrokerProfile({...brokerProfile, quote: e.target.value})}
@@ -771,49 +740,6 @@ export default function Dashboard() {
                       rows={2}
                       className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 resize-none"
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-white/70">Trajetória (Parágrafo 1)</label>
-                    <MagicWandTextarea
-                      value={brokerProfile.bio1}
-                      onChange={e => setBrokerProfile({...brokerProfile, bio1: e.target.value})}
-                      onApply={(text) => setBrokerProfile({...brokerProfile, bio1: text})}
-                      rows={3}
-                      className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-white/70">Trajetória (Parágrafo 2)</label>
-                    <MagicWandTextarea
-                      value={brokerProfile.bio2}
-                      onChange={e => setBrokerProfile({...brokerProfile, bio2: e.target.value})}
-                      onApply={(text) => setBrokerProfile({...brokerProfile, bio2: text})}
-                      rows={3}
-                      className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 resize-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-white/70">Imóveis Vendidos (Ex: 150+)</label>
-                      <input
-                        type="text"
-                        value={brokerProfile.propertiesSold || ''}
-                        onChange={e => setBrokerProfile({...brokerProfile, propertiesSold: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-white/70">Volume Vendido (Ex: $2B+)</label>
-                      <input
-                        type="text"
-                        value={brokerProfile.volumeSold || ''}
-                        onChange={e => setBrokerProfile({...brokerProfile, volumeSold: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
-                      />
-                    </div>
                   </div>
 
                   <button
@@ -831,178 +757,14 @@ export default function Dashboard() {
             </div>
           )}
 
-          {activeTab === 'leads' && (
-            <div>
-              <div className="flex items-center justify-between mb-4 md:mb-6">
-                <h2 className="text-xl md:text-2xl font-bold text-white">Leads</h2>
-                <span className="text-sm text-white/50">{allLeads.length} {allLeads.length === 1 ? 'contato' : 'contatos'}</span>
-              </div>
-              {loadingAllLeads && (
-                <div className="flex items-center gap-3 text-white/50 py-10">
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>Carregando leads...</span>
-                </div>
-              )}
-              {!loadingAllLeads && allLeads.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md bg-white/10 border border-white/15">
-                    <Users size={28} className="text-white/50" />
-                  </div>
-                  <h3 className="font-bold text-lg mb-1 text-white">Nenhum lead ainda</h3>
-                  <p className="text-white/50 text-sm max-w-xs">Os leads aparecem aqui quando alguém demonstra interesse em um imóvel via landing page.</p>
-                </div>
-              )}
-              {!loadingAllLeads && allLeads.length > 0 && (
-                <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
-                  <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px]">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Contato</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden sm:table-cell">Telefone</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden md:table-cell">Imóvel</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Recebido</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allLeads.map((lead) => (
-                        <tr key={lead.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5 transition-colors">
-                          <td className="px-4 md:px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 backdrop-blur-sm bg-violet-500/30 border border-violet-400/30">
-                                {lead.name?.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="font-semibold text-sm text-white">{lead.name}</p>
-                                {lead.email && <p className="text-xs text-white/40">{lead.email}</p>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 font-mono hidden sm:table-cell">{lead.phone || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[160px] truncate hidden md:table-cell">{lead.property || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/40 whitespace-nowrap hidden lg:table-cell">{formatTimeAgo(lead.created_at)}</td>
-                          <td className="px-4 md:px-6 py-4">
-                            <select
-                              value={lead.status || 'new'}
-                              onChange={e => updateLeadStatus(lead.id, e.target.value)}
-                              className={cn(
-                                "px-3 py-1.5 text-xs font-bold rounded-full uppercase tracking-wide border-none outline-none cursor-pointer",
-                                lead.status === 'new' && "bg-blue-100 text-blue-700",
-                                lead.status === 'contato' && "bg-purple-100 text-purple-700",
-                                lead.status === 'visita_agendada' && "bg-yellow-100 text-yellow-700",
-                                lead.status === 'contacted' && "bg-green-100 text-green-700",
-                                lead.status === 'archived' && "bg-gray-100 text-gray-500",
-                                !['new','contato','visita_agendada','contacted','archived'].includes(lead.status) && "bg-blue-100 text-blue-700"
-                              )}
-                            >
-                              <option value="new">Novo</option>
-                              <option value="contato">Contato</option>
-                              <option value="visita_agendada">Visita Agendada</option>
-                              <option value="contacted">Contactado</option>
-                              <option value="archived">Arquivado</option>
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'calendar' && (
-            <div>
-              <div className="flex items-center justify-between mb-4 md:mb-6">
-                <h2 className="text-xl md:text-2xl font-bold text-white">Agenda</h2>
-                <span className="text-sm text-white/50">{scheduledVisits.length} {scheduledVisits.length === 1 ? 'visita pendente' : 'visitas pendentes'}</span>
-              </div>
-
-              {loadingVisits && (
-                <div className="flex items-center gap-3 text-white/50 py-10">
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>Carregando agenda...</span>
-                </div>
-              )}
-
-              {!loadingVisits && scheduledVisits.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md bg-white/10 border border-white/15">
-                    <Calendar size={28} className="text-white/50" />
-                  </div>
-                  <h3 className="font-bold text-lg mb-1 text-white">Nenhuma visita agendada</h3>
-                  <p className="text-white/50 text-sm max-w-xs">As visitas aparecem aqui quando leads escolhem um horário via landing page.</p>
-                </div>
-              )}
-
-              {!loadingVisits && scheduledVisits.length > 0 && (
-                <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
-                  <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px]">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Visitante</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden sm:table-cell">Telefone</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden md:table-cell">Imóvel</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Observação</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Solicitado</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {scheduledVisits.map((visit) => (
-                        <tr key={visit.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5 transition-colors">
-                          <td className="px-4 md:px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-amber-300 shrink-0 backdrop-blur-sm bg-amber-500/20 border border-amber-400/30">
-                                {visit.name?.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="font-semibold text-sm text-white">{visit.name}</p>
-                                {visit.email && <p className="text-xs text-white/40">{visit.email}</p>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 md:px-6 py-4 text-sm font-mono text-white/60 hidden sm:table-cell">{visit.phone || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[160px] truncate hidden md:table-cell">{visit.property || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[200px] truncate hidden lg:table-cell">{visit.notes || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/40 whitespace-nowrap hidden lg:table-cell">{formatTimeAgo(visit.created_at)}</td>
-                          <td className="px-4 md:px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={async () => { await updateLeadStatus(visit.id, 'contacted'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
-                                className="px-3 py-1.5 bg-green-100 text-green-700 text-xs font-bold rounded-full hover:bg-green-200 transition-colors"
-                              >
-                                Confirmar
-                              </button>
-                              <button
-                                onClick={async () => { await updateLeadStatus(visit.id, 'archived'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
-                                className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-bold rounded-full hover:bg-gray-200 transition-colors"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {activeTab === 'settings' && <AISettings />}
 
-          {/* ─── ABA WHATSAPP ─── */}
-          {activeTab === 'whatsapp' && (
+          {/* ─── ABA CORRETORA ─── */}
+          {activeTab === 'corretora' && (
             <div className="max-w-2xl mx-auto">
-              <h2 className="text-xl md:text-2xl font-bold mb-2 text-white">WhatsApp</h2>
-              <p className="text-white/55 mb-8">Conecte seu número e ative o agente IA para responder clientes automaticamente.</p>
-              <WhatsAppSetup />
+              <h2 className="text-xl md:text-2xl font-bold mb-2 text-white">Corretora</h2>
+              <p className="text-white/55 mb-8">Cadastre a imobiliária que você representa e gerencie os corretores vinculados.</p>
+              <CorretoraSettings />
             </div>
           )}
 
