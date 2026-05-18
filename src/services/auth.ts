@@ -60,6 +60,17 @@ class AuthService {
     }
 
     const data = await res.json();
+
+    // Atualiza a instância singleton (não só o localStorage) para que
+    // isLoggedIn() reconheça a sessão imediatamente após o cadastro,
+    // permitindo o redirect direto para /payment sem passar pelo login.
+    if (data?.session?.access_token && data?.user) {
+      this.user = data.user;
+      this.token = data.session.access_token;
+      localStorage.setItem('user', JSON.stringify(this.user));
+      localStorage.setItem('token', this.token || '');
+    }
+
     return data;
   }
 

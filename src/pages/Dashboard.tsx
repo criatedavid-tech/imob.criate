@@ -350,12 +350,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchProperties();
-    fetchDashboardMetrics();
-    fetchRecentLeads();
-    fetchAllLeads();
-    fetchScheduledVisits();
+    fetchDashboardMetrics();   // alimenta o card "Total de Imóveis"
+    fetchScheduledVisits();    // alimenta a aba Agenda
     fetchBrokerProfile();
-    fetchChartData();
     const intervalId = setInterval(checkBackend, 5000);
     return () => clearInterval(intervalId);
   }, []);
@@ -451,6 +448,7 @@ export default function Dashboard() {
         <nav className="flex-1 space-y-1">
           <NavItem icon={<BarChart3 size={20} />}  label="Dashboard" active={activeTab === 'overview'}      onClick={() => handleTabChange('overview')} />
           <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
+          <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
           <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
         </nav>
 
@@ -494,6 +492,7 @@ export default function Dashboard() {
             <nav className="flex-1 space-y-1">
               <NavItem icon={<BarChart3 size={20} />}  label="Dashboard" active={activeTab === 'overview'}      onClick={() => handleTabChange('overview')} />
               <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
+              <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
               <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
             </nav>
 
@@ -544,80 +543,63 @@ export default function Dashboard() {
           {activeTab === 'overview' && (
             <div className="space-y-6 md:space-y-8">
               <h1 className="text-xl md:text-2xl font-bold text-white">Visão Geral</h1>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
-                <StatCard 
-                  label="Total de Imóveis" 
-                  value={dashboardMetrics.totalProperties.toString()} 
-                  icon={<Home className="text-blue-500" />} 
-                  onClick={() => setActiveTab('properties')} // AJUSTE REDIRECIONAMENTO 30/04/2026
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                <StatCard
+                  label="Total de Imóveis"
+                  value={dashboardMetrics.totalProperties.toString()}
+                  icon={<Home className="text-blue-500" />}
+                  onClick={() => setActiveTab('properties')}
                 />
-                <StatCard 
-                  label="Leads Ativos" 
-                  value={dashboardMetrics.activeLeads.toString()} 
-                  icon={<Users className="text-green-500" />} 
-                  onClick={() => setActiveTab('leads')} // AJUSTE REDIRECIONAMENTO 30/04/2026
-                />
-                <StatCard 
-                  label="Visitas Agendadas" 
-                  value={dashboardMetrics.scheduledVisits.toString()} 
-                  icon={<Calendar className="text-purple-500" />} 
-                  onClick={() => setActiveTab('calendar')} // AJUSTE REDIRECIONAMENTO 30/04/2026
+                <StatCard
+                  label="Visitas Agendadas"
+                  value={dashboardMetrics.scheduledVisits.toString()}
+                  icon={<Calendar className="text-purple-500" />}
+                  onClick={() => setActiveTab('calendar')}
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
-                {/* Chart panel — glass regular */}
-                <div className="lg:col-span-2 p-5 md:p-8 rounded-3xl
-                  backdrop-blur-xl bg-white/10 border border-white/15
-                  shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-white">Interesse nos Imóveis</h2>
-                    <TrendingUp className="text-emerald-400" />
-                  </div>
-                  <div className="h-56 md:h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData}>
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'rgba(255,255,255,0.4)'}} />
-                        <YAxis axisLine={false} tickLine={false} tick={{fill: 'rgba(255,255,255,0.4)'}} />
-                        <Tooltip
-                          cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                          contentStyle={{borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(15,20,40,0.85)', backdropFilter: 'blur(12px)', color: '#fff'}}
-                        />
-                        <Bar dataKey="value" fill="rgba(139,92,246,0.8)" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Recent leads panel — glass regular */}
-                <div className="p-5 md:p-8 rounded-3xl flex flex-col
-                  backdrop-blur-xl bg-white/10 border border-white/15
-                  shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
-                  <h2 className="text-xl font-bold text-white mb-6">Últimos Leads</h2>
-                  <div className="space-y-4 flex-1">
-                    {loadingMetrics ? (
-                      <div className="flex flex-col items-center justify-center py-10 text-white/40">
-                        <Loader2 className="animate-spin mb-2" size={24} />
-                        <span className="text-sm">Carregando leads...</span>
-                      </div>
-                    ) : recentLeads.length > 0 ? (
-                      recentLeads.map(lead => (
-                        <LeadItem key={lead.id} name={lead.name} property={lead.property} time={formatTimeAgo(lead.time)} />
-                      ))
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-10 text-white/40">
-                        <Users size={32} className="mb-2" />
-                        <span className="text-sm">Nenhum lead recente</span>
-                      </div>
-                    )}
-                  </div>
+              {/* Próximas visitas — resumo da agenda */}
+              <div className="p-5 md:p-8 rounded-3xl flex flex-col
+                backdrop-blur-xl bg-white/10 border border-white/15
+                shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-white">Próximas Visitas</h2>
                   <button
-                    onClick={() => setActiveTab('leads')}
-                    className="w-full py-3 text-sm font-semibold border-t border-white/10 mt-4 flex items-center justify-center gap-1 text-white/60 hover:text-white transition-colors"
+                    onClick={() => setActiveTab('calendar')}
+                    className="text-sm font-semibold flex items-center gap-1 text-white/60 hover:text-white transition-colors"
                   >
-                    Ver todos os leads <ChevronRight size={16} />
+                    Ver agenda <ChevronRight size={16} />
                   </button>
                 </div>
+                {loadingVisits ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-white/40">
+                    <Loader2 className="animate-spin mb-2" size={24} />
+                    <span className="text-sm">Carregando agenda...</span>
+                  </div>
+                ) : scheduledVisits.length > 0 ? (
+                  <div className="space-y-3">
+                    {scheduledVisits.slice(0, 5).map((visit) => (
+                      <div key={visit.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-amber-300 shrink-0 backdrop-blur-sm bg-amber-500/20 border border-amber-400/30">
+                            {visit.name?.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm text-white truncate">{visit.name}</p>
+                            <p className="text-xs text-white/40 truncate">{visit.property || 'Imóvel não informado'}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-white/40 whitespace-nowrap ml-3">{formatTimeAgo(visit.created_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center text-white/40">
+                    <Calendar size={32} className="mb-2" />
+                    <span className="text-sm">Nenhuma visita agendada ainda</span>
+                    <span className="text-xs text-white/30 mt-1 max-w-xs">As visitas aparecem aqui quando a IA agenda um horário pelo WhatsApp ou via landing page.</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -754,6 +736,88 @@ export default function Dashboard() {
                   </button>
                 </form>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <div>
+              <div className="flex items-center justify-between mb-4 md:mb-6">
+                <h2 className="text-xl md:text-2xl font-bold text-white">Agenda</h2>
+                <span className="text-sm text-white/50">{scheduledVisits.length} {scheduledVisits.length === 1 ? 'visita pendente' : 'visitas pendentes'}</span>
+              </div>
+
+              {loadingVisits && (
+                <div className="flex items-center gap-3 text-white/50 py-10">
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>Carregando agenda...</span>
+                </div>
+              )}
+
+              {!loadingVisits && scheduledVisits.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md bg-white/10 border border-white/15">
+                    <Calendar size={28} className="text-white/50" />
+                  </div>
+                  <h3 className="font-bold text-lg mb-1 text-white">Nenhuma visita agendada</h3>
+                  <p className="text-white/50 text-sm max-w-xs">As visitas aparecem aqui quando leads escolhem um horário via landing page.</p>
+                </div>
+              )}
+
+              {!loadingVisits && scheduledVisits.length > 0 && (
+                <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px]">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Visitante</th>
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden sm:table-cell">Telefone</th>
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden md:table-cell">Imóvel</th>
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Observação</th>
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Solicitado</th>
+                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduledVisits.map((visit) => (
+                        <tr key={visit.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5 transition-colors">
+                          <td className="px-4 md:px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-amber-300 shrink-0 backdrop-blur-sm bg-amber-500/20 border border-amber-400/30">
+                                {visit.name?.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-sm text-white">{visit.name}</p>
+                                {visit.email && <p className="text-xs text-white/40">{visit.email}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 md:px-6 py-4 text-sm font-mono text-white/60 hidden sm:table-cell">{visit.phone || '—'}</td>
+                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[160px] truncate hidden md:table-cell">{visit.property || '—'}</td>
+                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[200px] truncate hidden lg:table-cell">{visit.notes || '—'}</td>
+                          <td className="px-4 md:px-6 py-4 text-sm text-white/40 whitespace-nowrap hidden lg:table-cell">{formatTimeAgo(visit.created_at)}</td>
+                          <td className="px-4 md:px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={async () => { await updateLeadStatus(visit.id, 'contacted'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
+                                className="px-3 py-1.5 bg-green-100 text-green-700 text-xs font-bold rounded-full hover:bg-green-200 transition-colors"
+                              >
+                                Confirmar
+                              </button>
+                              <button
+                                onClick={async () => { await updateLeadStatus(visit.id, 'archived'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
+                                className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-bold rounded-full hover:bg-gray-200 transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

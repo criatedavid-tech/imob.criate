@@ -87,30 +87,44 @@ async function startServer() {
         return res.status(400).json({ error: 'Este e-mail já possui uma conta. Faça login ou recupere sua senha.' });
       }
 
-      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data, error } = await authClient.auth.signUp({ email: email.toLowerCase().trim(), password });
-      if (error) throw error;
+      const cleanEmail = email.toLowerCase().trim();
 
-      if (data.user) {
-        await supabase.auth.admin.updateUserById(data.user.id, { email_confirm: true }).catch(e => console.error("Auto-confirm error:", e));
+      // Cria o usuário JÁ confirmado (via admin/service_role) — evita a race
+      // condition de confirmar o e-mail depois e não conseguir a sessão na hora.
+      const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+        email: cleanEmail,
+        password,
+        email_confirm: true
+      });
+      if (createErr) throw createErr;
 
+      if (created.user) {
         const { error: profileError } = await supabase.from('brokers').insert([{
-          user_id: data.user.id,
+          user_id: created.user.id,
           name: name.trim(),
           phone: normalizePhoneBR(phone),
-          email: email.toLowerCase().trim(),
+          email: cleanEmail,
           ai_name: 'Minha Assistente IA',
           broker_address: '',
           status: 'pendente'
         }]);
         if (profileError) console.error("Error creating profile:", profileError);
 
-        const authClient2 = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data: loginData } = await authClient2.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
-        return res.json({ user: loginData?.user || data.user, session: loginData?.session || data.session });
+        // Usuário já nasce confirmado → signInWithPassword retorna a sessão na hora
+        const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+        const { data: loginData, error: loginErr } = await authClient.auth
+          .signInWithPassword({ email: cleanEmail, password });
+
+        if (loginErr || !loginData?.session) {
+          console.error("Signup auto-login falhou:", loginErr);
+          // Conta criada, mas sem sessão — frontend redireciona para login
+          return res.json({ user: created.user, session: null });
+        }
+
+        return res.json({ user: loginData.user, session: loginData.session });
       }
 
-      res.json({ user: data.user, session: data.session });
+      res.json({ user: created.user, session: null });
     } catch (err: any) {
       console.error("Auth Signup Error:", err);
       const msg = err.message?.includes('already registered')
