@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,18 +42,46 @@ const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
 const UAZAPI_HOST         = process.env.UAZAPI_HOST         || "https://criate.uazapi.com";
-const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN        || "d0R4HE6Vt0Y3eeej5W0NYTfz9rQlSjH85w61fNeZXcNxJNOEwi";
+const UAZAPI_TOKEN        = process.env.UAZAPI_TOKEN        || "";
 const PROVISIONING_WEBHOOK_URL = process.env.PROVISIONING_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/f19c91c4-b826-4150-af8d-151200e619f0";
 const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/edc20beb-c9c1-46c3-bbef-8fa81538cbb3";
-const SUBSCRIPTION_VALUE  = Number(process.env.SUBSCRIPTION_VALUE || "5.00");
-// UAZAPI_URL e UAZAPI_TOKEN não são passados via código — configurados direto no painel Z-PRO
-// E-mail de boas-vindas é enviado manualmente por um responsável humano
+const SUBSCRIPTION_VALUE  = Number(process.env.SUBSCRIPTION_VALUE || "49.90");
+// ─── PROXY LLM ────────────────────────────────────────────────────────────────
+// Token interno: N8N → servidor (substitui "credential" estática no N8N).
+// Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
+const INTERNAL_PROXY_TOKEN = process.env.INTERNAL_PROXY_TOKEN || "";
+const LLM_PROXY_ENC_KEY    = process.env.LLM_PROXY_ENC_KEY    || "";
+// Fallback: chave da empresa usada enquanto o corretor não configurou a própria.
+const OPENROUTER_API_KEY   = process.env.OPENROUTER_API_KEY   || "";
 
 // Normaliza telefone BR para o formato exigido pelo WhatsApp/Z-PRO:
 // DDI 55 + DDD (2) + 8 dígitos, sem o nono dígito.
 // Ex.: "(62)99159-2150" -> "556291592150"
+// ─── AES-256-GCM: criptografa/descriptografa a key OpenRouter do corretor ─────
+function encryptKey(plaintext: string): string {
+  if (!LLM_PROXY_ENC_KEY) throw new Error('LLM_PROXY_ENC_KEY não configurada');
+  const key = Buffer.from(LLM_PROXY_ENC_KEY, 'hex');
+  const iv  = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const enc  = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag  = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64'); // iv(12)+tag(16)+ciphertext
+}
+
+function decryptKey(packed: string): string {
+  if (!LLM_PROXY_ENC_KEY) throw new Error('LLM_PROXY_ENC_KEY não configurada');
+  const key = Buffer.from(LLM_PROXY_ENC_KEY, 'hex');
+  const buf = Buffer.from(packed, 'base64');
+  const iv         = buf.subarray(0, 12);
+  const tag        = buf.subarray(12, 28);
+  const ciphertext = buf.subarray(28);
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext).toString('utf8') + decipher.final('utf8');
+}
+
 function normalizePhoneBR(raw: string): string {
   let d = (raw || '').replace(/\D/g, '');
   if (!d) return '';
@@ -252,6 +281,39 @@ async function startServer() {
       
       if (error) throw error;
       res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Salva a chave OpenRouter do corretor (criptografada com AES-256-GCM)
+  app.post('/api/brokers/openrouter-key', async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const { api_key } = req.body;
+      if (!api_key || typeof api_key !== 'string' || api_key.trim().length < 10) {
+        return res.status(400).json({ error: 'Chave inválida.' });
+      }
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
+      const encrypted = encryptKey(api_key.trim());
+      await supabase.from('brokers').update({ openrouter_api_key_enc: encrypted }).eq('id', brokerId);
+      res.json({ ok: true, message: 'Chave salva com sucesso.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove a chave OpenRouter do corretor
+  app.delete('/api/brokers/openrouter-key', async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
+      await supabase.from('brokers').update({ openrouter_api_key_enc: null }).eq('id', brokerId);
+      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1887,6 +1949,64 @@ async function startServer() {
     }
   }
 
+
+  // ─── PROXY LLM ─────────────────────────────────────────────────────────────
+  // N8N chama: POST /api/proxy/llm/:brokerPhone/chat/completions
+  // Authorization: Bearer INTERNAL_PROXY_TOKEN   (credential estática no N8N)
+  // O proxy busca a key OpenRouter do corretor no Supabase e encaminha para
+  // openrouter.ai — cada corretor é cobrado na própria conta.
+  // Fallback: OPENROUTER_API_KEY (chave da empresa) se o corretor não configurou.
+  app.all('/api/proxy/llm/:brokerPhone/*', async (req, res) => {
+    // 1. Autenticação interna N8N → servidor
+    const authHeader = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+    if (!INTERNAL_PROXY_TOKEN || authHeader !== INTERNAL_PROXY_TOKEN) {
+      return res.status(401).json({ error: { message: 'Proxy: token inválido.', type: 'invalid_api_key' } });
+    }
+
+    const { brokerPhone } = req.params;
+
+    // 2. Resolve a key OpenRouter do corretor (ou fallback empresa)
+    let openRouterKey = OPENROUTER_API_KEY;
+    try {
+      const { data: broker } = await supabase
+        .from('brokers')
+        .select('openrouter_api_key_enc')
+        .eq('phone', brokerPhone)
+        .maybeSingle();
+      if (broker?.openrouter_api_key_enc) {
+        openRouterKey = decryptKey(broker.openrouter_api_key_enc);
+      }
+    } catch (err) {
+      console.error('[LLM Proxy] Erro ao buscar key do corretor, usando fallback:', err);
+    }
+
+    if (!openRouterKey) {
+      return res.status(402).json({
+        error: { message: 'OpenRouter key não configurada. Configure em Configurações > IA.', type: 'invalid_api_key' }
+      });
+    }
+
+    // 3. Proxy transparente → OpenRouter
+    const suffix = ((req.params as any)[0] || 'chat/completions').replace(/^\//, '');
+    const openRouterUrl = `https://openrouter.ai/api/v1/${suffix}`;
+    try {
+      const proxyResp = await fetch(openRouterUrl, {
+        method: req.method,
+        headers: {
+          'Authorization': `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': APP_URL,
+          'X-Title': 'ImobiFlow'
+        },
+        body: ['GET', 'HEAD'].includes(req.method.toUpperCase()) ? undefined : JSON.stringify(req.body)
+      });
+      const data = await proxyResp.json();
+      res.status(proxyResp.status).json(data);
+    } catch (err: any) {
+      console.error('[LLM Proxy] Erro ao chamar OpenRouter:', err);
+      res.status(502).json({ error: { message: 'Proxy error: ' + err.message, type: 'proxy_error' } });
+    }
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
