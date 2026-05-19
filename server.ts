@@ -13,9 +13,24 @@ const __dirname = path.dirname(__filename);
 // Carrega o .env (se existir), sobrescrevendo vars do ambiente se necessário
 dotenv.config({ override: true });
 
-// Fallback manual para as chaves do .env.example (Padrão do Sistema)
-const FALLBACK_URL = "https://umvbrahsqvqeondwtikm.supabase.co";
-const FALLBACK_KEY = "SUPABASE_SERVICE_ROLE_KEY_REDACTED";
+// --- CREDENCIAIS SUPABASE (somente via ambiente — NUNCA hardcoded) ---
+// A URL do projeto não é segredo; a service_role key é (acesso total ao
+// banco, ignora RLS). Por isso ela só vem do ambiente e o servidor recusa
+// subir sem ela, evitando rodar com chave vazia ou commitada por engano.
+const SUPABASE_URL = process.env.SUPABASE_URL
+  || process.env.VITE_SUPABASE_URL
+  || "https://umvbrahsqvqeondwtikm.supabase.co";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+  || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+  || "";
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.error(
+    "\n[FATAL] SUPABASE_SERVICE_ROLE_KEY ausente.\n" +
+    "Defina a variável de ambiente (ou no .env local) antes de iniciar o servidor.\n"
+  );
+  process.exit(1);
+}
 
 // ─── VARIÁVEIS DE AMBIENTE EXTERNAS ───────────────────────────────────────────
 const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
@@ -58,8 +73,8 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // --- INTEGRAÇÃO COM SUPABASE ---
-  const supabaseUrl = FALLBACK_URL;
-  const supabaseKey = FALLBACK_KEY;
+  const supabaseUrl = SUPABASE_URL;
+  const supabaseKey = SUPABASE_SERVICE_ROLE_KEY;
   
   // Cliente Supabase para operações no banco de dados e autenticação
   const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -317,6 +332,54 @@ async function startServer() {
       res.json({ url: publicUrl });
     } catch (err: any) {
       console.error("Erro upload foto corretor:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- UPLOAD DE IMAGEM DE IMÓVEL ---
+  // Recebe UMA imagem base64, grava no Supabase Storage e devolve a URL
+  // pública (CDN). Substitui o antigo fluxo que trafegava arrays de base64
+  // pelo heap do Node e os gravava como TEXT no Postgres (causa do OOM).
+  app.post("/api/properties/upload-image", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const { imageData } = req.body;
+      if (!imageData || typeof imageData !== 'string') {
+        return res.status(400).json({ error: "No image data" });
+      }
+
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // Limite defensivo de 8MB por imagem já comprimida
+      if (buffer.length > 8 * 1024 * 1024) {
+        return res.status(413).json({ error: "Imagem muito grande (máx. 8MB)." });
+      }
+
+      const fileName = `prop-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+
+      // Garante que o bucket existe (idempotente)
+      await supabase.storage.createBucket('property-images', {
+        public: true,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        fileSizeLimit: 8388608
+      }).catch(() => {}); // ignora erro se bucket já existe
+
+      const { error: uploadError } = await supabase.storage
+        .from('property-images')
+        .upload(fileName, buffer, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('property-images')
+        .getPublicUrl(fileName);
+
+      res.json({ url: publicUrl });
+    } catch (err: any) {
+      console.error("Erro upload imagem imóvel:", err);
       res.status(500).json({ error: err.message });
     }
   });

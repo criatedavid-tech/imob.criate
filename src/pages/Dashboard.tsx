@@ -31,7 +31,6 @@ import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import CorretoraSettings from '../components/CorretoraSettings';
 import PropertyForm from '../components/PropertyForm';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 import AISettings from '../components/AISettings';
 import { authService } from '../services/auth';

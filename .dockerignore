@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+coverage
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.claude
+.vscode
+*.log
+npm-debug.log*
+.DS_Store
+README.md
+fly.toml

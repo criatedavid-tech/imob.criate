@@ -51,6 +51,7 @@ export default function PropertyForm({
   });
   const [successData, setSuccessData] = useState<{isEdit: boolean, url: string} | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   React.useEffect(() => {
     if (initialData) {
@@ -138,12 +139,32 @@ export default function PropertyForm({
       });
     };
 
+    // Sobe cada foto direto pro Supabase Storage e guarda APENAS a URL
+    // pública no estado — nunca o base64. Isso mantém o payload do
+    // POST /api/properties minúsculo e elimina o pico de memória/OOM.
     files.forEach(async (file) => {
-      const compressed = await compressImage(file);
-      setFormData(prev => ({
-        ...prev, 
-        images: [...(prev.images || []), compressed]
-      }));
+      setUploadingCount(c => c + 1);
+      try {
+        const compressed = await compressImage(file);
+        const res = await fetch('/api/properties/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+          body: JSON.stringify({ imageData: compressed })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Falha ao enviar a imagem.');
+        }
+        const { url } = await res.json();
+        setFormData(prev => ({
+          ...prev,
+          images: [...(prev.images || []), url]
+        }));
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Não foi possível enviar uma das imagens.');
+      } finally {
+        setUploadingCount(c => Math.max(0, c - 1));
+      }
     });
   };
 
@@ -465,6 +486,13 @@ export default function PropertyForm({
                   </div>
                 ))}
                 
+                {Array.from({ length: uploadingCount }).map((_, i) => (
+                  <div key={`up-${i}`} className="rounded-xl flex flex-col items-center justify-center gap-2 text-white/50 aspect-square bg-white/5 border border-white/15">
+                    <Loader2 size={22} className="animate-spin" />
+                    <span className="font-semibold text-[10px] uppercase tracking-wider">Enviando…</span>
+                  </div>
+                ))}
+
                 {(!formData.images || formData.images.length < 15) && (
                   <div
                     onClick={handleImageClick}
@@ -481,14 +509,17 @@ export default function PropertyForm({
             <div className="pt-4">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || uploadingCount > 0}
                 className="w-full py-4 rounded-2xl font-bold text-lg text-white transition-all flex items-center justify-center gap-2
                   backdrop-blur-md bg-white/15 border border-white/25
                   shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_4px_16px_rgba(0,0,0,0.25)]
                   hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]"
               >
-                {loading ? <Loader2 className="animate-spin" /> : (initialData ? 'Salvar Edição' : 'Cadastrar Imóvel')}
-                {!loading && <Check size={20} />}
+                {uploadingCount > 0
+                  ? <><Loader2 className="animate-spin" /> Enviando fotos…</>
+                  : loading
+                    ? <Loader2 className="animate-spin" />
+                    : <>{initialData ? 'Salvar Edição' : 'Cadastrar Imóvel'} <Check size={20} /></>}
               </button>
             </div>
           </form>
