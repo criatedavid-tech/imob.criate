@@ -10,7 +10,7 @@ const inputClass =
 
 export default function ResetPassword() {
   const navigate = useNavigate();
-  const [accessToken, setAccessToken] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -19,15 +19,13 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
-    const token = params.get('access_token');
-    const type = params.get('type');
-    if (!token || type !== 'recovery') {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (!token) {
       setError('Link inválido ou expirado. Solicite uma nova recuperação de senha.');
       return;
     }
-    setAccessToken(token);
+    setResetToken(token);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,7 +38,7 @@ export default function ResetPassword() {
       const resp = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, newPassword: password })
+        body: JSON.stringify({ token: resetToken, newPassword: password })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error);
@@ -95,7 +93,7 @@ export default function ResetPassword() {
 
               {!accessToken && !error ? (
                 <p className="text-sm text-white/50 text-center">Verificando link...</p>
-              ) : accessToken ? (
+              ) : resetToken ? (
                 <>
                   <div>
                     <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nova Senha</label>

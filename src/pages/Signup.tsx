@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -29,6 +29,8 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const navigate = useNavigate();
 
   const progress = (step / STEPS.length) * 100;
@@ -55,14 +57,14 @@ export default function Signup() {
     setLoading(true);
     setError('');
     try {
-      const data = await authService.signup(formData.email, formData.password, formData.name, formData.phone);
-      if (data?.session?.access_token && data?.user) {
-        localStorage.setItem('token', data.session.access_token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        navigate('/payment');
-        return;
+      await authService.signup(formData.email, formData.password, formData.name, formData.phone);
+
+      // Se o auto-login do signup falhou (session null), faz login explícito
+      if (!authService.isLoggedIn()) {
+        await authService.login(formData.email, formData.password);
       }
-      navigate('/login');
+
+      window.location.replace('/payment');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -199,20 +201,28 @@ export default function Signup() {
                     <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Senha</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
-                      <input type="password" required minLength={6} value={formData.password}
+                      <input type={showPwd ? 'text' : 'password'} required minLength={6} value={formData.password}
                         onChange={e => setFormData({ ...formData, password: e.target.value })}
-                        className={`${inputClass} pl-11 pr-4`}
+                        className={`${inputClass} pl-11 pr-10`}
                         placeholder="••••••••" />
+                      <button type="button" onClick={() => setShowPwd(v => !v)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/30 hover:text-white/70 transition-colors">
+                        {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
                     </div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Confirmar</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
-                      <input type="password" required value={formData.confirmPassword}
+                      <input type={showConfirm ? 'text' : 'password'} required value={formData.confirmPassword}
                         onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
-                        className={`${inputClass} pl-11 pr-4`}
+                        className={`${inputClass} pl-11 pr-10`}
                         placeholder="••••••••" />
+                      <button type="button" onClick={() => setShowConfirm(v => !v)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/30 hover:text-white/70 transition-colors">
+                        {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
                     </div>
                   </div>
                 </div>

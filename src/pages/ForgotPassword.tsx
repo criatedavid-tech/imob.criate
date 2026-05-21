@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Home, Mail, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Home, Mail, Loader2, ArrowLeft, CheckCircle2, MessageCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const inputClass =
@@ -64,13 +64,13 @@ export default function ForgotPassword() {
             <div className="text-center">
               <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4
                 backdrop-blur-md bg-emerald-500/20 border border-emerald-400/30">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                <MessageCircle className="w-8 h-8 text-emerald-400" />
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Verifique seu e-mail</h3>
+              <h3 className="text-lg font-bold text-white mb-2">Verifique seu WhatsApp</h3>
               <p className="text-sm text-white/60 mb-4 leading-relaxed">
-                Se <strong className="text-white/80">{email}</strong> estiver cadastrado, você receberá um link para redefinir sua senha em instantes.
+                Se <strong className="text-white/80">{email}</strong> estiver cadastrado, você receberá um link temporário pelo WhatsApp no número cadastrado.
               </p>
-              <p className="text-xs text-white/30 mb-6">Não recebeu? Verifique a caixa de spam ou tente novamente.</p>
+              <p className="text-xs text-white/30 mb-6">O link expira em 15 minutos. Não recebeu? Confira o número cadastrado ou tente novamente.</p>
               <Link to="/login" className="flex items-center justify-center gap-2 text-sm font-semibold text-violet-300 hover:text-violet-200 transition-colors">
                 <ArrowLeft className="w-4 h-4" /> Voltar para o login
               </Link>
@@ -78,7 +78,7 @@ export default function ForgotPassword() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <p className="text-sm text-white/50">
-                Informe o e-mail cadastrado e enviaremos um link para você criar uma nova senha.
+                Informe o e-mail cadastrado e enviaremos um link temporário pelo <strong className="text-white/70">WhatsApp</strong> para você criar uma nova senha.
               </p>
 
               {error && (
@@ -104,7 +104,7 @@ export default function ForgotPassword() {
                   backdrop-blur-md bg-white/15 border border-white/25
                   shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)]
                   hover:bg-white/25">
-                {loading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Enviar link de recuperação'}
+                {loading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Enviar link pelo WhatsApp'}
               </button>
 
               <Link to="/login" className="flex items-center justify-center gap-1.5 text-sm text-white/40 hover:text-violet-300 transition-colors">

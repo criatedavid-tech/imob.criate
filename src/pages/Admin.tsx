@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users, Home, TrendingUp, DollarSign, Shield, CheckCircle2,
   XCircle, Clock, ChevronRight, Loader2, RefreshCw, LogOut,
-  Building2, X, Search
+  Building2, X, Search, Ban, Trash2, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../services/auth';
@@ -62,6 +62,7 @@ export default function Admin() {
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<BrokerDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const headers = authService.getAuthHeaders();
 
@@ -102,11 +103,74 @@ export default function Admin() {
   async function openDetail(id: string) {
     setLoadingDetail(true);
     setDetail(null);
+    setActionMsg(null);
     try {
       const res = await fetch(`/api/admin/brokers/${id}`, { headers });
       setDetail(await res.json());
     } finally {
       setLoadingDetail(false);
+    }
+  }
+
+  async function provisionTenant(id: string) {
+    setUpdatingId(id);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}/provision`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao provisionar');
+      setActionMsg({ type: 'success', text: 'Provisionamento disparado! Aguarde ~30s e recarregue os detalhes.' });
+      setTimeout(() => openDetail(id), 30000);
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function cancelPlan(id: string) {
+    if (!confirm('Cancelar o plano deste corretor?\n\nEle manterá acesso até o fim do período pago e depois perderá o acesso automaticamente.')) return;
+    setUpdatingId(id);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}/cancel-plan`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar plano');
+      setActionMsg({ type: 'success', text: 'Plano cancelado. Acesso mantido até o fim do período pago.' });
+      // Atualiza status local
+      setBrokers(prev => prev.map(b => b.id === id ? { ...b, status: 'bloqueado' as any } : b));
+      if (detail?.broker?.id === id) setDetail(d => d ? { ...d, broker: { ...d.broker, status: 'cancelado' } } : d);
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function deleteAccount(id: string, name: string) {
+    if (!confirm(`Tem certeza que deseja EXCLUIR a conta de "${name}"?\n\nEssa ação não poderá ser desfeita. A assinatura será cancelada e o acesso encerrado imediatamente.`)) return;
+    setUpdatingId(id);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}`, {
+        method: 'DELETE',
+        headers
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao excluir conta');
+      setActionMsg({ type: 'success', text: 'Conta excluída com sucesso.' });
+      setBrokers(prev => prev.filter(b => b.id !== id));
+      setDetail(null);
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setUpdatingId(null);
     }
   }
 
@@ -327,27 +391,78 @@ export default function Admin() {
                     ))}
                   </div>
 
-                  {/* Ações */}
+                  {/* Mensagem de ação */}
+                  {actionMsg && (
+                    <div className={`flex items-center gap-2 p-3 rounded-2xl text-xs font-medium border ${
+                      actionMsg.type === 'success'
+                        ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
+                        : 'bg-red-500/20 border-red-400/30 text-red-300'
+                    }`}>
+                      {actionMsg.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <XCircle className="w-3.5 h-3.5 shrink-0" />}
+                      {actionMsg.text}
+                    </div>
+                  )}
+
+                  {/* Ações de status */}
                   {!detail.broker.is_admin && (
-                    <div className="flex gap-2">
-                      {detail.broker.status !== 'ativo' && (
-                        <button onClick={() => updateStatus(detail.broker.id, 'ativo')}
-                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30 transition-colors">
-                          Ativar conta
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        {detail.broker.status !== 'ativo' && (
+                          <button onClick={() => updateStatus(detail.broker.id, 'ativo')} disabled={updatingId === detail.broker.id}
+                            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30 transition-colors disabled:opacity-40">
+                            Ativar conta
+                          </button>
+                        )}
+                        {detail.broker.status === 'ativo' && (
+                          <button onClick={() => updateStatus(detail.broker.id, 'bloqueado')} disabled={updatingId === detail.broker.id}
+                            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-300 hover:bg-amber-500/30 transition-colors disabled:opacity-40">
+                            Bloquear conta
+                          </button>
+                        )}
+                        {detail.broker.status === 'bloqueado' && (
+                          <button onClick={() => updateStatus(detail.broker.id, 'pendente')} disabled={updatingId === detail.broker.id}
+                            className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 transition-colors disabled:opacity-40">
+                            Desbloquear
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Provisionar Tenant */}
+                      {!detail.broker.zpro_tenant_id && (
+                        <button
+                          onClick={() => provisionTenant(detail.broker.id)}
+                          disabled={updatingId === detail.broker.id}
+                          className="w-full py-2.5 text-sm font-semibold rounded-2xl flex items-center justify-center gap-2
+                            bg-violet-500/20 border border-violet-400/30 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-40"
+                        >
+                          {updatingId === detail.broker.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                          Provisionar Tenant Z-PRO
                         </button>
                       )}
-                      {detail.broker.status === 'ativo' && (
-                        <button onClick={() => updateStatus(detail.broker.id, 'bloqueado')}
-                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-red-500/20 border border-red-400/30 text-red-300 hover:bg-red-500/30 transition-colors">
-                          Bloquear conta
+
+                      {/* Cancelar plano */}
+                      {detail.broker.asaas_customer_id && (
+                        <button
+                          onClick={() => cancelPlan(detail.broker.id)}
+                          disabled={updatingId === detail.broker.id}
+                          className="w-full py-2.5 text-sm font-semibold rounded-2xl flex items-center justify-center gap-2
+                            bg-orange-500/20 border border-orange-400/30 text-orange-300 hover:bg-orange-500/30 transition-colors disabled:opacity-40"
+                        >
+                          {updatingId === detail.broker.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                          Cancelar Plano
                         </button>
                       )}
-                      {detail.broker.status === 'bloqueado' && (
-                        <button onClick={() => updateStatus(detail.broker.id, 'pendente')}
-                          className="flex-1 py-2.5 text-sm font-semibold rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-300 hover:bg-amber-500/30 transition-colors">
-                          Desbloquear
-                        </button>
-                      )}
+
+                      {/* Excluir conta */}
+                      <button
+                        onClick={() => deleteAccount(detail.broker.id, detail.broker.name)}
+                        disabled={updatingId === detail.broker.id}
+                        className="w-full py-2.5 text-sm font-semibold rounded-2xl flex items-center justify-center gap-2
+                          bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-40"
+                      >
+                        {updatingId === detail.broker.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        Excluir Conta
+                      </button>
                     </div>
                   )}
 
