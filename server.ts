@@ -2179,11 +2179,15 @@ async function startServer() {
 
   // ── UAZAPI: cria instância e vincula ao canal Z-PRO ───────────────────────────
   // Fluxo descoberto via inspeção da API UAZAPI (criate.uazapi.com):
-  //   1. POST /instance/create (header: admintoken) + body {name} → cria instância, retorna instanceToken
-  //   2. PUT /whatsapp/:id (Z-PRO tenant token) com {tokenAPI: instanceToken} → salva (retorna 500 mas persiste)
-  //   3. POST /whatsappSession/:id (Z-PRO tenant token) → inicia sessão / gera QR Code
-  // Sem o passo 1+2, Z-PRO exibe "Aguardando QR Code" indefinidamente
-  // e POST /whatsappSession/:id retorna "UAZAPI instance token not found".
+  //   1. POST /instance/create (header: admintoken) + body {name}
+  //      → retorna { id: instanceId, token: instanceToken, instance: { id, token } }
+  //   2. PUT /whatsapp/:id (tenant token) com { tokenAPI, wppUser }
+  //      → tokenAPI = token por instância (campo "API Token" no painel)
+  //      → wppUser  = id da instância   (campo "Number ID / Instance ID" no painel)
+  //      → PUT retorna 500 mas persiste (padrão Z-PRO confirmado)
+  //   3. POST /whatsappSession/:id (tenant token) → inicia sessão / gera QR Code
+  //      → antes do passo 2: {"message":"UAZAPI instance token not found"}
+  //      → após  o passo 2: {"message":"Starting session."}
   async function createUazapiInstanceForChannel(
     whatsappId: string | number, channelName: string, tenantToken?: string
   ): Promise<string | null> {
@@ -2192,8 +2196,9 @@ async function startServer() {
       return null;
     }
 
-    // 1. Cria instância UAZAPI
+    // 1. Cria instância UAZAPI — extrai tanto o token quanto o id da instância
     let instanceToken: string | null = null;
+    let instanceId: string | null = null;
     try {
       const res = await fetch(`${UAZAPI_HOST}/instance/create`, {
         method: 'POST',
@@ -2202,8 +2207,9 @@ async function startServer() {
       });
       const json: any = await res.json().catch(() => null);
       instanceToken = json?.token ?? json?.instance?.token ?? null;
+      instanceId    = json?.instance?.id ?? json?.id ?? null;
       if (instanceToken) {
-        console.log(`[UAZAPI] Instância criada — name="${channelName}" token=${instanceToken.slice(0,8)}...`);
+        console.log(`[UAZAPI] Instância criada — name="${channelName}" id=${instanceId} token=${instanceToken.slice(0,8)}...`);
       } else {
         console.warn(`[UAZAPI] Criação de instância falhou: ${res.status} ${JSON.stringify(json)?.slice(0,200)}`);
         return null;
@@ -2213,15 +2219,18 @@ async function startServer() {
       return null;
     }
 
-    // 2. Salva o token da instância no canal Z-PRO (campo tokenAPI — PUT retorna 500 mas persiste)
-    // tokenAPI é o nome real do campo no schema Z-PRO para o token UAZAPI por canal.
-    await zproPut(`/whatsapp/${whatsappId}`, { tokenAPI: instanceToken }, tenantToken);
-    // Verifica se foi salvo (mesmo que status seja 500)
+    // 2. Salva credenciais no canal Z-PRO (PUT retorna 500 mas persiste — padrão confirmado)
+    // tokenAPI = "API Token"           no painel Z-PRO UazApi
+    // wppUser  = "Number ID/Instance ID" no painel Z-PRO UazApi
+    await zproPut(`/whatsapp/${whatsappId}`, { tokenAPI: instanceToken, wppUser: instanceId }, tenantToken);
+    // Verifica se foi salvo
     const checkRes = await zproGet(`/whatsapp/${whatsappId}`, tenantToken);
-    if (checkRes.json?.tokenAPI === instanceToken) {
-      console.log(`[Z-PRO] tokenAPI salvo no canal ${whatsappId} ✓`);
+    const savedToken = checkRes.json?.tokenAPI;
+    const savedId    = checkRes.json?.wppUser;
+    if (savedToken === instanceToken && savedId === instanceId) {
+      console.log(`[Z-PRO] tokenAPI + wppUser (instanceId) salvos no canal ${whatsappId} ✓`);
     } else {
-      console.warn(`[Z-PRO] tokenAPI pode não ter sido salvo. checkRes.tokenAPI=${checkRes.json?.tokenAPI}`);
+      console.warn(`[Z-PRO] Verificação pós-PUT — tokenAPI=${savedToken?.slice(0,8)} wppUser=${savedId}`);
     }
 
     // 3. Inicia sessão (solicita QR Code)
