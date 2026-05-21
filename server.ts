@@ -2177,6 +2177,71 @@ async function startServer() {
     }
   }
 
+  // ── UAZAPI: cria instância e vincula ao canal Z-PRO ───────────────────────────
+  // Fluxo descoberto via inspeção da API UAZAPI (criate.uazapi.com):
+  //   1. POST /instance/create (header: admintoken) + body {name} → cria instância, retorna instanceToken
+  //   2. PUT /whatsapp/:id (Z-PRO tenant token) com {tokenAPI: instanceToken} → salva (retorna 500 mas persiste)
+  //   3. POST /whatsappSession/:id (Z-PRO tenant token) → inicia sessão / gera QR Code
+  // Sem o passo 1+2, Z-PRO exibe "Aguardando QR Code" indefinidamente
+  // e POST /whatsappSession/:id retorna "UAZAPI instance token not found".
+  async function createUazapiInstanceForChannel(
+    whatsappId: string | number, channelName: string, tenantToken?: string
+  ): Promise<string | null> {
+    if (!UAZAPI_HOST || !UAZAPI_TOKEN) {
+      console.warn('[UAZAPI] UAZAPI_HOST ou UAZAPI_TOKEN ausente — pulando criação de instância');
+      return null;
+    }
+
+    // 1. Cria instância UAZAPI
+    let instanceToken: string | null = null;
+    try {
+      const res = await fetch(`${UAZAPI_HOST}/instance/create`, {
+        method: 'POST',
+        headers: { 'admintoken': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: channelName })
+      });
+      const json: any = await res.json().catch(() => null);
+      instanceToken = json?.token ?? json?.instance?.token ?? null;
+      if (instanceToken) {
+        console.log(`[UAZAPI] Instância criada — name="${channelName}" token=${instanceToken.slice(0,8)}...`);
+      } else {
+        console.warn(`[UAZAPI] Criação de instância falhou: ${res.status} ${JSON.stringify(json)?.slice(0,200)}`);
+        return null;
+      }
+    } catch (e: any) {
+      console.warn('[UAZAPI] Exceção ao criar instância:', e.message);
+      return null;
+    }
+
+    // 2. Salva o token da instância no canal Z-PRO (campo tokenAPI — PUT retorna 500 mas persiste)
+    // tokenAPI é o nome real do campo no schema Z-PRO para o token UAZAPI por canal.
+    await zproPut(`/whatsapp/${whatsappId}`, { tokenAPI: instanceToken }, tenantToken);
+    // Verifica se foi salvo (mesmo que status seja 500)
+    const checkRes = await zproGet(`/whatsapp/${whatsappId}`, tenantToken);
+    if (checkRes.json?.tokenAPI === instanceToken) {
+      console.log(`[Z-PRO] tokenAPI salvo no canal ${whatsappId} ✓`);
+    } else {
+      console.warn(`[Z-PRO] tokenAPI pode não ter sido salvo. checkRes.tokenAPI=${checkRes.json?.tokenAPI}`);
+    }
+
+    // 3. Inicia sessão (solicita QR Code)
+    try {
+      const sessionRes = await fetch(`${ZPRO_ADMIN_URL}/whatsappSession/${whatsappId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tenantToken || await getZproAdminToken()}`
+        }
+      });
+      const sessionJson: any = await sessionRes.json().catch(() => null);
+      console.log(`[Z-PRO] whatsappSession/${whatsappId}: ${sessionRes.status} — ${JSON.stringify(sessionJson)?.slice(0,100)}`);
+    } catch (e: any) {
+      console.warn('[Z-PRO] Exceção ao iniciar sessão:', e.message);
+    }
+
+    return instanceToken;
+  }
+
   // Cria API Config vinculada ao canal do corretor (endpoint do painel api-service).
   // POST /api-config → retorna uuid (para URL externa) + plainToken (bearer token).
   // URL externa: ${ZPRO_ADMIN_URL}/v2/api/external/${uuid}
@@ -2363,7 +2428,11 @@ async function startServer() {
           name: `WhatsApp - ${brokerName}`,
           status: 'DISCONNECTED',
           type: 'uazapi',
-          isActive: true
+          isActive: true,
+          // uazapiHost + uazapiToken são obrigatórios para Z-PRO comunicar com UAZAPI
+          // Sem eles o canal fica DISCONNECTED e nunca gera QR Code
+          uazapiHost: UAZAPI_HOST,
+          uazapiToken: UAZAPI_TOKEN
         };
 
         const channelRes = await zproPost('/whatsappTenants', channelBody);
@@ -2382,6 +2451,16 @@ async function startServer() {
         zpro_channel_name: `WhatsApp - ${brokerName}`,
         provisioning_status: 'session_created'
       }).eq('id', broker.id);
+
+      // ── 2b. Cria instância UAZAPI e vincula ao canal (tokenAPI) ───────────────
+      // Sem esse passo, Z-PRO exibe "Aguardando QR Code" indefinidamente.
+      // createUazapiInstanceForChannel: POST /instance/create (UAZAPI) + PUT /whatsapp/:id + POST /whatsappSession/:id
+      // Só cria se o canal é novo (não existia antes); se já existia, assume que a instância já foi criada.
+      if (!broker.zpro_channel_id || broker.zpro_channel_id === 'undefined') {
+        await createUazapiInstanceForChannel(whatsappId, `WhatsApp - ${brokerName}`, tenantToken);
+      } else {
+        console.log(`[UAZAPI] Canal ${whatsappId} pré-existente — pulando criação de instância UAZAPI`);
+      }
 
       // ── 3. Cria API Config vinculada ao canal (POST /api-config) ──────────────
       let apiPlainToken: string | null = null;
