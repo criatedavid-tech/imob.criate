@@ -25,7 +25,8 @@ import {
   Menu,
   X as XIcon,
   Shield,
-  Building2
+  Building2,
+  Bot
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -450,6 +451,7 @@ export default function Dashboard() {
           <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
           <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
           <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
+          <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
@@ -494,6 +496,7 @@ export default function Dashboard() {
               <NavItem icon={<Home size={20} />}        label="Imóveis"   active={activeTab === 'properties'}    onClick={() => handleTabChange('properties')} />
               <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
               <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
+              <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
             </nav>
 
             <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
