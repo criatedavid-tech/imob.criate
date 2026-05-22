@@ -114,6 +114,13 @@ Recuperação de senha: `reset_token`, `reset_token_expires_at`.
 ### `webhook_logs` — auditoria
 `id`, `source` (`asaas`/`zpro`/`provisioning_webhook`), `event_type`, `payload` (jsonb), `status`, `broker_id`, `created_at`.
 
+### `followup_config` — config do Follow-Up IA (1 por corretor)
+`id`, `broker_id` (único), `enabled` (toggle), `delay_minutes` (default 180), `message_1/2/3`, `strategy` (`progressive`), `reactivate_after_minutes`, timestamps.
+
+### `followup_conversations` — estado do follow por conversa (corretor × cliente)
+`id`, `broker_id`, `customer_phone`, `last_customer_message_at`, `follow_sent`, `follow_sent_at`, `follow_message_index` (0..3), `ai_active` (`false` = handover humano), `human_takeover_at`, **único(broker_id, customer_phone)**.
+Função SQL `claim_due_followups()`: claim atômico (multi-máquina safe) — seleciona + marca + avança o índice numa única instrução.
+
 ---
 
 ## 5. Fluxo operacional completo
@@ -144,7 +151,7 @@ Recuperação de senha: `reset_token`, `reset_token_expires_at`.
 10. Cliente final manda mensagem → UAZAPI → webhook → Z-PRO cria ticket → chama **N8N_WEBHOOK_URL** (`n8nUrl` do canal).
 11. N8N: **Normalizar Dados** → **Buscar Corretor** (`brokers` por telefone, limpando o sufixo `:xxxx` da UAZAPI) → **Buscar Imóveis** (`properties` por `broker_id`).
 12. Agente IA chama o **LLM Proxy** `POST /api/proxy/llm/:brokerPhone/*` → encaminha para OpenRouter usando a chave do corretor (ou fallback da empresa).
-13. **Enviar Resposta** → `POST {zpro_api_url}/messages/send-text` com header `Authorization: Bearer {zpro_api_token}`. Multitenant: cada corretor traz a própria URL/token via "Buscar Corretor".
+13. **Enviar Resposta** → `POST {zpro_api_url}` (URL **base**, sem sufixo) com header `Authorization: Token {zpro_api_token}` e body `{ body, number, externalKey, isClosed:false }`. Multitenant: cada corretor traz a própria URL/token via "Buscar Corretor". *(Formato confirmado no fluxo N8N real — não é `Bearer`/`/messages/send-text`.)*
 
 ### 5.4 CONTEÚDO (corretor cadastra imóveis) — **no painel ImobiFlow**
 - `Dashboard.tsx` → `PropertyForm.tsx` → `POST /api/properties`: gera `slug` + **landing page** `/p/:slug`, salva imagens, vincula `broker_id`.
@@ -157,17 +164,30 @@ Recuperação de senha: `reset_token`, `reset_token_expires_at`.
 - `PAYMENT_DELETED` → `status: inativo`.
 - `SUBSCRIPTION_DELETED`/`INACTIVATED`/`CANCELED` → `status: inativo` + `provisioning_status: disabled`.
 
+### 5.6 FOLLOW-UP IA (reativação de lead + handover humano)
+Camada nova e **isolada** (não altera o fluxo acima). Config por corretor na aba **Configurações** (`FollowUpSettings.tsx`).
+
+**Regra:**
+- Cliente fica `delay_minutes` (padrão 180 = 3h) sem responder → envia **1** follow (progressivo **1→2→3**, para após o 3º). Nunca dispara vários em sequência (`follow_sent=true` trava).
+- Cliente responde → re-arma (`follow_sent=false`), reinicia o contador; no próximo silêncio envia o **próximo** follow.
+- **Handover humano:** corretor responde manualmente → `ai_active=false` → agente N8N **interrompido** e follow-ups pausados naquela conversa.
+
+**Peças:**
+1. **N8N → ImobiFlow:** o fluxo do agente chama `POST /api/followup/inbound` (registra a msg do cliente + retorna `respond`; se `false`, o agente para). Corretor manual → `POST /api/followup/broker-reply`.
+2. **Marcador ZWSP (`​`):** agente e follow-up incluem um *zero-width space* (invisível) nas mensagens do **sistema**. O nó de handover só dispara quando a msg `fromMe` **não** tem o marcador (= corretor digitou manual) — resolve "agente vs corretor" sem depender de `wasSentByApi`.
+3. **Motor (cron 60s):** `claim_due_followups()` faz claim atômico (multi-máquina safe na Fly) e envia via API externa Z-PRO (mesmo formato do agente — ver §6). Falha de envio → reverte o claim p/ retry no próximo tick.
+
 ---
 
 ## 6. Convenção dos campos da API externa Z-PRO (importante)
 
 Cada corretor tem **uma** "api-config" no Z-PRO, vinculada ao canal, que expõe a
-API externa em `…/v2/api/external/{UUID}` autenticada por `Bearer {plainToken}`.
+API externa em `…/v2/api/external/{UUID}`. **Envio de mensagem** usa header `Authorization: Token {plainToken}` (formato do agente N8N — confirmado em produção); endpoints de leitura (ex.: `showChannelById`) também aceitam `Bearer`.
 
 | Campo Supabase | Conteúdo | Usado em |
 |----------------|----------|----------|
 | `zpro_api_key` | **UUID** da api-config | montar a URL externa |
-| `zpro_api_token` | **plainToken** | header `Bearer` (envio de mensagem, N8N) |
+| `zpro_api_token` | **plainToken** | header `Token {plainToken}` no envio (agente N8N + cron follow-up) |
 | `zpro_api_url` | URL completa `…/external/{UUID}` | base das chamadas |
 
 > O `plainToken` só é exibido **uma vez** na criação. Para reparar um corretor,
@@ -182,7 +202,7 @@ API externa em `…/v2/api/external/{UUID}` autenticada por `Bearer {plainToken}
 |-----------|-----|------|
 | **Asaas** | customer + subscription mensal; webhooks de pagamento | `ASAAS_API_KEY` |
 | **Z-PRO** (admin) | criar tenant/user/canal/api-config; PUT canal | `ZPRO_ADMIN_TOKEN` (super admin) ou token de login do tenant; fallback `forgeTenantJwt` com `ZPRO_JWT_SECRET` |
-| **Z-PRO** (externa) | enviar mensagem do corretor | `zpro_api_token` (Bearer) |
+| **Z-PRO** (externa) | enviar mensagem do corretor / follow-up | `zpro_api_token` (header `Token`) |
 | **UAZAPI** | criar instância, configurar webhook | header `admintoken`/`token` = `UAZAPI_TOKEN` |
 | **N8N** | provisioning webhook + processamento de mensagem + LLM proxy | `INTERNAL_PROXY_TOKEN` (N8N→servidor) |
 | **OpenRouter** | LLM do agente | chave do corretor (`openrouter_api_key_enc`) ou `OPENROUTER_API_KEY` |
@@ -209,6 +229,7 @@ Há ainda o webhook **UAZAPI→Z-PRO** (`…/uazapi-webhook/{instanceId}`), inte
 **IA:** `POST /api/ai/enhance-text` (Gemini)
 **Pagamento:** `GET /api/config/plan` · `POST /api/checkout` · `GET /api/subscription` · `POST /api/webhooks/asaas` · `POST /api/webhooks/asaas/test` *(bloqueado em produção)*
 **WhatsApp:** `POST /api/whatsapp/send` *(N8N, auth `INTERNAL_PROXY_TOKEN`)*
+**Follow-Up IA:** `GET|POST /api/followup/config` *(corretor)* · `POST /api/followup/inbound` *(N8N: msg do cliente + gate `respond`)* · `POST /api/followup/broker-reply` *(N8N: handover humano)* — N8N usa `INTERNAL_PROXY_TOKEN`; um cron interno (60s) dispara os follows
 **Admin** *(exige `requireAdmin` via header `x-user-id` de um broker `is_admin`)*: `GET /api/admin/brokers` · `GET /api/admin/metrics` · `PATCH /api/admin/brokers/:id/status` · `GET /api/admin/brokers/:id` · `POST /api/admin/brokers/:id/provision` · `PATCH /api/admin/brokers/:id/zpro-credentials` · `POST /api/admin/brokers/:id/cancel-plan` · `DELETE /api/admin/brokers/:id` · `POST /api/admin/brokers/:id/relink-uazapi`
 **Proxy LLM:** `ALL /api/proxy/llm/:brokerPhone/*`
 
@@ -228,7 +249,7 @@ Autenticação geral: o frontend envia `Authorization: Bearer <supabase_token>` 
 | `/admin` | **Admin** | logado (`is_admin`) |
 | `/` | **Dashboard** | logado **+ assinatura ativa** (`PrivateRoute` checa `GET /api/subscription`; `pendente` → `/payment`) |
 
-Dashboard concentra as abas: imóveis (`PropertyForm`), leads, agenda, configurações de IA (`AISettings`), corretora (`CorretoraSettings`).
+Dashboard concentra as abas: imóveis (`PropertyForm`), leads, agenda, configurações de IA (`AISettings`) + **Follow-Up Inteligente** (`FollowUpSettings`), corretora (`CorretoraSettings`).
 
 ---
 
@@ -256,8 +277,10 @@ Dashboard concentra as abas: imóveis (`PropertyForm`), leads, agenda, configura
    `ia_tenant_handoff_routes` (multitenancy/histórico de conversa da IA).
 2. **Config de IA no ImobiFlow:** hoje a aba "settings" (`AISettings`) deixa o
    corretor cadastrar a chave OpenRouter (cadastro de imóveis **+** IA).
-3. **Transbordo humano** (`ia_tenant_handoff_routes`): roteamento da conversa
-   para um atendente humano — em desenvolvimento.
+3. **Transbordo humano:** ✅ **implementado** no módulo Follow-Up (§5.6) — quando o
+   corretor responde manualmente, o agente é interrompido (`ai_active=false`),
+   com detecção via marcador ZWSP. *(Roteamento por categoria/fila
+   `ia_tenant_handoff_routes` segue no roadmap.)*
 4. **Lead/visita via WhatsApp:** hoje só a landing grava `leads`; gravar
    `leads`/`agenda` a partir da conversa do agente está no roadmap.
 5. **`UAZAPI_PLATFORM_SESSION`** está como placeholder no `.env` local —

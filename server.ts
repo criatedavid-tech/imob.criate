@@ -2720,6 +2720,197 @@ async function startServer() {
     }
   });
 
+  // ─── FOLLOW-UP IA ───────────────────────────────────────────────────────────
+  // Reativação automática de lead: após X minutos sem o cliente responder, envia
+  // UMA mensagem de follow (progressivo 1→2→3, para após o 3º). Handover humano:
+  // se o corretor responde manualmente, o agente é interrompido (ai_active=false)
+  // e os follow-ups param naquela conversa.
+  // Tabelas: followup_config (1 por corretor) + followup_conversations (por conversa).
+
+  // [Corretor] Carrega a config de follow-up do corretor logado
+  app.get('/api/followup/config', async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
+      const { data } = await supabase.from('followup_config').select('*').eq('broker_id', brokerId).maybeSingle();
+      res.json(data || {
+        broker_id: brokerId, enabled: false, delay_minutes: 180,
+        message_1: '', message_2: '', message_3: '', strategy: 'progressive'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // [Corretor] Salva a config de follow-up (toggle + tempo + 3 mensagens)
+  app.post('/api/followup/config', async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
+      const { enabled, delay_minutes, message_1, message_2, message_3, strategy } = req.body || {};
+      const payload: any = {
+        broker_id: brokerId,
+        enabled: !!enabled,
+        delay_minutes: Math.max(1, Number(delay_minutes) || 180),
+        message_1: message_1 ?? null,
+        message_2: message_2 ?? null,
+        message_3: message_3 ?? null,
+        strategy: strategy || 'progressive',
+        updated_at: new Date().toISOString()
+      };
+      const { data, error } = await supabase.from('followup_config')
+        .upsert(payload, { onConflict: 'broker_id' }).select().single();
+      if (error) throw error;
+      res.json({ success: true, config: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // [N8N] Cliente enviou mensagem → re-arma o timer; retorna { respond }.
+  // Se respond=false (handover humano ativo), o agente N8N deve PARAR de responder.
+  // Auth: Bearer INTERNAL_PROXY_TOKEN. Body: { broker_phone, customer_phone }.
+  app.post('/api/followup/inbound', async (req, res) => {
+    const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+    if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
+      return res.status(401).json({ error: 'Token inválido.' });
+    }
+    try {
+      const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
+      const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
+      if (!brokerPhone || !customerPhone) {
+        return res.status(400).json({ error: 'broker_phone e customer_phone são obrigatórios.' });
+      }
+      const { data: broker } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+      if (!broker) return res.json({ respond: true }); // corretor não encontrado: não bloqueia o agente
+
+      const { data: conv } = await supabase.from('followup_conversations')
+        .select('ai_active, human_takeover_at')
+        .eq('broker_id', broker.id).eq('customer_phone', customerPhone).maybeSingle();
+
+      // Reativação automática opcional após handover (config.reactivate_after_minutes; null = nunca)
+      let aiActive = conv?.ai_active ?? true;
+      if (conv && aiActive === false) {
+        const { data: cfg } = await supabase.from('followup_config')
+          .select('reactivate_after_minutes').eq('broker_id', broker.id).maybeSingle();
+        const mins = cfg?.reactivate_after_minutes;
+        if (mins && conv.human_takeover_at &&
+            (Date.now() - new Date(conv.human_takeover_at).getTime()) >= mins * 60000) {
+          aiActive = true;
+        }
+      }
+
+      // Re-arma o follow (follow_sent=false) e atualiza o horário da última msg do cliente.
+      // Mantém follow_message_index (progressivo).
+      await supabase.from('followup_conversations').upsert({
+        broker_id: broker.id,
+        customer_phone: customerPhone,
+        last_customer_message_at: new Date().toISOString(),
+        follow_sent: false,
+        ai_active: aiActive,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'broker_id,customer_phone' });
+
+      res.json({ respond: aiActive });
+    } catch (err: any) {
+      console.error('[Follow-up] inbound erro:', err.message);
+      res.json({ respond: true }); // em erro, nunca bloqueia o agente
+    }
+  });
+
+  // [N8N] Corretor respondeu manualmente → handover humano: interrompe o agente
+  // e pausa follow-ups naquela conversa. Auth: Bearer INTERNAL_PROXY_TOKEN.
+  app.post('/api/followup/broker-reply', async (req, res) => {
+    const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+    if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
+      return res.status(401).json({ error: 'Token inválido.' });
+    }
+    try {
+      const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
+      const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
+      if (!brokerPhone || !customerPhone) {
+        return res.status(400).json({ error: 'broker_phone e customer_phone são obrigatórios.' });
+      }
+      const { data: broker } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+      if (!broker) return res.json({ success: true });
+
+      await supabase.from('followup_conversations').upsert({
+        broker_id: broker.id,
+        customer_phone: customerPhone,
+        ai_active: false,
+        human_takeover_at: new Date().toISOString(),
+        follow_sent: true, // pausa follow-ups enquanto o humano atende
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'broker_id,customer_phone' });
+
+      res.json({ success: true, paused: true });
+    } catch (err: any) {
+      console.error('[Follow-up] broker-reply erro:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Motor do Follow-Up (tick 60s) ──────────────────────────────────────────
+  // claim_due_followups() faz o claim ATÔMICO (seleciona+marca+avança numa só
+  // instrução) → multi-máquina safe (Fly roda 2 VMs). Envia via API externa Z-PRO.
+  // Em falha de envio, reverte o claim p/ retry no próximo tick (nada se perde).
+  // Envia via API externa Z-PRO no MESMO formato do agente N8N (comprovado em produção):
+  // POST na URL base (zpro_api_url, sem sufixo) · header "Authorization: Token <token>"
+  // · body { body, number, externalKey, isClosed:false }.
+  async function sendFollowMessage(apiUrl: string, apiToken: string, customerPhone: string, message: string): Promise<boolean> {
+    if (!apiUrl || !apiToken || !message) return false;
+    try {
+      const r = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Token ${apiToken}` },
+        body: JSON.stringify({
+          // Prefixo ​ (zero-width space, invisível): marca mensagem do SISTEMA.
+          // O nó de handover no N8N só dispara quando a msg fromMe NÃO tem esse marcador
+          // (= corretor digitou manual). Assim o follow-up não causa auto-handover.
+          body: String.fromCharCode(0x200B) + message, // ZWSP: marca msg do sistema
+          number: normalizePhoneBR(customerPhone),
+          externalKey: 'imobiflow-followup',
+          isClosed: false
+        })
+      });
+      return r.ok;
+    } catch (e: any) {
+      console.warn('[Follow-up] sendFollowMessage exceção:', e.message);
+      return false;
+    }
+  }
+
+  async function runFollowupTick() {
+    try {
+      const { data: due, error } = await supabase.rpc('claim_due_followups');
+      if (error) { console.error('[Follow-up] claim erro:', error.message); return; }
+      if (!due?.length) return;
+      for (const row of due as any[]) {
+        const ok = await sendFollowMessage(row.zpro_api_url, row.zpro_api_token, row.customer_phone, row.message);
+        if (ok) {
+          console.log(`[Follow-up] follow #${row.message_index} → ${row.customer_phone} (broker ${row.broker_id})`);
+        } else {
+          await supabase.from('followup_conversations').update({
+            follow_sent: false,
+            follow_sent_at: null,
+            follow_message_index: Math.max(0, (row.message_index || 1) - 1),
+            updated_at: new Date().toISOString()
+          }).eq('id', row.conversation_id);
+          console.warn(`[Follow-up] envio falhou, claim revertido → ${row.customer_phone}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('[Follow-up] tick erro:', err.message);
+    }
+  }
+
+  setInterval(runFollowupTick, 60_000);
+  console.log('[Follow-up] scheduler ativo (tick 60s)');
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -33,6 +33,7 @@ import CorretoraSettings from '../components/CorretoraSettings';
 import PropertyForm from '../components/PropertyForm';
 
 import AISettings from '../components/AISettings';
+import FollowUpSettings from '../components/FollowUpSettings';
 import { authService } from '../services/auth';
 import MagicWandTextarea from '../components/MagicWandTextarea';
 
@@ -820,7 +821,12 @@ export default function Dashboard() {
             </div>
           )}
 
-          {activeTab === 'settings' && <AISettings />}
+          {activeTab === 'settings' && (
+            <>
+              <AISettings />
+              <FollowUpSettings />
+            </>
+          )}
 
           {/* ─── ABA CORRETORA ─── */}
           {activeTab === 'corretora' && (
