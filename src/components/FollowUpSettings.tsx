@@ -164,7 +164,7 @@ export default function FollowUpSettings() {
           <div className="pt-2">
             <button
               type="button"
-              onClick={save}
+              onClick={() => save()}
               disabled={saving}
               className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-white
                 transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed
