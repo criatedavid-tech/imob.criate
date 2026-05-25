@@ -2780,13 +2780,21 @@ async function startServer() {
       return res.status(401).json({ error: 'Token inválido.' });
     }
     try {
-      const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
       const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
-      if (!brokerPhone || !customerPhone) {
-        return res.status(400).json({ error: 'broker_phone e customer_phone são obrigatórios.' });
+      if (!customerPhone) {
+        return res.status(400).json({ error: 'customer_phone é obrigatório.' });
       }
-      const { data: broker } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
-      if (!broker) return res.json({ respond: true }); // corretor não encontrado: não bloqueia o agente
+      // Aceita broker_id direto (estável) ou fallback para broker_phone (quebra se trocar número)
+      let _brokerId: string | null = req.body?.broker_id || null;
+      if (!_brokerId) {
+        const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
+        if (brokerPhone) {
+          const { data: b } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+          _brokerId = b?.id || null;
+        }
+      }
+      if (!_brokerId) return res.json({ respond: true }); // corretor não encontrado: não bloqueia o agente
+      const broker = { id: _brokerId };
 
       const { data: conv } = await supabase.from('followup_conversations')
         .select('ai_active, human_takeover_at')
@@ -2830,13 +2838,21 @@ async function startServer() {
       return res.status(401).json({ error: 'Token inválido.' });
     }
     try {
-      const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
       const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
-      if (!brokerPhone || !customerPhone) {
-        return res.status(400).json({ error: 'broker_phone e customer_phone são obrigatórios.' });
+      if (!customerPhone) {
+        return res.status(400).json({ error: 'customer_phone é obrigatório.' });
       }
-      const { data: broker } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
-      if (!broker) return res.json({ success: true });
+      // Aceita broker_id direto (estável) ou fallback para broker_phone (quebra se trocar número)
+      let _brokerId: string | null = req.body?.broker_id || null;
+      if (!_brokerId) {
+        const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
+        if (brokerPhone) {
+          const { data: b } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+          _brokerId = b?.id || null;
+        }
+      }
+      if (!_brokerId) return res.json({ success: true });
+      const broker = { id: _brokerId };
 
       await supabase.from('followup_conversations').upsert({
         broker_id: broker.id,

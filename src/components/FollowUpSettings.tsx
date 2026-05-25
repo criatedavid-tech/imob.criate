@@ -49,14 +49,15 @@ export default function FollowUpSettings() {
     }
   };
 
-  const save = async () => {
+  const save = async (cfgOverride?: Cfg) => {
+    const cfgToSave = cfgOverride ?? cfg;
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
       const res = await fetch('/api/followup/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ ...cfg, strategy: 'progressive' }),
+        body: JSON.stringify({ ...cfgToSave, strategy: 'progressive' }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Erro ao salvar');
       setMessage({ type: 'success', text: 'Follow-Up salvo com sucesso!' });
@@ -95,7 +96,11 @@ export default function FollowUpSettings() {
           </div>
           <button
             type="button"
-            onClick={() => setCfg({ ...cfg, enabled: !cfg.enabled })}
+            onClick={() => {
+              const newCfg = { ...cfg, enabled: !cfg.enabled };
+              setCfg(newCfg);
+              save(newCfg);
+            }}
             aria-label="Ativar follow-up"
             className={`relative shrink-0 w-12 h-7 rounded-full transition-colors mt-1 border ${
               cfg.enabled ? 'bg-emerald-500/70 border-emerald-300/40' : 'bg-white/10 border-white/20'
