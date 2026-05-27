@@ -5,7 +5,7 @@
 > **Não contém valores de segredos** — apenas os nomes das variáveis (os
 > valores ficam no `.env` local, nos *secrets* da Fly e nas notas de memória).
 
-Última atualização: 2026-05-22.
+Última atualização: 2026-05-27.
 
 ---
 
@@ -115,7 +115,8 @@ Recuperação de senha: `reset_token`, `reset_token_expires_at`.
 `id`, `source` (`asaas`/`zpro`/`provisioning_webhook`), `event_type`, `payload` (jsonb), `status`, `broker_id`, `created_at`.
 
 ### `followup_config` — config do Follow-Up IA (1 por corretor)
-`id`, `broker_id` (único), `enabled` (toggle), `delay_minutes` (default 180), `message_1/2/3`, `strategy` (`progressive`), `reactivate_after_minutes`, timestamps.
+`id`, `broker_id` (único), `enabled` (toggle), `delay_minutes_1` (default 1440 = 24h), `delay_minutes_2` (default 4320 = 3 dias), `delay_minutes_3` (default 10080 = 7 dias), `message_1/2/3`, timestamps.
+Cada timer é independente: F1 conta a partir de `last_customer_message_at`; F2/F3 contam a partir de `follow_sent_at` do follow anterior.
 
 ### `followup_conversations` — estado do follow por conversa (corretor × cliente)
 `id`, `broker_id`, `customer_phone`, `last_customer_message_at`, `follow_sent`, `follow_sent_at`, `follow_message_index` (0..3), `ai_active` (`false` = handover humano), `human_takeover_at`, **único(broker_id, customer_phone)**.
@@ -164,13 +165,19 @@ Função SQL `claim_due_followups()`: claim atômico (multi-máquina safe) — s
 - `PAYMENT_DELETED` → `status: inativo`.
 - `SUBSCRIPTION_DELETED`/`INACTIVATED`/`CANCELED` → `status: inativo` + `provisioning_status: disabled`.
 
-### 5.6 FOLLOW-UP IA (reativação de lead + handover humano)
-Camada nova e **isolada** (não altera o fluxo acima). Config por corretor na aba **Configurações** (`FollowUpSettings.tsx`).
+### 5.6 FOLLOW-UP IA (reativação de lead + handover humano) — VALIDADO EM PRODUÇÃO
+Camada **isolada** (não altera o fluxo acima). Config por corretor na aba **Configurações** (`FollowUpSettings.tsx`).
 
-**Regra:**
-- Cliente fica `delay_minutes` (padrão 180 = 3h) sem responder → envia **1** follow (progressivo **1→2→3**, para após o 3º). Nunca dispara vários em sequência (`follow_sent=true` trava).
-- Cliente responde → re-arma (`follow_sent=false`), reinicia o contador; no próximo silêncio envia o **próximo** follow.
-- **Handover humano:** corretor responde manualmente → `ai_active=false` → agente N8N **interrompido** e follow-ups pausados naquela conversa.
+**Regras:**
+- Máximo 3 follows por ticket. `follow_message_index` vai de 0→1→2→3 e para.
+- Index **nunca reseta** quando cliente responde — só reseta em `isNewTicket` (ticket_id diferente).
+- **Timers independentes por follow:**
+  - F1: conta a partir de `last_customer_message_at + delay_minutes_1` (padrão 1440 min = 24h)
+  - F2: conta a partir de `follow_sent_at + delay_minutes_2` (padrão 4320 min = 3 dias)
+  - F3: conta a partir de `follow_sent_at + delay_minutes_3` (padrão 10080 min = 7 dias)
+- Auto-progressão: após F1 enviado, `follow_sent=false` é resetado; F2 dispara automaticamente no próximo tick após `follow_sent_at + delay_minutes_2`; idem F3.
+- Mensagens vazias são puladas (sem loop infinito).
+- **Handover humano:** corretor responde manualmente → `human_takeover_at` setado → `ai_active=false` → agente N8N interrompido e follow-ups pausados naquela conversa.
 
 **Peças:**
 1. **N8N → ImobiFlow:** o fluxo do agente chama `POST /api/followup/inbound` (registra a msg do cliente + retorna `respond`; se `false`, o agente para). Corretor manual → `POST /api/followup/broker-reply`.
@@ -219,7 +226,7 @@ Há ainda o webhook **UAZAPI→Z-PRO** (`…/uazapi-webhook/{instanceId}`), inte
 
 ## 8. Referência de endpoints (backend — `server.ts`)
 
-**Auth:** `POST /api/auth/signup` · `/login` · `/forgot-password` · `/reset-password`
+**Auth** *(rate-limited: 10 req/15min por IP)*: `POST /api/auth/signup` · `/login` · `/forgot-password` · `/reset-password`
 **Corretor:** `GET /api/brokers/me` · `POST /api/brokers/settings` · `POST|DELETE /api/brokers/openrouter-key` · `POST /api/brokers/upload-photo`
 **Corretora:** `GET|POST /api/corretora` · `GET /api/corretora/brokers`
 **Imóveis:** `GET|POST /api/properties` · `GET /api/properties/health` · `GET /api/properties/:slug` · `DELETE /api/properties/:id` · `PATCH /api/properties/:id/status` · `POST /api/properties/upload-image`
@@ -227,7 +234,7 @@ Há ainda o webhook **UAZAPI→Z-PRO** (`…/uazapi-webhook/{instanceId}`), inte
 **Agenda:** `GET /api/agenda` · `GET /api/agenda/visits`
 **Dashboard:** `GET /api/dashboard/metrics` · `GET /api/dashboard/charts`
 **IA:** `POST /api/ai/enhance-text` (Gemini)
-**Pagamento:** `GET /api/config/plan` · `POST /api/checkout` · `GET /api/subscription` · `POST /api/webhooks/asaas` · `POST /api/webhooks/asaas/test` *(bloqueado em produção)*
+**Pagamento** *(`/api/checkout` rate-limited: 5 req/1h; `/api/webhooks/asaas` rate-limited: 120 req/1min)*: `GET /api/config/plan` · `POST /api/checkout` · `GET /api/subscription` · `POST /api/webhooks/asaas` · `POST /api/webhooks/asaas/test` *(bloqueado em produção)*
 **WhatsApp:** `POST /api/whatsapp/send` *(N8N, auth `INTERNAL_PROXY_TOKEN`)*
 **Follow-Up IA:** `GET|POST /api/followup/config` *(corretor)* · `POST /api/followup/inbound` *(N8N: msg do cliente + gate `respond`)* · `POST /api/followup/broker-reply` *(N8N: handover humano)* — N8N usa `INTERNAL_PROXY_TOKEN`; um cron interno (60s) dispara os follows
 **Admin** *(exige `requireAdmin` via header `x-user-id` de um broker `is_admin`)*: `GET /api/admin/brokers` · `GET /api/admin/metrics` · `PATCH /api/admin/brokers/:id/status` · `GET /api/admin/brokers/:id` · `POST /api/admin/brokers/:id/provision` · `PATCH /api/admin/brokers/:id/zpro-credentials` · `POST /api/admin/brokers/:id/cancel-plan` · `DELETE /api/admin/brokers/:id` · `POST /api/admin/brokers/:id/relink-uazapi`
@@ -267,31 +274,32 @@ Dashboard concentra as abas: imóveis (`PropertyForm`), leads, agenda, configura
 
 ---
 
-## 11. Pontos de atenção / roadmap (features em desenvolvimento)
+## 11. Pontos de atenção / roadmap
 
-> A camada `ia_*` e a lógica relacionada **já estão em desenvolvimento** — os
-> itens abaixo descrevem o estado atual vs. o que está sendo construído.
+### ✅ Concluído (2026-05-27)
+- **Rebranding "Criate":** title, favicon, header desktop, sidebar mobile, nav da landing.
+- **Follow-Up Inteligente:** 3 timers independentes, auto-progressão, skip mensagens vazias — validado em produção.
+- **Rate limiting:** `express-rate-limit` nos endpoints de auth, checkout e webhook Asaas.
+- **Termos de Uso e Política de Privacidade:** 20 cláusulas cada, cobrindo LGPD, Marco Civil, Lei do Software, CDC, Decreto 7.962/2013.
+- **Limpeza do histórico git:** service_role key do Supabase expurgada de todos os commits com `git-filter-repo`.
+- **Tenant 209 (David):** validado.
 
-1. **Backend da IA no N8N:** o fluxo atual lê `brokers`/`properties`. Está sendo
-   construída a camada `ia_tenants`/`ia_clients`/`ia_chat_histories`/
-   `ia_tenant_handoff_routes` (multitenancy/histórico de conversa da IA).
-2. **Config de IA no ImobiFlow:** hoje a aba "settings" (`AISettings`) deixa o
-   corretor cadastrar a chave OpenRouter (cadastro de imóveis **+** IA).
-3. **Transbordo humano:** ✅ **implementado** no módulo Follow-Up (§5.6) — quando o
-   corretor responde manualmente, o agente é interrompido (`ai_active=false`),
-   com detecção via marcador ZWSP. *(Roteamento por categoria/fila
-   `ia_tenant_handoff_routes` segue no roadmap.)*
-4. **Lead/visita via WhatsApp:** hoje só a landing grava `leads`; gravar
-   `leads`/`agenda` a partir da conversa do agente está no roadmap.
-5. **`UAZAPI_PLATFORM_SESSION`** está como placeholder no `.env` local —
-   recuperação de senha por WhatsApp só funciona se configurado (Fly).
-6. **Bug pré-existente:** `src/pages/ResetPassword.tsx:94` referencia
-   `accessToken` inexistente (erro de typecheck). Não afeta o runtime (app roda
-   via `tsx`), mas é candidato a correção. **Não alterado** nesta sessão.
-7. **`POST /api/whatsapp/send`** é um caminho de envio alternativo (autenticado
-   por `INTERNAL_PROXY_TOKEN`) **não usado** pelo fluxo N8N atual (que chama a
-   API externa do Z-PRO direto). Mantido como capacidade; candidato a
-   consolidação futura.
+### ⚠️ Urgente / bloqueante comercial
+- **Rotacionar service_role key do Supabase** (chave antiga ficou no histórico git — ver HANDOFF.md §7).
+- **Páginas legais:** preencher constantes de empresa (`RAZAO_SOCIAL`, `CNPJ`, `ENDERECO`, `EMAIL_CONTATO`, `EMAIL_DPO`) no topo de `Termos.tsx` e `Privacidade.tsx`.
+
+### 🟡 Pendente / roadmap
+1. **N8N — sub-workflow "Deletar Agendamento":** campo `id visita` vazio; URL correta: `$json.url/scheduleReminder/delete/$json['id visita']`; nó "When Executed by Another Workflow" precisa de `$fromAI()` no campo; body `{}`.
+2. **Email real de notificação de lead:** atualmente `console.log('[E-MAIL SIMULADO]')` em `server.ts` — implementar com Resend, SendGrid ou Nodemailer.
+3. **Agente IA "Juliana":** colar conteúdo de `agent_system_message.txt` no nó "Agente IA Corretor" do N8N.
+4. **GitHub Actions CI/CD:** `fly deploy` automático no push para `main` (`FLY_API_TOKEN` como secret).
+5. **Rate limiting distribuído (Redis):** hoje cada máquina Fly tem contador independente — para multi-máquina correta, usar Redis (ex.: `rate-limit-redis`).
+6. **Verificar ticket aberto antes de follow:** idealmente consultar Z-PRO API para não disparar follow em ticket já encerrado.
+7. **Sentry / error tracking:** vários `catch` silenciosos em `server.ts`.
+8. **Bug pré-existente:** `src/pages/ResetPassword.tsx:94` referencia `accessToken` inexistente (erro de typecheck, não afeta runtime).
+9. **`UAZAPI_PLATFORM_SESSION`:** placeholder no `.env` local — recuperação de senha por WhatsApp só funciona se configurado na Fly.
+10. **Lead/visita via WhatsApp:** hoje só a landing grava `leads`; gravar a partir da conversa do agente está no roadmap.
+11. **`POST /api/whatsapp/send`:** caminho alternativo de envio (autenticado por `INTERNAL_PROXY_TOKEN`), não usado pelo fluxo N8N atual — candidato a consolidação futura.
 
 ---
 
