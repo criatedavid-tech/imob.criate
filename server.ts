@@ -7,6 +7,8 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'node:crypto';
 import rateLimit from "express-rate-limit";
+import * as Sentry from "@sentry/node";
+import Redis from "ioredis";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +66,38 @@ const INTERNAL_PROXY_TOKEN = process.env.INTERNAL_PROXY_TOKEN || "";
 const LLM_PROXY_ENC_KEY    = process.env.LLM_PROXY_ENC_KEY    || "";
 // Fallback: chave da empresa usada enquanto o corretor não configurou a própria.
 const OPENROUTER_API_KEY   = process.env.OPENROUTER_API_KEY   || "";
+const SENTRY_DSN           = process.env.SENTRY_DSN           || "";
+const REDIS_URL            = process.env.REDIS_URL            || "";
+
+// ─── SENTRY (opcional — error tracking) ──────────────────────────────────────
+if (SENTRY_DSN) {
+  Sentry.init({ dsn: SENTRY_DSN, tracesSampleRate: 0.1 });
+  process.on('unhandledRejection', (reason) => Sentry.captureException(reason));
+  console.log('[Sentry] inicializado');
+}
+
+// ─── REDIS (opcional — rate limiting distribuído multi-máquina) ───────────────
+// Sem REDIS_URL, os limiters caem para store em memória por VM (comportamento atual).
+// Para ativar: fly redis create --app imobiflow && fly secrets set REDIS_URL=...
+let redisClient: Redis | null = null;
+if (REDIS_URL) {
+  redisClient = new Redis(REDIS_URL);
+  redisClient.on('connect', () => console.log('[Redis] conectado'));
+  redisClient.on('error',  (e: Error) => console.error('[Redis] erro:', e.message));
+}
+
+function makeRedisStore(prefix: string, windowMs: number) {
+  if (!redisClient) return undefined;
+  return {
+    async increment(key: string) {
+      const k = `rl:${prefix}:${key}`;
+      const results = await redisClient!.multi().incr(k).pexpire(k, windowMs).exec();
+      return { totalHits: (results?.[0]?.[1] as number) ?? 1, resetTime: new Date(Date.now() + windowMs) };
+    },
+    async decrement(key: string) { await redisClient!.decr(`rl:${prefix}:${key}`); },
+    async resetKey(key: string)  { await redisClient!.del(`rl:${prefix}:${key}`); },
+  };
+}
 
 // ─── Z-PRO JWT AUTO-REFRESH ──────────────────────────────────────────────────
 // O JWT do superadmin expira em ~24h. Este objeto mantém o token em memória e
@@ -228,6 +262,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' },
+    store: makeRedisStore('auth', 15 * 60 * 1000),
   });
 
   const checkoutLimiter = rateLimit({
@@ -236,6 +271,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Limite de cadastros por IP atingido. Tente novamente em 1 hora.' },
+    store: makeRedisStore('checkout', 60 * 60 * 1000),
   });
 
   const webhookLimiter = rateLimit({
@@ -244,6 +280,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Rate limit exceeded.' },
+    store: makeRedisStore('webhook', 60 * 1000),
   });
 
   // --- ROTAS DE AUTENTICAÇÃO (AUTH) ---
@@ -1235,9 +1272,7 @@ async function startServer() {
         }).catch(err => console.error("Erro ao disparar Webhook:", err));
         integrationStatus = "chatbot";
       } else {
-        // Simulação de disparo de e-mail (Log de console como fallback do sistema)
-        console.log(`[E-MAIL SIMULADO] Para: corretor do imóvel ${property_id}. Assunto: Novo lead - ${name}`);
-        integrationStatus = "email";
+        integrationStatus = "none";
       }
 
       // 4. Log (Opcional - usando console para não criar novas tabelas se não existirem)
@@ -2915,6 +2950,22 @@ async function startServer() {
   // Envia via API externa Z-PRO no MESMO formato do agente N8N (comprovado em produção):
   // POST na URL base (zpro_api_url, sem sufixo) · header "Authorization: Token <token>"
   // · body { body, number, externalKey, isClosed:false }.
+  async function checkTicketOpen(ticketId: string | null): Promise<boolean | null> {
+    if (!ticketId || !ZPRO_ADMIN_URL) return null;
+    try {
+      const token = await getZproAdminToken();
+      const r = await fetch(`${ZPRO_ADMIN_URL}/api/tickets/${ticketId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!r.ok) return null; // falha na consulta → não bloqueia envio
+      const d = await r.json();
+      const status = d?.ticket?.status ?? d?.status;
+      return status === 'open' || status === 'pending';
+    } catch {
+      return null;
+    }
+  }
+
   async function sendFollowMessage(apiUrl: string, apiToken: string, customerPhone: string, message: string): Promise<boolean> {
     if (!apiUrl || !apiToken || !message) return false;
     try {
@@ -2947,6 +2998,12 @@ async function startServer() {
         // Mensagem vazia = follow não configurado → avança sem enviar (evita loop infinito)
         if (!row.message?.trim()) {
           console.warn(`[Follow-up] follow #${row.message_index} sem mensagem configurada — pulando → ${row.customer_phone}`);
+          continue;
+        }
+        // Verifica se o ticket ainda está aberto no Z-PRO antes de enviar
+        const ticketOpen = await checkTicketOpen(row.zpro_ticket_id);
+        if (ticketOpen === false) {
+          console.log(`[Follow-up] ticket ${row.zpro_ticket_id} fechado — pulando ${row.customer_phone}`);
           continue;
         }
         const ok = await sendFollowMessage(row.zpro_api_url, row.zpro_api_token, row.customer_phone, row.message);

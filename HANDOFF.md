@@ -81,12 +81,17 @@ Sistema de reativação de leads silenciosos. Config por corretor em **Configura
 
 ---
 
-## 6. Rate Limiting (IMPLEMENTADO em 2026-05-27)
+## 6. Rate Limiting (IMPLEMENTADO em 2026-05-27, Redis em 2026-05-27)
 
 `express-rate-limit` aplicado em:
 - `POST /api/auth/signup|login|forgot-password` → 10 req / 15 min por IP
 - `POST /api/checkout` → 5 req / 1 hora por IP
 - `POST /api/webhooks/asaas` → 120 req / 1 min por IP
+
+**Rate limiting distribuído (Redis):** código implementado com fallback gracioso.
+- Sem `REDIS_URL`: cada VM usa store em memória (comportamento anterior).
+- Com `REDIS_URL`: contadores compartilhados entre as 2 VMs Fly via `ioredis`.
+- Para ativar: `fly redis create --app imobiflow` → `fly secrets set REDIS_URL=<url>`
 
 ---
 
@@ -110,21 +115,22 @@ A `service_role key` do Supabase ficou hardcoded em commits antigos (`check.ts`,
 - [x] Follow-Up Inteligente com 3 timers independentes — **VALIDADO**
 - [x] Tenant 209 (David) — **VALIDADO**
 - [x] Rebranding "Criate" (title, favicon, header, sidebar, nav)
-- [x] Rate limiting (auth, checkout, webhook)
+- [x] Rate limiting (auth, checkout, webhook) + Redis distribuído (fallback gracioso)
 - [x] Termos de Uso e Política de Privacidade completos (LGPD + Marco Civil + Lei do Software)
 - [x] Limpeza de credenciais do histórico git
+- [x] CI/CD GitHub Actions (`fly deploy` no push para `main`)
+- [x] Sentry error tracking (opcional — ativo com `SENTRY_DSN`)
+- [x] Verificação de ticket aberto antes de disparar follow-up (via Z-PRO API)
+- [x] Bug `ResetPassword.tsx:94` corrigido (`accessToken` → `resetToken`)
+- [x] Agenda do tenant: dom-sáb, 07h-19h
+- [x] Email simulado de lead removido (contato via WhatsApp)
 
 ### Pendente / próximos passos
 - [ ] **⚠️ URGENTE:** Rotacionar service_role key do Supabase (ver §7)
-- [ ] N8N — sub-workflow "Deletar Agendamento": campo `id visita` vazio; URL: `$json.url/scheduleReminder/delete/$json['id visita']`; nó "When Executed by Another Workflow" precisa `$fromAI()` no campo; body `{}`
-- [ ] Email real de notificação de lead (`console.log('[E-MAIL SIMULADO]')` em `server.ts`)
-- [ ] Agente IA "Juliana" — colar `agent_system_message.txt` no nó "Agente IA Corretor" do N8N
 - [ ] Páginas legais: preencher constantes no topo de `Termos.tsx` e `Privacidade.tsx` (Razão Social, CNPJ, Endereço, Emails)
-- [ ] GitHub Actions CI/CD (`fly deploy` automático no push para main)
-- [ ] Rate limiting distribuído (Redis) para multi-máquina Fly (hoje cada máquina tem contador independente)
-- [ ] Verificar se ticket ainda está aberto antes de disparar follow (via Z-PRO API)
-- [ ] Sentry / error tracking (vários `catch` silenciosos em `server.ts`)
-- [ ] Bug pré-existente: `ResetPassword.tsx:94` usa `accessToken` inexistente (não afeta runtime)
+- [ ] Ativar Redis distribuído: `fly redis create --app imobiflow` → `fly secrets set REDIS_URL=<url>`
+- [ ] Ativar Sentry: criar conta em sentry.io → `fly secrets set SENTRY_DSN=<dsn>`
+- [ ] Ativar CI/CD: adicionar `FLY_API_TOKEN` como secret no GitHub (Settings → Secrets → Actions)
 
 ---
 

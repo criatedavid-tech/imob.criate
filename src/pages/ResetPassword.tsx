@@ -91,7 +91,7 @@ export default function ResetPassword() {
                 </div>
               )}
 
-              {!accessToken && !error ? (
+              {!resetToken && !error ? (
                 <p className="text-sm text-white/50 text-center">Verificando link...</p>
               ) : resetToken ? (
                 <>
