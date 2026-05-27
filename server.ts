@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'node:crypto';
+import rateLimit from "express-rate-limit";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -220,12 +221,37 @@ async function startServer() {
     }
   });
 
+  // --- RATE LIMITERS ---
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' },
+  });
+
+  const checkoutLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Limite de cadastros por IP atingido. Tente novamente em 1 hora.' },
+  });
+
+  const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Rate limit exceeded.' },
+  });
+
   // --- ROTAS DE AUTENTICAÇÃO (AUTH) ---
   /**
    * Realiza o cadastro de um novo usuário (corretor) no sistema.
    * Cria também um perfil inicial na tabela 'brokers'.
    */
-  app.post("/api/auth/signup", async (req, res) => {
+  app.post("/api/auth/signup", authLimiter, async (req, res) => {
     try {
       const { email, password, name, phone } = req.body;
       if (!email || !password || !name) {
@@ -285,7 +311,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
@@ -306,7 +332,7 @@ async function startServer() {
   });
 
   // Recuperação de senha via WhatsApp — gera token temporário (15 min) e envia link
-  app.post("/api/auth/forgot-password", async (req, res) => {
+  app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
     const genericMsg = { message: 'Se o e-mail estiver cadastrado, você receberá o link de recuperação pelo WhatsApp.' };
     try {
       const { email } = req.body;
@@ -1404,7 +1430,7 @@ async function startServer() {
   });
 
   // Cria cobrança no Asaas (cartão de crédito) e ativa o corretor imediatamente
-  app.post("/api/checkout", async (req, res) => {
+  app.post("/api/checkout", checkoutLimiter, async (req, res) => {
     const userId = req.headers['x-user-id'] as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -1614,7 +1640,7 @@ async function startServer() {
   });
 
   // Webhook do Asaas — confirmação de pagamento, cancelamento
-  app.post("/api/webhooks/asaas", async (req, res) => {
+  app.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
     const event = req.body;
 
     await supabase.from('webhook_logs').insert({
