@@ -2410,13 +2410,13 @@ async function startServer() {
     // 'O' = Aberto (Open), 'C' = Fechado (Closed). 'W' é convertido para 'O' pelo Z-PRO.
     // restrictedUser: false garante que essas horas não bloqueiam login.
     const defaultBusinessHours = [
-      { day: 0, label: 'Domingo',    type: 'C', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 1, label: 'Segunda',    type: 'O', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 2, label: 'Terça',      type: 'O', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 3, label: 'Quarta',     type: 'O', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 4, label: 'Quinta',     type: 'O', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 5, label: 'Sexta',      type: 'O', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' },
-      { day: 6, label: 'Sábado',     type: 'C', hr1: '08:00', hr2: '18:00', hr3: '', hr4: '' }
+      { day: 0, label: 'Domingo',    type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 1, label: 'Segunda',    type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 2, label: 'Terça',      type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 3, label: 'Quarta',     type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 4, label: 'Quinta',     type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 5, label: 'Sexta',      type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' },
+      { day: 6, label: 'Sábado',     type: 'O', hr1: '07:00', hr2: '19:00', hr3: '', hr4: '' }
     ];
     const defaultMenuPermissions = {
       massa: true, grupo: true, chatPrivado: true, kanban: true, funil: true,
