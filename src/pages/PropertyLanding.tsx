@@ -245,7 +245,7 @@ export default function PropertyLanding() {
         transition={{ delay: 0.4, duration: 0.8 }}
       >
         <span className={`font-serif text-lg tracking-widest uppercase transition-colors duration-500 ${navScrolled ? 'text-[#1a1a1a]' : 'text-white'}`}>
-          ImobiFlow
+          Criate
         </span>
         <div className="flex items-center gap-3">
           <button

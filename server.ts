@@ -2736,7 +2736,8 @@ async function startServer() {
       if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
       const { data } = await supabase.from('followup_config').select('*').eq('broker_id', brokerId).maybeSingle();
       res.json(data || {
-        broker_id: brokerId, enabled: false, delay_minutes: 180,
+        broker_id: brokerId, enabled: false,
+        delay_minutes_1: 30, delay_minutes_2: 120, delay_minutes_3: 1440,
         message_1: '', message_2: '', message_3: '', strategy: 'progressive'
       });
     } catch (err: any) {
@@ -2751,11 +2752,13 @@ async function startServer() {
     try {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
-      const { enabled, delay_minutes, message_1, message_2, message_3, strategy } = req.body || {};
+      const { enabled, delay_minutes_1, delay_minutes_2, delay_minutes_3, message_1, message_2, message_3, strategy } = req.body || {};
       const payload: any = {
         broker_id: brokerId,
         enabled: !!enabled,
-        delay_minutes: Math.max(1, Number(delay_minutes) || 180),
+        delay_minutes_1: Math.max(1, Number(delay_minutes_1) || 30),
+        delay_minutes_2: Math.max(1, Number(delay_minutes_2) || 120),
+        delay_minutes_3: Math.max(1, Number(delay_minutes_3) || 1440),
         message_1: message_1 ?? null,
         message_2: message_2 ?? null,
         message_3: message_3 ?? null,
@@ -2796,8 +2799,10 @@ async function startServer() {
       if (!_brokerId) return res.json({ respond: true }); // corretor não encontrado: não bloqueia o agente
       const broker = { id: _brokerId };
 
+      const incomingTicketId = String(req.body?.ticket_id || '').trim() || null;
+
       const { data: conv } = await supabase.from('followup_conversations')
-        .select('ai_active, human_takeover_at')
+        .select('ai_active, human_takeover_at, zpro_ticket_id')
         .eq('broker_id', broker.id).eq('customer_phone', customerPhone).maybeSingle();
 
       // Reativação automática opcional após handover (config.reactivate_after_minutes; null = nunca)
@@ -2812,14 +2817,21 @@ async function startServer() {
         }
       }
 
-      // Re-arma o follow (follow_sent=false) e atualiza o horário da última msg do cliente.
-      // Mantém follow_message_index (progressivo).
+      // Novo ticket = zera a contagem de follows. Mesma conversa = mantém o índice.
+      // Regra: máximo 3 follows por ticket. O índice (follow_message_index) é o
+      // contador absoluto e NÃO reseta quando o cliente responde — só reseta em
+      // novo ticket. Assim: Follow 1 → 2 → 3 → para, independente de respostas.
+      const isNewTicket = incomingTicketId && conv?.zpro_ticket_id &&
+                          incomingTicketId !== conv.zpro_ticket_id;
+
       await supabase.from('followup_conversations').upsert({
         broker_id: broker.id,
         customer_phone: customerPhone,
         last_customer_message_at: new Date().toISOString(),
-        follow_sent: false,
+        follow_sent: false, // re-arma o timer (permite próximo follow disparar)
         ai_active: aiActive,
+        ...(incomingTicketId ? { zpro_ticket_id: incomingTicketId } : {}),
+        ...(isNewTicket ? { follow_message_index: 0, human_takeover_at: null } : {}),
         updated_at: new Date().toISOString()
       }, { onConflict: 'broker_id,customer_phone' });
 
@@ -2906,10 +2918,25 @@ async function startServer() {
       if (error) { console.error('[Follow-up] claim erro:', error.message); return; }
       if (!due?.length) return;
       for (const row of due as any[]) {
+        // Mensagem vazia = follow não configurado → avança sem enviar (evita loop infinito)
+        if (!row.message?.trim()) {
+          console.warn(`[Follow-up] follow #${row.message_index} sem mensagem configurada — pulando → ${row.customer_phone}`);
+          continue;
+        }
         const ok = await sendFollowMessage(row.zpro_api_url, row.zpro_api_token, row.customer_phone, row.message);
         if (ok) {
           console.log(`[Follow-up] follow #${row.message_index} → ${row.customer_phone} (broker ${row.broker_id})`);
+          // Após Follow 1 ou 2, reseta follow_sent para que o próximo dispare automaticamente
+          // após o delay correspondente (contado a partir de follow_sent_at, gravado pela RPC).
+          // Follow 3 (index=3) mantém follow_sent=true — sequência encerrada.
+          if (row.message_index < 3) {
+            await supabase.from('followup_conversations').update({
+              follow_sent: false,
+              updated_at: new Date().toISOString()
+            }).eq('id', row.conversation_id);
+          }
         } else {
+          // Falha de envio (rede/API) → reverte claim para retry no próximo tick
           await supabase.from('followup_conversations').update({
             follow_sent: false,
             follow_sent_at: null,

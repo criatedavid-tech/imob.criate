@@ -442,7 +442,7 @@ export default function Dashboard() {
             <Home className="text-white w-5 h-5" />
           </div>
           <span onClick={handleSafeReload} className="font-bold text-xl tracking-tight text-white cursor-pointer hover:opacity-80 transition-opacity">
-            ImobiFlow
+            Criate
           </span>
         </div>
 
@@ -484,7 +484,7 @@ export default function Dashboard() {
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md bg-white/15 border border-white/25">
                   <Home className="text-white w-5 h-5" />
                 </div>
-                <span className="font-bold text-xl tracking-tight text-white">ImobiFlow</span>
+                <span className="font-bold text-xl tracking-tight text-white">Criate</span>
               </div>
               <button onClick={() => setSidebarOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
                 <XIcon size={20} />

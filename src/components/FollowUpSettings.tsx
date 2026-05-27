@@ -9,22 +9,62 @@ const inputClass =
 
 interface Cfg {
   enabled: boolean;
-  delay_minutes: number;
+  delay_minutes_1: number;
+  delay_minutes_2: number;
+  delay_minutes_3: number;
   message_1: string;
   message_2: string;
   message_3: string;
 }
 
 const FOLLOWS = [
-  { key: 'message_1' as const, label: 'Follow 1', placeholder: 'Olá! Vi que você demonstrou interesse no imóvel. Posso tirar alguma dúvida?' },
-  { key: 'message_2' as const, label: 'Follow 2', placeholder: 'Ainda tem interesse nesse imóvel? Posso te enviar mais detalhes.' },
-  { key: 'message_3' as const, label: 'Follow 3', placeholder: 'Esse imóvel ainda está disponível e com bastante procura. 😊' },
+  {
+    msgKey: 'message_1' as const,
+    delayKey: 'delay_minutes_1' as const,
+    label: 'Follow 1',
+    delayLabel: 'Enviar após silêncio do cliente (minutos)',
+    delayHint: 'Contado a partir da última mensagem do cliente. Produção recomendada: 1440 (24h)',
+    defaultDelay: 1440,
+    placeholder: 'Olá! Vi que você demonstrou interesse no imóvel. Posso tirar alguma dúvida?',
+  },
+  {
+    msgKey: 'message_2' as const,
+    delayKey: 'delay_minutes_2' as const,
+    label: 'Follow 2',
+    delayLabel: 'Enviar após o Follow 1 (minutos)',
+    delayHint: 'Contado a partir de quando o Follow 1 foi enviado. Produção recomendada: 4320 (72h)',
+    defaultDelay: 4320,
+    placeholder: 'Ainda tem interesse nesse imóvel? Posso te enviar mais detalhes.',
+  },
+  {
+    msgKey: 'message_3' as const,
+    delayKey: 'delay_minutes_3' as const,
+    label: 'Follow 3',
+    delayLabel: 'Enviar após o Follow 2 (minutos)',
+    delayHint: 'Contado a partir de quando o Follow 2 foi enviado. Produção recomendada: 10080 (7 dias)',
+    defaultDelay: 10080,
+    placeholder: 'Esse imóvel ainda está disponível e com bastante procura. 😊',
+  },
 ];
+
+const hms = (min: number) => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h ? `${h}h` : ''}${m ? ` ${m}min` : h ? '' : '0min'}`.trim();
+};
 
 export default function FollowUpSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [cfg, setCfg] = useState<Cfg>({ enabled: false, delay_minutes: 180, message_1: '', message_2: '', message_3: '' });
+  const [cfg, setCfg] = useState<Cfg>({
+    enabled: false,
+    delay_minutes_1: 30,
+    delay_minutes_2: 120,
+    delay_minutes_3: 1440,
+    message_1: '',
+    message_2: '',
+    message_3: '',
+  });
   const [message, setMessage] = useState<{ type: string; text: string }>({ type: '', text: '' });
 
   useEffect(() => { fetchCfg(); }, []);
@@ -36,7 +76,9 @@ export default function FollowUpSettings() {
         const d = await res.json();
         setCfg({
           enabled: !!d.enabled,
-          delay_minutes: Number(d.delay_minutes) || 180,
+          delay_minutes_1: Number(d.delay_minutes_1) || 30,
+          delay_minutes_2: Number(d.delay_minutes_2) || 120,
+          delay_minutes_3: Number(d.delay_minutes_3) || 1440,
           message_1: d.message_1 || '',
           message_2: d.message_2 || '',
           message_3: d.message_3 || '',
@@ -66,12 +108,6 @@ export default function FollowUpSettings() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const hms = (min: number) => {
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return `${h ? `${h}h` : ''}${m ? ` ${m}min` : (h ? '' : '0min')}`.trim();
   };
 
   if (loading) {
@@ -110,7 +146,7 @@ export default function FollowUpSettings() {
           </button>
         </div>
 
-        <div className={`p-8 space-y-6 transition-opacity ${cfg.enabled ? '' : 'opacity-50 pointer-events-none select-none'}`}>
+        <div className={`p-8 space-y-5 transition-opacity ${cfg.enabled ? '' : 'opacity-50 pointer-events-none select-none'}`}>
           {message.text && (
             <div className={`flex items-center gap-2 p-4 rounded-2xl text-sm font-medium border ${
               message.type === 'success'
@@ -122,41 +158,58 @@ export default function FollowUpSettings() {
             </div>
           )}
 
-          {/* Tempo */}
-          <div>
-            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">
-              Tempo sem resposta antes de enviar o follow (minutos)
-            </label>
-            <div className="relative max-w-[220px]">
-              <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" size={16} />
-              <input
-                type="number" min={1}
-                value={cfg.delay_minutes}
-                onChange={e => setCfg({ ...cfg, delay_minutes: Math.max(1, Number(e.target.value) || 1) })}
-                className={`${inputClass} pl-11`}
-              />
-            </div>
-            <p className="text-[11px] text-white/30 mt-2 italic px-1">≈ {hms(cfg.delay_minutes)} (padrão: 180 = 3h)</p>
-          </div>
-
-          {/* Mensagens */}
-          <div className="space-y-4 pt-2 border-t border-white/10">
+          {/* Blocos por follow */}
+          <div className="space-y-4">
             {FOLLOWS.map((f, i) => (
-              <div key={f.key}>
-                <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1 flex items-center gap-1.5">
-                  <MessageSquare size={11} /> {f.label}
-                </label>
-                <textarea
-                  rows={2}
-                  value={cfg[f.key]}
-                  onChange={e => setCfg({ ...cfg, [f.key]: e.target.value })}
-                  placeholder={f.placeholder}
-                  className={`${inputClass} resize-none`}
-                />
+              <div
+                key={f.msgKey}
+                className="rounded-2xl bg-white/5 border border-white/10 p-5 space-y-3"
+              >
+                {/* Label do follow */}
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={13} className="text-white/40" />
+                  <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">{f.label}</span>
+                </div>
+
+                {/* Timer */}
+                <div>
+                  <label className="block text-[10px] text-white/30 mb-1.5 pl-1 uppercase tracking-wider">
+                    {f.delayLabel}
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-40">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" size={14} />
+                      <input
+                        type="number"
+                        min={1}
+                        value={cfg[f.delayKey]}
+                        onChange={e => setCfg({ ...cfg, [f.delayKey]: Math.max(1, Number(e.target.value) || 1) })}
+                        className={`${inputClass} pl-9 py-2.5 text-sm`}
+                      />
+                    </div>
+                    <span className="text-[11px] text-white/30 italic">≈ {hms(cfg[f.delayKey])}</span>
+                  </div>
+                  <p className="text-[10px] text-white/20 mt-1 pl-1 italic">{f.delayHint}</p>
+                </div>
+
+                {/* Mensagem */}
+                <div>
+                  <label className="block text-[10px] text-white/30 mb-1.5 pl-1 uppercase tracking-wider">
+                    Mensagem
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={cfg[f.msgKey]}
+                    onChange={e => setCfg({ ...cfg, [f.msgKey]: e.target.value })}
+                    placeholder={f.placeholder}
+                    className={`${inputClass} resize-none`}
+                  />
+                </div>
               </div>
             ))}
+
             <p className="text-[11px] text-white/30 italic px-1">
-              * Envia 1 follow por vez. Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow 3, para.
+              * Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow 3, para.
               Se você (corretor) responder manualmente, o agente é interrompido naquela conversa.
             </p>
           </div>
