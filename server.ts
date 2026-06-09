@@ -1730,6 +1730,11 @@ async function startServer() {
     res.json({ received: true });
   });
 
+  // Rejeita métodos não-POST no endpoint de webhook
+  app.all("/api/webhooks/asaas", (_req, res) => {
+    res.status(405).json({ error: 'Method Not Allowed' });
+  });
+
   // Endpoint de teste — simula ativação sem Asaas (apenas dev)
   app.post("/api/webhooks/asaas/test", async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
