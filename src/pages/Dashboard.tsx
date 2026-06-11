@@ -26,7 +26,8 @@ import {
   X as XIcon,
   Shield,
   Building2,
-  Bot
+  Bot,
+  Activity
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -69,8 +70,6 @@ export default function Dashboard() {
   const [loadingAllLeads, setLoadingAllLeads] = useState(false);
   const [loadingVisits, setLoadingVisits] = useState(false);
   const [chartData, setChartData] = useState<{name: string, value: number}[]>([]);
-  const [billingUsage, setBillingUsage] = useState<any>(null);
-  const [loadingBilling, setLoadingBilling] = useState(false);
 
   // PERFIL DO CORRETOR
   const [brokerProfile, setBrokerProfile] = useState<any>({
@@ -150,15 +149,6 @@ export default function Dashboard() {
       console.error("Erro ao carregar métricas:", error);
       // Fallback already handled by state initialization
     }
-  };
-
-  const fetchBillingUsage = async () => {
-    setLoadingBilling(true);
-    try {
-      const res = await fetch('/api/billing/usage', { headers: authService.getAuthHeaders() });
-      if (res.ok) setBillingUsage(await res.json());
-    } catch {}
-    finally { setLoadingBilling(false); }
   };
 
   // NOVO: implementado em 30/04/2026 - não altera legado
@@ -365,7 +355,6 @@ export default function Dashboard() {
     fetchDashboardMetrics();   // alimenta o card "Total de Imóveis"
     fetchScheduledVisits();    // alimenta a aba Agenda
     fetchBrokerProfile();
-    fetchBillingUsage();
     const intervalId = setInterval(checkBackend, 5000);
     return () => clearInterval(intervalId);
   }, []);
@@ -464,38 +453,7 @@ export default function Dashboard() {
           <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
           <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
           <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
-
-          {/* Widget de consumo IA — sidebar desktop */}
-          {billingUsage && (() => {
-            const { tickets_used, tickets_included, overage_amount } = billingUsage.current_period;
-            const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
-            const isOver = tickets_used > tickets_included;
-            const isWarning = !isOver && pct >= 80;
-            const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
-            const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
-            return (
-              <div onClick={() => handleTabChange('subscription')}
-                className="mt-2 p-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer
-                  hover:bg-white/10 hover:border-white/20 transition-all">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
-                    <Bot size={12} className="text-violet-400" /> Consumo IA
-                  </span>
-                  <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
-                  <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
-                  {isOver
-                    ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
-                    : <span className="text-xs text-white/30">atendimentos</span>
-                  }
-                </div>
-              </div>
-            );
-          })()}
+          <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => handleTabChange('subscription')} />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
@@ -541,38 +499,7 @@ export default function Dashboard() {
               <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
               <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
               <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
-
-              {/* Widget de consumo IA — drawer mobile */}
-              {billingUsage && (() => {
-                const { tickets_used, tickets_included, overage_amount } = billingUsage.current_period;
-                const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
-                const isOver = tickets_used > tickets_included;
-                const isWarning = !isOver && pct >= 80;
-                const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
-                const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
-                return (
-                  <div onClick={() => { handleTabChange('subscription'); setSidebarOpen(false); }}
-                    className="mt-2 p-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer
-                      hover:bg-white/10 hover:border-white/20 transition-all">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
-                        <Bot size={12} className="text-violet-400" /> Consumo IA
-                      </span>
-                      <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
-                      <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
-                      {isOver
-                        ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
-                        : <span className="text-xs text-white/30">atendimentos</span>
-                      }
-                    </div>
-                  </div>
-                );
-              })()}
+              <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => { handleTabChange('subscription'); setSidebarOpen(false); }} />
             </nav>
 
             <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
@@ -996,6 +923,7 @@ export default function Dashboard() {
 function SubscriptionTab() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [usage, setUsage] = useState<any>(null);
 
   useEffect(() => {
     fetch('/api/subscription', { headers: (authService as any).getAuthHeaders() })
@@ -1003,6 +931,11 @@ function SubscriptionTab() {
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    fetch('/api/billing/usage', { headers: (authService as any).getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(setUsage)
+      .catch(() => {});
   }, []);
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-white/40" /></div>;
@@ -1037,6 +970,42 @@ function SubscriptionTab() {
           </a>
         )}
       </div>
+
+      {/* Status — consumo de atendimentos IA do ciclo atual */}
+      {usage && (() => {
+        const { tickets_used, tickets_included, tickets_remaining, overage_tickets, overage_amount, overage_price_per_ticket } = usage.current_period;
+        const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
+        const isOver = tickets_used > tickets_included;
+        const isWarning = !isOver && pct >= 80;
+        const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
+        return (
+          <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
+            <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4" /> Status</h3>
+
+            <div className="flex items-end justify-between mb-3">
+              <span className={`text-3xl font-extrabold ${isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white'}`}>
+                {tickets_used}
+              </span>
+              <span className="text-sm text-white/50">/ {tickets_included} atendimentos inclusos</span>
+            </div>
+
+            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-3">
+              <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-white/50">
+              <span>{isOver ? `${overage_tickets} excedente${overage_tickets > 1 ? 's' : ''}` : `${tickets_remaining} restante${tickets_remaining !== 1 ? 's' : ''}`}</span>
+              <span>{pct}% usado</span>
+            </div>
+
+            {isOver && (
+              <div className="mt-3 p-3 rounded-2xl bg-red-500/15 border border-red-400/20 text-xs text-red-300">
+                Excedente projetado: {overage_tickets} × R$ {overage_price_per_ticket.toFixed(2)} = <strong>R$ {overage_amount.toFixed(2)}</strong> — será cobrado junto com a próxima mensalidade.
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Último pagamento */}
       {sub && (
