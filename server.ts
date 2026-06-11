@@ -62,7 +62,7 @@ const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "4
 // Plano: 100 atendimentos inclusos; excedente R$ 2,00/ticket cobrado automaticamente no ciclo seguinte.
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=2.00
 const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
-const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "2.00");
+const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "3.00");
 // ─── PROXY LLM ────────────────────────────────────────────────────────────────
 // Token interno: N8N → servidor (substitui "credential" estática no N8N).
 // Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
