@@ -58,7 +58,11 @@ const PROVISIONING_WEBHOOK_URL = process.env.PROVISIONING_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/f19c91c4-b826-4150-af8d-151200e619f0";
 const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/edc20beb-c9c1-46c3-bbef-8fa81538cbb3";
-const SUBSCRIPTION_VALUE  = Number(process.env.SUBSCRIPTION_VALUE || "49.90");
+const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "49.90");
+// Plano: 100 atendimentos inclusos; excedente R$ 2,00/ticket cobrado automaticamente no ciclo seguinte.
+// Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=2.00
+const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
+const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "2.00");
 // ─── PROXY LLM ────────────────────────────────────────────────────────────────
 // Token interno: N8N → servidor (substitui "credential" estática no N8N).
 // Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
@@ -1553,9 +1557,14 @@ async function startServer() {
         throw new Error('Pagamento não aprovado. Verifique os dados do cartão.');
       }
 
-      // 4. Salva subscription_id no broker e ativa imediatamente
+      // 4. Salva subscription_id e token do cartão no broker e ativa imediatamente
+      // O creditCardToken permite cobranças avulsas futuras (excedente) sem pedir o cartão novamente.
+      const creditCardToken = subscription.creditCard?.creditCardToken || '';
       await supabase.from('brokers')
-        .update({ asaas_subscription_id: subscription.id })
+        .update({
+          asaas_subscription_id: subscription.id,
+          ...(creditCardToken ? { asaas_credit_card_token: creditCardToken } : {})
+        })
         .eq('id', brokerId);
 
       await handleAsaasPaymentReceived({
@@ -1603,6 +1612,57 @@ async function startServer() {
         .order('created_at', { ascending: false }).limit(1).single();
 
       res.json({ broker, lastSubscription: lastSub });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Retorna o consumo de atendimentos do ciclo atual e histórico de cobranças de excedente
+  app.get("/api/billing/usage", async (req, res) => {
+    const userId = req.headers['x-user-id'] as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+
+      const { data: broker } = await supabase.from('brokers')
+        .select('valid_until').eq('id', brokerId).single();
+
+      // Início do ciclo atual = valid_until - 1 mês
+      const periodEnd   = broker?.valid_until ? new Date(broker.valid_until) : new Date();
+      const periodStart = new Date(periodEnd);
+      periodStart.setMonth(periodStart.getMonth() - 1);
+
+      const { count: ticketsUsed } = await supabase.from('ticket_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('broker_id', brokerId)
+        .gte('created_at', periodStart.toISOString())
+        .lt('created_at', periodEnd.toISOString());
+
+      const overage        = Math.max(0, (ticketsUsed ?? 0) - PLAN_INCLUDED_TICKETS);
+      const overageAmount  = overage * PLAN_OVERAGE_PRICE;
+
+      // Histórico das últimas 6 cobranças de excedente
+      const { data: history } = await supabase.from('overage_charges')
+        .select('billing_period_start, billing_period_end, tickets_total, tickets_overage, amount_cents, status, charged_at')
+        .eq('broker_id', brokerId)
+        .order('billing_period_end', { ascending: false })
+        .limit(6);
+
+      res.json({
+        current_period: {
+          start:             periodStart.toISOString(),
+          end:               periodEnd.toISOString(),
+          tickets_used:      ticketsUsed ?? 0,
+          tickets_included:  PLAN_INCLUDED_TICKETS,
+          tickets_remaining: Math.max(0, PLAN_INCLUDED_TICKETS - (ticketsUsed ?? 0)),
+          overage_tickets:   overage,
+          overage_amount:    overageAmount,
+          overage_price_per_ticket: PLAN_OVERAGE_PRICE,
+        },
+        history: history ?? [],
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1695,7 +1755,8 @@ async function startServer() {
           customerId: p.customer,
           value: p.value,
           brokerId: broker.id,
-          subscriptionId: p.subscription || broker.asaas_subscription_id || undefined
+          subscriptionId: p.subscription || broker.asaas_subscription_id || undefined,
+          isRenewal: true  // webhook = cobrança de renovação → calcula excedente do ciclo encerrado
         });
       }
     } else if (event.event === 'PAYMENT_OVERDUE') {
@@ -1970,10 +2031,14 @@ async function startServer() {
   // FUNÇÕES DE AUTOMAÇÃO — ATIVAÇÃO E Z-PRO
   // ─────────────────────────────────────────────────────────────────────────
 
-  async function handleAsaasPaymentReceived({ id, customerId, value, brokerId, subscriptionId }: {
-    id: string; customerId: string; value: number; brokerId: string; subscriptionId?: string;
+  async function handleAsaasPaymentReceived({ id, customerId, value, brokerId, subscriptionId, isRenewal = false }: {
+    id: string; customerId: string; value: number; brokerId: string; subscriptionId?: string; isRenewal?: boolean;
   }) {
     try {
+      // Captura valid_until ANTES de atualizar — necessário para delimitar o ciclo encerrado
+      const { data: brokerBefore } = await supabase.from('brokers')
+        .select('valid_until, asaas_credit_card_token').eq('id', brokerId).single();
+
       const validUntil = new Date();
       validUntil.setMonth(validUntil.getMonth() + 1);
 
@@ -1987,6 +2052,16 @@ async function startServer() {
       if (subscriptionId) brokerUpdate.asaas_subscription_id = subscriptionId;
 
       await supabase.from('brokers').update(brokerUpdate).eq('id', brokerId);
+
+      // Cobrança de excedente do ciclo que acaba de encerrar (apenas em renovações)
+      if (isRenewal && brokerBefore?.valid_until && brokerBefore?.asaas_credit_card_token) {
+        const periodEnd = new Date(brokerBefore.valid_until);
+        // Tolera até 7 dias de atraso no webhook do Asaas (grace period)
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        if (periodEnd >= sevenDaysAgo) {
+          await chargeOverageIfDue(brokerId, periodEnd, customerId, brokerBefore.asaas_credit_card_token);
+        }
+      }
 
       await supabase.from('subscriptions').insert({
         broker_id: brokerId,
@@ -2022,6 +2097,121 @@ async function startServer() {
       console.log(`✅ Corretor ${brokerId} ativado — Asaas ${id}`);
     } catch (err: any) {
       console.error("Erro ao ativar corretor:", err);
+    }
+  }
+
+  // ─── Cobrança de excedente de atendimentos ────────────────────────────────
+  // Chamada na renovação mensal (handleAsaasPaymentReceived com isRenewal=true).
+  // Conta os tickets do ciclo encerrado, cobra R$ PLAN_OVERAGE_PRICE por ticket
+  // acima de PLAN_INCLUDED_TICKETS diretamente no cartão já cadastrado via token.
+  // Idempotente: se já existe registro para o mesmo período, não cobra novamente.
+  async function chargeOverageIfDue(
+    brokerId: string,
+    periodEnd: Date,
+    asaasCustomerId: string,
+    creditCardToken: string
+  ): Promise<void> {
+    const periodStart = new Date(periodEnd);
+    periodStart.setMonth(periodStart.getMonth() - 1);
+
+    // Idempotência: verifica se já existe cobrança para este período (±12h de tolerância)
+    const windowStart = new Date(periodEnd.getTime() - 12 * 60 * 60 * 1000).toISOString();
+    const windowEnd   = new Date(periodEnd.getTime() + 12 * 60 * 60 * 1000).toISOString();
+    const { data: existing } = await supabase.from('overage_charges')
+      .select('id, status')
+      .eq('broker_id', brokerId)
+      .gte('billing_period_end', windowStart)
+      .lte('billing_period_end', windowEnd)
+      .neq('status', 'failed')
+      .maybeSingle();
+
+    if (existing) {
+      console.log(`[Overage] período ${periodEnd.toISOString().slice(0,10)} já processado (${existing.status}) — ${brokerId}`);
+      return;
+    }
+
+    // Conta tickets no período encerrado
+    const { count } = await supabase.from('ticket_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('broker_id', brokerId)
+      .gte('created_at', periodStart.toISOString())
+      .lt('created_at', periodEnd.toISOString());
+
+    const totalTickets = count ?? 0;
+    const overage      = Math.max(0, totalTickets - PLAN_INCLUDED_TICKETS);
+    const amountCents  = Math.round(overage * PLAN_OVERAGE_PRICE * 100);
+
+    console.log(`[Overage] ${brokerId} — ${totalTickets} tickets (${overage} excedentes, R$ ${(amountCents / 100).toFixed(2)})`);
+
+    // Sem excedente: registra apenas para auditoria
+    if (overage === 0) {
+      await supabase.from('overage_charges').insert({
+        broker_id: brokerId,
+        billing_period_start: periodStart.toISOString(),
+        billing_period_end:   periodEnd.toISOString(),
+        tickets_total:   totalTickets,
+        tickets_included: PLAN_INCLUDED_TICKETS,
+        tickets_overage: 0,
+        price_per_ticket: PLAN_OVERAGE_PRICE,
+        amount_cents: 0,
+        status: 'no_charge',
+      });
+      return;
+    }
+
+    // Insere registro 'pending' ANTES de chamar o Asaas (garante idempotência em retries)
+    const { data: chargeRow } = await supabase.from('overage_charges').insert({
+      broker_id: brokerId,
+      billing_period_start: periodStart.toISOString(),
+      billing_period_end:   periodEnd.toISOString(),
+      tickets_total:    totalTickets,
+      tickets_included: PLAN_INCLUDED_TICKETS,
+      tickets_overage:  overage,
+      price_per_ticket: PLAN_OVERAGE_PRICE,
+      amount_cents:     amountCents,
+      status: 'pending',
+    }).select('id').single();
+
+    try {
+      const amount = amountCents / 100;
+      const dueDate = new Date().toISOString().split('T')[0];
+      const description =
+        `Criate — Excedente ${overage} atendimento${overage > 1 ? 's' : ''} ` +
+        `(${periodStart.toISOString().slice(0,10)} a ${periodEnd.toISOString().slice(0,10)}) ` +
+        `× R$ ${PLAN_OVERAGE_PRICE.toFixed(2)}`;
+
+      const payResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
+        method: 'POST',
+        headers: asaasHeaders(),
+        body: JSON.stringify({
+          customer: asaasCustomerId,
+          billingType: 'CREDIT_CARD',
+          value: amount,
+          dueDate,
+          description,
+          creditCardToken,
+        })
+      });
+
+      const payment = await payResp.json();
+      if (!payResp.ok) {
+        throw new Error(payment.errors?.[0]?.description || payment.message || 'Falha na cobrança Asaas');
+      }
+
+      await supabase.from('overage_charges').update({
+        status: 'charged',
+        asaas_payment_id: payment.id,
+        charged_at: new Date().toISOString(),
+      }).eq('id', chargeRow?.id);
+
+      console.log(`[Overage] ✅ R$ ${amount.toFixed(2)} cobrado — payment ${payment.id} — ${brokerId}`);
+    } catch (err: any) {
+      await supabase.from('overage_charges').update({
+        status: 'failed',
+        error: err.message,
+      }).eq('id', chargeRow?.id);
+      // Falha na cobrança de excedente não deve derrubar o fluxo principal de renovação
+      console.error(`[Overage] ❌ falha ao cobrar excedente ${brokerId}:`, err.message);
     }
   }
 
@@ -2900,6 +3090,16 @@ async function startServer() {
         ...(isNewTicket ? { follow_message_index: 0, human_takeover_at: null } : {}),
         updated_at: new Date().toISOString()
       }, { onConflict: 'broker_id,customer_phone' });
+
+      // Contabiliza atendimento: cada ticket_id único = 1 atendimento no ciclo de billing.
+      // ON CONFLICT (broker_id, zpro_ticket_id) DO NOTHING garante idempotência sem try/catch.
+      if (incomingTicketId) {
+        await supabase.from('ticket_events').upsert({
+          broker_id: broker.id,
+          zpro_ticket_id: incomingTicketId,
+          customer_phone: customerPhone,
+        }, { onConflict: 'broker_id,zpro_ticket_id', ignoreDuplicates: true });
+      }
 
       res.json({ respond: aiActive });
     } catch (err: any) {

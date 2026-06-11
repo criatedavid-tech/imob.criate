@@ -105,7 +105,7 @@ A `service_role key` do Supabase ficou hardcoded em commits antigos (`check.ts`,
 
 ---
 
-## 8. Estado atual (2026-05-27)
+## 8. Estado atual (2026-06-11)
 
 ### Concluído e em produção
 - [x] Esteira completa de provisionamento (8 passos)
@@ -124,6 +124,7 @@ A `service_role key` do Supabase ficou hardcoded em commits antigos (`check.ts`,
 - [x] Bug `ResetPassword.tsx:94` corrigido (`accessToken` → `resetToken`)
 - [x] Agenda do tenant: dom-sáb, 07h-19h
 - [x] Email simulado de lead removido (contato via WhatsApp)
+- [x] **Billing de excedente** — contagem de tickets + cobrança automática via Asaas (ver §13 DOCUMENTACAO.md)
 
 ### Pendente / próximos passos
 - [ ] **⚠️ URGENTE:** Rotacionar service_role key do Supabase (ver §7)
@@ -131,6 +132,24 @@ A `service_role key` do Supabase ficou hardcoded em commits antigos (`check.ts`,
 - [ ] Ativar Redis distribuído: `fly redis create --app imobiflow` → `fly secrets set REDIS_URL=<url>`
 - [ ] Ativar Sentry: criar conta em sentry.io → `fly secrets set SENTRY_DSN=<dsn>`
 - [ ] Ativar CI/CD: adicionar `FLY_API_TOKEN` como secret no GitHub (Settings → Secrets → Actions)
+- [ ] **Validar billing ponta a ponta** com valor R$ 5,00 (sandbox Asaas): fazer checkout → acumular >100 tickets → aguardar renovação → verificar `overage_charges`
+- [ ] Após validação: `fly secrets set SUBSCRIPTION_VALUE=297.00 PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=2.00 --app imobiflow`
+
+### Billing de excedente — resumo técnico (2026-06-11)
+Plano de validação: R$ 5,00/mês, 100 atendimentos inclusos, R$ 2,00 por ticket excedente.
+
+**Novas tabelas Supabase:**
+- `ticket_events` — 1 linha por `(broker_id, zpro_ticket_id)` único; índice único garante idempotência
+- `overage_charges` — log de cada ciclo processado; status: `no_charge` / `pending` / `charged` / `failed` / `waived`
+
+**Nova coluna:** `brokers.asaas_credit_card_token` — salvo no checkout; usado para cobrar excedente sem pedir cartão novamente.
+
+**Novo endpoint:** `GET /api/billing/usage` — retorna uso do ciclo atual + histórico dos últimos 6 ciclos.
+
+**Variáveis (alterar sem redeploy):**
+```bash
+fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=2.00 SUBSCRIPTION_VALUE=297.00 --app imobiflow
+```
 
 ---
 

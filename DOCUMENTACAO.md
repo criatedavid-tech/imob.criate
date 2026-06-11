@@ -5,7 +5,7 @@
 > **Não contém valores de segredos** — apenas os nomes das variáveis (os
 > valores ficam no `.env` local, nos *secrets* da Fly e nas notas de memória).
 
-Última atualização: 2026-05-27.
+Última atualização: 2026-06-11.
 
 ---
 
