@@ -15,6 +15,9 @@ export interface BrokerSettings {
 class AuthService {
   private user: User | null = null;
   private token: string | null = null;
+  private refreshToken: string | null = null;
+  private expiresAt = 0; // epoch em segundos (expiração do access_token)
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     const savedUser = localStorage.getItem('user');
@@ -22,7 +25,53 @@ class AuthService {
     if (savedUser && savedToken) {
       this.user = JSON.parse(savedUser);
       this.token = savedToken;
+      this.refreshToken = localStorage.getItem('refresh_token');
+      this.expiresAt = Number(localStorage.getItem('token_expires_at') || 0);
+      this.scheduleRefresh();
+      // O access_token do Supabase expira em ~1h; renova já se está vencido ou perto disso
+      if (this.refreshToken && Date.now() / 1000 > this.expiresAt - 300) {
+        this.refresh().catch(() => {});
+      }
     }
+  }
+
+  private saveSession(user: any, session: any) {
+    this.user = user || this.user;
+    this.token = session?.access_token || null;
+    this.refreshToken = session?.refresh_token || this.refreshToken;
+    this.expiresAt = session?.expires_at || 0;
+
+    localStorage.setItem('user', JSON.stringify(this.user));
+    localStorage.setItem('token', this.token || '');
+    if (this.refreshToken) localStorage.setItem('refresh_token', this.refreshToken);
+    localStorage.setItem('token_expires_at', String(this.expiresAt));
+    this.scheduleRefresh();
+  }
+
+  private scheduleRefresh() {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    // Checa a cada 5 min; renova quando faltar menos de 10 min para expirar
+    this.refreshTimer = setInterval(() => {
+      if (this.refreshToken && Date.now() / 1000 > this.expiresAt - 600) {
+        this.refresh().catch(() => {});
+      }
+    }, 5 * 60 * 1000);
+  }
+
+  async refresh() {
+    if (!this.refreshToken) return;
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: this.refreshToken })
+    });
+    if (!res.ok) {
+      // Refresh token revogado/expirado → sessão morreu de verdade
+      if (res.status === 401) this.logout();
+      return;
+    }
+    const data = await res.json();
+    if (data?.session?.access_token) this.saveSession(data.user, data.session);
   }
 
   async login(email: string, password: string) {
@@ -38,12 +87,7 @@ class AuthService {
     }
 
     const data = await res.json();
-    this.user = data.user;
-    this.token = data.session?.access_token || 'dummy_token'; // Supabase access token
-    
-    localStorage.setItem('user', JSON.stringify(this.user));
-    localStorage.setItem('token', this.token || '');
-    
+    this.saveSession(data.user, data.session);
     return data;
   }
 
@@ -65,10 +109,7 @@ class AuthService {
     // isLoggedIn() reconheça a sessão imediatamente após o cadastro,
     // permitindo o redirect direto para /payment sem passar pelo login.
     if (data?.session?.access_token && data?.user) {
-      this.user = data.user;
-      this.token = data.session.access_token;
-      localStorage.setItem('user', JSON.stringify(this.user));
-      localStorage.setItem('token', this.token || '');
+      this.saveSession(data.user, data.session);
     }
 
     return data;
@@ -77,8 +118,13 @@ class AuthService {
   logout() {
     this.user = null;
     this.token = null;
+    this.refreshToken = null;
+    this.expiresAt = 0;
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('token_expires_at');
     window.location.href = '/login';
   }
 

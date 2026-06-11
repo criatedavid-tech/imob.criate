@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'node:crypto';
 import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 import * as Sentry from "@sentry/node";
 import Redis from "ioredis";
 
@@ -248,8 +249,14 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+  // Headers de segurança HTTP (HSTS, X-Frame-Options, nosniff, etc.)
+  // CSP desativado: o SPA Vite usa inline styles/scripts que o CSP padrão bloquearia.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // 10mb: suficiente para upload individual de foto em base64 (~7MB de imagem real).
+  // Limite anterior de 50mb era vetor de DoS por exaustão de memória.
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // --- INTEGRAÇÃO COM SUPABASE ---
   const supabaseUrl = SUPABASE_URL;
@@ -290,6 +297,44 @@ async function startServer() {
     message: { error: 'Rate limit exceeded.' },
     store: makeRedisStore('webhook', 60 * 1000),
   });
+
+  // --- AUTENTICAÇÃO REAL (valida o JWT do Supabase, não confia em headers) ---
+  // O header x-user-id é ignorado para fins de identidade: o userId vem
+  // exclusivamente do access_token validado pelo Supabase Auth.
+  // Cache de 60s evita uma chamada ao Auth por request.
+  const tokenCache = new Map<string, { userId: string; expires: number }>();
+
+  async function verifyAccessToken(req: express.Request): Promise<string | null> {
+    const token = (req.headers.authorization || '').toString().replace(/^Bearer\s+/i, '').trim();
+    if (!token || token === 'dummy_token' || token === 'null' || token === 'undefined') return null;
+
+    const cached = tokenCache.get(token);
+    if (cached && cached.expires > Date.now()) return cached.userId;
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return null;
+
+    if (tokenCache.size > 1000) {
+      const now = Date.now();
+      for (const [k, v] of tokenCache) if (v.expires <= now) tokenCache.delete(k);
+    }
+    tokenCache.set(token, { userId: data.user.id, expires: Date.now() + 60_000 });
+    return data.user.id;
+  }
+
+  // Rotas que EXIGEM usuário logado
+  async function requireUser(req: any, res: any, next: any) {
+    const userId = await verifyAccessToken(req);
+    if (!userId) return res.status(401).json({ error: 'Sessão inválida ou expirada. Faça login novamente.' });
+    req.userId = userId;
+    next();
+  }
+
+  // Rotas com auth opcional (ex.: GET /api/properties serve landing pública)
+  async function optionalUser(req: any, _res: any, next: any) {
+    req.userId = await verifyAccessToken(req);
+    next();
+  }
 
   // --- ROTAS DE AUTENTICAÇÃO (AUTH) ---
   /**
@@ -372,6 +417,23 @@ async function startServer() {
       res.json({ user: data.user, session: data.session });
     } catch (err: any) {
       console.error("Auth Login Error:", err);
+      res.status(401).json({ error: err.message });
+    }
+  });
+
+  // Renova a sessão usando o refresh_token (access_token do Supabase expira em ~1h)
+  app.post("/api/auth/refresh", async (req, res) => {
+    try {
+      const { refresh_token } = req.body || {};
+      if (!refresh_token) return res.status(400).json({ error: 'refresh_token obrigatório.' });
+
+      const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data, error } = await authClient.auth.refreshSession({ refresh_token });
+      if (error || !data?.session) {
+        return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
+      }
+      res.json({ user: data.user, session: data.session });
+    } catch (err: any) {
       res.status(401).json({ error: err.message });
     }
   });
@@ -472,12 +534,9 @@ async function startServer() {
   /**
    * Obtém as informações do perfil do corretor logado.
    */
-  app.get("/api/brokers/me", async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Missing authorization" });
-    
+  app.get("/api/brokers/me", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string; 
+      const userId = (req as any).userId as string; 
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -504,20 +563,28 @@ async function startServer() {
   /**
    * Atualiza as configurações e informações do perfil do corretor.
    */
-  app.post("/api/brokers/settings", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post("/api/brokers/settings", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Broker profile could not be found" });
 
-      const settings = req.body;
+      // Whitelist: impede mass assignment (ex.: is_admin, valid_until, status
+      // ou tokens de pagamento enviados no body seriam gravados sem isso).
+      const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address'] as const;
+      const settings: Record<string, any> = {};
+      for (const field of ALLOWED_SETTINGS) {
+        if (req.body?.[field] !== undefined) settings[field] = req.body[field];
+      }
       if (settings.phone !== undefined) settings.phone = normalizePhoneBR(settings.phone);
       const { data, error } = await supabase.from('brokers').update({
         ...settings,
         updated_at: new Date()
-      }).eq('id', brokerId).select().single();
+      }).eq('id', brokerId).select(
+        'id, name, phone, ai_name, broker_address, updated_at'
+      ).single();
       
       if (error) throw error;
       res.json(data);
@@ -527,8 +594,8 @@ async function startServer() {
   });
 
   // Salva a chave OpenRouter do corretor (criptografada com AES-256-GCM)
-  app.post('/api/brokers/openrouter-key', async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post('/api/brokers/openrouter-key', requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const { api_key } = req.body;
@@ -546,8 +613,8 @@ async function startServer() {
   });
 
   // Remove a chave OpenRouter do corretor
-  app.delete('/api/brokers/openrouter-key', async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.delete('/api/brokers/openrouter-key', requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const brokerId = await getBrokerId(userId);
@@ -602,8 +669,8 @@ async function startServer() {
   }
 
   // --- UPLOAD DE FOTO DO CORRETOR ---
-  app.post("/api/brokers/upload-photo", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post("/api/brokers/upload-photo", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -642,8 +709,8 @@ async function startServer() {
   // Recebe UMA imagem base64, grava no Supabase Storage e devolve a URL
   // pública (CDN). Substitui o antigo fluxo que trafegava arrays de base64
   // pelo heap do Node e os gravava como TEXT no Postgres (causa do OOM).
-  app.post("/api/properties/upload-image", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post("/api/properties/upload-image", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -691,8 +758,8 @@ async function startServer() {
   // ─────────────────────────────────────────────────────────────────────────
 
   // Retorna a corretora vinculada ao corretor logado
-  app.get("/api/corretora", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.get("/api/corretora", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     try {
       const brokerId = await getBrokerId(userId);
@@ -713,8 +780,8 @@ async function startServer() {
   });
 
   // Cria/atualiza a corretora e vincula o corretor logado (upsert por CNPJ)
-  app.post("/api/corretora", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post("/api/corretora", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     try {
       const brokerId = await getBrokerId(userId);
@@ -764,8 +831,8 @@ async function startServer() {
   });
 
   // Lista os corretores vinculados à corretora (apenas o owner/admin da corretora vê)
-  app.get("/api/corretora/brokers", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.get("/api/corretora/brokers", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     try {
       const brokerId = await getBrokerId(userId);
@@ -849,9 +916,9 @@ async function startServer() {
   /**
    * Lista todos os imóveis associados ao usuário logado.
    */
-  app.get("/api/properties", async (req, res) => {
+  app.get("/api/properties", optionalUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       const query = supabase.from('properties').select('*');
       
       if (userId) {
@@ -913,7 +980,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/properties", async (req, res) => {
+  app.post("/api/properties", requireUser, async (req, res) => {
     try {
       let property = req.body;
       const imgCount = Array.isArray(property.images) ? property.images.length : (property.imageUrl ? 1 : 0);
@@ -946,7 +1013,7 @@ async function startServer() {
       property.link = `${cleanOrigin}/p/${property.slug}`;
 
       // Link to broker
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (userId) {
         const brokerId = await getBrokerId(userId);
         if (brokerId) {
@@ -1004,9 +1071,9 @@ async function startServer() {
   });
 
   // NOVO: implementado em 30/04/2026 - não altera legado
-  app.get("/api/dashboard/metrics", async (req, res) => {
+  app.get("/api/dashboard/metrics", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -1061,9 +1128,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/dashboard/charts", async (req, res) => {
+  app.get("/api/dashboard/charts", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -1117,9 +1184,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/leads/recent", async (req, res) => {
+  app.get("/api/leads/recent", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -1303,9 +1370,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/agenda/visits", async (req, res) => {
+  app.get("/api/agenda/visits", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -1359,9 +1426,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/leads", async (req, res) => {
+  app.get("/api/leads", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const brokerId = await getBrokerId(userId);
@@ -1401,9 +1468,9 @@ async function startServer() {
   });
 
   // Atualiza o status de um imóvel (disponivel / vendido / alugado)
-  app.patch("/api/properties/:id/status", async (req, res) => {
+  app.patch("/api/properties/:id/status", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const { status } = req.body;
@@ -1425,9 +1492,9 @@ async function startServer() {
   });
 
   // Atualiza o status de um lead
-  app.patch("/api/leads/:id/status", async (req, res) => {
+  app.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const { status } = req.body;
@@ -1483,8 +1550,8 @@ async function startServer() {
   });
 
   // Cria cobrança no Asaas (cartão de crédito) e ativa o corretor imediatamente
-  app.post("/api/checkout", checkoutLimiter, async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post("/api/checkout", checkoutLimiter, requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     if (!ASAAS_API_KEY) {
@@ -1597,8 +1664,8 @@ async function startServer() {
   });
 
   // Retorna status da assinatura do corretor
-  app.get("/api/subscription", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.get("/api/subscription", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -1632,8 +1699,8 @@ async function startServer() {
   });
 
   // Retorna o consumo de atendimentos do ciclo atual e histórico de cobranças de excedente
-  app.get("/api/billing/usage", async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.get("/api/billing/usage", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -1843,8 +1910,9 @@ async function startServer() {
   // ─────────────────────────────────────────────────────────────────────────
 
   async function requireAdmin(req: any, res: any): Promise<boolean> {
-    const userId = req.headers['x-user-id'] as string;
+    const userId = await verifyAccessToken(req);
     if (!userId) { res.status(401).json({ error: "Unauthorized" }); return false; }
+    req.userId = userId;
     const { data } = await supabase.from('brokers').select('is_admin').eq('user_id', userId).single();
     if (!data?.is_admin) { res.status(403).json({ error: "Acesso negado" }); return false; }
     return true;
@@ -2009,7 +2077,7 @@ async function startServer() {
       await supabase.from('brokers').update({ status: 'bloqueado' }).eq('id', req.params.id);
 
       // Log admin
-      const adminId = req.headers['x-user-id'];
+      const adminId = (req as any).userId;
       console.log(`[ADMIN] Plano cancelado: broker=${req.params.id} por user=${adminId}`);
 
       res.json({ success: true });
@@ -2043,7 +2111,7 @@ async function startServer() {
         );
       }
 
-      const adminId = req.headers['x-user-id'];
+      const adminId = (req as any).userId;
       console.log(`[ADMIN] Conta excluída: broker=${req.params.id} por user=${adminId}`);
 
       res.json({ success: true });
@@ -3124,8 +3192,8 @@ async function startServer() {
   // Tabelas: followup_config (1 por corretor) + followup_conversations (por conversa).
 
   // [Corretor] Carrega a config de follow-up do corretor logado
-  app.get('/api/followup/config', async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.get('/api/followup/config', requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const brokerId = await getBrokerId(userId);
@@ -3142,8 +3210,8 @@ async function startServer() {
   });
 
   // [Corretor] Salva a config de follow-up (toggle + tempo + 3 mensagens)
-  app.post('/api/followup/config', async (req, res) => {
-    const userId = req.headers['x-user-id'] as string;
+  app.post('/api/followup/config', requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const brokerId = await getBrokerId(userId);
