@@ -2078,13 +2078,39 @@ async function startServer() {
 
       await supabase.from('brokers').update(brokerUpdate).eq('id', brokerId);
 
-      // Cobrança de excedente do ciclo que acaba de encerrar (apenas em renovações)
-      if (isRenewal && brokerBefore?.valid_until && brokerBefore?.asaas_credit_card_token) {
+      // Processa excedente do ciclo encerrado (apenas em renovações)
+      if (isRenewal && brokerBefore?.valid_until && subscriptionId) {
         const periodEnd = new Date(brokerBefore.valid_until);
-        // Tolera até 7 dias de atraso no webhook do Asaas (grace period)
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
         if (periodEnd >= sevenDaysAgo) {
-          await chargeOverageIfDue(brokerId, periodEnd, customerId, brokerBefore.asaas_credit_card_token);
+          // Verifica se prepareOverageBilling() já embutiu o excedente na assinatura
+          const windowStart = new Date(periodEnd.getTime() - 12 * 60 * 60 * 1000).toISOString();
+          const windowEnd   = new Date(periodEnd.getTime() + 12 * 60 * 60 * 1000).toISOString();
+          const { data: scheduled } = await supabase.from('overage_charges')
+            .select('id, tickets_overage, amount_cents')
+            .eq('broker_id', brokerId)
+            .eq('status', 'scheduled_in_subscription')
+            .gte('billing_period_end', windowStart)
+            .lte('billing_period_end', windowEnd)
+            .maybeSingle();
+
+          if (scheduled) {
+            // Caminho normal: excedente já estava embutido no valor da cobrança — marcar como pago
+            await supabase.from('overage_charges')
+              .update({ status: 'included_in_subscription', charged_at: new Date().toISOString() })
+              .eq('id', scheduled.id);
+            // Reseta subscription de volta ao valor base para o próximo ciclo
+            fetch(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}`, {
+              method: 'PUT',
+              headers: asaasHeaders(),
+              body: JSON.stringify({ value: SUBSCRIPTION_VALUE, description: 'Criate — Plano mensal' })
+            }).catch(e => console.error('[Billing] falha ao resetar subscription:', e.message));
+            console.log(`[Billing] excedente de ${scheduled.tickets_overage} tickets já incluído na renovação — ${brokerId}`);
+          } else if (brokerBefore?.asaas_credit_card_token) {
+            // Fallback: job de preparo não rodou (ex: servidor estava offline) → cobrança separada
+            await chargeOverageIfDue(brokerId, periodEnd, customerId, brokerBefore.asaas_credit_card_token);
+          }
         }
       }
 
@@ -2237,6 +2263,95 @@ async function startServer() {
       }).eq('id', chargeRow?.id);
       // Falha na cobrança de excedente não deve derrubar o fluxo principal de renovação
       console.error(`[Overage] ❌ falha ao cobrar excedente ${brokerId}:`, err.message);
+    }
+  }
+
+  // ─── Preparo de billing consolidado (roda a cada hora) ───────────────────
+  // Para cada corretor cuja renovação é amanhã, calcula o excedente do ciclo
+  // atual e atualiza o valor da assinatura no Asaas ANTES que ela seja cobrada.
+  // Assim o corretor recebe UMA cobrança = mensalidade + excedente (se houver).
+  // Quando o webhook de renovação chega, handleAsaasPaymentReceived reseta o
+  // valor de volta ao base e marca o registro como 'included_in_subscription'.
+  async function prepareOverageBilling(): Promise<void> {
+    if (!ASAAS_API_KEY) return;
+
+    const now = new Date();
+    // Janela: corretores com valid_until nas próximas 20-28 horas
+    // (evita preparar muito cedo ou deixar passar)
+    const windowStart = new Date(now.getTime() + 20 * 60 * 60 * 1000);
+    const windowEnd   = new Date(now.getTime() + 28 * 60 * 60 * 1000);
+
+    const { data: brokers } = await supabase.from('brokers')
+      .select('id, asaas_subscription_id, valid_until')
+      .eq('status', 'ativo')
+      .gte('valid_until', windowStart.toISOString())
+      .lte('valid_until', windowEnd.toISOString())
+      .not('asaas_subscription_id', 'is', null);
+
+    if (!brokers?.length) return;
+    console.log(`[Billing Prep] ${brokers.length} corretor(es) com renovação amanhã`);
+
+    for (const broker of brokers) {
+      try {
+        const periodEnd   = new Date(broker.valid_until);
+        const periodStart = new Date(periodEnd);
+        periodStart.setMonth(periodStart.getMonth() - 1);
+
+        // Idempotência: não preparar duas vezes o mesmo ciclo
+        const { data: alreadyDone } = await supabase.from('overage_charges')
+          .select('id')
+          .eq('broker_id', broker.id)
+          .in('status', ['scheduled_in_subscription', 'included_in_subscription', 'no_charge'])
+          .gte('billing_period_end', new Date(periodEnd.getTime() - 12 * 60 * 60 * 1000).toISOString())
+          .lte('billing_period_end', new Date(periodEnd.getTime() + 12 * 60 * 60 * 1000).toISOString())
+          .maybeSingle();
+
+        if (alreadyDone) continue;
+
+        const { count } = await supabase.from('ticket_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('broker_id', broker.id)
+          .gte('created_at', periodStart.toISOString())
+          .lt('created_at', periodEnd.toISOString());
+
+        const totalTickets  = count ?? 0;
+        const overage       = Math.max(0, totalTickets - PLAN_INCLUDED_TICKETS);
+        const overageAmount = overage * PLAN_OVERAGE_PRICE;
+        const totalValue    = SUBSCRIPTION_VALUE + overageAmount;
+
+        const description = overage > 0
+          ? `Criate — Plano mensal + ${overage} atendimento${overage > 1 ? 's' : ''} excedente${overage > 1 ? 's' : ''} × R$ ${PLAN_OVERAGE_PRICE.toFixed(2)}`
+          : 'Criate — Plano mensal';
+
+        // Atualiza valor da assinatura no Asaas para o próximo ciclo
+        const upResp = await fetch(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}`, {
+          method: 'PUT',
+          headers: asaasHeaders(),
+          body: JSON.stringify({ value: totalValue, description })
+        });
+
+        if (!upResp.ok) {
+          const err = await upResp.json().catch(() => ({}));
+          console.error(`[Billing Prep] falha ao atualizar subscription ${broker.asaas_subscription_id}:`, err);
+          continue;
+        }
+
+        await supabase.from('overage_charges').insert({
+          broker_id:            broker.id,
+          billing_period_start: periodStart.toISOString(),
+          billing_period_end:   periodEnd.toISOString(),
+          tickets_total:        totalTickets,
+          tickets_included:     PLAN_INCLUDED_TICKETS,
+          tickets_overage:      overage,
+          price_per_ticket:     PLAN_OVERAGE_PRICE,
+          amount_cents:         Math.round(overageAmount * 100),
+          status:               overage > 0 ? 'scheduled_in_subscription' : 'no_charge',
+        });
+
+        console.log(`[Billing Prep] ✅ ${broker.id} — R$ ${totalValue.toFixed(2)} (${overage} excedentes) agendado`);
+      } catch (err: any) {
+        console.error(`[Billing Prep] erro para ${broker.id}:`, err.message);
+      }
     }
   }
 
@@ -3266,6 +3381,12 @@ async function startServer() {
 
   setInterval(runFollowupTick, 60_000);
   console.log('[Follow-up] scheduler ativo (tick 60s)');
+
+  // Verifica a cada hora se algum corretor tem renovação amanhã e emite o
+  // valor combinado (mensalidade + excedente) na assinatura do Asaas.
+  setInterval(prepareOverageBilling, 60 * 60 * 1000);
+  prepareOverageBilling(); // executa uma vez ao subir (cobre restarts próximos ao billing)
+  console.log('[Billing Prep] scheduler ativo (tick 1h)');
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

@@ -313,3 +313,167 @@ confirmou que nada quebrou). Nenhuma lógica viva foi alterada:
 | `src/pages/WhatsAppSetup.tsx` | Página não roteada (não importada no `App.tsx`); leitura de QR migrou para o Z-PRO |
 | `GET /api/whatsapp/status` (em `server.ts`) | Único consumidor era a página acima |
 | `check.ts`, `check_env.ts`, `check_schema.ts` | Scripts de diagnóstico soltos (2 com service-role key hardcoded; um inseria dado de teste) |
+
+---
+
+## 13. Billing de excedente de atendimentos (implementado em 2026-06-11)
+
+### Modelo de cobrança
+
+| Parâmetro | Valor padrão | Env var para alterar |
+|-----------|-------------|---------------------|
+| Plano mensal |  (R$ 5,00 durante validação; futuro R$ 297,00) | Updating existing machines in 'imobiflow' with rolling strategy
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Waiting for 7814053f9e2078 [app] to have state: started
+> [1/2] Machine 7814053f9e2078 [app] has state: started
+> [1/2] Checking that 7814053f9e2078 [app] is up and running
+> [1/2] Waiting for 7814053f9e2078 [app] to become healthy: 1/1
+
+✔ [1/2] Machine 7814053f9e2078 [app] update succeeded
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Waiting for 7840637a265778 [app] to have state: started
+> [2/2] Machine 7840637a265778 [app] has state: started
+> [2/2] Checking that 7840637a265778 [app] is up and running
+> [2/2] Waiting for 7840637a265778 [app] to become healthy: 1/1
+
+✔ [2/2] Machine 7840637a265778 [app] update succeeded |
+| Atendimentos inclusos/ciclo | 100 | Updating existing machines in 'imobiflow' with rolling strategy
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Waiting for 7814053f9e2078 [app] to have state: started
+> [1/2] Machine 7814053f9e2078 [app] has state: started
+> [1/2] Checking that 7814053f9e2078 [app] is up and running
+> [1/2] Waiting for 7814053f9e2078 [app] to become healthy: 1/1
+
+✔ [1/2] Machine 7814053f9e2078 [app] update succeeded
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Waiting for 7840637a265778 [app] to have state: started
+> [2/2] Machine 7840637a265778 [app] has state: started
+> [2/2] Checking that 7840637a265778 [app] is up and running
+> [2/2] Waiting for 7840637a265778 [app] to become healthy: 1/1
+
+✔ [2/2] Machine 7840637a265778 [app] update succeeded |
+| Preço por atendimento excedente | R$ 2,00 | Updating existing machines in 'imobiflow' with rolling strategy
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Waiting for 7814053f9e2078 [app] to have state: started
+> [1/2] Machine 7814053f9e2078 [app] has state: started
+> [1/2] Checking that 7814053f9e2078 [app] is up and running
+> [1/2] Waiting for 7814053f9e2078 [app] to become healthy: 1/1
+
+✔ [1/2] Machine 7814053f9e2078 [app] update succeeded
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Waiting for 7840637a265778 [app] to have state: started
+> [2/2] Machine 7840637a265778 [app] has state: started
+> [2/2] Checking that 7840637a265778 [app] is up and running
+> [2/2] Waiting for 7840637a265778 [app] to become healthy: 1/1
+
+✔ [2/2] Machine 7840637a265778 [app] update succeeded |
+
+**Exemplo:** corretor com 250 atendimentos no ciclo → 150 excedentes → R$ 300,00 cobrado automaticamente no cartão.
+
+---
+
+### O que conta como atendimento
+
+Um **ticket novo no Z-PRO** = 1 atendimento. A contagem é feita pela chave composta :
+- Primeira mensagem de um lead novo → ticket A → conta 1
+- Segunda mensagem do mesmo lead no mesmo ticket → mesmo ticket A → **não conta** (idempotente via UNIQUE INDEX)
+- Lead retorna após meses, Z-PRO cria ticket B → conta +1
+
+A contabilização ocorre no endpoint  (disparado pelo N8N a cada mensagem recebida).
+
+---
+
+### Tabelas envolvidas
+
+#### 
+Registra cada atendimento único por broker.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| uid=197609(Criate) gid=197121 groups=197121 | UUID PK | — |
+|  | UUID FK brokers | Corretor dono do atendimento |
+|  | TEXT | ID do ticket no Z-PRO |
+|  | TEXT | Telefone normalizado do lead |
+|  | TIMESTAMPTZ | Momento do primeiro contato deste ticket |
+
+Índice único:  → garante que o mesmo ticket só conta uma vez.
+
+#### 
+Registra cada ciclo processado (com ou sem excedente).
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| uid=197609(Criate) gid=197121 groups=197121 | UUID PK | — |
+|  | UUID FK brokers | — |
+|  | TIMESTAMPTZ | Início do ciclo () |
+|  | TIMESTAMPTZ | Fim do ciclo ( anterior) |
+|  | INT | Total de tickets no ciclo |
+|  | INT | Limite do plano (padrão 100) |
+|  | INT | Tickets acima do limite |
+|  | NUMERIC | Preço unitário aplicado |
+|  | INT | Valor cobrado em centavos |
+|  | TEXT |  /  /  /  /  |
+|  | TEXT | ID do payment no Asaas (quando ) |
+|  | TEXT | Mensagem de erro (quando ) |
+|  | TIMESTAMPTZ | Quando a cobrança foi confirmada |
+
+####  — nova coluna
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+|  | TEXT | Token do cartão retornado pelo Asaas na criação da subscription. Permite cobranças avulsas futuras sem pedir o cartão novamente. |
+
+---
+
+### Fluxo de cobrança de excedente
+
+
+
+**Tolerância de atraso:** o webhook do Asaas pode chegar com até 7 dias de atraso;  só processa se .
+
+**Falha não-bloqueante:** se a cobrança de excedente falhar (cartão recusado, timeout), o registro fica  no banco, mas a renovação da assinatura principal **não é afetada**. Revisão manual via tabela .
+
+---
+
+### Endpoint para o corretor
+
+ — autenticado com 
+
+Retorna:
+
+
+---
+
+### Variáveis de ambiente relevantes
+
+| Variável | Descrição |
+|----------|-----------|
+|  | Valor mensal do plano (R$ — padrão 49.90, validação 5.00, futuro 297.00) |
+|  | Atendimentos inclusos no plano (padrão 100) |
+|  | Preço por atendimento excedente em R$ (padrão 2.00) |
+|  | Chave da API Asaas — necessária para criar payments de excedente |
+|  |  = api.asaas.com; qualquer outro = sandbox |
+
+Para alterar limites sem redeploy:
+Updating existing machines in 'imobiflow' with rolling strategy
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Updating 7814053f9e2078 [app]
+> [1/2] Waiting for 7814053f9e2078 [app] to have state: started
+> [1/2] Machine 7814053f9e2078 [app] has state: started
+> [1/2] Checking that 7814053f9e2078 [app] is up and running
+> [1/2] Waiting for 7814053f9e2078 [app] to become healthy: 1/1
+
+✔ [1/2] Machine 7814053f9e2078 [app] update succeeded
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Updating 7840637a265778 [app]
+> [2/2] Waiting for 7840637a265778 [app] to have state: started
+> [2/2] Machine 7840637a265778 [app] has state: started
+> [2/2] Checking that 7840637a265778 [app] is up and running
+> [2/2] Waiting for 7840637a265778 [app] to become healthy: 1/1
+
+✔ [2/2] Machine 7840637a265778 [app] update succeeded
