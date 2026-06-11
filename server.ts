@@ -59,6 +59,10 @@ const PROVISIONING_WEBHOOK_URL = process.env.PROVISIONING_WEBHOOK_URL
 const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/edc20beb-c9c1-46c3-bbef-8fa81538cbb3";
 const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "49.90");
+// Token configurado no painel Asaas (Configurações → Integrações → Webhooks → Token de Acesso).
+// O Asaas envia este valor no header 'asaas-access-token' em cada evento.
+// Sem ele configurado, a verificação é pulada (compatibilidade com sandbox sem token).
+const ASAAS_WEBHOOK_TOKEN     = process.env.ASAAS_WEBHOOK_TOKEN             || "";
 // Plano: 100 atendimentos inclusos; excedente R$ 2,00/ticket cobrado automaticamente no ciclo seguinte.
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=2.00
 const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
@@ -479,7 +483,17 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Broker profile could not be found or created" });
 
-      const { data, error } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+      // Campos seguros para expor ao frontend — NUNCA incluir:
+      // asaas_credit_card_token (cobra cartão), zpro_password, reset_token, reset_token_expires_at
+      const { data, error } = await supabase.from('brokers').select(
+        'id, user_id, name, email, phone, ai_name, broker_address, status, plan, ' +
+        'valid_until, grace_until, is_admin, corretora_id, ' +
+        'zpro_tenant_id, zpro_channel_id, zpro_channel_name, zpro_user_email, zpro_username, zpro_qr_code, ' +
+        'zpro_api_url, zpro_api_key, ' +
+        'asaas_customer_id, asaas_subscription_id, ' +
+        'provisioning_status, provisioning_error, provisioning_completed_at, ' +
+        'created_at, updated_at'
+      ).eq('id', brokerId).single();
       if (error) throw error;
       res.json(data);
     } catch (err: any) {
@@ -1736,6 +1750,17 @@ async function startServer() {
 
   // Webhook do Asaas — confirmação de pagamento, cancelamento
   app.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
+    // Verifica token de acesso enviado pelo Asaas no header (configurado em Asaas → Webhooks).
+    // Se ASAAS_WEBHOOK_TOKEN não estiver definido no ambiente, a verificação é pulada
+    // para manter compatibilidade com o sandbox de desenvolvimento.
+    if (ASAAS_WEBHOOK_TOKEN) {
+      const incoming = req.headers['asaas-access-token'];
+      if (incoming !== ASAAS_WEBHOOK_TOKEN) {
+        console.warn(`[Webhook] token inválido — origin: ${req.ip}`);
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    }
+
     const event = req.body;
 
     await supabase.from('webhook_logs').insert({
