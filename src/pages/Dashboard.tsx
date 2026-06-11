@@ -464,37 +464,39 @@ export default function Dashboard() {
           <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
           <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
           <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
-        </nav>
 
-        {/* Widget de consumo IA — sidebar desktop */}
-        {billingUsage && (() => {
-          const { tickets_used, tickets_included, overage_tickets, overage_amount } = billingUsage.current_period;
-          const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
-          const isOver = tickets_used > tickets_included;
-          const isWarning = !isOver && pct >= 80;
-          const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
-          const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
-          return (
-            <div className="mx-1 mb-3 p-3 rounded-2xl bg-white/5 border border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
-                  <Bot size={12} className="text-violet-400" /> Consumo IA
-                </span>
-                <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
+          {/* Widget de consumo IA — sidebar desktop */}
+          {billingUsage && (() => {
+            const { tickets_used, tickets_included, overage_amount } = billingUsage.current_period;
+            const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
+            const isOver = tickets_used > tickets_included;
+            const isWarning = !isOver && pct >= 80;
+            const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
+            const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
+            return (
+              <div onClick={() => handleTabChange('subscription')}
+                className="mt-2 p-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer
+                  hover:bg-white/10 hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
+                    <Bot size={12} className="text-violet-400" /> Consumo IA
+                  </span>
+                  <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
+                  <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
+                  {isOver
+                    ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
+                    : <span className="text-xs text-white/30">atendimentos</span>
+                  }
+                </div>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
-                <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
-                {isOver
-                  ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
-                  : <span className="text-xs text-white/30">atendimentos</span>
-                }
-              </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
+        </nav>
 
         <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
           <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
@@ -539,37 +541,39 @@ export default function Dashboard() {
               <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
               <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
               <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
-            </nav>
 
-            {/* Widget de consumo IA — drawer mobile */}
-            {billingUsage && (() => {
-              const { tickets_used, tickets_included, overage_tickets, overage_amount } = billingUsage.current_period;
-              const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
-              const isOver = tickets_used > tickets_included;
-              const isWarning = !isOver && pct >= 80;
-              const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
-              const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
-              return (
-                <div className="mb-3 p-3 rounded-2xl bg-white/5 border border-white/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
-                      <Bot size={12} className="text-violet-400" /> Consumo IA
-                    </span>
-                    <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
+              {/* Widget de consumo IA — drawer mobile */}
+              {billingUsage && (() => {
+                const { tickets_used, tickets_included, overage_amount } = billingUsage.current_period;
+                const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
+                const isOver = tickets_used > tickets_included;
+                const isWarning = !isOver && pct >= 80;
+                const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
+                const textColor = isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white/70';
+                return (
+                  <div onClick={() => { handleTabChange('subscription'); setSidebarOpen(false); }}
+                    className="mt-2 p-3 rounded-2xl bg-white/5 border border-white/10 cursor-pointer
+                      hover:bg-white/10 hover:border-white/20 transition-all">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-white/60 flex items-center gap-1.5">
+                        <Bot size={12} className="text-violet-400" /> Consumo IA
+                      </span>
+                      <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
+                      <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
+                      {isOver
+                        ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
+                        : <span className="text-xs text-white/30">atendimentos</span>
+                      }
+                    </div>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-2">
-                    <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-white/40">{tickets_used} / {tickets_included}</span>
-                    {isOver
-                      ? <span className="text-xs text-red-300 font-semibold">+R$ {overage_amount.toFixed(2)}</span>
-                      : <span className="text-xs text-white/30">atendimentos</span>
-                    }
-                  </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
+            </nav>
 
             <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
               <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
