@@ -583,11 +583,6 @@ export default function Dashboard() {
                       <Bot size={18} className="text-violet-400" />
                       <h3 className="text-base font-bold text-white">Atendimentos IA — Ciclo Atual</h3>
                     </div>
-                    {billingUsage && (
-                      <span className="text-xs text-white/40">
-                        até {new Date(billingUsage.current_period.end).toLocaleDateString('pt-BR')}
-                      </span>
-                    )}
                   </div>
 
                   {loadingBilling && !billingUsage ? (
