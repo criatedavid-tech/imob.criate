@@ -508,8 +508,8 @@ export default function Admin() {
                         {/* Descrição do tipo selecionado */}
                         <p className="text-[10px] text-white/30 -mt-2">
                           {adjType === 'bonus'
-                            ? 'Aumenta o limite incluso gratuitamente. O cliente ganha capacidade extra sem ser cobrado.'
-                            : 'Adiciona atendimentos ao uso do período. Serão cobrados como excedente na próxima renovação.'}
+                            ? `Positivo: concede atendimentos grátis. Negativo: estorna bônus indevido (máx. ${tickets_bonus > 0 ? tickets_bonus : 0} disponível). Os ${tickets_included_base} do plano são intocáveis.`
+                            : `Positivo: cobra atendimentos extras. Negativo: estorna cobrança indevida (máx. ${tickets_charge_adj > 0 ? tickets_charge_adj : 0} disponível).`}
                         </p>
 
                         {/* Input de quantidade */}
@@ -533,26 +533,44 @@ export default function Admin() {
                           </div>
 
                           {/* Preview do efeito */}
-                          {adjAmount && parsedAmt !== 0 && adjType === 'bonus' && parsedAmt > 0 && (
+                          {/* Bônus positivo */}
+                          {adjAmount && parsedAmt > 0 && adjType === 'bonus' && (
                             <p className="text-[10px] text-emerald-400/80">
-                              Limite passa de {tickets_included} → {tickets_included + parsedAmt} atendimentos inclusos (grátis)
+                              Limite passa de {tickets_included} → {tickets_included + parsedAmt} atendimentos inclusos (grátis).
                             </p>
                           )}
-                          {adjAmount && parsedAmt < 0 && adjType === 'bonus' && (
+                          {/* Bônus negativo — estorno válido */}
+                          {adjAmount && parsedAmt < 0 && adjType === 'bonus' && tickets_bonus > 0 && (tickets_bonus + parsedAmt) >= 0 && (
+                            <p className="text-[10px] text-amber-400/80">
+                              Estorna {Math.abs(parsedAmt)} de bônus. Limite volta de {tickets_included} → {tickets_included + parsedAmt}. Bônus restante: {tickets_bonus + parsedAmt}.
+                            </p>
+                          )}
+                          {/* Bônus negativo — excede o concedido */}
+                          {adjAmount && parsedAmt < 0 && adjType === 'bonus' && (tickets_bonus === 0 || (tickets_bonus + parsedAmt) < 0) && (
                             <p className="text-[10px] text-red-400/90 font-semibold">
-                              Ação não permitida. O plano do cliente garante {tickets_included_base} atendimentos inclusos.
+                              {tickets_bonus === 0
+                                ? 'Nenhum bônus concedido neste período. Não há o que estornar.'
+                                : `Bônus concedido: +${tickets_bonus}. Estorno máximo: ${tickets_bonus}. Os ${tickets_included_base} do plano são intocáveis.`}
                             </p>
                           )}
+                          {/* Cobrança positiva */}
                           {adjAmount && parsedAmt > 0 && adjType === 'charge' && (
                             <p className="text-[10px] text-orange-400/80">
-                              {parsedAmt} atendimentos cobrados diretamente como excedente:{' '}
-                              {parsedAmt} × R$ {overage_price_per_ticket.toFixed(2)} ={' '}
-                              <strong>R$ {(parsedAmt * overage_price_per_ticket).toFixed(2)}</strong> adicionado à próxima renovação.
+                              {parsedAmt} × R$ {overage_price_per_ticket.toFixed(2)} = <strong>R$ {(parsedAmt * overage_price_per_ticket).toFixed(2)}</strong> adicionado ao excedente da próxima renovação.
                             </p>
                           )}
-                          {adjAmount && parsedAmt < 0 && adjType === 'charge' && (
+                          {/* Cobrança negativa — estorno válido */}
+                          {adjAmount && parsedAmt < 0 && adjType === 'charge' && tickets_charge_adj > 0 && (tickets_charge_adj + parsedAmt) >= 0 && (
+                            <p className="text-[10px] text-amber-400/80">
+                              Estorna {Math.abs(parsedAmt)} de cobrança. Reduz excedente em R$ {(Math.abs(parsedAmt) * overage_price_per_ticket).toFixed(2)}. Cobrança restante: {tickets_charge_adj + parsedAmt}.
+                            </p>
+                          )}
+                          {/* Cobrança negativa — excede o cobrado */}
+                          {adjAmount && parsedAmt < 0 && adjType === 'charge' && (tickets_charge_adj === 0 || (tickets_charge_adj + parsedAmt) < 0) && (
                             <p className="text-[10px] text-red-400/90 font-semibold">
-                              Ação não permitida. O plano do cliente garante {tickets_included_base} atendimentos inclusos.
+                              {tickets_charge_adj === 0
+                                ? 'Nenhuma cobrança manual aplicada neste período. Não há o que estornar.'
+                                : `Cobrança aplicada: +${tickets_charge_adj}. Estorno máximo: ${tickets_charge_adj}.`}
                             </p>
                           )}
 
@@ -567,7 +585,11 @@ export default function Admin() {
 
                           <button
                             onClick={() => applyAdjustment(detail!.broker.id)}
-                            disabled={applyingAdj || !adjAmount || parsedAmt <= 0}
+                            disabled={
+                              applyingAdj || !adjAmount || parsedAmt === 0 ||
+                              (parsedAmt < 0 && adjType === 'bonus'  && (tickets_bonus  + parsedAmt) < 0) ||
+                              (parsedAmt < 0 && adjType === 'charge' && (tickets_charge_adj + parsedAmt) < 0)
+                            }
                             className={`w-full py-2 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${
                               adjType === 'bonus'
                                 ? 'bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30'

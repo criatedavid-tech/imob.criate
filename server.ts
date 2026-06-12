@@ -2201,13 +2201,6 @@ async function startServer() {
     if (!['bonus', 'charge'].includes(type)) {
       return res.status(400).json({ error: 'type deve ser "bonus" ou "charge"' });
     }
-    // Valores negativos são proibidos — o plano garante os atendimentos inclusos ao cliente
-    if (amount < 0) {
-      return res.status(400).json({
-        error: `Ação não permitida. O plano do cliente garante ${PLAN_INCLUDED_TICKETS} atendimentos inclusos e não é possível reduzir abaixo disso.`
-      });
-    }
-
     try {
       const { data: broker } = await supabase.from('brokers')
         .select('valid_until').eq('id', brokerId).single();
@@ -2216,6 +2209,23 @@ async function startServer() {
       const periodEnd   = broker.valid_until ? new Date(broker.valid_until) : new Date();
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
+
+      // Negativo só é permitido para estornar o que o admin mesmo lançou neste período
+      if (amount < 0) {
+        const { data: existing } = await supabase.from('ticket_adjustments')
+          .select('amount')
+          .eq('broker_id', brokerId)
+          .eq('type', type)
+          .gte('period_start', periodStart.toISOString());
+        const currentTotal = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+        if (currentTotal + amount < 0) {
+          const label = type === 'bonus' ? 'bônus concedido' : 'cobrança aplicada';
+          return res.status(400).json({
+            error: `${type === 'bonus' ? 'Bônus' : 'Cobrança'} deste período: +${currentTotal}. Estorno máximo: ${currentTotal}. Não é possível remover mais do que foi adicionado (os ${PLAN_INCLUDED_TICKETS} do plano são intocáveis).`,
+            current_total: currentTotal,
+          });
+        }
+      }
 
       const { data, error } = await supabase.from('ticket_adjustments').insert({
         broker_id:    brokerId,
