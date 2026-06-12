@@ -19,6 +19,7 @@ const BENEFITS = [
   'Leads capturados automaticamente no CRM',
   'Agente IA respondendo seu WhatsApp 24h',
   'Dashboard com métricas em tempo real',
+  '100 atendimentos de IA inclusos por mês',
 ];
 
 // ── Validações ─────────────────────────────────────────────────────────────
@@ -253,6 +254,10 @@ export default function PaymentPending() {
               </div>
             ))}
           </div>
+          <p className="text-[11px] text-white/40 leading-relaxed mt-4 pt-4 border-t border-white/10">
+            Após os 100 atendimentos mensais inclusos, cada atendimento adicional é cobrado a{' '}
+            <strong className="text-white/60">R$ 3,00 por ticket</strong>, lançado automaticamente na sua fatura seguinte.
+          </p>
         </div>
 
         {/* Formulário */}
@@ -373,7 +378,7 @@ export default function PaymentPending() {
               <input type="checkbox" checked={acceptedRecurring} onChange={e => setAcceptedRecurring(e.target.checked)}
                 className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]" />
               <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
-                Autorizo a cobrança mensal recorrente de <strong className="text-white/70">R$ {priceNum}</strong> no cartão informado, podendo cancelar a qualquer momento.
+                Autorizo a cobrança mensal recorrente de <strong className="text-white/70">R$ {priceNum}</strong> no cartão informado, bem como a cobrança de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> que exceder os 100 atendimentos mensais inclusos, podendo cancelar a qualquer momento.
               </span>
             </label>
             <label className="flex items-start gap-3 cursor-pointer group">
