@@ -43,7 +43,9 @@ interface TicketUsage {
   tickets_used: number;
   tickets_included_base: number;
   tickets_bonus: number;
+  tickets_charge_adj: number;
   tickets_included: number;
+  overage_price_per_ticket: number;
   adjustments: { id: string; amount: number; type: 'bonus' | 'charge'; reason: string | null; created_at: string }[];
 }
 
@@ -446,7 +448,7 @@ export default function Admin() {
 
                   {/* Atendimentos — ajuste manual */}
                   {ticketUsage && (() => {
-                    const { tickets_used, tickets_included, tickets_included_base, tickets_bonus, adjustments, period_start, period_end } = ticketUsage;
+                    const { tickets_used, tickets_included, tickets_included_base, tickets_bonus, tickets_charge_adj, overage_price_per_ticket, adjustments, period_start, period_end } = ticketUsage;
                     const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
                     const isOver = tickets_used > tickets_included;
                     const isWarn = !isOver && pct >= 80;
@@ -478,6 +480,11 @@ export default function Admin() {
                           {tickets_bonus > 0 && (
                             <p className="text-[10px] text-emerald-400/70 mt-1">
                               Base {tickets_included_base} + bônus {tickets_bonus} = {tickets_included} inclusos
+                            </p>
+                          )}
+                          {tickets_charge_adj > 0 && (
+                            <p className="text-[10px] text-orange-400/70 mt-0.5">
+                              Cobrança manual: {tickets_charge_adj} atend. = R$ {(tickets_charge_adj * overage_price_per_ticket).toFixed(2)} já lançados no excedente
                             </p>
                           )}
                         </div>
@@ -536,14 +543,17 @@ export default function Admin() {
                               Remove {Math.abs(parsedAmt)} de bônus. Limite mínimo garantido: {tickets_included_base}.
                             </p>
                           )}
-                          {adjAmount && parsedAmt !== 0 && adjType === 'charge' && parsedAmt > 0 && (
+                          {adjAmount && parsedAmt > 0 && adjType === 'charge' && (
                             <p className="text-[10px] text-orange-400/80">
-                              Uso passa de {tickets_used} → {tickets_used + parsedAmt}. {tickets_used + parsedAmt > tickets_included ? `${tickets_used + parsedAmt - tickets_included} excedente(s) serão cobrados na renovação.` : 'Ainda dentro do limite.'}
+                              {parsedAmt} atendimentos cobrados diretamente como excedente:{' '}
+                              {parsedAmt} × R$ {overage_price_per_ticket.toFixed(2)} ={' '}
+                              <strong>R$ {(parsedAmt * overage_price_per_ticket).toFixed(2)}</strong> adicionado à próxima renovação.
                             </p>
                           )}
-                          {adjAmount && parsedAmt !== 0 && adjType === 'charge' && parsedAmt < 0 && (
+                          {adjAmount && parsedAmt < 0 && adjType === 'charge' && (
                             <p className="text-[10px] text-blue-400/80">
-                              Correção: remove {Math.abs(parsedAmt)} do uso cobrado. Uso passa para {Math.max(0, tickets_used + parsedAmt)}.
+                              Correção: remove {Math.abs(parsedAmt)} de cobrança manual.{' '}
+                              Reduz o excedente em R$ {(Math.abs(parsedAmt) * overage_price_per_ticket).toFixed(2)}.
                             </p>
                           )}
 

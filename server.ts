@@ -1728,12 +1728,13 @@ async function startServer() {
       ]);
 
       // bonus → aumenta o limite incluso (gratuito para o cliente)
-      // charge → adiciona ao uso efetivo (será cobrado como excedente)
+      // charge → vai direto para excedente, independente do plano (admin cobra manualmente)
       const bonusAdj          = (adjData ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
       const chargeAdj         = (adjData ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
-      const ticketsUsed       = (ticketsRaw ?? 0) + chargeAdj;
+      const ticketsUsed       = ticketsRaw ?? 0;
       const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
-      const overage           = Math.max(0, ticketsUsed - effectiveIncluded);
+      const regularOverage    = Math.max(0, ticketsUsed - effectiveIncluded);
+      const overage           = regularOverage + Math.max(0, chargeAdj);
       const overageAmount     = overage * PLAN_OVERAGE_PRICE;
 
       // Histórico das últimas 6 cobranças de excedente
@@ -1751,7 +1752,7 @@ async function startServer() {
           tickets_included:         effectiveIncluded,
           tickets_included_base:    PLAN_INCLUDED_TICKETS,
           tickets_bonus:            Math.max(0, bonusAdj),
-          tickets_charge_adj:       chargeAdj,
+          tickets_charge_adj:       Math.max(0, chargeAdj),
           tickets_remaining:        Math.max(0, effectiveIncluded - ticketsUsed),
           overage_tickets:          overage,
           overage_amount:           overageAmount,
@@ -2164,19 +2165,20 @@ async function startServer() {
       const bonusAdj          = (adjData ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
       const chargeAdj         = (adjData ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
       const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
-      const ticketsUsed       = (ticketsRaw ?? 0) + chargeAdj;
+      const ticketsUsed       = ticketsRaw ?? 0;
 
       res.json({
-        broker_name:           broker.name,
-        period_start:          periodStart.toISOString(),
-        period_end:            periodEnd.toISOString(),
-        tickets_used:          ticketsUsed,
-        tickets_raw:           ticketsRaw ?? 0,
-        tickets_included_base: PLAN_INCLUDED_TICKETS,
-        tickets_bonus:         Math.max(0, bonusAdj),
-        tickets_charge_adj:    chargeAdj,
-        tickets_included:      effectiveIncluded,
-        adjustments:           adjData ?? [],
+        broker_name:              broker.name,
+        period_start:             periodStart.toISOString(),
+        period_end:               periodEnd.toISOString(),
+        tickets_used:             ticketsUsed,
+        tickets_raw:              ticketsRaw ?? 0,
+        tickets_included_base:    PLAN_INCLUDED_TICKETS,
+        tickets_bonus:            Math.max(0, bonusAdj),
+        tickets_charge_adj:       Math.max(0, chargeAdj),
+        tickets_included:         effectiveIncluded,
+        overage_price_per_ticket: PLAN_OVERAGE_PRICE,
+        adjustments:              adjData ?? [],
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
