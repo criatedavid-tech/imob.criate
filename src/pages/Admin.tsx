@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users, Home, TrendingUp, DollarSign, Shield, CheckCircle2,
   XCircle, Clock, ChevronRight, Loader2, RefreshCw, LogOut,
-  Building2, X, Search, Ban, Trash2, Zap
+  Building2, X, Search, Ban, Trash2, Zap, Activity, Plus, Minus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../services/auth';
@@ -36,6 +36,17 @@ interface BrokerDetail {
   subscriptions: any[];
 }
 
+interface TicketUsage {
+  broker_name: string;
+  period_start: string;
+  period_end: string;
+  tickets_raw: number;
+  tickets_adjustment: number;
+  tickets_effective: number;
+  tickets_included: number;
+  adjustments: { id: string; amount: number; reason: string | null; created_at: string }[];
+}
+
 const STATUS: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   ativo:     { label: 'Ativo',     cls: 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300', icon: <CheckCircle2 className="w-3 h-3" /> },
   pendente:  { label: 'Pendente',  cls: 'bg-amber-500/20 border-amber-400/30 text-amber-300',       icon: <Clock className="w-3 h-3" /> },
@@ -63,6 +74,10 @@ export default function Admin() {
   const [detail, setDetail] = useState<BrokerDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [ticketUsage, setTicketUsage] = useState<TicketUsage | null>(null);
+  const [adjAmount, setAdjAmount] = useState('');
+  const [adjReason, setAdjReason] = useState('');
+  const [applyingAdj, setApplyingAdj] = useState(false);
 
   const headers = authService.getAuthHeaders();
 
@@ -103,12 +118,48 @@ export default function Admin() {
   async function openDetail(id: string) {
     setLoadingDetail(true);
     setDetail(null);
+    setTicketUsage(null);
+    setAdjAmount('');
+    setAdjReason('');
     setActionMsg(null);
     try {
-      const res = await fetch(`/api/admin/brokers/${id}`, { headers });
-      setDetail(await res.json());
+      const [dRes, uRes] = await Promise.all([
+        fetch(`/api/admin/brokers/${id}`, { headers }),
+        fetch(`/api/admin/brokers/${id}/ticket-usage`, { headers })
+      ]);
+      setDetail(await dRes.json());
+      if (uRes.ok) setTicketUsage(await uRes.json());
     } finally {
       setLoadingDetail(false);
+    }
+  }
+
+  async function applyAdjustment(brokerId: string) {
+    const amount = parseInt(adjAmount, 10);
+    if (!adjAmount || isNaN(amount) || amount === 0) {
+      setActionMsg({ type: 'error', text: 'Informe um valor diferente de zero (ex: -10 ou +20).' });
+      return;
+    }
+    setApplyingAdj(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${brokerId}/ticket-adjustment`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, reason: adjReason })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao aplicar ajuste');
+      setActionMsg({ type: 'success', text: `Ajuste de ${amount > 0 ? '+' : ''}${amount} aplicado com sucesso.` });
+      setAdjAmount('');
+      setAdjReason('');
+      // Recarrega o uso de tickets
+      const uRes = await fetch(`/api/admin/brokers/${brokerId}/ticket-usage`, { headers });
+      if (uRes.ok) setTicketUsage(await uRes.json());
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setApplyingAdj(false);
     }
   }
 
@@ -390,6 +441,104 @@ export default function Admin() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Atendimentos — ajuste manual */}
+                  {ticketUsage && (() => {
+                    const { tickets_effective, tickets_included, tickets_raw, tickets_adjustment, adjustments, period_start, period_end } = ticketUsage;
+                    const pct = Math.min(100, Math.round((tickets_effective / tickets_included) * 100));
+                    const isOver = tickets_effective > tickets_included;
+                    const isWarn = !isOver && pct >= 80;
+                    const barColor = isOver ? 'bg-red-400' : isWarn ? 'bg-amber-400' : 'bg-violet-400';
+                    const fmtPeriod = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+                    return (
+                      <div className={`${glassCard} p-4 space-y-4`}>
+                        <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-1.5">
+                          <Activity className="w-3 h-3" /> Atendimentos
+                        </h4>
+
+                        {/* Barra de progresso */}
+                        <div>
+                          <div className="flex items-end justify-between mb-1.5">
+                            <span className={`text-2xl font-extrabold ${isOver ? 'text-red-300' : isWarn ? 'text-amber-300' : 'text-white'}`}>
+                              {tickets_effective}
+                            </span>
+                            <span className="text-xs text-white/40">/ {tickets_included} inclusos</span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-1">
+                            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-white/30">
+                            <span>{fmtPeriod(period_start)} – {fmtPeriod(period_end)}</span>
+                            <span>{pct}% usado</span>
+                          </div>
+                          {tickets_adjustment !== 0 && (
+                            <p className="text-[10px] text-white/30 mt-1">
+                              Base: {tickets_raw} + ajuste: {tickets_adjustment > 0 ? '+' : ''}{tickets_adjustment} = {tickets_effective}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Formulário de ajuste */}
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold text-white/50">Ajuste manual</p>
+                          <div className="flex gap-2">
+                            <div className="flex items-center rounded-xl bg-white/10 border border-white/15 overflow-hidden flex-1">
+                              <button
+                                onClick={() => setAdjAmount(v => { const n = parseInt(v||'0',10); return String(n - 1); })}
+                                className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                              ><Minus className="w-3.5 h-3.5" /></button>
+                              <input
+                                type="number"
+                                value={adjAmount}
+                                onChange={e => setAdjAmount(e.target.value)}
+                                placeholder="0"
+                                className="flex-1 bg-transparent text-center text-sm text-white outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <button
+                                onClick={() => setAdjAmount(v => { const n = parseInt(v||'0',10); return String(n + 1); })}
+                                className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                              ><Plus className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={adjReason}
+                            onChange={e => setAdjReason(e.target.value)}
+                            placeholder="Motivo (opcional)"
+                            maxLength={200}
+                            className="w-full px-3 py-2 rounded-xl text-sm text-white placeholder:text-white/30 bg-white/10 border border-white/15 outline-none focus:ring-1 focus:ring-white/25"
+                          />
+                          <button
+                            onClick={() => applyAdjustment(detail!.broker.id)}
+                            disabled={applyingAdj || !adjAmount || adjAmount === '0'}
+                            className="w-full py-2 text-sm font-semibold rounded-xl bg-violet-500/20 border border-violet-400/30 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                          >
+                            {applyingAdj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                            Aplicar ajuste
+                          </button>
+                        </div>
+
+                        {/* Histórico de ajustes */}
+                        {adjustments.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold text-white/30 mb-2">Histórico de ajustes</p>
+                            <div className="space-y-1">
+                              {adjustments.map(a => (
+                                <div key={a.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px]">
+                                  <span className={a.amount > 0 ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>
+                                    {a.amount > 0 ? '+' : ''}{a.amount}
+                                  </span>
+                                  <span className="text-white/40 flex-1 mx-2 truncate">{a.reason || '—'}</span>
+                                  <span className="text-white/25 shrink-0">{new Date(a.created_at).toLocaleDateString('pt-BR')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Mensagem de ação */}
                   {actionMsg && (

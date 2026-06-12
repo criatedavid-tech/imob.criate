@@ -1715,13 +1715,21 @@ async function startServer() {
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
 
-      const { count: ticketsUsed } = await supabase.from('ticket_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('broker_id', brokerId)
-        .gte('created_at', periodStart.toISOString())
-        .lt('created_at', periodEnd.toISOString());
+      const [{ count: ticketsRaw }, { data: adjData }] = await Promise.all([
+        supabase.from('ticket_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('broker_id', brokerId)
+          .gte('created_at', periodStart.toISOString())
+          .lt('created_at', periodEnd.toISOString()),
+        supabase.from('ticket_adjustments')
+          .select('amount')
+          .eq('broker_id', brokerId)
+          .gte('period_start', periodStart.toISOString())
+      ]);
 
-      const overage        = Math.max(0, (ticketsUsed ?? 0) - PLAN_INCLUDED_TICKETS);
+      const totalAdj       = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+      const ticketsUsed    = Math.max(0, (ticketsRaw ?? 0) + totalAdj);
+      const overage        = Math.max(0, ticketsUsed - PLAN_INCLUDED_TICKETS);
       const overageAmount  = overage * PLAN_OVERAGE_PRICE;
 
       // Histórico das últimas 6 cobranças de excedente
@@ -1735,9 +1743,9 @@ async function startServer() {
         current_period: {
           start:             periodStart.toISOString(),
           end:               periodEnd.toISOString(),
-          tickets_used:      ticketsUsed ?? 0,
+          tickets_used:      ticketsUsed,
           tickets_included:  PLAN_INCLUDED_TICKETS,
-          tickets_remaining: Math.max(0, PLAN_INCLUDED_TICKETS - (ticketsUsed ?? 0)),
+          tickets_remaining: Math.max(0, PLAN_INCLUDED_TICKETS - ticketsUsed),
           overage_tickets:   overage,
           overage_amount:    overageAmount,
           overage_price_per_ticket: PLAN_OVERAGE_PRICE,
@@ -2115,6 +2123,89 @@ async function startServer() {
       console.log(`[ADMIN] Conta excluída: broker=${req.params.id} por user=${adminId}`);
 
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Consulta consumo de atendimentos de um corretor (período atual)
+  app.get("/api/admin/brokers/:id/ticket-usage", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    try {
+      const brokerId = req.params.id;
+      const { data: broker } = await supabase.from('brokers')
+        .select('valid_until, name').eq('id', brokerId).single();
+      if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
+
+      const periodEnd   = broker.valid_until ? new Date(broker.valid_until) : new Date();
+      const periodStart = new Date(periodEnd);
+      periodStart.setMonth(periodStart.getMonth() - 1);
+
+      const [{ count: ticketsRaw }, { data: adjData }] = await Promise.all([
+        supabase.from('ticket_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('broker_id', brokerId)
+          .gte('created_at', periodStart.toISOString())
+          .lt('created_at', periodEnd.toISOString()),
+        supabase.from('ticket_adjustments')
+          .select('id, amount, reason, created_at')
+          .eq('broker_id', brokerId)
+          .gte('period_start', periodStart.toISOString())
+          .order('created_at', { ascending: false })
+      ]);
+
+      const totalAdj      = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+      const ticketsEff    = Math.max(0, (ticketsRaw ?? 0) + totalAdj);
+
+      res.json({
+        broker_name:        broker.name,
+        period_start:       periodStart.toISOString(),
+        period_end:         periodEnd.toISOString(),
+        tickets_raw:        ticketsRaw ?? 0,
+        tickets_adjustment: totalAdj,
+        tickets_effective:  ticketsEff,
+        tickets_included:   PLAN_INCLUDED_TICKETS,
+        adjustments:        adjData ?? [],
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Ajuste manual de atendimentos de um corretor (período atual)
+  app.post("/api/admin/brokers/:id/ticket-adjustment", async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    const adminId  = (req as any).userId;
+    const brokerId = req.params.id;
+
+    const amount = parseInt(req.body?.amount, 10);
+    const reason = String(req.body?.reason || '').trim().slice(0, 500);
+
+    if (!Number.isInteger(amount) || amount === 0) {
+      return res.status(400).json({ error: 'amount deve ser um inteiro diferente de zero' });
+    }
+
+    try {
+      const { data: broker } = await supabase.from('brokers')
+        .select('valid_until').eq('id', brokerId).single();
+      if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
+
+      const periodEnd   = broker.valid_until ? new Date(broker.valid_until) : new Date();
+      const periodStart = new Date(periodEnd);
+      periodStart.setMonth(periodStart.getMonth() - 1);
+
+      const { data, error } = await supabase.from('ticket_adjustments').insert({
+        broker_id:    brokerId,
+        amount,
+        reason:       reason || null,
+        admin_id:     adminId,
+        period_start: periodStart.toISOString(),
+        period_end:   periodEnd.toISOString(),
+      }).select().single();
+      if (error) throw error;
+
+      console.log(`[ADMIN] Ajuste tickets: broker=${brokerId} amount=${amount>0?'+':''}${amount} por admin=${adminId}`);
+      res.json({ success: true, adjustment: data });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
