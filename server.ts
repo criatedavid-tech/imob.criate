@@ -2201,6 +2201,12 @@ async function startServer() {
     if (!['bonus', 'charge'].includes(type)) {
       return res.status(400).json({ error: 'type deve ser "bonus" ou "charge"' });
     }
+    // Valores negativos são proibidos — o plano garante os atendimentos inclusos ao cliente
+    if (amount < 0) {
+      return res.status(400).json({
+        error: `Ação não permitida. O plano do cliente garante ${PLAN_INCLUDED_TICKETS} atendimentos inclusos e não é possível reduzir abaixo disso.`
+      });
+    }
 
     try {
       const { data: broker } = await supabase.from('brokers')
@@ -2210,21 +2216,6 @@ async function startServer() {
       const periodEnd   = broker.valid_until ? new Date(broker.valid_until) : new Date();
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
-
-      // Bônus negativo: garante que o limite não caia abaixo do plano base
-      if (type === 'bonus' && amount < 0) {
-        const { data: existing } = await supabase.from('ticket_adjustments')
-          .select('amount')
-          .eq('broker_id', brokerId)
-          .eq('type', 'bonus')
-          .gte('period_start', periodStart.toISOString());
-        const currentBonus = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-        if (currentBonus + amount < 0) {
-          return res.status(400).json({
-            error: `Bônus atual é +${Math.max(0, currentBonus)}. Não é possível remover mais do que o bônus concedido (limite mínimo = plano base de ${PLAN_INCLUDED_TICKETS}).`
-          });
-        }
-      }
 
       const { data, error } = await supabase.from('ticket_adjustments').insert({
         broker_id:    brokerId,

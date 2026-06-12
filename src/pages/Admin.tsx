@@ -538,9 +538,9 @@ export default function Admin() {
                               Limite passa de {tickets_included} → {tickets_included + parsedAmt} atendimentos inclusos (grátis)
                             </p>
                           )}
-                          {adjAmount && parsedAmt !== 0 && adjType === 'bonus' && parsedAmt < 0 && (
-                            <p className="text-[10px] text-amber-400/80">
-                              Remove {Math.abs(parsedAmt)} de bônus. Limite mínimo garantido: {tickets_included_base}.
+                          {adjAmount && parsedAmt < 0 && adjType === 'bonus' && (
+                            <p className="text-[10px] text-red-400/90 font-semibold">
+                              Ação não permitida. O plano do cliente garante {tickets_included_base} atendimentos inclusos.
                             </p>
                           )}
                           {adjAmount && parsedAmt > 0 && adjType === 'charge' && (
@@ -551,9 +551,8 @@ export default function Admin() {
                             </p>
                           )}
                           {adjAmount && parsedAmt < 0 && adjType === 'charge' && (
-                            <p className="text-[10px] text-blue-400/80">
-                              Correção: remove {Math.abs(parsedAmt)} de cobrança manual.{' '}
-                              Reduz o excedente em R$ {(Math.abs(parsedAmt) * overage_price_per_ticket).toFixed(2)}.
+                            <p className="text-[10px] text-red-400/90 font-semibold">
+                              Ação não permitida. O plano do cliente garante {tickets_included_base} atendimentos inclusos.
                             </p>
                           )}
 
@@ -568,7 +567,7 @@ export default function Admin() {
 
                           <button
                             onClick={() => applyAdjustment(detail!.broker.id)}
-                            disabled={applyingAdj || !adjAmount || adjAmount === '0' || parsedAmt === 0}
+                            disabled={applyingAdj || !adjAmount || parsedAmt <= 0}
                             className={`w-full py-2 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${
                               adjType === 'bonus'
                                 ? 'bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30'
