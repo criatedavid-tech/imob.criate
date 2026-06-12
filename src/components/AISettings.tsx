@@ -14,25 +14,31 @@ export default function AISettings() {
     name: '',
     phone: '',
     ai_name: '',
-    broker_address: '',
-    ai_custom_prompt: ''
+    broker_address: ''
   });
+  const [agentPrompt, setAgentPrompt] = useState('');
   const [message, setMessage] = useState<{ type: string; text: string }>({ type: '', text: '' });
 
   useEffect(() => { fetchSettings(); }, []);
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch('/api/brokers/me', { headers: authService.getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
+      const [meRes, agentRes] = await Promise.all([
+        fetch('/api/brokers/me', { headers: authService.getAuthHeaders() }),
+        fetch('/api/brokers/my-agent', { headers: authService.getAuthHeaders() })
+      ]);
+      if (meRes.ok) {
+        const data = await meRes.json();
         setSettings({
           name: data.name || '',
           phone: data.phone || '',
           ai_name: data.ai_name || '',
-          broker_address: data.broker_address || '',
-          ai_custom_prompt: data.ai_custom_prompt || ''
+          broker_address: data.broker_address || ''
         });
+      }
+      if (agentRes.ok) {
+        const agent = await agentRes.json();
+        setAgentPrompt(agent.system_prompt || '');
       }
     } catch (error) {
       console.error('Erro ao buscar configurações:', error);
@@ -46,12 +52,20 @@ export default function AISettings() {
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
-      const res = await fetch('/api/brokers/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify(settings)
+      await Promise.all([
+        fetch('/api/brokers/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+          body: JSON.stringify(settings)
+        }),
+        fetch('/api/brokers/my-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+          body: JSON.stringify({ system_prompt: agentPrompt })
+        })
+      ]).then(([r1, r2]) => {
+        if (!r1.ok || !r2.ok) throw new Error();
       });
-      if (!res.ok) throw new Error();
       setMessage({ type: 'success', text: 'Configurações salvas com sucesso!' });
     } catch {
       setMessage({ type: 'error', text: 'Erro ao salvar configurações.' });
@@ -170,8 +184,8 @@ export default function AISettings() {
               Instruções Personalizadas para a IA
             </label>
             <textarea
-              value={settings.ai_custom_prompt}
-              onChange={e => setSettings({ ...settings, ai_custom_prompt: e.target.value })}
+              value={agentPrompt}
+              onChange={e => setAgentPrompt(e.target.value)}
               rows={6}
               className={`${inputClass} px-4 py-3 resize-none`}
               placeholder={"Ex: Somos especializados em imóveis de alto padrão na Zona Sul.\nMencione sempre que oferecemos avaliação gratuita.\nNão informe preços sem antes perguntar o orçamento do cliente."}

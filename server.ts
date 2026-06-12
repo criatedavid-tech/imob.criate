@@ -573,7 +573,7 @@ async function startServer() {
 
       // Whitelist: impede mass assignment (ex.: is_admin, valid_until, status
       // ou tokens de pagamento enviados no body seriam gravados sem isso).
-      const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address', 'ai_custom_prompt'] as const;
+      const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address'] as const;
       const settings: Record<string, any> = {};
       for (const field of ALLOWED_SETTINGS) {
         if (req.body?.[field] !== undefined) settings[field] = req.body[field];
@@ -593,6 +593,90 @@ async function startServer() {
     }
   });
 
+
+  // ─── Agente IA do corretor ───────────────────────────────────────────────
+
+  app.get("/api/brokers/my-agent", requireUser, async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+      const { data } = await supabase
+        .from('broker_agents')
+        .select('id, agent_name, system_prompt, is_active, updated_at')
+        .eq('broker_id', brokerId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      res.json(data ?? { agent_name: 'Agente Principal', system_prompt: '' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/brokers/my-agent", requireUser, async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+      const agent_name: string = req.body?.agent_name || 'Agente Principal';
+      const system_prompt: string = req.body?.system_prompt ?? '';
+
+      const { data: existing } = await supabase
+        .from('broker_agents')
+        .select('id')
+        .eq('broker_id', brokerId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        const { data, error } = await supabase
+          .from('broker_agents')
+          .update({ agent_name, system_prompt, updated_at: new Date() })
+          .eq('id', existing.id)
+          .select('id, agent_name, system_prompt, updated_at')
+          .single();
+        if (error) throw error;
+        return res.json(data);
+      }
+
+      const { data, error } = await supabase
+        .from('broker_agents')
+        .insert({ broker_id: brokerId, agent_name, system_prompt })
+        .select('id, agent_name, system_prompt, updated_at')
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Endpoint para N8N — auth via INTERNAL_PROXY_TOKEN
+  app.get("/api/brokers/:id/agent", async (req, res) => {
+    const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+    if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
+      return res.status(401).json({ error: 'Token inválido.' });
+    }
+    try {
+      const { id } = req.params;
+      const { data } = await supabase
+        .from('broker_agents')
+        .select('agent_name, system_prompt')
+        .eq('broker_id', id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      res.json({ agent_name: data?.agent_name ?? 'Agente Principal', system_prompt: data?.system_prompt ?? '' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Helper to ensure broker exists
   async function getBrokerId(userId: string) {
