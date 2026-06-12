@@ -1727,10 +1727,14 @@ async function startServer() {
           .gte('period_start', periodStart.toISOString())
       ]);
 
-      const totalAdj       = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-      const ticketsUsed    = Math.max(0, (ticketsRaw ?? 0) + totalAdj);
-      const overage        = Math.max(0, ticketsUsed - PLAN_INCLUDED_TICKETS);
-      const overageAmount  = overage * PLAN_OVERAGE_PRICE;
+      // O ajuste incide sobre o LIMITE incluso, não o uso real.
+      // +N = admin concede N atendimentos extras; -N = reduz o bônus concedido.
+      // O limite efetivo nunca pode cair abaixo do PLAN_INCLUDED_TICKETS.
+      const totalAdj          = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+      const ticketsUsed       = ticketsRaw ?? 0;
+      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + totalAdj);
+      const overage           = Math.max(0, ticketsUsed - effectiveIncluded);
+      const overageAmount     = overage * PLAN_OVERAGE_PRICE;
 
       // Histórico das últimas 6 cobranças de excedente
       const { data: history } = await supabase.from('overage_charges')
@@ -1741,13 +1745,15 @@ async function startServer() {
 
       res.json({
         current_period: {
-          start:             periodStart.toISOString(),
-          end:               periodEnd.toISOString(),
-          tickets_used:      ticketsUsed,
-          tickets_included:  PLAN_INCLUDED_TICKETS,
-          tickets_remaining: Math.max(0, PLAN_INCLUDED_TICKETS - ticketsUsed),
-          overage_tickets:   overage,
-          overage_amount:    overageAmount,
+          start:                    periodStart.toISOString(),
+          end:                      periodEnd.toISOString(),
+          tickets_used:             ticketsUsed,
+          tickets_included:         effectiveIncluded,
+          tickets_included_base:    PLAN_INCLUDED_TICKETS,
+          tickets_bonus:            Math.max(0, totalAdj),
+          tickets_remaining:        Math.max(0, effectiveIncluded - ticketsUsed),
+          overage_tickets:          overage,
+          overage_amount:           overageAmount,
           overage_price_per_ticket: PLAN_OVERAGE_PRICE,
         },
         history: history ?? [],
@@ -2154,18 +2160,21 @@ async function startServer() {
           .order('created_at', { ascending: false })
       ]);
 
-      const totalAdj      = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-      const ticketsEff    = Math.max(0, (ticketsRaw ?? 0) + totalAdj);
+      // Ajuste incide sobre o LIMITE, não sobre o uso real.
+      // Limite efetivo nunca cai abaixo do plano base para não lesar o cliente.
+      const totalAdj          = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + totalAdj);
+      const ticketsUsed       = ticketsRaw ?? 0;
 
       res.json({
-        broker_name:        broker.name,
-        period_start:       periodStart.toISOString(),
-        period_end:         periodEnd.toISOString(),
-        tickets_raw:        ticketsRaw ?? 0,
-        tickets_adjustment: totalAdj,
-        tickets_effective:  ticketsEff,
-        tickets_included:   PLAN_INCLUDED_TICKETS,
-        adjustments:        adjData ?? [],
+        broker_name:           broker.name,
+        period_start:          periodStart.toISOString(),
+        period_end:            periodEnd.toISOString(),
+        tickets_used:          ticketsUsed,
+        tickets_included_base: PLAN_INCLUDED_TICKETS,
+        tickets_bonus:         Math.max(0, totalAdj),
+        tickets_included:      effectiveIncluded,
+        adjustments:           adjData ?? [],
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2193,6 +2202,20 @@ async function startServer() {
       const periodEnd   = broker.valid_until ? new Date(broker.valid_until) : new Date();
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
+
+      // Garante que o limite efetivo nunca fique abaixo do plano base
+      if (amount < 0) {
+        const { data: existing } = await supabase.from('ticket_adjustments')
+          .select('amount')
+          .eq('broker_id', brokerId)
+          .gte('period_start', periodStart.toISOString());
+        const currentBonus = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+        if (currentBonus + amount < 0) {
+          return res.status(400).json({
+            error: `Não é possível reduzir abaixo do plano base (${PLAN_INCLUDED_TICKETS} atendimentos). Bônus atual: +${Math.max(0, currentBonus)}.`
+          });
+        }
+      }
 
       const { data, error } = await supabase.from('ticket_adjustments').insert({
         broker_id:    brokerId,

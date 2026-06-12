@@ -40,9 +40,9 @@ interface TicketUsage {
   broker_name: string;
   period_start: string;
   period_end: string;
-  tickets_raw: number;
-  tickets_adjustment: number;
-  tickets_effective: number;
+  tickets_used: number;
+  tickets_included_base: number;
+  tickets_bonus: number;
   tickets_included: number;
   adjustments: { id: string; amount: number; reason: string | null; created_at: string }[];
 }
@@ -444,9 +444,9 @@ export default function Admin() {
 
                   {/* Atendimentos — ajuste manual */}
                   {ticketUsage && (() => {
-                    const { tickets_effective, tickets_included, tickets_raw, tickets_adjustment, adjustments, period_start, period_end } = ticketUsage;
-                    const pct = Math.min(100, Math.round((tickets_effective / tickets_included) * 100));
-                    const isOver = tickets_effective > tickets_included;
+                    const { tickets_used, tickets_included, tickets_included_base, tickets_bonus, adjustments, period_start, period_end } = ticketUsage;
+                    const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));
+                    const isOver = tickets_used > tickets_included;
                     const isWarn = !isOver && pct >= 80;
                     const barColor = isOver ? 'bg-red-400' : isWarn ? 'bg-amber-400' : 'bg-violet-400';
                     const fmtPeriod = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -457,11 +457,11 @@ export default function Admin() {
                           <Activity className="w-3 h-3" /> Atendimentos
                         </h4>
 
-                        {/* Barra de progresso */}
+                        {/* Barra de progresso — uso real vs limite ajustado */}
                         <div>
                           <div className="flex items-end justify-between mb-1.5">
                             <span className={`text-2xl font-extrabold ${isOver ? 'text-red-300' : isWarn ? 'text-amber-300' : 'text-white'}`}>
-                              {tickets_effective}
+                              {tickets_used}
                             </span>
                             <span className="text-xs text-white/40">/ {tickets_included} inclusos</span>
                           </div>
@@ -472,35 +472,45 @@ export default function Admin() {
                             <span>{fmtPeriod(period_start)} – {fmtPeriod(period_end)}</span>
                             <span>{pct}% usado</span>
                           </div>
-                          {tickets_adjustment !== 0 && (
-                            <p className="text-[10px] text-white/30 mt-1">
-                              Base: {tickets_raw} + ajuste: {tickets_adjustment > 0 ? '+' : ''}{tickets_adjustment} = {tickets_effective}
+                          {tickets_bonus > 0 && (
+                            <p className="text-[10px] text-emerald-400/70 mt-1">
+                              Plano base {tickets_included_base} + bônus concedido {tickets_bonus} = {tickets_included} inclusos
                             </p>
                           )}
                         </div>
 
-                        {/* Formulário de ajuste */}
+                        {/* Formulário de ajuste — aumenta ou reduz o LIMITE incluso */}
                         <div className="space-y-2">
-                          <p className="text-[10px] font-semibold text-white/50">Ajuste manual</p>
-                          <div className="flex gap-2">
-                            <div className="flex items-center rounded-xl bg-white/10 border border-white/15 overflow-hidden flex-1">
-                              <button
-                                onClick={() => setAdjAmount(v => { const n = parseInt(v||'0',10); return String(n - 1); })}
-                                className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                              ><Minus className="w-3.5 h-3.5" /></button>
-                              <input
-                                type="number"
-                                value={adjAmount}
-                                onChange={e => setAdjAmount(e.target.value)}
-                                placeholder="0"
-                                className="flex-1 bg-transparent text-center text-sm text-white outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              />
-                              <button
-                                onClick={() => setAdjAmount(v => { const n = parseInt(v||'0',10); return String(n + 1); })}
-                                className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                              ><Plus className="w-3.5 h-3.5" /></button>
-                            </div>
+                          <p className="text-[10px] font-semibold text-white/50">
+                            Ajuste de limite &mdash; <span className="text-white/30 font-normal">positivo concede mais atendimentos, negativo retira bônus</span>
+                          </p>
+                          <div className="flex items-center rounded-xl bg-white/10 border border-white/15 overflow-hidden">
+                            <button
+                              onClick={() => setAdjAmount(v => String((parseInt(v || '0', 10)) - 1))}
+                              className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                            ><Minus className="w-3.5 h-3.5" /></button>
+                            <input
+                              type="number"
+                              value={adjAmount}
+                              onChange={e => setAdjAmount(e.target.value)}
+                              placeholder="0"
+                              className="flex-1 bg-transparent text-center text-sm text-white outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              onClick={() => setAdjAmount(v => String((parseInt(v || '0', 10)) + 1))}
+                              className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                            ><Plus className="w-3.5 h-3.5" /></button>
                           </div>
+                          {adjAmount && parseInt(adjAmount, 10) > 0 && (
+                            <p className="text-[10px] text-emerald-400/70">
+                              Novo limite: {tickets_included + parseInt(adjAmount, 10)} atendimentos (+{adjAmount} bônus)
+                            </p>
+                          )}
+                          {adjAmount && parseInt(adjAmount, 10) < 0 && (
+                            <p className="text-[10px] text-amber-400/70">
+                              Remove {Math.abs(parseInt(adjAmount, 10))} de bônus. Limite mínimo garantido: {tickets_included_base}.
+                            </p>
+                          )}
                           <input
                             type="text"
                             value={adjReason}
@@ -522,11 +532,11 @@ export default function Admin() {
                         {/* Histórico de ajustes */}
                         {adjustments.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-semibold text-white/30 mb-2">Histórico de ajustes</p>
+                            <p className="text-[10px] font-semibold text-white/30 mb-2">Histórico de ajustes de limite</p>
                             <div className="space-y-1">
                               {adjustments.map(a => (
                                 <div key={a.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px]">
-                                  <span className={a.amount > 0 ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>
+                                  <span className={a.amount > 0 ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
                                     {a.amount > 0 ? '+' : ''}{a.amount}
                                   </span>
                                   <span className="text-white/40 flex-1 mx-2 truncate">{a.reason || '—'}</span>
