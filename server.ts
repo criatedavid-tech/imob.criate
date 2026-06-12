@@ -1722,17 +1722,17 @@ async function startServer() {
           .gte('created_at', periodStart.toISOString())
           .lt('created_at', periodEnd.toISOString()),
         supabase.from('ticket_adjustments')
-          .select('amount')
+          .select('amount, type')
           .eq('broker_id', brokerId)
           .gte('period_start', periodStart.toISOString())
       ]);
 
-      // O ajuste incide sobre o LIMITE incluso, não o uso real.
-      // +N = admin concede N atendimentos extras; -N = reduz o bônus concedido.
-      // O limite efetivo nunca pode cair abaixo do PLAN_INCLUDED_TICKETS.
-      const totalAdj          = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-      const ticketsUsed       = ticketsRaw ?? 0;
-      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + totalAdj);
+      // bonus → aumenta o limite incluso (gratuito para o cliente)
+      // charge → adiciona ao uso efetivo (será cobrado como excedente)
+      const bonusAdj          = (adjData ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
+      const chargeAdj         = (adjData ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
+      const ticketsUsed       = (ticketsRaw ?? 0) + chargeAdj;
+      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
       const overage           = Math.max(0, ticketsUsed - effectiveIncluded);
       const overageAmount     = overage * PLAN_OVERAGE_PRICE;
 
@@ -1750,7 +1750,8 @@ async function startServer() {
           tickets_used:             ticketsUsed,
           tickets_included:         effectiveIncluded,
           tickets_included_base:    PLAN_INCLUDED_TICKETS,
-          tickets_bonus:            Math.max(0, totalAdj),
+          tickets_bonus:            Math.max(0, bonusAdj),
+          tickets_charge_adj:       chargeAdj,
           tickets_remaining:        Math.max(0, effectiveIncluded - ticketsUsed),
           overage_tickets:          overage,
           overage_amount:           overageAmount,
@@ -2154,25 +2155,26 @@ async function startServer() {
           .gte('created_at', periodStart.toISOString())
           .lt('created_at', periodEnd.toISOString()),
         supabase.from('ticket_adjustments')
-          .select('id, amount, reason, created_at')
+          .select('id, amount, type, reason, created_at')
           .eq('broker_id', brokerId)
           .gte('period_start', periodStart.toISOString())
           .order('created_at', { ascending: false })
       ]);
 
-      // Ajuste incide sobre o LIMITE, não sobre o uso real.
-      // Limite efetivo nunca cai abaixo do plano base para não lesar o cliente.
-      const totalAdj          = (adjData ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + totalAdj);
-      const ticketsUsed       = ticketsRaw ?? 0;
+      const bonusAdj          = (adjData ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
+      const chargeAdj         = (adjData ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
+      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
+      const ticketsUsed       = (ticketsRaw ?? 0) + chargeAdj;
 
       res.json({
         broker_name:           broker.name,
         period_start:          periodStart.toISOString(),
         period_end:            periodEnd.toISOString(),
         tickets_used:          ticketsUsed,
+        tickets_raw:           ticketsRaw ?? 0,
         tickets_included_base: PLAN_INCLUDED_TICKETS,
-        tickets_bonus:         Math.max(0, totalAdj),
+        tickets_bonus:         Math.max(0, bonusAdj),
+        tickets_charge_adj:    chargeAdj,
         tickets_included:      effectiveIncluded,
         adjustments:           adjData ?? [],
       });
@@ -2188,10 +2190,14 @@ async function startServer() {
     const brokerId = req.params.id;
 
     const amount = parseInt(req.body?.amount, 10);
+    const type   = String(req.body?.type || 'bonus');
     const reason = String(req.body?.reason || '').trim().slice(0, 500);
 
     if (!Number.isInteger(amount) || amount === 0) {
       return res.status(400).json({ error: 'amount deve ser um inteiro diferente de zero' });
+    }
+    if (!['bonus', 'charge'].includes(type)) {
+      return res.status(400).json({ error: 'type deve ser "bonus" ou "charge"' });
     }
 
     try {
@@ -2203,16 +2209,17 @@ async function startServer() {
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
 
-      // Garante que o limite efetivo nunca fique abaixo do plano base
-      if (amount < 0) {
+      // Bônus negativo: garante que o limite não caia abaixo do plano base
+      if (type === 'bonus' && amount < 0) {
         const { data: existing } = await supabase.from('ticket_adjustments')
           .select('amount')
           .eq('broker_id', brokerId)
+          .eq('type', 'bonus')
           .gte('period_start', periodStart.toISOString());
         const currentBonus = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
         if (currentBonus + amount < 0) {
           return res.status(400).json({
-            error: `Não é possível reduzir abaixo do plano base (${PLAN_INCLUDED_TICKETS} atendimentos). Bônus atual: +${Math.max(0, currentBonus)}.`
+            error: `Bônus atual é +${Math.max(0, currentBonus)}. Não é possível remover mais do que o bônus concedido (limite mínimo = plano base de ${PLAN_INCLUDED_TICKETS}).`
           });
         }
       }
@@ -2220,6 +2227,7 @@ async function startServer() {
       const { data, error } = await supabase.from('ticket_adjustments').insert({
         broker_id:    brokerId,
         amount,
+        type,
         reason:       reason || null,
         admin_id:     adminId,
         period_start: periodStart.toISOString(),
@@ -2227,7 +2235,7 @@ async function startServer() {
       }).select().single();
       if (error) throw error;
 
-      console.log(`[ADMIN] Ajuste tickets: broker=${brokerId} amount=${amount>0?'+':''}${amount} por admin=${adminId}`);
+      console.log(`[ADMIN] Ajuste tickets: broker=${brokerId} type=${type} amount=${amount>0?'+':''}${amount} por admin=${adminId}`);
       res.json({ success: true, adjustment: data });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

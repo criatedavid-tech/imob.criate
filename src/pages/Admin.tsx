@@ -44,7 +44,7 @@ interface TicketUsage {
   tickets_included_base: number;
   tickets_bonus: number;
   tickets_included: number;
-  adjustments: { id: string; amount: number; reason: string | null; created_at: string }[];
+  adjustments: { id: string; amount: number; type: 'bonus' | 'charge'; reason: string | null; created_at: string }[];
 }
 
 const STATUS: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
@@ -75,6 +75,7 @@ export default function Admin() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [ticketUsage, setTicketUsage] = useState<TicketUsage | null>(null);
+  const [adjType, setAdjType] = useState<'bonus' | 'charge'>('bonus');
   const [adjAmount, setAdjAmount] = useState('');
   const [adjReason, setAdjReason] = useState('');
   const [applyingAdj, setApplyingAdj] = useState(false);
@@ -119,6 +120,7 @@ export default function Admin() {
     setLoadingDetail(true);
     setDetail(null);
     setTicketUsage(null);
+    setAdjType('bonus');
     setAdjAmount('');
     setAdjReason('');
     setActionMsg(null);
@@ -137,7 +139,7 @@ export default function Admin() {
   async function applyAdjustment(brokerId: string) {
     const amount = parseInt(adjAmount, 10);
     if (!adjAmount || isNaN(amount) || amount === 0) {
-      setActionMsg({ type: 'error', text: 'Informe um valor diferente de zero (ex: -10 ou +20).' });
+      setActionMsg({ type: 'error', text: 'Informe um valor diferente de zero.' });
       return;
     }
     setApplyingAdj(true);
@@ -146,7 +148,7 @@ export default function Admin() {
       const res = await fetch(`/api/admin/brokers/${brokerId}/ticket-adjustment`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, reason: adjReason })
+        body: JSON.stringify({ amount, type: adjType, reason: adjReason })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao aplicar ajuste');
@@ -450,6 +452,7 @@ export default function Admin() {
                     const isWarn = !isOver && pct >= 80;
                     const barColor = isOver ? 'bg-red-400' : isWarn ? 'bg-amber-400' : 'bg-violet-400';
                     const fmtPeriod = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    const parsedAmt = parseInt(adjAmount || '0', 10);
 
                     return (
                       <div className={`${glassCard} p-4 space-y-4`}>
@@ -457,7 +460,7 @@ export default function Admin() {
                           <Activity className="w-3 h-3" /> Atendimentos
                         </h4>
 
-                        {/* Barra de progresso — uso real vs limite ajustado */}
+                        {/* Barra de progresso */}
                         <div>
                           <div className="flex items-end justify-between mb-1.5">
                             <span className={`text-2xl font-extrabold ${isOver ? 'text-red-300' : isWarn ? 'text-amber-300' : 'text-white'}`}>
@@ -474,16 +477,36 @@ export default function Admin() {
                           </div>
                           {tickets_bonus > 0 && (
                             <p className="text-[10px] text-emerald-400/70 mt-1">
-                              Plano base {tickets_included_base} + bônus concedido {tickets_bonus} = {tickets_included} inclusos
+                              Base {tickets_included_base} + bônus {tickets_bonus} = {tickets_included} inclusos
                             </p>
                           )}
                         </div>
 
-                        {/* Formulário de ajuste — aumenta ou reduz o LIMITE incluso */}
+                        {/* Seletor de tipo */}
+                        <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+                          <button
+                            onClick={() => { setAdjType('bonus'); setAdjAmount(''); }}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${adjType === 'bonus' ? 'bg-emerald-500/25 border border-emerald-400/40 text-emerald-300' : 'text-white/30 hover:text-white/60'}`}
+                          >
+                            Bônus
+                          </button>
+                          <button
+                            onClick={() => { setAdjType('charge'); setAdjAmount(''); }}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${adjType === 'charge' ? 'bg-orange-500/25 border border-orange-400/40 text-orange-300' : 'text-white/30 hover:text-white/60'}`}
+                          >
+                            Cobrança
+                          </button>
+                        </div>
+
+                        {/* Descrição do tipo selecionado */}
+                        <p className="text-[10px] text-white/30 -mt-2">
+                          {adjType === 'bonus'
+                            ? 'Aumenta o limite incluso gratuitamente. O cliente ganha capacidade extra sem ser cobrado.'
+                            : 'Adiciona atendimentos ao uso do período. Serão cobrados como excedente na próxima renovação.'}
+                        </p>
+
+                        {/* Input de quantidade */}
                         <div className="space-y-2">
-                          <p className="text-[10px] font-semibold text-white/50">
-                            Ajuste de limite &mdash; <span className="text-white/30 font-normal">positivo concede mais atendimentos, negativo retira bônus</span>
-                          </p>
                           <div className="flex items-center rounded-xl bg-white/10 border border-white/15 overflow-hidden">
                             <button
                               onClick={() => setAdjAmount(v => String((parseInt(v || '0', 10)) - 1))}
@@ -501,16 +524,29 @@ export default function Admin() {
                               className="px-3 py-2 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
                             ><Plus className="w-3.5 h-3.5" /></button>
                           </div>
-                          {adjAmount && parseInt(adjAmount, 10) > 0 && (
-                            <p className="text-[10px] text-emerald-400/70">
-                              Novo limite: {tickets_included + parseInt(adjAmount, 10)} atendimentos (+{adjAmount} bônus)
+
+                          {/* Preview do efeito */}
+                          {adjAmount && parsedAmt !== 0 && adjType === 'bonus' && parsedAmt > 0 && (
+                            <p className="text-[10px] text-emerald-400/80">
+                              Limite passa de {tickets_included} → {tickets_included + parsedAmt} atendimentos inclusos (grátis)
                             </p>
                           )}
-                          {adjAmount && parseInt(adjAmount, 10) < 0 && (
-                            <p className="text-[10px] text-amber-400/70">
-                              Remove {Math.abs(parseInt(adjAmount, 10))} de bônus. Limite mínimo garantido: {tickets_included_base}.
+                          {adjAmount && parsedAmt !== 0 && adjType === 'bonus' && parsedAmt < 0 && (
+                            <p className="text-[10px] text-amber-400/80">
+                              Remove {Math.abs(parsedAmt)} de bônus. Limite mínimo garantido: {tickets_included_base}.
                             </p>
                           )}
+                          {adjAmount && parsedAmt !== 0 && adjType === 'charge' && parsedAmt > 0 && (
+                            <p className="text-[10px] text-orange-400/80">
+                              Uso passa de {tickets_used} → {tickets_used + parsedAmt}. {tickets_used + parsedAmt > tickets_included ? `${tickets_used + parsedAmt - tickets_included} excedente(s) serão cobrados na renovação.` : 'Ainda dentro do limite.'}
+                            </p>
+                          )}
+                          {adjAmount && parsedAmt !== 0 && adjType === 'charge' && parsedAmt < 0 && (
+                            <p className="text-[10px] text-blue-400/80">
+                              Correção: remove {Math.abs(parsedAmt)} do uso cobrado. Uso passa para {Math.max(0, tickets_used + parsedAmt)}.
+                            </p>
+                          )}
+
                           <input
                             type="text"
                             value={adjReason}
@@ -519,27 +555,35 @@ export default function Admin() {
                             maxLength={200}
                             className="w-full px-3 py-2 rounded-xl text-sm text-white placeholder:text-white/30 bg-white/10 border border-white/15 outline-none focus:ring-1 focus:ring-white/25"
                           />
+
                           <button
                             onClick={() => applyAdjustment(detail!.broker.id)}
-                            disabled={applyingAdj || !adjAmount || adjAmount === '0'}
-                            className="w-full py-2 text-sm font-semibold rounded-xl bg-violet-500/20 border border-violet-400/30 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                            disabled={applyingAdj || !adjAmount || adjAmount === '0' || parsedAmt === 0}
+                            className={`w-full py-2 text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${
+                              adjType === 'bonus'
+                                ? 'bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 hover:bg-emerald-500/30'
+                                : 'bg-orange-500/20 border border-orange-400/30 text-orange-300 hover:bg-orange-500/30'
+                            }`}
                           >
                             {applyingAdj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
-                            Aplicar ajuste
+                            {adjType === 'bonus' ? 'Aplicar bônus' : 'Aplicar cobrança'}
                           </button>
                         </div>
 
                         {/* Histórico de ajustes */}
                         {adjustments.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-semibold text-white/30 mb-2">Histórico de ajustes de limite</p>
+                            <p className="text-[10px] font-semibold text-white/30 mb-2">Histórico</p>
                             <div className="space-y-1">
-                              {adjustments.map(a => (
-                                <div key={a.id} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px]">
-                                  <span className={a.amount > 0 ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
+                              {adjustments.map((a: any) => (
+                                <div key={a.id} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px]">
+                                  <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${a.type === 'bonus' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-orange-500/20 text-orange-300'}`}>
+                                    {a.type === 'bonus' ? 'bônus' : 'cobr.'}
+                                  </span>
+                                  <span className={`font-bold shrink-0 ${a.amount > 0 ? 'text-white/70' : 'text-red-300'}`}>
                                     {a.amount > 0 ? '+' : ''}{a.amount}
                                   </span>
-                                  <span className="text-white/40 flex-1 mx-2 truncate">{a.reason || '—'}</span>
+                                  <span className="text-white/40 flex-1 truncate">{a.reason || '—'}</span>
                                   <span className="text-white/25 shrink-0">{new Date(a.created_at).toLocaleDateString('pt-BR')}</span>
                                 </div>
                               ))}
