@@ -14,8 +14,8 @@ Plataforma B2B SaaS para corretores de imóveis. Cada corretor recebe automatica
 | Autenticação | Supabase Auth |
 | Storage | Supabase Storage (fotos de imóveis e perfis) |
 | IA — texto | Google Gemini 2.0 Flash Lite |
-| IA — agente | OpenRouter (multi-tenant, chave por corretor) |
-| Pagamentos | Asaas (checkout + webhooks recorrentes) |
+| IA — agente | OpenRouter (via proxy interno, chave da empresa) |
+| Pagamentos | Asaas (checkout transparente + assinatura recorrente + cobrança de excedente) |
 | WhatsApp | Z-PRO (multi-tenant) + UAZAPI (provider) |
 | Automação | N8N (agente IA + entrega de credenciais) |
 | Deploy | Fly.io — região GRU (São Paulo) |
@@ -54,6 +54,8 @@ Corretor recebe login + URL + bearerToken
 - IA para aprimorar descrições (Gemini 2.0 Flash Lite)
 - Perfil profissional completo (bio, foto, citação, métricas de vendas)
 - Agenda de visitas agendadas via agente IA
+- Instruções personalizadas para a IA (AISettings → `broker_agents`)
+- Acompanhamento de uso de tickets do ciclo (inclusos x excedente)
 - Recuperação de senha via WhatsApp (link de reset por UAZAPI)
 
 ### Para o administrador
@@ -64,16 +66,29 @@ Corretor recebe login + URL + bearerToken
 - Visualizar status de assinatura Asaas
 
 ### Agente IA WhatsApp
-- N8N processa mensagens recebidas pelo Z-PRO
+- N8N processa mensagens recebidas pelo Z-PRO (texto, áudio, imagem e documento — mídia transcrita/descrita via Gemini)
 - Interpreta intenção do cliente (agendamento, dúvidas, interesse)
-- Agenda visitas salvando na tabela `agenda` via API interna
+- Agenda, remarca e cancela visitas via API do Z-PRO (tools do agente)
+- **Prompt personalizado por corretor**: instruções salvas na tabela `broker_agents` são injetadas no system prompt em cada atendimento, com fallback seguro (sem agente cadastrado → injeção vazia, fluxo nunca quebra)
 - Responde automaticamente via Z-PRO
 
-### Proxy LLM multi-tenant
-- Cada corretor configura sua própria chave OpenRouter
+### Proxy LLM
 - N8N chama `POST /api/proxy/llm/:brokerPhone/chat/completions`
 - Token `INTERNAL_PROXY_TOKEN` protege o endpoint
-- Chaves armazenadas com AES-256-GCM no Supabase
+- O proxy encaminha para o OpenRouter com a chave da empresa (`OPENROUTER_API_KEY`)
+
+### Cobrança de excedente (overage)
+- Plano inclui **100 atendimentos de IA por mês** (`PLAN_INCLUDED_TICKETS`)
+- Atendimento adicional: **R$ 3,00 por ticket** (`PLAN_OVERAGE_PRICE`), cobrado automaticamente na fatura seguinte via Asaas
+- Scheduler "Billing Prep" roda a cada 1h consolidando uso (`ticket_events` → `overage_charges`)
+- Admin pode conceder bônus de tickets via `ticket_adjustments`
+- O checkout informa o excedente e o checkbox de autorização inclui consentimento explícito da cobrança adicional
+
+### Follow-up automático
+- Scheduler interno (tick 60s) reengaja clientes que pararam de responder
+- `POST /api/followup/inbound` (N8N): cliente respondeu → re-arma o timer e informa se a IA deve responder (`respond: false` = handover humano ativo)
+- `POST /api/followup/broker-reply` (N8N): corretor assumiu a conversa → pausa follow-ups
+- Configurável por corretor via `GET/POST /api/followup/config`
 
 ---
 
@@ -108,6 +123,20 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 
 ---
 
+## Workflows N8N
+
+Instância: `https://212n8n.criate.online` — detalhes operacionais em `GUIA-NOS-WORKFLOWS.md`.
+
+| Workflow | Status | Função |
+|---|---|---|
+| **ImobiFlow - IA Corretor WhatsApp** | Ativo (principal) | Recebe webhook do Z-PRO, identifica o corretor pelo `tenantId`, busca o prompt do agente (`Buscar Agente IA` → `/api/brokers/:id/agent`), monta contexto com imóveis e responde via agente IA. Tools: verificação de agenda, agendamento, update (sub-workflow) e delete (HTTP direto) |
+| **Update de visita imobiliária** | Ativo (sub-workflow) | Chamado como tool pelo principal. Lista agendamentos no Z-PRO, localiza pelo `contactId` e atualiza data/título/notas com valores fornecidos pela IA via `$fromAI` |
+| **Delete Agenda Imobiliária** | **Obsoleto** | Substituído pela tool HTTP direta `Deletar_agendamento` no workflow principal. Mantido como backup — pode ser arquivado |
+
+Fluxo do prompt personalizado: painel do corretor (AISettings) → `POST /api/brokers/my-agent` → tabela `broker_agents` → N8N busca via `GET /api/brokers/:id/agent` (auth `INTERNAL_PROXY_TOKEN`) → injeta no system prompt do agente. O endpoint sempre retorna 200: sem agente cadastrado retorna `system_prompt: ""` e a expressão N8N não injeta nada (fallback).
+
+---
+
 ## Rotas do Backend
 
 ### Autenticação
@@ -122,8 +151,13 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/brokers/me` | Perfil do corretor autenticado |
-| POST | `/api/brokers/settings` | Salvar perfil e configurações |
+| POST | `/api/brokers/settings` | Salvar perfil (whitelist anti mass-assignment) |
 | POST | `/api/brokers/upload-photo` | Upload de foto de perfil |
+| GET | `/api/brokers/my-agent` | Agente IA do corretor (prompt personalizado) |
+| POST | `/api/brokers/my-agent` | Criar/atualizar o agente IA do corretor |
+| GET | `/api/corretora` | Dados da corretora do corretor |
+| GET | `/api/corretora/brokers` | Corretores vinculados à corretora |
+| POST | `/api/corretora` | Criar/atualizar corretora |
 
 ### Imóveis
 | Método | Rota | Descrição |
@@ -148,15 +182,30 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 |---|---|---|
 | GET | `/api/dashboard/metrics` | Métricas (imóveis, leads, visitas) |
 | GET | `/api/dashboard/charts` | Gráfico de leads por mês |
+| GET | `/api/tickets/recent` | Atendimentos recentes do agente IA |
+| GET | `/api/billing/usage` | Uso de tickets do ciclo (inclusos x excedente) |
 | POST | `/api/ai/enhance-text` | Aprimorar texto com Gemini |
 
-### Pagamentos e WhatsApp
+### Pagamentos
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/api/checkout` | Criar cobrança Asaas |
+| POST | `/api/checkout` | Checkout transparente Asaas (cartão) |
 | GET | `/api/subscription` | Status da assinatura |
-| GET | `/api/whatsapp/status` | Status e QR Code do WhatsApp |
-| POST | `/api/whatsapp/send-message` | Enviar mensagem via N8N |
+| GET | `/api/config/plan` | Preço e dados do plano (público) |
+
+### Integrações internas (N8N — auth `INTERNAL_PROXY_TOKEN`)
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/brokers/:id/agent` | Prompt do agente IA do corretor (com fallback) |
+| POST | `/api/whatsapp/send` | Enviar mensagem WhatsApp via Z-PRO |
+| POST | `/api/followup/inbound` | Cliente respondeu — re-arma follow-up, retorna `respond` |
+| POST | `/api/followup/broker-reply` | Corretor respondeu — pausa follow-up (handover) |
+
+### Follow-up (corretor)
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/followup/config` | Configuração de follow-up do corretor |
+| POST | `/api/followup/config` | Salvar configuração de follow-up |
 
 ### Webhooks
 | Método | Rota | Descrição |
@@ -164,14 +213,20 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 | POST | `/api/webhooks/asaas` | Webhook Asaas (pagamentos e assinaturas) |
 | POST | `/api/webhooks/asaas/test` | Simular webhook Asaas (testes) |
 
-### Admin
+### Admin (JWT + `is_admin`)
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/admin/brokers` | Listar todos os corretores |
-| POST | `/api/admin/brokers/:id/block` | Bloquear corretor |
-| POST | `/api/admin/brokers/:id/unblock` | Desbloquear corretor |
+| GET | `/api/admin/brokers/:id` | Detalhe de um corretor |
+| GET | `/api/admin/brokers/:id/ticket-usage` | Uso de tickets do corretor |
+| GET | `/api/admin/metrics` | Métricas globais da plataforma |
+| PATCH | `/api/admin/brokers/:id/status` | Bloquear/ativar corretor |
 | POST | `/api/admin/brokers/:id/provision` | Disparar provisionamento Z-PRO |
+| POST | `/api/admin/brokers/:id/relink-uazapi` | Reconectar canal UAZAPI |
+| POST | `/api/admin/brokers/:id/cancel-plan` | Cancelar assinatura |
+| POST | `/api/admin/brokers/:id/ticket-adjustment` | Conceder bônus/ajuste de tickets |
 | PATCH | `/api/admin/brokers/:id/zpro-credentials` | Atualizar credenciais Z-PRO |
+| DELETE | `/api/admin/brokers/:id` | Excluir corretor |
 
 ### Proxy LLM
 | Método | Rota | Descrição |
@@ -187,10 +242,18 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 | Tabela | Descrição |
 |---|---|
 | `brokers` | Perfil, status de assinatura, credenciais Z-PRO e configurações |
+| `broker_agents` | Agente IA por corretor (`agent_name`, `system_prompt`, `is_active`) — RLS + índice único parcial (1 agente ativo por corretor) |
+| `corretoras` | Imobiliárias (vínculo N:1 via `brokers.corretora_id`) |
 | `properties` | Imóveis com slug, fotos (JSON), status e detalhes |
 | `leads` | Leads capturados via landing page |
 | `agenda` | Visitas agendadas via agente IA N8N |
 | `subscriptions` | Histórico de pagamentos Asaas |
+| `ticket_events` | Eventos de atendimento do agente IA (base do billing) |
+| `ticket_adjustments` | Bônus/ajustes de tickets concedidos pelo admin |
+| `overage_charges` | Cobranças de excedente consolidadas (R$ 3,00/ticket acima de 100/mês) |
+| `followup_config` | Configuração de follow-up por corretor |
+| `followup_conversations` | Estado das conversas em follow-up (timers, handover) |
+| `n8n_whatsapp_memory` | Memória de conversa do agente IA (Postgres Chat Memory) |
 | `webhook_logs` | Log completo de todos os webhooks recebidos e disparados |
 | `password_reset_tokens` | Tokens de recuperação de senha (TTL 15 min) |
 
@@ -211,7 +274,10 @@ Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
 | `zpro_api_url` | text | URL externa `/v2/api/external/{uuid}` |
 | `provisioning_status` | text | Estado do provisionamento |
 | `broker_address` | jsonb | Perfil profissional (bio, foto, citação, etc.) |
-| `openrouter_api_key_enc` | text | Chave OpenRouter criptografada (AES-256-GCM) |
+| `ai_name` | text | Nome da assistente IA exibido aos clientes |
+| `ai_custom_prompt` | text | **Legado** — migrado para `broker_agents.system_prompt` |
+| `asaas_customer_id` / `asaas_subscription_id` | text | Vínculo com assinatura Asaas |
+| `grace_until` | timestamptz | Período de carência após falha de pagamento |
 
 ### Row Level Security (RLS)
 - `agenda`, `subscriptions`, `webhook_logs` — RLS habilitado
@@ -272,11 +338,15 @@ Configurar no Asaas: `https://imobiflow.fly.dev/api/webhooks/asaas`
 ## Segurança
 
 ### O que está protegido
+- **Autenticação JWT real** (Supabase Auth): `requireUser` valida o token Bearer em toda rota autenticada; o header `x-user-id` é ignorado para identidade
+- Admin: `requireAdmin` = JWT válido + `is_admin: true` no banco
+- **Anti mass-assignment**: `POST /api/brokers/settings` aceita apenas campos da whitelist `ALLOWED_SETTINGS`
+- Rate limiting (express-rate-limit, com store Redis opcional p/ multi-máquina): auth 15min, checkout 1h, webhooks 1min
+- Helmet habilitado (CSP desativado por causa do SPA Vite)
+- Rotas internas do N8N protegidas por `INTERNAL_PROXY_TOKEN`
 - `.env` no `.gitignore` — nunca versionado
 - Senhas dos corretores armazenadas pelo Supabase Auth (bcrypt)
-- Chaves OpenRouter criptografadas com AES-256-GCM no banco
 - `service_role` key usada apenas no backend
-- Endpoint admin exige `is_admin: true` via `x-user-id` header
 
 ### Aviso de histórico git
 Um commit antigo contém o `UAZAPI_TOKEN` hardcoded como fallback. O arquivo atual usa `|| ""` (sem fallback). Se o repositório for público, **rotacione o token UAZAPI**.
@@ -395,4 +465,7 @@ PROVISIONING_WEBHOOK_URL
 N8N_WEBHOOK_URL
 INTERNAL_PROXY_TOKEN
 LLM_PROXY_ENC_KEY
+OPENROUTER_API_KEY            # chave da empresa usada pelo proxy LLM
+PLAN_INCLUDED_TICKETS=100     # atendimentos inclusos no plano
+PLAN_OVERAGE_PRICE=3.00       # R$ por ticket excedente
 ```

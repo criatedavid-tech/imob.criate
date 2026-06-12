@@ -64,7 +64,7 @@ const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "4
 // O Asaas envia este valor no header 'asaas-access-token' em cada evento.
 // Sem ele configurado, a verificação é pulada (compatibilidade com sandbox sem token).
 const ASAAS_WEBHOOK_TOKEN     = process.env.ASAAS_WEBHOOK_TOKEN             || "";
-// Plano: 100 atendimentos inclusos; excedente R$ 2,00/ticket cobrado automaticamente no ciclo seguinte.
+// Plano: 100 atendimentos inclusos; excedente R$ 3,00/ticket cobrado automaticamente no ciclo seguinte.
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=3.00
 const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
 const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "3.00");
