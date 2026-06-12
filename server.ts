@@ -573,7 +573,7 @@ async function startServer() {
 
       // Whitelist: impede mass assignment (ex.: is_admin, valid_until, status
       // ou tokens de pagamento enviados no body seriam gravados sem isso).
-      const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address'] as const;
+      const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address', 'ai_custom_prompt'] as const;
       const settings: Record<string, any> = {};
       for (const field of ALLOWED_SETTINGS) {
         if (req.body?.[field] !== undefined) settings[field] = req.body[field];
@@ -593,38 +593,6 @@ async function startServer() {
     }
   });
 
-  // Salva a chave OpenRouter do corretor (criptografada com AES-256-GCM)
-  app.post('/api/brokers/openrouter-key', requireUser, async (req, res) => {
-    const userId = (req as any).userId as string;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-      const { api_key } = req.body;
-      if (!api_key || typeof api_key !== 'string' || api_key.trim().length < 10) {
-        return res.status(400).json({ error: 'Chave inválida.' });
-      }
-      const brokerId = await getBrokerId(userId);
-      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
-      const encrypted = encryptKey(api_key.trim());
-      await supabase.from('brokers').update({ openrouter_api_key_enc: encrypted }).eq('id', brokerId);
-      res.json({ ok: true, message: 'Chave salva com sucesso.' });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Remove a chave OpenRouter do corretor
-  app.delete('/api/brokers/openrouter-key', requireUser, async (req, res) => {
-    const userId = (req as any).userId as string;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-      const brokerId = await getBrokerId(userId);
-      if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
-      await supabase.from('brokers').update({ openrouter_api_key_enc: null }).eq('id', brokerId);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   // Helper to ensure broker exists
   async function getBrokerId(userId: string) {
@@ -1693,6 +1661,26 @@ async function startServer() {
         .order('created_at', { ascending: false }).limit(1).single();
 
       res.json({ broker, lastSubscription: lastSub });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Retorna os últimos atendimentos (ticket_events) do corretor para o dashboard
+  app.get("/api/tickets/recent", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+      const { data, error } = await supabase
+        .from("ticket_events")
+        .select("id, zpro_ticket_id, created_at")
+        .eq("broker_id", brokerId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      res.json(data || []);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -3269,43 +3257,24 @@ async function startServer() {
   // openrouter.ai — cada corretor é cobrado na própria conta.
   // Fallback: OPENROUTER_API_KEY (chave da empresa) se o corretor não configurou.
   app.all('/api/proxy/llm/:brokerPhone/*', async (req, res) => {
-    // 1. Autenticação interna N8N → servidor
     const authHeader = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
     if (!INTERNAL_PROXY_TOKEN || authHeader !== INTERNAL_PROXY_TOKEN) {
       return res.status(401).json({ error: { message: 'Proxy: token inválido.', type: 'invalid_api_key' } });
     }
 
-    const { brokerPhone } = req.params;
-
-    // 2. Resolve a key OpenRouter do corretor (ou fallback empresa)
-    let openRouterKey = OPENROUTER_API_KEY;
-    try {
-      const { data: broker } = await supabase
-        .from('brokers')
-        .select('openrouter_api_key_enc')
-        .eq('phone', brokerPhone)
-        .maybeSingle();
-      if (broker?.openrouter_api_key_enc) {
-        openRouterKey = decryptKey(broker.openrouter_api_key_enc);
-      }
-    } catch (err) {
-      console.error('[LLM Proxy] Erro ao buscar key do corretor, usando fallback:', err);
-    }
-
-    if (!openRouterKey) {
+    if (!OPENROUTER_API_KEY) {
       return res.status(402).json({
-        error: { message: 'OpenRouter key não configurada. Configure em Configurações > IA.', type: 'invalid_api_key' }
+        error: { message: 'OpenRouter key não configurada no servidor.', type: 'invalid_api_key' }
       });
     }
 
-    // 3. Proxy transparente → OpenRouter
     const suffix = ((req.params as any)[0] || 'chat/completions').replace(/^\//, '');
     const openRouterUrl = `https://openrouter.ai/api/v1/${suffix}`;
     try {
       const proxyResp = await fetch(openRouterUrl, {
         method: req.method,
         headers: {
-          'Authorization': `Bearer ${openRouterKey}`,
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': APP_URL,
           'X-Title': 'ImobiFlow'

@@ -71,6 +71,11 @@ export default function Dashboard() {
   const [loadingVisits, setLoadingVisits] = useState(false);
   const [chartData, setChartData] = useState<{name: string, value: number}[]>([]);
 
+  // ATENDIMENTOS
+  const [atendimentosRecentes, setAtendimentosRecentes] = useState<any[]>([]);
+  const [atendimentosMes, setAtendimentosMes] = useState<number | null>(null);
+  const [loadingAtendimentos, setLoadingAtendimentos] = useState(false);
+
   // PERFIL DO CORRETOR
   const [brokerProfile, setBrokerProfile] = useState<any>({
     name: '',
@@ -180,6 +185,25 @@ export default function Dashboard() {
       setScheduledVisits([]);
     } finally {
       setLoadingVisits(false);
+    }
+  };
+
+  const fetchAtendimentosRecentes = async () => {
+    setLoadingAtendimentos(true);
+    try {
+      const [recentRes, usageRes] = await Promise.all([
+        fetch('/api/tickets/recent', { headers: authService.getAuthHeaders() }),
+        fetch('/api/billing/usage', { headers: authService.getAuthHeaders() })
+      ]);
+      if (recentRes.ok) setAtendimentosRecentes(await recentRes.json());
+      if (usageRes.ok) {
+        const usage = await usageRes.json();
+        setAtendimentosMes(usage?.current_period?.tickets_used ?? 0);
+      }
+    } catch {
+      setAtendimentosRecentes([]);
+    } finally {
+      setLoadingAtendimentos(false);
     }
   };
 
@@ -352,8 +376,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchProperties();
-    fetchDashboardMetrics();   // alimenta o card "Total de Imóveis"
-    fetchScheduledVisits();    // alimenta a aba Agenda
+    fetchDashboardMetrics();
+    fetchScheduledVisits();
+    fetchAtendimentosRecentes();
     fetchBrokerProfile();
     const intervalId = setInterval(checkBackend, 5000);
     return () => clearInterval(intervalId);
@@ -557,53 +582,53 @@ export default function Dashboard() {
                   onClick={() => setActiveTab('properties')}
                 />
                 <StatCard
-                  label="Visitas Agendadas"
-                  value={dashboardMetrics.scheduledVisits.toString()}
-                  icon={<Calendar className="text-purple-500" />}
-                  onClick={() => setActiveTab('calendar')}
+                  label="Atendimentos este mês"
+                  value={atendimentosMes !== null ? atendimentosMes.toString() : '—'}
+                  icon={<Bot className="text-indigo-400" />}
+                  onClick={() => setActiveTab('subscription')}
                 />
               </div>
 
-              {/* Próximas visitas — resumo da agenda */}
+              {/* Últimos Atendimentos via IA */}
               <div className="p-5 md:p-8 rounded-3xl flex flex-col
                 backdrop-blur-xl bg-white/10 border border-white/15
                 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-white">Próximas Visitas</h2>
+                  <h2 className="text-xl font-bold text-white">Últimos Atendimentos</h2>
                   <button
-                    onClick={() => setActiveTab('calendar')}
+                    onClick={() => setActiveTab('subscription')}
                     className="text-sm font-semibold flex items-center gap-1 text-white/60 hover:text-white transition-colors"
                   >
-                    Ver agenda <ChevronRight size={16} />
+                    Ver consumo <ChevronRight size={16} />
                   </button>
                 </div>
-                {loadingVisits ? (
+                {loadingAtendimentos ? (
                   <div className="flex flex-col items-center justify-center py-16 text-white/40">
                     <Loader2 className="animate-spin mb-2" size={24} />
-                    <span className="text-sm">Carregando agenda...</span>
+                    <span className="text-sm">Carregando atendimentos...</span>
                   </div>
-                ) : scheduledVisits.length > 0 ? (
+                ) : atendimentosRecentes.length > 0 ? (
                   <div className="space-y-3">
-                    {scheduledVisits.slice(0, 5).map((visit) => (
-                      <div key={visit.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
+                    {atendimentosRecentes.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-amber-300 shrink-0 backdrop-blur-sm bg-amber-500/20 border border-amber-400/30">
-                            {visit.name?.charAt(0).toUpperCase()}
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 backdrop-blur-sm bg-indigo-500/20 border border-indigo-400/30">
+                            <Bot size={16} className="text-indigo-300" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold text-sm text-white truncate">{visit.name}</p>
-                            <p className="text-xs text-white/40 truncate">{visit.property || 'Imóvel não informado'}</p>
+                            <p className="font-semibold text-sm text-white truncate">Atendimento via IA</p>
+                            <p className="text-xs text-white/40 truncate">Ticket #{item.zpro_ticket_id}</p>
                           </div>
                         </div>
-                        <span className="text-xs text-white/40 whitespace-nowrap ml-3">{formatTimeAgo(visit.created_at)}</span>
+                        <span className="text-xs text-white/40 whitespace-nowrap ml-3">{formatTimeAgo(item.created_at)}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 text-center text-white/40">
-                    <Calendar size={32} className="mb-2" />
-                    <span className="text-sm">Nenhuma visita agendada ainda</span>
-                    <span className="text-xs text-white/30 mt-1 max-w-xs">As visitas aparecem aqui quando a IA agenda um horário pelo WhatsApp ou via landing page.</span>
+                    <Bot size={32} className="mb-2 text-white/20" />
+                    <span className="text-sm">Nenhum atendimento ainda</span>
+                    <span className="text-xs text-white/30 mt-1 max-w-xs">Os atendimentos aparecem aqui conforme a IA conversa com seus clientes pelo WhatsApp.</span>
                   </div>
                 )}
               </div>
