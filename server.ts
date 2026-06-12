@@ -2502,14 +2502,24 @@ async function startServer() {
 
         if (alreadyDone) continue;
 
-        const { count } = await supabase.from('ticket_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('broker_id', broker.id)
-          .gte('created_at', periodStart.toISOString())
-          .lt('created_at', periodEnd.toISOString());
+        const [{ count }, { data: adjRows }] = await Promise.all([
+          supabase.from('ticket_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('broker_id', broker.id)
+            .gte('created_at', periodStart.toISOString())
+            .lt('created_at', periodEnd.toISOString()),
+          supabase.from('ticket_adjustments')
+            .select('amount, type')
+            .eq('broker_id', broker.id)
+            .gte('period_start', periodStart.toISOString())
+        ]);
 
+        const bonusAdj      = (adjRows ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
+        const chargeAdj     = (adjRows ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
         const totalTickets  = count ?? 0;
-        const overage       = Math.max(0, totalTickets - PLAN_INCLUDED_TICKETS);
+        const effectiveLim  = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
+        const regularOver   = Math.max(0, totalTickets - effectiveLim);
+        const overage       = regularOver + Math.max(0, chargeAdj);
         const overageAmount = overage * PLAN_OVERAGE_PRICE;
         const totalValue    = SUBSCRIPTION_VALUE + overageAmount;
 
