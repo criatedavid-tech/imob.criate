@@ -2155,16 +2155,19 @@ async function startServer() {
           .eq('broker_id', brokerId)
           .gte('created_at', periodStart.toISOString())
           .lt('created_at', periodEnd.toISOString()),
+        // SEM filtro de período: admin vê e pode estornar qualquer ajuste da história
         supabase.from('ticket_adjustments')
-          .select('id, amount, type, reason, created_at')
+          .select('id, amount, type, reason, created_at, period_start')
           .eq('broker_id', brokerId)
-          .gte('period_start', periodStart.toISOString())
           .order('created_at', { ascending: false })
       ]);
 
+      // Totais históricos (sem filtro de período) — base para elegibilidade de estorno
       const bonusAdj          = (adjData ?? []).filter((a: any) => a.type === 'bonus').reduce((s: number, a: any) => s + a.amount, 0);
       const chargeAdj         = (adjData ?? []).filter((a: any) => a.type === 'charge').reduce((s: number, a: any) => s + a.amount, 0);
-      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj);
+      // Limite efetivo usa apenas ajustes do período corrente para cálculo de cobrança
+      const periodBonusAdj    = (adjData ?? []).filter((a: any) => a.type === 'bonus' && a.period_start >= periodStart.toISOString()).reduce((s: number, a: any) => s + a.amount, 0);
+      const effectiveIncluded = Math.max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + periodBonusAdj);
       const ticketsUsed       = ticketsRaw ?? 0;
 
       res.json({
@@ -2174,8 +2177,8 @@ async function startServer() {
         tickets_used:             ticketsUsed,
         tickets_raw:              ticketsRaw ?? 0,
         tickets_included_base:    PLAN_INCLUDED_TICKETS,
-        tickets_bonus:            Math.max(0, bonusAdj),
-        tickets_charge_adj:       Math.max(0, chargeAdj),
+        tickets_bonus:            Math.max(0, bonusAdj),     // total histórico para estorno
+        tickets_charge_adj:       Math.max(0, chargeAdj),    // total histórico para estorno
         tickets_included:         effectiveIncluded,
         overage_price_per_ticket: PLAN_OVERAGE_PRICE,
         adjustments:              adjData ?? [],
@@ -2210,19 +2213,17 @@ async function startServer() {
       const periodStart = new Date(periodEnd);
       periodStart.setMonth(periodStart.getMonth() - 1);
 
-      // Negativo só é permitido para estornar o que o admin mesmo lançou neste período
+      // Negativo: estorno de qualquer ajuste histórico (sem filtro de período)
       if (amount < 0) {
         const { data: existing } = await supabase.from('ticket_adjustments')
           .select('amount')
           .eq('broker_id', brokerId)
-          .eq('type', type)
-          .gte('period_start', periodStart.toISOString());
-        const currentTotal = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
-        if (currentTotal + amount < 0) {
-          const label = type === 'bonus' ? 'bônus concedido' : 'cobrança aplicada';
+          .eq('type', type);
+        const historicTotal = (existing ?? []).reduce((s: number, a: any) => s + a.amount, 0);
+        if (historicTotal + amount < 0) {
           return res.status(400).json({
-            error: `${type === 'bonus' ? 'Bônus' : 'Cobrança'} deste período: +${currentTotal}. Estorno máximo: ${currentTotal}. Não é possível remover mais do que foi adicionado (os ${PLAN_INCLUDED_TICKETS} do plano são intocáveis).`,
-            current_total: currentTotal,
+            error: `${type === 'bonus' ? 'Bônus' : 'Cobrança'} total histórico: +${historicTotal}. Estorno máximo: ${historicTotal}. Não é possível estornar mais do que foi lançado.`,
+            current_total: historicTotal,
           });
         }
       }
