@@ -255,8 +255,8 @@ export default function PaymentPending() {
             ))}
           </div>
           <p className="text-[11px] text-white/40 leading-relaxed mt-4 pt-4 border-t border-white/10">
-            Após os 100 atendimentos mensais inclusos, cada atendimento adicional é cobrado a{' '}
-            <strong className="text-white/60">R$ 3,00 por ticket</strong>, lançado automaticamente na sua fatura seguinte.
+            Caso ultrapasse os 100 atendimentos inclusos no mês, cada atendimento adicional custará{' '}
+            <strong className="text-white/60">R$ 3,00</strong>. Você acompanha o uso em tempo real no seu painel para manter o controle total.
           </p>
         </div>
 
@@ -378,7 +378,7 @@ export default function PaymentPending() {
               <input type="checkbox" checked={acceptedRecurring} onChange={e => setAcceptedRecurring(e.target.checked)}
                 className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]" />
               <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
-                Autorizo a cobrança mensal recorrente de <strong className="text-white/70">R$ {priceNum}</strong> no cartão informado, bem como a cobrança de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> que exceder os 100 atendimentos mensais inclusos, podendo cancelar a qualquer momento.
+                Autorizo a cobrança recorrente de <strong className="text-white/70">R$ {priceNum}/mês</strong> e o valor de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> (acima de 100/mês), se houver. Posso cancelar a qualquer momento.
               </span>
             </label>
             <label className="flex items-start gap-3 cursor-pointer group">
