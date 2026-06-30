@@ -349,7 +349,7 @@ async function startServer() {
       }
 
       // Verifica se já existe conta com este e-mail
-      const { data: existing } = await supabase.from('brokers').select('id').eq('email', email.toLowerCase().trim()).maybeSingle();
+      const { data: existing } = await supabase.from('imf_brokers').select('id').eq('email', email.toLowerCase().trim()).maybeSingle();
       if (existing) {
         return res.status(400).json({ error: 'Este e-mail já possui uma conta. Faça login ou recupere sua senha.' });
       }
@@ -366,7 +366,7 @@ async function startServer() {
       if (createErr) throw createErr;
 
       if (created.user) {
-        const { error: profileError } = await supabase.from('brokers').insert([{
+        const { error: profileError } = await supabase.from('imf_brokers').insert([{
           user_id: created.user.id,
           name: name.trim(),
           phone: normalizePhoneBR(phone),
@@ -447,7 +447,7 @@ async function startServer() {
 
       // Busca corretor pelo e-mail
       const { data: broker } = await supabase
-        .from('brokers')
+        .from('imf_brokers')
         .select('id, phone')
         .eq('email', email.toLowerCase().trim())
         .single();
@@ -458,7 +458,7 @@ async function startServer() {
       const token = randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         reset_token: token,
         reset_token_expires_at: expiresAt
       }).eq('id', broker.id);
@@ -501,7 +501,7 @@ async function startServer() {
 
       // Busca corretor pelo token
       const { data: broker } = await supabase
-        .from('brokers')
+        .from('imf_brokers')
         .select('id, user_id, reset_token_expires_at')
         .eq('reset_token', token)
         .single();
@@ -518,7 +518,7 @@ async function startServer() {
       if (error) throw error;
 
       // Invalida o token imediatamente
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         reset_token: null,
         reset_token_expires_at: null
       }).eq('id', broker.id);
@@ -544,7 +544,7 @@ async function startServer() {
 
       // Campos seguros para expor ao frontend — NUNCA incluir:
       // asaas_credit_card_token (cobra cartão), zpro_password, reset_token, reset_token_expires_at
-      const { data, error } = await supabase.from('brokers').select(
+      const { data, error } = await supabase.from('imf_brokers').select(
         'id, user_id, name, email, phone, ai_name, broker_address, status, plan, ' +
         'valid_until, grace_until, is_admin, corretora_id, ' +
         'zpro_tenant_id, zpro_channel_id, zpro_channel_name, zpro_user_email, zpro_username, zpro_qr_code, ' +
@@ -579,7 +579,7 @@ async function startServer() {
         if (req.body?.[field] !== undefined) settings[field] = req.body[field];
       }
       if (settings.phone !== undefined) settings.phone = normalizePhoneBR(settings.phone);
-      const { data, error } = await supabase.from('brokers').update({
+      const { data, error } = await supabase.from('imf_brokers').update({
         ...settings,
         updated_at: new Date()
       }).eq('id', brokerId).select(
@@ -682,7 +682,7 @@ async function startServer() {
   async function getBrokerId(userId: string) {
     if (!userId) return null;
     try {
-      const { data: brokers, error } = await supabase.from('brokers').select('id').eq('user_id', userId).order('created_at', { ascending: true }).limit(1);
+      const { data: brokers, error } = await supabase.from('imf_brokers').select('id').eq('user_id', userId).order('created_at', { ascending: true }).limit(1);
       
       if (error) {
         console.error("Error fetching broker:", error);
@@ -696,7 +696,7 @@ async function startServer() {
         const { data: userData } = await supabase.auth.admin.getUserById(userId).catch(() => ({ data: { user: null } }));
         const user = userData?.user;
         
-        const { data: newBroker, error: createError } = await supabase.from('brokers').insert([
+        const { data: newBroker, error: createError } = await supabase.from('imf_brokers').insert([
           { 
             user_id: userId,
             name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Corretor',
@@ -817,7 +817,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('corretora_id').eq('id', brokerId).single();
 
       if (!broker?.corretora_id) return res.json({ corretora: null });
@@ -871,7 +871,7 @@ async function startServer() {
       }
 
       // Vincula o corretor logado à corretora
-      await supabase.from('brokers')
+      await supabase.from('imf_brokers')
         .update({ corretora_id: corretora.id, updated_at: new Date() })
         .eq('id', brokerId);
 
@@ -890,7 +890,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('corretora_id').eq('id', brokerId).single();
       if (!broker?.corretora_id) return res.json({ brokers: [] });
 
@@ -900,7 +900,7 @@ async function startServer() {
         return res.status(403).json({ error: "Apenas o administrador da corretora pode ver os corretores vinculados." });
       }
 
-      const { data: brokers } = await supabase.from('brokers')
+      const { data: brokers } = await supabase.from('imf_brokers')
         .select('id, name, email, phone, status, created_at')
         .eq('corretora_id', broker.corretora_id)
         .order('created_at', { ascending: true });
@@ -971,7 +971,7 @@ async function startServer() {
   app.get("/api/properties", optionalUser, async (req, res) => {
     try {
       const userId = (req as any).userId as string;
-      const query = supabase.from('properties').select('*');
+      const query = supabase.from('imf_properties').select('*');
       
       if (userId) {
         const brokerId = await getBrokerId(userId);
@@ -1104,7 +1104,7 @@ async function startServer() {
           return obj;
         }, {});
 
-      const { data, error } = await supabase.from('properties').upsert(filteredProperty).select().single();
+      const { data, error } = await supabase.from('imf_properties').upsert(filteredProperty).select().single();
       
       if (error) {
         console.error("Supabase error upserting property:", error);
@@ -1133,7 +1133,7 @@ async function startServer() {
 
       // Count properties
       const { count: propertyCount, error: propError } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('*', { count: 'exact', head: true })
         .eq('broker_id', brokerId);
 
@@ -1142,7 +1142,7 @@ async function startServer() {
       // Count leads for these properties
       // First get property IDs
       const { data: propIds, error: idsError } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('id')
         .eq('broker_id', brokerId);
 
@@ -1189,7 +1189,7 @@ async function startServer() {
       if (!brokerId) return res.json([]);
 
       const { data: propIds } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('id')
         .eq('broker_id', brokerId);
 
@@ -1245,7 +1245,7 @@ async function startServer() {
       if (!brokerId) return res.json([]);
 
       const { data: propIds, error: idsError } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('id, title')
         .eq('broker_id', brokerId);
 
@@ -1283,7 +1283,7 @@ async function startServer() {
 
   app.get("/api/properties/health", async (req, res) => {
     try {
-      const { data, error } = await supabase.from('properties').select('id').limit(1);
+      const { data, error } = await supabase.from('imf_properties').select('id').limit(1);
       if (error) throw error;
       res.json({
         database: "CONNECTED",
@@ -1304,8 +1304,8 @@ async function startServer() {
   app.get("/api/properties/:slug", async (req, res) => {
     try {
       const { data, error } = await supabase
-        .from('properties')
-        .select('*, brokers(*)')
+        .from('imf_properties')
+        .select('*, imf_brokers(*)')
         .eq('slug', req.params.slug)
         .single();
       
@@ -1352,7 +1352,7 @@ async function startServer() {
    */
   app.delete("/api/properties/:id", async (req, res) => {
     try {
-      const { error } = await supabase.from('properties').delete().eq('id', req.params.id);
+      const { error } = await supabase.from('imf_properties').delete().eq('id', req.params.id);
       if (error) throw error;
       res.status(200).json({ success: true });
     } catch (err: any) {
@@ -1441,7 +1441,7 @@ async function startServer() {
 
       // Retrocompat: lê também de leads com status de visita agendada (dados antigos)
       const { data: propIds } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('id, title')
         .eq('broker_id', brokerId);
 
@@ -1487,7 +1487,7 @@ async function startServer() {
       if (!brokerId) return res.json([]);
 
       const { data: propIds, error: idsError } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .select('id, title')
         .eq('broker_id', brokerId);
 
@@ -1529,7 +1529,7 @@ async function startServer() {
       if (!status) return res.status(400).json({ error: "Status é obrigatório." });
 
       const { data, error } = await supabase
-        .from('properties')
+        .from('imf_properties')
         .update({ status })
         .eq('id', req.params.id)
         .select()
@@ -1619,7 +1619,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+      const { data: broker } = await supabase.from('imf_brokers').select('*').eq('id', brokerId).single();
       if (!broker) return res.status(404).json({ error: "Corretor não encontrado." });
 
       // 1. Cria cliente no Asaas
@@ -1693,7 +1693,7 @@ async function startServer() {
       // 4. Salva subscription_id e token do cartão no broker e ativa imediatamente
       // O creditCardToken permite cobranças avulsas futuras (excedente) sem pedir o cartão novamente.
       const creditCardToken = subscription.creditCard?.creditCardToken || '';
-      await supabase.from('brokers')
+      await supabase.from('imf_brokers')
         .update({
           asaas_subscription_id: subscription.id,
           ...(creditCardToken ? { asaas_credit_card_token: creditCardToken } : {})
@@ -1724,7 +1724,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      let { data: broker } = await supabase.from('brokers')
+      let { data: broker } = await supabase.from('imf_brokers')
         .select('status, plan, valid_until, grace_until, zpro_tenant_id, zpro_channel_id, zpro_qr_code, is_admin')
         .eq('id', brokerId).single();
 
@@ -1736,7 +1736,7 @@ async function startServer() {
       // Enforcement lazy do grace period: se passou de grace_until e ainda está
       // 'ativo', suspende o acesso agora (cobre PAYMENT_OVERDUE sem cron job).
       if (broker?.status === 'ativo' && broker?.grace_until && new Date(broker.grace_until) < new Date()) {
-        await supabase.from('brokers').update({ status: 'inativo' }).eq('id', brokerId);
+        await supabase.from('imf_brokers').update({ status: 'inativo' }).eq('id', brokerId);
         broker = { ...broker, status: 'inativo' };
       }
 
@@ -1779,7 +1779,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('valid_until').eq('id', brokerId).single();
 
       // Início do ciclo atual = valid_until - 1 mês
@@ -1788,12 +1788,12 @@ async function startServer() {
       periodStart.setMonth(periodStart.getMonth() - 1);
 
       const [{ count: ticketsRaw }, { data: adjData }] = await Promise.all([
-        supabase.from('ticket_events')
+        supabase.from('imf_ticket_events')
           .select('id', { count: 'exact', head: true })
           .eq('broker_id', brokerId)
           .gte('created_at', periodStart.toISOString())
           .lt('created_at', periodEnd.toISOString()),
-        supabase.from('ticket_adjustments')
+        supabase.from('imf_ticket_adjustments')
           .select('amount, type')
           .eq('broker_id', brokerId)
           .gte('period_start', periodStart.toISOString())
@@ -1810,7 +1810,7 @@ async function startServer() {
       const overageAmount     = overage * PLAN_OVERAGE_PRICE;
 
       // Histórico das últimas 6 cobranças de excedente
-      const { data: history } = await supabase.from('overage_charges')
+      const { data: history } = await supabase.from('imf_overage_charges')
         .select('billing_period_start, billing_period_end, tickets_total, tickets_overage, amount_cents, status, charged_at')
         .eq('broker_id', brokerId)
         .order('billing_period_end', { ascending: false })
@@ -1854,7 +1854,7 @@ async function startServer() {
     try {
       const normalizedBroker = normalizePhoneBR(brokerPhone);
       const { data: broker } = await supabase
-        .from('brokers')
+        .from('imf_brokers')
         .select('id, name, zpro_api_url, zpro_api_key, zpro_api_token, zpro_channel_id')
         .eq('phone', normalizedBroker)
         .single();
@@ -1927,7 +1927,7 @@ async function startServer() {
 
     if (event.event === 'PAYMENT_RECEIVED' || event.event === 'PAYMENT_CONFIRMED') {
       const p = event.payment;
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('id, asaas_subscription_id').eq('asaas_customer_id', p.customer).single();
       if (broker) {
         await handleAsaasPaymentReceived({
@@ -1945,13 +1945,13 @@ async function startServer() {
       const p = event.payment;
       const graceUntil = new Date();
       graceUntil.setDate(graceUntil.getDate() + 3);
-      await supabase.from('brokers')
+      await supabase.from('imf_brokers')
         .update({ grace_until: graceUntil.toISOString() })
         .eq('asaas_customer_id', p.customer);
       await supabase.from('subscriptions').update({ status: 'overdue' }).eq('asaas_payment_id', p.id);
     } else if (event.event === 'PAYMENT_DELETED') {
       const p = event.payment;
-      await supabase.from('brokers').update({ status: 'inativo' }).eq('asaas_customer_id', p.customer);
+      await supabase.from('imf_brokers').update({ status: 'inativo' }).eq('asaas_customer_id', p.customer);
       await supabase.from('subscriptions').update({ status: 'cancelled' }).eq('asaas_payment_id', p.id);
     } else if (
       event.event === 'SUBSCRIPTION_DELETED' ||
@@ -1962,7 +1962,7 @@ async function startServer() {
       const sub = event.subscription || event.payment;
       const subId = sub?.id || sub?.subscription;
       if (subId) {
-        await supabase.from('brokers')
+        await supabase.from('imf_brokers')
           .update({ status: 'inativo', provisioning_status: 'disabled' })
           .eq('asaas_subscription_id', subId);
       }
@@ -2001,7 +2001,7 @@ async function startServer() {
     const userId = await verifyAccessToken(req);
     if (!userId) { res.status(401).json({ error: "Unauthorized" }); return false; }
     req.userId = userId;
-    const { data } = await supabase.from('brokers').select('is_admin').eq('user_id', userId).single();
+    const { data } = await supabase.from('imf_brokers').select('is_admin').eq('user_id', userId).single();
     if (!data?.is_admin) { res.status(403).json({ error: "Acesso negado" }); return false; }
     return true;
   }
@@ -2011,7 +2011,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const { data, error } = await supabase
-        .from('brokers')
+        .from('imf_brokers')
         .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, zpro_tenant_id')
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -2026,10 +2026,10 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const [brokersRes, propertiesRes, leadsRes, activeRes, revenueRes] = await Promise.all([
-        supabase.from('brokers').select('id', { count: 'exact', head: true }),
-        supabase.from('properties').select('id', { count: 'exact', head: true }),
+        supabase.from('imf_brokers').select('id', { count: 'exact', head: true }),
+        supabase.from('imf_properties').select('id', { count: 'exact', head: true }),
         supabase.from('leads').select('id', { count: 'exact', head: true }),
-        supabase.from('brokers').select('id', { count: 'exact', head: true }).eq('status', 'ativo'),
+        supabase.from('imf_brokers').select('id', { count: 'exact', head: true }).eq('status', 'ativo'),
         supabase.from('subscriptions').select('amount').eq('status', 'paid')
       ]);
       const totalRevenue = (revenueRes.data || []).reduce((sum: number, s: any) => sum + (s.amount || 0), 0);
@@ -2054,7 +2054,7 @@ async function startServer() {
     }
     try {
       const { data, error } = await supabase
-        .from('brokers').update({ status }).eq('id', req.params.id).select().single();
+        .from('imf_brokers').update({ status }).eq('id', req.params.id).select().single();
       if (error) throw error;
       res.json(data);
     } catch (err: any) {
@@ -2067,8 +2067,8 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const [brokerRes, propsRes, subsRes] = await Promise.all([
-        supabase.from('brokers').select('*').eq('id', req.params.id).single(),
-        supabase.from('properties').select('id, title, status, created_at').eq('broker_id', req.params.id).order('created_at', { ascending: false }),
+        supabase.from('imf_brokers').select('*').eq('id', req.params.id).single(),
+        supabase.from('imf_properties').select('id, title, status, created_at').eq('broker_id', req.params.id).order('created_at', { ascending: false }),
         supabase.from('subscriptions').select('*').eq('broker_id', req.params.id).order('created_at', { ascending: false })
       ]);
       if (brokerRes.error) throw brokerRes.error;
@@ -2090,7 +2090,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const { data: broker } = await supabase
-        .from('brokers').select('*').eq('id', req.params.id).single();
+        .from('imf_brokers').select('*').eq('id', req.params.id).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
       // Garante que o corretor está ativo antes de provisionar
@@ -2100,7 +2100,7 @@ async function startServer() {
       if (needsValidUntil) {
         const validUntil = new Date();
         validUntil.setMonth(validUntil.getMonth() + 1);
-        await supabase.from('brokers').update({
+        await supabase.from('imf_brokers').update({
           status: 'ativo',
           plan: broker.plan || 'mensal',
           valid_until: validUntil.toISOString()
@@ -2108,7 +2108,7 @@ async function startServer() {
         broker.status = 'ativo';
         broker.valid_until = validUntil.toISOString();
       } else if (broker.status !== 'ativo') {
-        await supabase.from('brokers').update({ status: 'ativo' }).eq('id', broker.id);
+        await supabase.from('imf_brokers').update({ status: 'ativo' }).eq('id', broker.id);
         broker.status = 'ativo';
       }
 
@@ -2135,7 +2135,7 @@ async function startServer() {
       return res.status(400).json({ error: 'zpro_api_key e zpro_api_token são obrigatórios' });
     }
     const url = zpro_api_url || `${ZPRO_ADMIN_URL}/v2/api/external/${zpro_api_key}`;
-    const { error } = await supabase.from('brokers').update({
+    const { error } = await supabase.from('imf_brokers').update({
       zpro_api_key: String(zpro_api_key),
       zpro_api_url: url,
       zpro_api_token: String(zpro_api_token)
@@ -2150,7 +2150,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const { data: broker } = await supabase
-        .from('brokers').select('asaas_subscription_id, asaas_customer_id, name').eq('id', req.params.id).single();
+        .from('imf_brokers').select('asaas_subscription_id, asaas_customer_id, name').eq('id', req.params.id).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
       // Cancela assinatura no Asaas se existir
@@ -2162,7 +2162,7 @@ async function startServer() {
       }
 
       // Marca corretor como cancelado — acesso mantido até valid_until (cronjob/webhook vai expirar)
-      await supabase.from('brokers').update({ status: 'bloqueado' }).eq('id', req.params.id);
+      await supabase.from('imf_brokers').update({ status: 'bloqueado' }).eq('id', req.params.id);
 
       // Log admin
       const adminId = (req as any).userId;
@@ -2179,7 +2179,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const { data: broker } = await supabase
-        .from('brokers').select('user_id, asaas_subscription_id').eq('id', req.params.id).single();
+        .from('imf_brokers').select('user_id, asaas_subscription_id').eq('id', req.params.id).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
       // 1. Cancela assinatura no Asaas
@@ -2190,7 +2190,7 @@ async function startServer() {
       }
 
       // 2. Remove dados do corretor (cascade deve limpar propriedades/leads via FK)
-      await supabase.from('brokers').delete().eq('id', req.params.id);
+      await supabase.from('imf_brokers').delete().eq('id', req.params.id);
 
       // 3. Remove usuário do Supabase Auth (invalida login)
       if (broker.user_id) {
@@ -2213,7 +2213,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const brokerId = req.params.id;
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('valid_until, name').eq('id', brokerId).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
@@ -2222,13 +2222,13 @@ async function startServer() {
       periodStart.setMonth(periodStart.getMonth() - 1);
 
       const [{ count: ticketsRaw }, { data: adjData }] = await Promise.all([
-        supabase.from('ticket_events')
+        supabase.from('imf_ticket_events')
           .select('id', { count: 'exact', head: true })
           .eq('broker_id', brokerId)
           .gte('created_at', periodStart.toISOString())
           .lt('created_at', periodEnd.toISOString()),
         // SEM filtro de período: admin vê e pode estornar qualquer ajuste da história
-        supabase.from('ticket_adjustments')
+        supabase.from('imf_ticket_adjustments')
           .select('id, amount, type, reason, created_at, period_start')
           .eq('broker_id', brokerId)
           .order('created_at', { ascending: false })
@@ -2277,7 +2277,7 @@ async function startServer() {
       return res.status(400).json({ error: 'type deve ser "bonus" ou "charge"' });
     }
     try {
-      const { data: broker } = await supabase.from('brokers')
+      const { data: broker } = await supabase.from('imf_brokers')
         .select('valid_until').eq('id', brokerId).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
@@ -2287,7 +2287,7 @@ async function startServer() {
 
       // Negativo: estorno de qualquer ajuste histórico (sem filtro de período)
       if (amount < 0) {
-        const { data: existing } = await supabase.from('ticket_adjustments')
+        const { data: existing } = await supabase.from('imf_ticket_adjustments')
           .select('amount')
           .eq('broker_id', brokerId)
           .eq('type', type);
@@ -2300,7 +2300,7 @@ async function startServer() {
         }
       }
 
-      const { data, error } = await supabase.from('ticket_adjustments').insert({
+      const { data, error } = await supabase.from('imf_ticket_adjustments').insert({
         broker_id:    brokerId,
         amount,
         type,
@@ -2327,7 +2327,7 @@ async function startServer() {
   }) {
     try {
       // Captura valid_until ANTES de atualizar — necessário para delimitar o ciclo encerrado
-      const { data: brokerBefore } = await supabase.from('brokers')
+      const { data: brokerBefore } = await supabase.from('imf_brokers')
         .select('valid_until, asaas_credit_card_token').eq('id', brokerId).single();
 
       const validUntil = new Date();
@@ -2342,7 +2342,7 @@ async function startServer() {
       };
       if (subscriptionId) brokerUpdate.asaas_subscription_id = subscriptionId;
 
-      await supabase.from('brokers').update(brokerUpdate).eq('id', brokerId);
+      await supabase.from('imf_brokers').update(brokerUpdate).eq('id', brokerId);
 
       // Processa excedente do ciclo encerrado (apenas em renovações)
       if (isRenewal && brokerBefore?.valid_until && subscriptionId) {
@@ -2353,7 +2353,7 @@ async function startServer() {
           // Verifica se prepareOverageBilling() já embutiu o excedente na assinatura
           const windowStart = new Date(periodEnd.getTime() - 12 * 60 * 60 * 1000).toISOString();
           const windowEnd   = new Date(periodEnd.getTime() + 12 * 60 * 60 * 1000).toISOString();
-          const { data: scheduled } = await supabase.from('overage_charges')
+          const { data: scheduled } = await supabase.from('imf_overage_charges')
             .select('id, tickets_overage, amount_cents')
             .eq('broker_id', brokerId)
             .eq('status', 'scheduled_in_subscription')
@@ -2363,7 +2363,7 @@ async function startServer() {
 
           if (scheduled) {
             // Caminho normal: excedente já estava embutido no valor da cobrança — marcar como pago
-            await supabase.from('overage_charges')
+            await supabase.from('imf_overage_charges')
               .update({ status: 'included_in_subscription', charged_at: new Date().toISOString() })
               .eq('id', scheduled.id);
             // Reseta subscription de volta ao valor base para o próximo ciclo
@@ -2392,13 +2392,13 @@ async function startServer() {
         valid_until: validUntil.toISOString()
       });
 
-      const { data: broker } = await supabase.from('brokers').select('*').eq('id', brokerId).single();
+      const { data: broker } = await supabase.from('imf_brokers').select('*').eq('id', brokerId).single();
       if (!broker) return;
 
       if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN) {
         // Trava atômica: só provisiona se status NÃO for 'completed' nem 'processing'.
         // Evita criação duplicada quando Asaas dispara o mesmo evento 2x.
-        const { data: locked } = await supabase.from('brokers')
+        const { data: locked } = await supabase.from('imf_brokers')
           .update({ provisioning_status: 'processing' })
           .eq('id', brokerId)
           .neq('provisioning_status', 'completed')
@@ -2434,7 +2434,7 @@ async function startServer() {
     // Idempotência: verifica se já existe cobrança para este período (±12h de tolerância)
     const windowStart = new Date(periodEnd.getTime() - 12 * 60 * 60 * 1000).toISOString();
     const windowEnd   = new Date(periodEnd.getTime() + 12 * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await supabase.from('overage_charges')
+    const { data: existing } = await supabase.from('imf_overage_charges')
       .select('id, status')
       .eq('broker_id', brokerId)
       .gte('billing_period_end', windowStart)
@@ -2448,7 +2448,7 @@ async function startServer() {
     }
 
     // Conta tickets no período encerrado
-    const { count } = await supabase.from('ticket_events')
+    const { count } = await supabase.from('imf_ticket_events')
       .select('id', { count: 'exact', head: true })
       .eq('broker_id', brokerId)
       .gte('created_at', periodStart.toISOString())
@@ -2462,7 +2462,7 @@ async function startServer() {
 
     // Sem excedente: registra apenas para auditoria
     if (overage === 0) {
-      await supabase.from('overage_charges').insert({
+      await supabase.from('imf_overage_charges').insert({
         broker_id: brokerId,
         billing_period_start: periodStart.toISOString(),
         billing_period_end:   periodEnd.toISOString(),
@@ -2477,7 +2477,7 @@ async function startServer() {
     }
 
     // Insere registro 'pending' ANTES de chamar o Asaas (garante idempotência em retries)
-    const { data: chargeRow } = await supabase.from('overage_charges').insert({
+    const { data: chargeRow } = await supabase.from('imf_overage_charges').insert({
       broker_id: brokerId,
       billing_period_start: periodStart.toISOString(),
       billing_period_end:   periodEnd.toISOString(),
@@ -2515,7 +2515,7 @@ async function startServer() {
         throw new Error(payment.errors?.[0]?.description || payment.message || 'Falha na cobrança Asaas');
       }
 
-      await supabase.from('overage_charges').update({
+      await supabase.from('imf_overage_charges').update({
         status: 'charged',
         asaas_payment_id: payment.id,
         charged_at: new Date().toISOString(),
@@ -2523,7 +2523,7 @@ async function startServer() {
 
       console.log(`[Overage] ✅ R$ ${amount.toFixed(2)} cobrado — payment ${payment.id} — ${brokerId}`);
     } catch (err: any) {
-      await supabase.from('overage_charges').update({
+      await supabase.from('imf_overage_charges').update({
         status: 'failed',
         error: err.message,
       }).eq('id', chargeRow?.id);
@@ -2547,7 +2547,7 @@ async function startServer() {
     const windowStart = new Date(now.getTime() + 20 * 60 * 60 * 1000);
     const windowEnd   = new Date(now.getTime() + 28 * 60 * 60 * 1000);
 
-    const { data: brokers } = await supabase.from('brokers')
+    const { data: brokers } = await supabase.from('imf_brokers')
       .select('id, asaas_subscription_id, valid_until')
       .eq('status', 'ativo')
       .gte('valid_until', windowStart.toISOString())
@@ -2564,7 +2564,7 @@ async function startServer() {
         periodStart.setMonth(periodStart.getMonth() - 1);
 
         // Idempotência: não preparar duas vezes o mesmo ciclo
-        const { data: alreadyDone } = await supabase.from('overage_charges')
+        const { data: alreadyDone } = await supabase.from('imf_overage_charges')
           .select('id')
           .eq('broker_id', broker.id)
           .in('status', ['scheduled_in_subscription', 'included_in_subscription', 'no_charge'])
@@ -2575,12 +2575,12 @@ async function startServer() {
         if (alreadyDone) continue;
 
         const [{ count }, { data: adjRows }] = await Promise.all([
-          supabase.from('ticket_events')
+          supabase.from('imf_ticket_events')
             .select('id', { count: 'exact', head: true })
             .eq('broker_id', broker.id)
             .gte('created_at', periodStart.toISOString())
             .lt('created_at', periodEnd.toISOString()),
-          supabase.from('ticket_adjustments')
+          supabase.from('imf_ticket_adjustments')
             .select('amount, type')
             .eq('broker_id', broker.id)
             .gte('period_start', periodStart.toISOString())
@@ -2612,7 +2612,7 @@ async function startServer() {
           continue;
         }
 
-        await supabase.from('overage_charges').insert({
+        await supabase.from('imf_overage_charges').insert({
           broker_id:            broker.id,
           billing_period_start: periodStart.toISOString(),
           billing_period_end:   periodEnd.toISOString(),
@@ -2918,7 +2918,7 @@ async function startServer() {
     if (!await requireAdmin(req, res)) return;
     try {
       const { data: broker } = await supabase
-        .from('brokers').select('*').eq('id', req.params.id).single();
+        .from('imf_brokers').select('*').eq('id', req.params.id).single();
       if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
       if (!broker.zpro_channel_id) return res.status(400).json({ error: 'Canal Z-PRO não configurado para este corretor.' });
       if (!UAZAPI_HOST || !UAZAPI_TOKEN) return res.status(503).json({ error: 'UAZAPI não configurado no servidor.' });
@@ -3043,7 +3043,7 @@ async function startServer() {
     // let (não const) para permitir fallback para @imobiflow.local se necessário.
     let tenantEmail = broker.zpro_user_email || broker.email || `${tenantUsername}@imobiflow.local`;
 
-    await supabase.from('brokers').update({
+    await supabase.from('imf_brokers').update({
       zpro_password: tenantPassword,
       zpro_username: tenantUsername,
       zpro_user_email: tenantEmail,
@@ -3130,7 +3130,7 @@ async function startServer() {
           userRes = await zproPost('/userTenants', buildUserBody(fallbackEmail));
           if (userRes.ok && userRes.json?.id) {
             tenantEmail = fallbackEmail;  // atualiza para o resto do fluxo (login, webhook)
-            await supabase.from('brokers').update({ zpro_user_email: fallbackEmail }).eq('id', broker.id);
+            await supabase.from('imf_brokers').update({ zpro_user_email: fallbackEmail }).eq('id', broker.id);
           }
         }
 
@@ -3143,7 +3143,7 @@ async function startServer() {
           // Não é fatal — login tenta mesmo assim
         }
 
-        await supabase.from('brokers').update({
+        await supabase.from('imf_brokers').update({
           zpro_tenant_id: String(tenantId),
           provisioning_status: 'tenant_created'
         }).eq('id', broker.id);
@@ -3219,7 +3219,7 @@ async function startServer() {
         console.log(`[Z-PRO] Canal ${whatsappId} já existe — pulando criação`);
       }
 
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         zpro_channel_id: String(whatsappId),
         zpro_channel_name: `WhatsApp - ${brokerName}`,
         provisioning_status: 'session_created'
@@ -3245,7 +3245,7 @@ async function startServer() {
           apiPlainToken = apiResult.plainToken;
           apiUuid = apiResult.uuid;
           apiExternalUrl = apiResult.apiUrl;
-          await supabase.from('brokers').update({
+          await supabase.from('imf_brokers').update({
             zpro_api_key: apiUuid,
             zpro_api_token: apiPlainToken,
             zpro_api_url: apiExternalUrl
@@ -3264,12 +3264,12 @@ async function startServer() {
       // Z-PRO retorna 500 mas salva; verificamos com GET para confirmar.
       if (N8N_WEBHOOK_URL) await setN8nWebhook(tenantId, whatsappId, tenantToken);
 
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         provisioning_status: 'api_created'
       }).eq('id', broker.id);
 
       const completedAt = new Date().toISOString();
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         provisioning_status: 'completed',
         provisioning_completed_at: completedAt
       }).eq('id', broker.id);
@@ -3319,7 +3319,7 @@ async function startServer() {
 
     } catch (err: any) {
       console.error("Erro ao criar Z-PRO tenant/canal:", err);
-      await supabase.from('brokers').update({
+      await supabase.from('imf_brokers').update({
         provisioning_status: 'failed',
         provisioning_error: err.message
       }).eq('id', broker.id);
@@ -3445,7 +3445,7 @@ async function startServer() {
       if (!_brokerId) {
         const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
         if (brokerPhone) {
-          const { data: b } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+          const { data: b } = await supabase.from('imf_brokers').select('id').eq('phone', brokerPhone).maybeSingle();
           _brokerId = b?.id || null;
         }
       }
@@ -3491,7 +3491,7 @@ async function startServer() {
       // Contabiliza atendimento: cada ticket_id único = 1 atendimento no ciclo de billing.
       // ON CONFLICT (broker_id, zpro_ticket_id) DO NOTHING garante idempotência sem try/catch.
       if (incomingTicketId) {
-        await supabase.from('ticket_events').upsert({
+        await supabase.from('imf_ticket_events').upsert({
           broker_id: broker.id,
           zpro_ticket_id: incomingTicketId,
           customer_phone: customerPhone,
@@ -3522,7 +3522,7 @@ async function startServer() {
       if (!_brokerId) {
         const brokerPhone = normalizePhoneBR(String(req.body?.broker_phone || '').split(':')[0]);
         if (brokerPhone) {
-          const { data: b } = await supabase.from('brokers').select('id').eq('phone', brokerPhone).maybeSingle();
+          const { data: b } = await supabase.from('imf_brokers').select('id').eq('phone', brokerPhone).maybeSingle();
           _brokerId = b?.id || null;
         }
       }
