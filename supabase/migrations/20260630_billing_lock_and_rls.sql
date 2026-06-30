@@ -41,9 +41,10 @@ $$;
 --    para o mesmo corretor no mesmo ciclo de billing.
 -- ============================================================
 
-ALTER TABLE imf_overage_charges
-  ADD CONSTRAINT IF NOT EXISTS uq_overage_broker_period
-  UNIQUE (broker_id, billing_period_end);
+-- Índice único (idempotente) — Postgres NÃO aceita ADD CONSTRAINT IF NOT EXISTS,
+-- então usamos CREATE UNIQUE INDEX IF NOT EXISTS, que tem o mesmo efeito prático.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_overage_broker_period
+  ON imf_overage_charges (broker_id, billing_period_end);
 
 -- ============================================================
 -- 3. RLS NAS TABELAS DE TENANT (rede de segurança)
