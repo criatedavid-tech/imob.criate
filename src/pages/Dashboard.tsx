@@ -36,6 +36,7 @@ import PropertyForm from '../components/PropertyForm';
 
 import AISettings from '../components/AISettings';
 import FollowUpSettings from '../components/FollowUpSettings';
+import AgendaCalendar from '../components/AgendaCalendar';
 import { authService } from '../services/auth';
 import MagicWandTextarea from '../components/MagicWandTextarea';
 
@@ -771,85 +772,7 @@ export default function Dashboard() {
           )}
 
           {activeTab === 'calendar' && (
-            <div>
-              <div className="flex items-center justify-between mb-4 md:mb-6">
-                <h2 className="text-xl md:text-2xl font-bold text-white">Agenda</h2>
-                <span className="text-sm text-white/50">{scheduledVisits.length} {scheduledVisits.length === 1 ? 'visita pendente' : 'visitas pendentes'}</span>
-              </div>
-
-              {loadingVisits && (
-                <div className="flex items-center gap-3 text-white/50 py-10">
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>Carregando agenda...</span>
-                </div>
-              )}
-
-              {!loadingVisits && scheduledVisits.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md bg-white/10 border border-white/15">
-                    <Calendar size={28} className="text-white/50" />
-                  </div>
-                  <h3 className="font-bold text-lg mb-1 text-white">Nenhuma visita agendada</h3>
-                  <p className="text-white/50 text-sm max-w-xs">As visitas aparecem aqui quando leads escolhem um horário via landing page.</p>
-                </div>
-              )}
-
-              {!loadingVisits && scheduledVisits.length > 0 && (
-                <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
-                  <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px]">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Visitante</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden sm:table-cell">Telefone</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden md:table-cell">Imóvel</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Observação</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider hidden lg:table-cell">Solicitado</th>
-                        <th className="text-left px-4 md:px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-wider">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {scheduledVisits.map((visit) => (
-                        <tr key={visit.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5 transition-colors">
-                          <td className="px-4 md:px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-amber-300 shrink-0 backdrop-blur-sm bg-amber-500/20 border border-amber-400/30">
-                                {visit.name?.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="font-semibold text-sm text-white">{visit.name}</p>
-                                {visit.email && <p className="text-xs text-white/40">{visit.email}</p>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 md:px-6 py-4 text-sm font-mono text-white/60 hidden sm:table-cell">{visit.phone || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[160px] truncate hidden md:table-cell">{visit.property || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/60 max-w-[200px] truncate hidden lg:table-cell">{visit.notes || '—'}</td>
-                          <td className="px-4 md:px-6 py-4 text-sm text-white/40 whitespace-nowrap hidden lg:table-cell">{formatTimeAgo(visit.created_at)}</td>
-                          <td className="px-4 md:px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={async () => { await updateLeadStatus(visit.id, 'contacted'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
-                                className="px-3 py-1.5 bg-green-100 text-green-700 text-xs font-bold rounded-full hover:bg-green-200 transition-colors"
-                              >
-                                Confirmar
-                              </button>
-                              <button
-                                onClick={async () => { await updateLeadStatus(visit.id, 'archived'); fetchScheduledVisits(); fetchDashboardMetrics(); }}
-                                className="px-3 py-1.5 bg-gray-100 text-gray-500 text-xs font-bold rounded-full hover:bg-gray-200 transition-colors"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              )}
-            </div>
+            <AgendaCalendar />
           )}
 
           {activeTab === 'settings' && (

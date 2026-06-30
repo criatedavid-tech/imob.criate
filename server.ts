@@ -1422,6 +1422,10 @@ async function startServer() {
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // AGENDA — CRUD completo
+  // ─────────────────────────────────────────────────────────────────────────
+
   app.get("/api/agenda/visits", requireUser, async (req, res) => {
     try {
       const userId = (req as any).userId as string;
@@ -1430,50 +1434,133 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.json([]);
 
-      // Lê da tabela agenda (criada para o N8N gravar agendamentos)
-      const { data: agendaVisits, error: agendaError } = await supabase
-        .from('agenda')
-        .select('*')
+      const { start, end } = req.query as { start?: string; end?: string };
+
+      let query = supabase
+        .from('imf_agenda')
+        .select('*, imf_properties(title)')
         .eq('broker_id', brokerId)
         .order('scheduled_at', { ascending: true });
 
+      if (start) query = query.gte('scheduled_at', start);
+      if (end)   query = query.lte('scheduled_at', end);
+
+      const { data: agendaVisits, error: agendaError } = await query;
       if (agendaError) throw agendaError;
 
-      // Retrocompat: lê também de leads com status de visita agendada (dados antigos)
-      const { data: propIds } = await supabase
-        .from('imf_properties')
-        .select('id, title')
-        .eq('broker_id', brokerId);
-
-      const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
-      const ids = Array.from(propertiesMap.keys());
-
-      let legacyVisits: any[] = [];
-      if (ids.length > 0) {
-        const { data } = await supabase
-          .from('leads')
-          .select('*')
-          .in('property_id', ids)
-          .in('status', ['visita_agendada', 'agendado'])
-          .order('created_at', { ascending: false });
-        legacyVisits = (data || []).map((l: any) => ({
-          ...l,
-          name: l.name || l.client_name || 'Sem nome',
-          phone: l.phone || l.client_phone || '',
-          scheduled_at: l.created_at,
-          property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
-        }));
-      }
-
-      const agendaFormatted = (agendaVisits || []).map((a: any) => ({
+      const formatted = (agendaVisits || []).map((a: any) => ({
         ...a,
-        name: a.title || 'Sem nome',
-        property: propertiesMap.get(a.property_id) || 'Imóvel desconhecido'
+        name: a.client_name || 'Sem nome',
+        phone: a.client_phone || '',
+        email: a.client_email || '',
+        property: a.imf_properties?.title || null,
       }));
 
-      res.json([...agendaFormatted, ...legacyVisits]);
+      res.json(formatted);
     } catch (err: any) {
       console.error("Erro GET /api/agenda/visits:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/agenda/visits", requireUser, async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const {
+        client_name, client_phone, client_email,
+        scheduled_at, duration_minutes, title, notes,
+        property_id, source
+      } = req.body;
+
+      if (!client_name || !scheduled_at) {
+        return res.status(400).json({ error: "client_name e scheduled_at são obrigatórios" });
+      }
+
+      const { data, error } = await supabase
+        .from('imf_agenda')
+        .insert({
+          broker_id: brokerId,
+          property_id: property_id || null,
+          client_name,
+          client_phone: client_phone || null,
+          client_email: client_email || null,
+          scheduled_at,
+          duration_minutes: duration_minutes || 60,
+          title: title || null,
+          notes: notes || null,
+          status: 'pendente',
+          source: source || 'manual',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (err: any) {
+      console.error("Erro POST /api/agenda/visits:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/agenda/visits/:id", requireUser, async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const { id } = req.params;
+      const allowed = [
+        'client_name', 'client_phone', 'client_email',
+        'scheduled_at', 'duration_minutes', 'title', 'notes',
+        'property_id', 'status'
+      ];
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) updates[key] = req.body[key];
+      }
+
+      const { data, error } = await supabase
+        .from('imf_agenda')
+        .update(updates)
+        .eq('id', id)
+        .eq('broker_id', brokerId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      console.error("Erro PATCH /api/agenda/visits/:id:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/agenda/visits/:id", requireUser, async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const { id } = req.params;
+      const { error } = await supabase
+        .from('imf_agenda')
+        .delete()
+        .eq('id', id)
+        .eq('broker_id', brokerId);
+
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Erro DELETE /api/agenda/visits/:id:", err);
       res.status(500).json({ error: err.message });
     }
   });
