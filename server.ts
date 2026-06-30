@@ -1565,6 +1565,166 @@ async function startServer() {
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // AGENDA — Endpoints para N8N (auth: INTERNAL_PROXY_TOKEN, broker_id no body/query)
+  // Substituem as tools zpro_api_url/appointment/* do Agente IA Corretor
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function requireInternalToken(req: any, res: any): boolean {
+    const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+    if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
+      res.status(401).json({ error: 'Token inválido.' });
+      return false;
+    }
+    return true;
+  }
+
+  // [N8N] Lista agendamentos de um corretor (substitui GET /appointment/list do ZPro)
+  // Query: broker_id (obrigatório), phone (opcional — filtra por cliente)
+  app.get('/api/agenda/n8n/list', async (req, res) => {
+    if (!requireInternalToken(req, res)) return;
+    try {
+      const { broker_id, phone } = req.query as { broker_id?: string; phone?: string };
+      if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+
+      let query = supabase
+        .from('imf_agenda')
+        .select('*, imf_properties(title)')
+        .eq('broker_id', broker_id)
+        .order('scheduled_at', { ascending: true });
+
+      if (phone) {
+        const normalized = phone.replace(/\D/g, '');
+        query = query.ilike('client_phone', `%${normalized}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      res.json((data || []).map((a: any) => ({
+        id:               a.id,
+        title:            a.title || `Visita — ${a.client_name}`,
+        client_name:      a.client_name,
+        client_phone:     a.client_phone,
+        scheduled_at:     a.scheduled_at,
+        startAt:          a.scheduled_at,
+        endAt:            new Date(new Date(a.scheduled_at).getTime() + (a.duration_minutes || 60) * 60000).toISOString(),
+        duration_minutes: a.duration_minutes,
+        status:           a.status,
+        notes:            a.notes,
+        property:         a.imf_properties?.title || null,
+        source:           a.source,
+        created_at:       a.created_at,
+      })));
+    } catch (err: any) {
+      console.error('[Agenda N8N] GET list:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // [N8N] Cria agendamento (substitui POST /appointment/create do ZPro)
+  app.post('/api/agenda/n8n/create', async (req, res) => {
+    if (!requireInternalToken(req, res)) return;
+    try {
+      const {
+        broker_id, client_name, client_phone, client_email,
+        startAt, endAt, title, notes, property_id
+      } = req.body;
+
+      if (!broker_id)   return res.status(400).json({ error: 'broker_id é obrigatório.' });
+      if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
+      if (!startAt)     return res.status(400).json({ error: 'startAt é obrigatório.' });
+
+      const scheduled_at = new Date(startAt).toISOString();
+      const duration_minutes = endAt
+        ? Math.round((new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000)
+        : 60;
+
+      const { data, error } = await supabase
+        .from('imf_agenda')
+        .insert({
+          broker_id,
+          client_name,
+          client_phone:     client_phone || null,
+          client_email:     client_email || null,
+          scheduled_at,
+          duration_minutes: duration_minutes > 0 ? duration_minutes : 60,
+          title:            title || null,
+          notes:            notes || null,
+          property_id:      property_id || null,
+          status:           'pendente',
+          source:           'ia',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
+    } catch (err: any) {
+      console.error('[Agenda N8N] POST create:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // [N8N] Atualiza agendamento (substitui /appointment/update do ZPro)
+  app.patch('/api/agenda/n8n/:id', async (req, res) => {
+    if (!requireInternalToken(req, res)) return;
+    try {
+      const { id } = req.params;
+      const { broker_id, startAt, endAt, title, notes, status } = req.body;
+
+      if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (startAt) updates.scheduled_at = new Date(startAt).toISOString();
+      if (endAt && startAt) {
+        updates.duration_minutes = Math.round(
+          (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000
+        );
+      }
+      if (title)  updates.title  = title;
+      if (notes)  updates.notes  = notes;
+      if (status) updates.status = status;
+
+      const { data, error } = await supabase
+        .from('imf_agenda')
+        .update(updates)
+        .eq('id', id)
+        .eq('broker_id', broker_id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
+    } catch (err: any) {
+      console.error('[Agenda N8N] PATCH update:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // [N8N] Cancela agendamento (substitui /appointment/delete/:id do ZPro)
+  app.delete('/api/agenda/n8n/:id', async (req, res) => {
+    if (!requireInternalToken(req, res)) return;
+    try {
+      const { id } = req.params;
+      const broker_id = (req.query.broker_id || req.body?.broker_id) as string;
+
+      if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+
+      const { error } = await supabase
+        .from('imf_agenda')
+        .delete()
+        .eq('id', id)
+        .eq('broker_id', broker_id);
+
+      if (error) throw error;
+      res.json({ ok: true, deleted_id: id });
+    } catch (err: any) {
+      console.error('[Agenda N8N] DELETE:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/leads", requireUser, async (req, res) => {
     try {
       const userId = (req as any).userId as string;
