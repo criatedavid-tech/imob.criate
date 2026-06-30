@@ -1350,9 +1350,17 @@ async function startServer() {
   /**
    * Remove um imóvel do sistema permanentemente.
    */
-  app.delete("/api/properties/:id", async (req, res) => {
+  app.delete("/api/properties/:id", requireUser, async (req, res) => {
     try {
-      const { error } = await supabase.from('imf_properties').delete().eq('id', req.params.id);
+      const userId = (req as any).userId as string;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const { error } = await supabase.from('imf_properties').delete()
+        .eq('id', req.params.id)
+        .eq('broker_id', brokerId);
       if (error) throw error;
       res.status(200).json({ success: true });
     } catch (err: any) {
@@ -1772,6 +1780,9 @@ async function startServer() {
       const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
       const { status } = req.body;
       if (!status) return res.status(400).json({ error: "Status é obrigatório." });
 
@@ -1779,10 +1790,12 @@ async function startServer() {
         .from('imf_properties')
         .update({ status })
         .eq('id', req.params.id)
+        .eq('broker_id', brokerId)
         .select()
         .single();
 
       if (error) throw error;
+      if (!data) return res.status(403).json({ error: 'Acesso negado.' });
       res.json(data);
     } catch (err: any) {
       console.error("Erro PATCH /api/properties/:id/status:", err);
@@ -1796,17 +1809,30 @@ async function startServer() {
       const userId = (req as any).userId as string;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
       const { status } = req.body;
       if (!status) return res.status(400).json({ error: "Status é obrigatório." });
+
+      // Escopo multi-tenant: só atualiza lead cujo imóvel pertence ao corretor autenticado
+      const { data: propIds } = await supabase
+        .from('imf_properties')
+        .select('id')
+        .eq('broker_id', brokerId);
+      const ids = (propIds || []).map((p: any) => p.id);
+      if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
 
       const { data, error } = await supabase
         .from('leads')
         .update({ status })
         .eq('id', req.params.id)
+        .in('property_id', ids)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) return res.status(403).json({ error: 'Acesso negado.' });
       res.json(data);
     } catch (err: any) {
       console.error("Erro PATCH /api/leads/:id/status:", err);
@@ -2788,6 +2814,14 @@ async function startServer() {
   async function prepareOverageBilling(): Promise<void> {
     if (!ASAAS_API_KEY) return;
 
+    // Lock distribuído: garante execução única mesmo com múltiplas máquinas Fly
+    const { data: locked } = await supabase.rpc('try_billing_lock', { p_key: 'billing_prep', p_ttl_seconds: 7200 });
+    if (!locked) {
+      console.log('[Billing Prep] outra máquina segura o lock — tick ignorado');
+      return;
+    }
+
+    try {
     const now = new Date();
     // Janela: corretores com valid_until nas próximas 20-28 horas
     // (evita preparar muito cedo ou deixar passar)
@@ -2874,6 +2908,13 @@ async function startServer() {
         console.log(`[Billing Prep] ✅ ${broker.id} — R$ ${totalValue.toFixed(2)} (${overage} excedentes) agendado`);
       } catch (err: any) {
         console.error(`[Billing Prep] erro para ${broker.id}:`, err.message);
+      }
+    }
+    } finally {
+      try {
+        await supabase.rpc('release_billing_lock', { p_key: 'billing_prep' });
+      } catch (e: any) {
+        console.warn('[Billing Prep] falha ao liberar lock:', e?.message);
       }
     }
   }
