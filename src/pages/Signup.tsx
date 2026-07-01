@@ -64,6 +64,12 @@ export default function Signup() {
         await authService.login(formData.email, formData.password);
       }
 
+      // Registra o aceite dos Termos (checkbox obrigatório acima) no perfil.
+      // Falha aqui não bloqueia o cadastro — o TermsGate cobre no primeiro acesso.
+      try {
+        await fetch('/api/terms/accept', { method: 'POST', headers: authService.getAuthHeaders() });
+      } catch { /* noop */ }
+
       window.location.replace('/payment');
     } catch (err: any) {
       setError(err.message);

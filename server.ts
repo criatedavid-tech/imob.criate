@@ -45,6 +45,11 @@ const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
   : 'https://sandbox.asaas.com/api/v3';
 const ZPRO_ADMIN_URL      = process.env.ZPRO_ADMIN_URL      || "";
 const ZPRO_ADMIN_TOKEN    = process.env.ZPRO_ADMIN_TOKEN    || "";
+
+// Versão vigente dos Termos de Uso / Política de Privacidade (data de vigência).
+// Ao alterar os documentos de forma relevante, mude esta constante — usuários
+// logados com versão aceita divergente verão o modal de re-aceite (TermsGate).
+const TERMS_VERSION = '2026-07-01';
 // API_TOKEN_SECRET do backend Z-PRO — necessário para tenantApiCreateSession/StoreTenant
 // Obtido pelo admin do servidor Z-PRO: cat /app/.env | grep API_TOKEN_SECRET
 // Quando configurado, habilita criação automática de apiConfig no provisionamento.
@@ -593,6 +598,42 @@ async function startServer() {
     }
   });
 
+
+  // ─── Termos de Uso — versão vigente e registro de aceite ─────────────────
+
+  app.get("/api/terms/status", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+      const { data } = await supabase.from('imf_brokers')
+        .select('terms_version, terms_accepted_at').eq('id', brokerId).single();
+      res.json({
+        current: TERMS_VERSION,
+        accepted_version: data?.terms_version || null,
+        accepted_at: data?.terms_accepted_at || null,
+        needs_acceptance: data?.terms_version !== TERMS_VERSION
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/terms/accept", requireUser, async (req, res) => {
+    const userId = (req as any).userId as string;
+    try {
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
+      const acceptedAt = new Date().toISOString();
+      const { error } = await supabase.from('imf_brokers')
+        .update({ terms_version: TERMS_VERSION, terms_accepted_at: acceptedAt })
+        .eq('id', brokerId);
+      if (error) throw error;
+      res.json({ ok: true, version: TERMS_VERSION, accepted_at: acceptedAt });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // ─── Agente IA do corretor ───────────────────────────────────────────────
 
@@ -1962,6 +2003,12 @@ async function startServer() {
           asaas_subscription_id: subscription.id,
           ...(creditCardToken ? { asaas_credit_card_token: creditCardToken } : {})
         })
+        .eq('id', brokerId);
+
+      // Registro do aceite dos Termos/Privacidade (checkbox obrigatório no
+      // checkout) — update separado para nunca comprometer o update crítico acima.
+      await supabase.from('imf_brokers')
+        .update({ terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() })
         .eq('id', brokerId);
 
       await handleAsaasPaymentReceived({

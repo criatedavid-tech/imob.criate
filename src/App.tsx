@@ -13,6 +13,7 @@ import Privacidade from './pages/Privacidade';
 import Admin from './pages/Admin';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
+import TermsGate from './components/TermsGate';
 
 // Rota que verifica login E status da assinatura
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -45,7 +46,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
   if (status === 'pendente') return <Navigate to="/payment" replace />;
 
-  return <>{children}</>;
+  return <><TermsGate />{children}</>;
 }
 
 export default function App() {
