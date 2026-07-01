@@ -99,7 +99,7 @@ O que acontece quando o cliente final manda "oi, vi o apartamento no anúncio":
    são registrados para auditoria.
 9. **Catálogo com cache** — o estoque (planilha do cliente) é carregado com
    cache TTL por tenant: resposta rápida e sem estourar cota da fonte.
-10. **IA em 3 camadas** — modelo principal do tenant (ex.: Gemini 2.5 Pro via
+10. **IA em 3 camadas** — modelo principal do tenant (ex.: Gemini 2.5 flash via
     OpenRouter) → falhou? **fallback** (ex.: GPT-4o-mini) → falhou também?
     **mensagem de emergência** educada com rota de escape para atendente.
     O cliente final **nunca** fica sem resposta.

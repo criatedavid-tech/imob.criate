@@ -5,7 +5,8 @@
 > **Não contém valores de segredos** — apenas os nomes das variáveis (os
 > valores ficam no `.env` local, nos *secrets* da Fly e nas notas de memória).
 
-Última atualização: 2026-06-11.
+Última atualização: 2026-07-01. **Comece pela §14** (estado consolidado e
+continuidade) — ela é a fonte de verdade atual e supersede as §4 e §13.
 
 ---
 
@@ -477,3 +478,484 @@ Updating existing machines in 'imobiflow' with rolling strategy
 > [2/2] Waiting for 7840637a265778 [app] to become healthy: 1/1
 
 ✔ [2/2] Machine 7840637a265778 [app] update succeeded
+
+
+---
+
+# 14. Estado Consolidado e Continuidade (atualizado 2026-07-01)
+
+> **Leia esta seção primeiro se você é novo no projeto.** Ela é auto-contida e
+> reflete o estado **real e verificado** do código em produção nesta data.
+> Onde houver divergência com seções anteriores (§4 e §13), **esta seção
+> prevalece** — as seções 1–13 foram escritas antes de duas mudanças grandes:
+> (a) o *rename* das tabelas para o prefixo `imf_` (commit `c11caa4`) e
+> (b) a migração do modelo de cobrança de excedente para "valor da assinatura
+> ajustado antes da renovação". A §13 do documento, além disso, está
+> **corrompida** (saída de `fly deploy` foi colada dentro das células das
+> tabelas) — ignore-a e use a §14.5 abaixo.
+
+---
+
+## 14.1. Objetivo geral do projeto
+
+**ImobiFlow** (marca comercial **Criate**) é um **SaaS B2B multitenant** para
+corretores de imóveis brasileiros. A proposta de valor é uma **esteira 100%
+automática**: o corretor assina o plano, paga pelo **Asaas**, e o sistema
+**provisiona sozinho** um atendimento de WhatsApp isolado (número, sessão,
+canal e um agente de IA) sem intervenção humana. A partir daí, um **agente de
+IA no N8N** atende os clientes finais do corretor 24/7, respondendo com base
+nos **imóveis que o corretor cadastrou** no painel e reativando leads silenciosos
+via **follow-up automático**.
+
+Em uma frase: **"pague e, minutos depois, tenha um vendedor de imóveis por IA
+no seu WhatsApp, alimentado pelo seu próprio catálogo."**
+
+Divisão de painéis (importante não confundir):
+- **ImobiFlow / Criate** (este repositório, `imobiflow.fly.dev`): cadastro de
+  imóveis, landing pages, leads, agenda, configuração do agente de IA,
+  pagamento, billing de excedente e o **motor de provisionamento**.
+- **Z-PRO** (`app.criate.online`): onde o corretor **lê o QR Code** e opera a
+  caixa de entrada do WhatsApp (inbox/tickets). É um produto de terceiros
+  (fork do Whaticket) que orquestramos via API.
+
+---
+
+## 14.2. Arquitetura atual
+
+### Visão de componentes
+
+```mermaid
+flowchart TB
+    subgraph Cliente["Navegador / Cliente final"]
+        Painel["Painel Corretor (React SPA)"]
+        Landing["Landing /p/:slug (público)"]
+        Zap["Cliente final no WhatsApp"]
+    end
+
+    subgraph Fly["Fly.io — app 'imobiflow' (2 máquinas, GRU)"]
+        API["server.ts — Express + TS<br/>(monolito ~3900 linhas)<br/>+ serve dist/ do Vite"]
+        Cron1["Cron 60s: follow-up<br/>(claim_due_followups)"]
+        Cron2["Cron 60min: prepareOverageBilling<br/>(com lock distribuído)"]
+    end
+
+    subgraph Ext["Integrações externas"]
+        Supa[("Supabase<br/>Postgres + Auth<br/>umvbrahsqvqeondwtikm")]
+        Asaas["Asaas<br/>(assinatura + excedente)"]
+        Zpro["Z-PRO<br/>appback.criate.online"]
+        Uaz["UAZAPI<br/>criate.uazapi.com"]
+        N8N["N8N<br/>212hook.criate.online"]
+        OR["OpenRouter (LLM)"]
+        Gem["Google Gemini<br/>(melhora de texto)"]
+    end
+
+    Painel -->|"Bearer + x-user-id"| API
+    Landing -->|"POST /api/leads"| API
+    Zap --> Uaz --> Zpro -->|"webhook msg"| N8N
+    N8N -->|"INTERNAL_PROXY_TOKEN"| API
+    N8N -->|"LLM proxy"| API --> OR
+    API --> Supa
+    API --> Asaas
+    API -->|"provisiona"| Zpro
+    API -->|"cria instância"| Uaz
+    API --> Gem
+    Cron2 --> Asaas
+    Cron1 --> Zpro
+    Asaas -->|"webhooks pagamento"| API
+```
+
+### Características arquiteturais-chave
+
+- **Monólito intencional.** Todo o backend vive em um único arquivo
+  `server.ts` (~3900 linhas). Isso é uma **decisão deliberada** (ver §14.8),
+  não dívida acidental. Não fragmente sem necessidade real.
+- **Multitenant por `broker_id`.** Cada corretor é um *tenant*. O isolamento
+  é **100% responsabilidade do código de aplicação**, porque o backend usa a
+  `service_role` do Supabase, que **ignora RLS** (ver §14.5.2 e §14.9).
+- **Stateless + 2 máquinas.** O Fly roda 2 VMs com `auto_start_machines`.
+  Qualquer job agendado (`setInterval`) roda **nas duas** — daí a necessidade
+  de **locks/claims atômicos no Postgres** para tudo que não pode duplicar.
+- **Frontend só fala com o backend.** O SPA nunca consulta o Supabase
+  diretamente (o cliente `anon` em `src/lib/supabase.ts` é exportado mas
+  **nenhum** `.from()`/`.rpc()` o usa). Isso torna seguro habilitar RLS sem
+  quebrar a UI.
+
+---
+
+## 14.3. Tecnologias utilizadas
+
+| Camada | Tecnologia | Observação |
+|--------|-----------|-----------|
+| Backend | Node + Express + TypeScript, via `tsx server.ts` (porta 3000) | `--max-old-space-size=1024` evita OOM em uploads base64 |
+| Frontend | Vite + React 19 + React Router 7 + Tailwind 4 | Design system "Liquid Glass" (`motion`, `recharts`, `lucide-react`) |
+| Banco/Auth | Supabase (`umvbrahsqvqeondwtikm`) — Postgres + Auth | Instância **compartilhada** com outros projetos (ver §14.5) |
+| Deploy | Fly.io — app `imobiflow` (`imobiflow.fly.dev`), 2 máquinas GRU | CI/CD: GitHub Actions faz `fly deploy` no push para `main` |
+| Pagamentos | Asaas — assinatura mensal recorrente + cobrança de excedente | `ASAAS_ENV=production` → `api.asaas.com`; senão sandbox |
+| WhatsApp | Z-PRO (fork Whaticket) sobre UAZAPI | Z-PRO orquestra; UAZAPI é o provedor real do número |
+| Automação IA | N8N (`212hook.criate.online`) | Fluxo do agente + provisioning webhook |
+| LLM | OpenRouter | Chave por corretor (fallback da empresa) via proxy |
+| Texto auxiliar | Google Gemini | "Varinha mágica" para melhorar descrições de imóveis |
+
+Rodar / deployar:
+```bash
+# Local (em C:\Users\Criate\imob.criate)
+npm run dev     # tsx --max-old-space-size=1024 server.ts (porta 3000)
+npm run build   # vite build → dist/
+npm run lint    # tsc --noEmit (typecheck — sempre rode antes de commitar)
+
+# Produção: push para main dispara GitHub Actions → fly deploy
+# (ou manual) fly deploy --app imobiflow
+```
+
+---
+
+## 14.4. Estrutura do banco de dados (Supabase) — **fonte de verdade atual**
+
+> ⚠️ **Mudança crítica vs. §4:** as tabelas **núcleo** foram renomeadas para o
+> prefixo `imf_` no commit `c11caa4`. A §4 (que lista `brokers`, `properties`,
+> `agenda`, `ticket_events`, `overage_charges`) está **desatualizada**. Além
+> disso, a instância Supabase é **compartilhada** com outros sistemas da Criate
+> (CVV usa prefixo `cvv_`, Criate IA usa `ia_`, zpro-dashboard usa `zpro_`).
+> **Sempre filtre pelo prefixo `imf_` ao mexer em tabelas deste projeto.**
+
+### Tabelas com prefixo `imf_` (renomeadas — núcleo do produto)
+
+| Tabela | Papel | Colunas relevantes |
+|--------|-------|--------------------|
+| `imf_brokers` | Corretor / tenant (núcleo) | `id`, `user_id` (Auth), `name`, `email`, `phone`, `is_admin`, `corretora_id`, `status` (`pendente`/`ativo`/`inativo`/`bloqueado`), `plan`, `valid_until`, `grace_until`, `asaas_customer_id`, `asaas_subscription_id`, `asaas_credit_card_token`, `provisioning_status`, credenciais Z-PRO (`zpro_*`), `ai_name`, `broker_address`, `openrouter_api_key_enc`, `reset_token` |
+| `imf_properties` | Imóveis | `id`, `title`, `price`, `location`, `description`, `image_url` (JSON), `slug`, `link`, `status`, `broker_id`, timestamps |
+| `imf_agenda` | Visitas/agenda (calendário) | `id`, `broker_id`, `lead_id`, `property_id`, `title`, `scheduled_at`, `status`, dados do cliente |
+| `imf_ticket_events` | 1 linha por atendimento único (base do billing) | `id`, `broker_id`, `zpro_ticket_id`, `customer_phone`, `created_at`. **UNIQUE `(broker_id, zpro_ticket_id)`** garante idempotência |
+| `imf_ticket_adjustments` | Ajustes manuais de atendimentos (admin) | `id`, `broker_id`, `type` (`bonus` \| `charge`), `amount`, `period_start`, ... |
+| `imf_overage_charges` | Log de cada ciclo de billing processado | ver §14.5. **UNIQUE `(broker_id, billing_period_end)`** (índice `uq_overage_broker_period`, criado nesta rodada) |
+| `imf_billing_lock` | **NOVO** — lock distribuído do cron de billing | `lock_key` (PK), `acquired_at`, `expires_at` |
+
+### Tabelas **sem** prefixo (não foram renomeadas — atenção!)
+
+`leads`, `corretoras`, `subscriptions`, `webhook_logs`, `followup_config`,
+`followup_conversations`, `broker_agents`.
+
+- **`broker_agents`** (novo): agente(s) de IA por corretor —
+  `id`, `broker_id`, `agent_name`, `system_prompt`, `is_active`, `updated_at`.
+  Substitui a antiga UI de `ai_custom_prompt`. O N8N lê via
+  `GET /api/brokers/:id/agent` (auth `INTERNAL_PROXY_TOKEN`).
+- **`followup_conversations`**: estado do follow por conversa —
+  `broker_id`, `customer_phone`, `last_customer_message_at`, `follow_sent`,
+  `follow_sent_at`, `follow_message_index` (0..3), `ai_active`,
+  `human_takeover_at`. **UNIQUE `(broker_id, customer_phone)`**.
+
+### RPCs (funções Postgres) em uso
+
+| Função | Uso | Onde |
+|--------|-----|------|
+| `claim_due_followups()` | Claim atômico dos follow-ups vencidos (multi-máquina safe) | cron 60s |
+| `try_billing_lock(p_key, p_ttl_seconds)` | **NOVO** — adquire lock do billing; retorna `true`/`false` | `prepareOverageBilling` |
+| `release_billing_lock(p_key)` | **NOVO** — libera o lock no `finally` | `prepareOverageBilling` |
+
+---
+
+## 14.5. Fluxos implementados
+
+Os fluxos 5.1–5.6 da §5 (provisionamento, ativação, operação, conteúdo,
+ciclo de assinatura, follow-up) continuam **válidos** — apenas troque os nomes
+de tabela para o prefixo `imf_`. Abaixo estão os fluxos **novos ou alterados**.
+
+### 14.5.1. Billing de excedente (modelo atual — substitui §13)
+
+O modelo **mudou**: em vez de criar uma cobrança avulsa no cartão, o sistema
+**ajusta o valor da própria assinatura no Asaas** antes da renovação. Assim o
+corretor recebe **uma única cobrança** = mensalidade + excedente.
+
+**Parâmetros (env vars, alteráveis sem redeploy via `fly secrets set`):**
+
+| Parâmetro | Valor atual | Env var |
+|-----------|-------------|---------|
+| Mensalidade | R$ 5,00 (validação) → R$ 297,00 (futuro) | `SUBSCRIPTION_VALUE` |
+| Atendimentos inclusos/ciclo | 100 | `PLAN_INCLUDED_TICKETS` |
+| Preço por excedente | **R$ 3,00** | `PLAN_OVERAGE_PRICE` |
+
+> Nota: a §13 menciona R$ 2,00 — está **desatualizada**. O valor vigente é
+> **R$ 3,00/ticket** (commits `dfbf16f`, `51f852f`).
+
+**O que conta como atendimento:** 1 ticket novo no Z-PRO = 1 atendimento.
+Mensagens subsequentes no mesmo ticket **não** contam (idempotência via UNIQUE
+em `imf_ticket_events`). A contagem é registrada quando o N8N chama o endpoint
+de inbound a cada mensagem.
+
+**Ajustes manuais (admin):** via `imf_ticket_adjustments`, o admin pode lançar
+`bonus` (aumenta o limite incluso) ou `charge` (soma direto ao excedente).
+O cálculo efetivo é:
+```
+effectiveLim = max(PLAN_INCLUDED_TICKETS, PLAN_INCLUDED_TICKETS + bonusAdj)
+overage      = max(0, totalTickets - effectiveLim) + max(0, chargeAdj)
+totalValue   = SUBSCRIPTION_VALUE + overage * PLAN_OVERAGE_PRICE
+```
+
+**Fluxo do cron `prepareOverageBilling` (roda a cada 60 min, nas 2 máquinas):**
+
+```mermaid
+sequenceDiagram
+    participant Tick as setInterval 60min (VM-A e VM-B)
+    participant Lock as RPC try_billing_lock
+    participant DB as Supabase (imf_*)
+    participant Asaas
+
+    Tick->>Lock: try_billing_lock('billing_prep', ttl 7200s)
+    alt não conseguiu o lock (outra VM já tem)
+        Lock-->>Tick: false → aborta o tick (log e sai)
+    else conseguiu o lock
+        Lock-->>Tick: true
+        Tick->>DB: brokers 'ativo' com valid_until em 20–28h
+        loop cada broker
+            Tick->>DB: já processou este ciclo? (idempotência)
+            Tick->>DB: conta imf_ticket_events + lê imf_ticket_adjustments
+            Tick->>Asaas: PUT /subscriptions/:id {value = base + excedente}
+            Tick->>DB: INSERT imf_overage_charges (status scheduled_in_subscription | no_charge)
+        end
+        Tick->>Lock: release_billing_lock (no finally)
+    end
+```
+
+**Status possíveis em `imf_overage_charges`:** `scheduled_in_subscription`
+(excedente agendado no próximo ciclo), `included_in_subscription` (renovação já
+cobrou), `no_charge` (sem excedente), e os legados `pending`/`charged`/`failed`/`waived`.
+
+**Três camadas de proteção contra cobrança dupla** (implementadas nesta rodada):
+1. **Lock distribuído** (`imf_billing_lock` + RPCs) — só uma VM executa o tick.
+2. **Idempotência de ciclo** — checa se já existe registro para o período antes de agendar.
+3. **UNIQUE `(broker_id, billing_period_end)`** — rede final: o banco recusa
+   uma 2ª linha para o mesmo corretor no mesmo ciclo.
+
+### 14.5.2. Isolamento multi-tenant (endurecido nesta rodada)
+
+Como o backend usa `service_role` (ignora RLS), **cada rota** precisa derivar o
+tenant do **token de autenticação**, nunca de `broker_id` vindo do cliente.
+
+```mermaid
+flowchart TD
+    Req["Requisição chega em uma rota"] --> Q{Tipo de rota?}
+    Q -->|"Painel (browser)"| A["requireUser → getBrokerId(userId)<br/>IGNORA broker_id do body/query<br/>toda query .eq('broker_id', brokerId)"]
+    Q -->|"Interna (N8N/proxy)"| B["exige header Authorization<br/>== INTERNAL_PROXY_TOKEN"]
+    Q -->|"Pública (landing)"| C["valida payload;<br/>escreve escopo por property_id"]
+    A --> RLS["RLS (rede de defesa):<br/>anon/frontend só vê broker do auth.uid()"]
+    B --> RLS
+    C --> RLS
+```
+
+**Correções aplicadas (commit `fc5b7e7`):**
+- `DELETE /api/properties/:id` — **estava sem autenticação nenhuma**. Agora:
+  `requireUser` + `getBrokerId` + `.eq('broker_id', brokerId)`.
+- `PATCH /api/properties/:id/status` — agora escopado por `broker_id` (403 se não for dono).
+- `PATCH /api/leads/:id/status` — escopado via `property_id` do broker (403 se não for dono).
+- **RLS habilitado** em `imf_properties`, `imf_agenda`, `imf_overage_charges`
+  (+ condicionalmente `imf_ticket_adjustments` e `followup_conversations`),
+  com policy `broker_id = (SELECT id FROM imf_brokers WHERE user_id = auth.uid())`.
+  É **defesa em profundidade**: não protege o backend (service_role ignora RLS),
+  mas blinda qualquer acesso futuro via chave `anon`.
+
+---
+
+## 14.6. Integrações realizadas
+
+Idêntico à §7 (Asaas, Z-PRO admin+externa, UAZAPI, N8N, OpenRouter, Gemini).
+Pontos que um novo dev precisa memorizar:
+
+- **Envio de mensagem no Z-PRO:** header `Authorization: Token {zpro_api_token}`
+  (não `Bearer`), body `{ body, number, externalKey, isClosed:false }`, na URL
+  base `zpro_api_url`. Confirmado em produção.
+- **`wabaId` é o campo crítico** da UAZAPI→Z-PRO: sem ele, o canal nunca ativa.
+  O webhook precisa existir **antes** de conectar o WhatsApp (ver §4).
+- **N8N → backend** sempre autentica com `INTERNAL_PROXY_TOKEN` (Bearer).
+
+**Os 3 webhooks (não confundir):** `PROVISIONING_WEBHOOK_URL` (entrega
+credenciais), `N8N_WEBHOOK_URL` (mensagens dos clientes), `CHATBOT_WEBHOOK_URL`
+(lead da landing, opcional). Há ainda o webhook interno UAZAPI→Z-PRO.
+
+---
+
+## 14.7. Funcionalidades já concluídas
+
+- [x] Esteira completa de provisionamento (8 passos) — Z-PRO + UAZAPI.
+- [x] Dashboard do corretor (imóveis, leads, agenda, configurações).
+- [x] Landing page por imóvel `/p/:slug` + captura de leads.
+- [x] Pagamento Asaas (assinatura recorrente, grace period, webhooks).
+- [x] Follow-Up Inteligente (3 timers independentes, handover humano) — **validado**.
+- [x] Rate limiting (auth/checkout/webhook) + Redis distribuído com fallback.
+- [x] Termos de Uso e Política de Privacidade (LGPD/Marco Civil/CDC).
+- [x] CI/CD GitHub Actions (`fly deploy` no push para `main`).
+- [x] **Rename das tabelas para prefixo `imf_`** (higiene do banco compartilhado).
+- [x] **Agente(s) por corretor** (`broker_agents`, `system_prompt` custom).
+- [x] **Agenda com calendário completo** (CRUD painel + endpoints N8N que substituem `/appointment/*` do Z-PRO).
+- [x] **Billing de excedente** — contagem idempotente + ajuste da assinatura no Asaas.
+- [x] **Ajuste manual de atendimentos** no painel admin (bonus/charge).
+- [x] **[Esta rodada] Lock distribuído no billing** — impede cobrança duplicada em 2 VMs.
+- [x] **[Esta rodada] Endurecimento multi-tenant** — 3 rotas corrigidas + RLS de defesa.
+
+### Superfície de endpoints nova/alterada desde a §8
+
+| Endpoint | Auth | Função |
+|----------|------|--------|
+| `GET|POST /api/brokers/my-agent` | corretor | lê/salva o agente de IA do corretor |
+| `GET /api/brokers/:id/agent` | `INTERNAL_PROXY_TOKEN` | N8N busca prompt do agente |
+| `GET|POST|PATCH|DELETE /api/agenda/visits[/:id]` | corretor | CRUD do calendário |
+| `GET /api/agenda/n8n/list` · `POST .../create` · `PATCH|DELETE .../:id` | `INTERNAL_PROXY_TOKEN` | agenda pelo agente N8N |
+| `GET /api/billing/usage` | corretor | uso do ciclo atual + histórico |
+| `GET /api/admin/brokers/:id/ticket-usage` | admin | uso detalhado de um corretor |
+| `POST /api/admin/brokers/:id/ticket-adjustment` | admin | lança bonus/charge |
+
+---
+
+## 14.8. Decisões arquiteturais tomadas
+
+| Decisão | Por quê |
+|---------|---------|
+| **Monólito `server.ts`** | Um dev só, iteração rápida, deploy trivial. Fragmentar cedo custaria mais do que resolve. Reavaliar só quando escalar o time. |
+| **Lock por tabela (`imf_billing_lock`) e não `pg_advisory_lock`** | supabase-js usa conexões **pooled**; um advisory lock preso a uma sessão é frágil. Uma tabela com `expires_at` sobrevive à troca de conexão e **se auto-cura** de deadlock via TTL. |
+| **Idempotência em 3 camadas no billing** | Cobrança dupla é dano financeiro direto ao cliente. Lock (evita concorrência) + checagem de ciclo (evita repetição lógica) + UNIQUE (garantia do banco). "Na dúvida, não cobra." |
+| **Manter `service_role` no backend + RLS só como defesa** | Trocar para `anon` quebraria toda a escrita do sistema. A regra virou: **nunca confiar em `broker_id` do cliente**; RLS é rede, não o muro principal. |
+| **`INTERNAL_PROXY_TOKEN` para rotas do N8N** | Separa claramente "rota de browser" (token de usuário) de "rota máquina-a-máquina" (token compartilhado), sem expor dados de um tenant a outro. |
+| **Marcador ZWSP nas mensagens do sistema** | Distingue "mensagem do agente/follow-up" de "corretor digitou manualmente" sem depender de flags não confiáveis do Z-PRO — dispara o handover humano corretamente. |
+| **Cron a cada 60min com janela 20–28h** | Prepara o billing com folga antes da renovação, tolerando atraso de webhook do Asaas, sem preparar cedo demais. |
+
+---
+
+## 14.9. Problemas encontrados e como foram resolvidos
+
+| Problema | Resolução |
+|----------|-----------|
+| **Cobrança duplicada** se o Fly subir 2 VMs (ambas rodam o `setInterval` de billing) | Lock distribuído no Postgres (`try_billing_lock`/`release_billing_lock`) + idempotência de ciclo + UNIQUE `(broker_id, billing_period_end)`. |
+| **`DELETE /api/properties/:id` sem autenticação** (qualquer um deletava imóvel de qualquer corretor) | Adicionado `requireUser` + escopo `.eq('broker_id', getBrokerId(userId))`. |
+| **Vazamento cross-tenant** em rotas que confiavam em `broker_id` do cliente | Rotas de painel passam a derivar o tenant **sempre** do token; rotas internas exigem `INTERNAL_PROXY_TOKEN`; RLS habilitado como rede. |
+| **`ADD CONSTRAINT IF NOT EXISTS` é inválido no Postgres** (bug no arquivo de migration) | Trocado por `CREATE UNIQUE INDEX IF NOT EXISTS` (idempotente, mesmo efeito) — commit `b4d441c`. |
+| **supabase-js `.rpc()` não é Promise nativa** (`.catch` não existe até dar `await`) | `release_billing_lock` embrulhado em `try/catch` com `await`, dentro do `finally`. |
+| **Sem rota de rede para o Supabase a partir do ambiente de dev** (TLS falha) | Verificação de banco (RLS ativo, funções existem) feita pelo usuário no **SQL Editor** do Supabase. |
+| **`wabaId` ausente → canal "Não ativado"** | Gravar `wabaId = instance.id` no canal e criar o webhook **antes** de conectar (ver §4). |
+
+---
+
+## 14.10. Estado atual do sistema
+
+- **Em produção**, 2 VMs no Fly (GRU), deploy automático via GitHub Actions.
+- Billing de excedente **protegido contra duplicidade** e **verificado no banco**
+  (RLS ativo em `imf_properties`/`imf_agenda`/`imf_overage_charges`; funções
+  `try_billing_lock`/`release_billing_lock` existem; índice único aplicado).
+- Isolamento multi-tenant **endurecido** nas rotas de escrita conhecidas.
+- Modelo de cobrança vigente: **R$ 5,00 (validação) + R$ 3,00/atendimento
+  excedente acima de 100/ciclo**. Trocar para R$ 297,00 após validação ponta a ponta.
+
+> Commits desta rodada: `fc5b7e7` (isolamento + billing lock) e `b4d441c`
+> (correção da migration). Migration versionada em
+> `supabase/migrations/20260630_billing_lock_and_rls.sql`.
+
+---
+
+## 14.11. Próximos passos (roadmap detalhado para continuidade)
+
+### A. O que ainda precisa ser desenvolvido / concluído
+
+1. **⚠️ Rotacionar a `service_role key` do Supabase** *(segurança, bloqueante)*.
+   A chave antiga ficou no histórico git (já expurgado, mas a chave real
+   continua válida). Regenerar no dashboard → `fly secrets set SUPABASE_SERVICE_ROLE_KEY=...`.
+2. **Corrigir 2 regressões de nomenclatura pós-rename** *(ver §14.12 — Riscos)*:
+   - `GET /api/agenda` lê `.from('agenda')` (deveria ser `imf_agenda`) — hoje
+     mascarado por fallback que retorna `[]`.
+   - Dashboard "atendimentos recentes" lê `.from('ticket_events')` (deveria ser
+     `imf_ticket_events`) — **sem fallback**, provavelmente retornando 500.
+3. **Teste de isolamento com 2 corretores** *(validação da §14.5.2)*: autenticar
+   como corretor A e tentar deletar/editar recurso do corretor B → esperar 403.
+   Requer acesso de rede à produção (indisponível no ambiente de dev).
+4. **Validar billing ponta a ponta** em sandbox (R$ 5,00): checkout → acumular
+   >100 tickets → aguardar renovação → conferir `imf_overage_charges` e a
+   cobrança única no Asaas. Rodar em 2 VMs por 1h e confirmar **1 linha/ciclo**.
+5. **Preencher constantes legais** (`RAZAO_SOCIAL`, `CNPJ`, `ENDERECO`,
+   `EMAIL_CONTATO`, `EMAIL_DPO`) no topo de `Termos.tsx` e `Privacidade.tsx`.
+6. **Observabilidade:** ativar Sentry (`SENTRY_DSN`) — há `catch` silenciosos.
+7. **Ativar Redis distribuído** (`fly redis create` → `REDIS_URL`) para o
+   rate-limit ser correto entre as 2 VMs.
+
+### B. Quais componentes devem ser alterados
+
+| Componente | Alteração |
+|-----------|-----------|
+| `server.ts` (rotas de leitura pós-rename) | trocar `'agenda'`→`'imf_agenda'` e `'ticket_events'`→`'imf_ticket_events'` |
+| `server.ts` (auditoria de isolamento) | varrer **todas** as rotas restantes que leem `broker_id`/`brokerId` de `req.query`/`req.body` e aplicar o padrão `getBrokerId` (a §14.5.2 cobriu as 3 conhecidas; falta um sweep completo) |
+| `supabase/migrations/` | novas policies RLS para tabelas ainda sem RLS (`leads`, `subscriptions`, `webhook_logs`), se/quando o frontend passar a usar `anon` |
+| `Termos.tsx` / `Privacidade.tsx` | constantes da empresa |
+| Secrets Fly | `SERVICE_ROLE` rotacionada, `SENTRY_DSN`, `REDIS_URL` |
+
+### C. Quais novos fluxos serão criados
+
+- **Cobrança de excedente via cartão avulso** (caminho alternativo ao ajuste da
+  assinatura), usando `imf_brokers.asaas_credit_card_token` — útil para cobrar
+  fora do ciclo. Já há coluna e token salvos; falta o disparo.
+- **Registro de lead/visita a partir da conversa do agente** (hoje só a landing
+  grava `leads`) — o agente N8N passaria a criar lead + agendar visita.
+- **Sub-workflow N8N "Deletar Agendamento"** — já mapeado (`/scheduleReminder/delete/`).
+
+### D. Como isso se conecta à arquitetura existente
+
+- As correções de nomenclatura e o sweep de isolamento são **locais** ao
+  `server.ts` e não mudam contratos externos — baixo risco de regressão.
+- A cobrança avulsa reaproveita `asaas_credit_card_token` + `imf_overage_charges`
+  (novo status), encaixando no mesmo modelo de billing (§14.5.1).
+- Lead-via-agente reaproveita o endpoint de inbound do N8N + tabela `leads` +
+  `imf_agenda` — apenas estende o fluxo 5.3 (operação).
+
+### E. Dependências entre as etapas
+
+```mermaid
+flowchart LR
+    RotService["Rotar service_role"] --> ValBilling["Validar billing E2E"]
+    FixRename["Corrigir 'agenda'/'ticket_events'"] --> TesteIso["Teste isolamento 2 corretores"]
+    Sweep["Sweep de isolamento completo"] --> TesteIso
+    ValBilling --> GoLive["Trocar SUBSCRIPTION_VALUE p/ 297,00"]
+    TesteIso --> GoLive
+    Legais["Preencher constantes legais"] --> GoLive
+```
+
+- **Rotacionar a chave** deve preceder qualquer validação séria de produção.
+- **Trocar o preço para R$ 297** só depois de billing E2E **e** isolamento validados.
+
+### F. Cuidados técnicos importantes
+
+- **Sempre `npm run lint` (tsc) antes de commitar** — o typecheck pega
+  regressões cedo (foi assim que o `.catch` do `.rpc()` foi flagrado).
+- **Não confie em `broker_id` de query/body** em nenhuma rota de browser.
+- **Não use `if (FLY_MACHINE_ID === 'x')`** como guarda de execução única —
+  quebra em restart/realocação. Use lock/claim atômico no Postgres.
+- **Postgres não aceita `ADD CONSTRAINT IF NOT EXISTS`** — use
+  `CREATE UNIQUE INDEX IF NOT EXISTS`.
+- **Não alterar valores/regras de billing** ao mexer em concorrência — só
+  impedir execução duplicada.
+- **Não troque `service_role` por `anon` no backend** — quebra a escrita.
+- **Verificação de banco é feita pelo usuário no SQL Editor** (o ambiente de dev
+  não tem rota de rede ao Supabase).
+
+### G. Riscos e pontos de atenção
+
+Ver §14.12.
+
+---
+
+## 14.12. Riscos e pontos de atenção (leitura obrigatória)
+
+1. **Regressão pós-rename (`ticket_events`):** o dashboard de "atendimentos
+   recentes" lê `.from('ticket_events')` sem fallback — como a tabela foi
+   renomeada para `imf_ticket_events`, essa rota **provavelmente retorna 500**.
+   Verificar em produção e corrigir (prioridade alta, é visível ao usuário).
+2. **`GET /api/agenda` silenciosamente vazio:** lê `.from('agenda')`, mas o
+   calendário real usa `imf_agenda`. O fallback devolve `[]`, então **falha em
+   silêncio** — não confie neste endpoint legado.
+3. **RLS não protege o backend:** `service_role` ignora RLS por design. A
+   proteção real do multitenant continua sendo o **código**. RLS só blinda
+   acesso via `anon`. Nunca relaxe a regra do `getBrokerId`.
+4. **Sweep de isolamento incompleto:** apenas 3 rotas foram corrigidas nesta
+   rodada. Um novo dev deve varrer **todas** as rotas que aceitam `broker_id`
+   do cliente antes de considerar o tema fechado.
+5. **`service_role` ainda não rotacionada:** a chave antiga é válida e vazou no
+   histórico git (mesmo expurgado). Bloqueante comercial.
+6. **Instância Supabase compartilhada:** nunca rode migration/DROP sem filtrar
+   pelo prefixo `imf_`. Tabelas `cvv_*`, `ia_*`, `zpro_*`, `luxashade*` são de
+   **outros** projetos.
+7. **§13 corrompida e §4 desatualizada:** use a §14 como fonte de verdade.
+8. **Billing só é seguro se as 3 camadas estiverem ativas** (lock + idempotência
+   + UNIQUE). Se alguém remover o índice único, a rede final cai.

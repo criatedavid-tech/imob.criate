@@ -1843,12 +1843,10 @@ async function startServer() {
   // NOVO LANDING 30/04/2026 - Endpoint para buscar agenda
   app.get("/api/agenda", async (req, res) => {
     try {
-      // Como a tabela 'agenda' pode não existir ou ter nome diferente no sistema real do usuário
-      // tentamos buscar da tabela 'agenda'. Se der erro, retornamos lista vazia conforme requisito fallback.
-      const { data, error } = await supabase.from('agenda').select('*');
-      
+      const { data, error } = await supabase.from('imf_agenda').select('*');
+
       if (error) {
-        console.log("Aviso: Tabela 'agenda' não encontrada. Usando fallback de lista vazia.");
+        console.log("Aviso: Tabela 'imf_agenda' não encontrada. Usando fallback de lista vazia.");
         return res.json([]);
       }
       
@@ -2031,7 +2029,7 @@ async function startServer() {
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
       const { data, error } = await supabase
-        .from("ticket_events")
+        .from("imf_ticket_events")
         .select("id, zpro_ticket_id, created_at")
         .eq("broker_id", brokerId)
         .order("created_at", { ascending: false })
