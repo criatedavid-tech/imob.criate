@@ -1841,19 +1841,12 @@ async function startServer() {
   });
 
   // NOVO LANDING 30/04/2026 - Endpoint para buscar agenda
-  app.get("/api/agenda", async (req, res) => {
-    try {
-      const { data, error } = await supabase.from('imf_agenda').select('*');
-
-      if (error) {
-        console.log("Aviso: Tabela 'imf_agenda' não encontrada. Usando fallback de lista vazia.");
-        return res.json([]);
-      }
-      
-      res.json(data || []);
-    } catch (err) {
-      res.json([]);
-    }
+  // Slots públicos de agendamento NÃO implementados: o front (PropertyLanding)
+  // espera {data, horario}, campos que não existem em imf_agenda, e este endpoint
+  // é público — expor imf_agenda aqui vazaria nome/telefone de clientes de todos
+  // os corretores. Retorna vazio até a feature de slots existir de verdade.
+  app.get("/api/agenda", async (_req, res) => {
+    res.json([]);
   });
 
   // Retorna configurações públicas do plano (preço atual)
