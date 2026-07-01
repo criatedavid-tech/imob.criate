@@ -2592,7 +2592,36 @@ async function startServer() {
     try {
       // Captura valid_until ANTES de atualizar — necessário para delimitar o ciclo encerrado
       const { data: brokerBefore } = await supabase.from('imf_brokers')
-        .select('valid_until, asaas_credit_card_token').eq('id', brokerId).single();
+        .select('valid_until, asaas_credit_card_token, provisioning_status').eq('id', brokerId).single();
+
+      // Cobrança órfã de assinatura cancelada: SUBSCRIPTION_DELETED seta
+      // provisioning_status='disabled', mas o Asaas ainda pode cobrar uma
+      // cobrança remanescente (ex.: retry de overdue gerada antes do cancelamento).
+      // Registra o pagamento para auditoria e alerta, mas NÃO reativa o corretor
+      // nem reprovisiona ('disabled' passaria pela trava de provisionamento).
+      // Recompra legítima entra pelo checkout (isRenewal=false) e não cai aqui.
+      if (isRenewal && brokerBefore?.provisioning_status === 'disabled') {
+        await supabase.from('subscriptions').upsert({
+          broker_id: brokerId,
+          asaas_payment_id: id,
+          asaas_customer_id: customerId,
+          plan: 'mensal',
+          amount: Math.round(value * 100),
+          currency: 'brl',
+          status: 'paid_after_cancellation',
+          paid_at: new Date().toISOString(),
+          valid_until: brokerBefore?.valid_until || new Date().toISOString()
+        }, { onConflict: 'asaas_payment_id', ignoreDuplicates: true });
+        await supabase.from('webhook_logs').insert({
+          source: 'asaas',
+          event_type: 'payment_after_cancellation',
+          payload: { payment_id: id, customer_id: customerId, value, broker_id: brokerId },
+          status: 'alert',
+          broker_id: brokerId
+        });
+        console.warn(`[Asaas] ⚠️ pagamento ${id} de assinatura CANCELADA — broker ${brokerId} não reativado; avaliar estorno`);
+        return;
+      }
 
       const validUntil = new Date();
       validUntil.setMonth(validUntil.getMonth() + 1);
@@ -2644,7 +2673,9 @@ async function startServer() {
         }
       }
 
-      await supabase.from('subscriptions').insert({
+      // Idempotente: o Asaas entrega o mesmo webhook em duplicidade (~200ms de
+      // intervalo) — ON CONFLICT no asaas_payment_id descarta a repetição.
+      await supabase.from('subscriptions').upsert({
         broker_id: brokerId,
         asaas_payment_id: id,
         asaas_customer_id: customerId,
@@ -2654,7 +2685,7 @@ async function startServer() {
         status: 'paid',
         paid_at: new Date().toISOString(),
         valid_until: validUntil.toISOString()
-      });
+      }, { onConflict: 'asaas_payment_id', ignoreDuplicates: true });
 
       const { data: broker } = await supabase.from('imf_brokers').select('*').eq('id', brokerId).single();
       if (!broker) return;
