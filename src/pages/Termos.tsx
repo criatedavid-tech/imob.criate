@@ -3,15 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 
-// ─── PREENCHER ANTES DE IR AO AR ────────────────────────────────────────────
-const RAZAO_SOCIAL   = '[RAZÃO SOCIAL DA EMPRESA]';
-const CNPJ           = '[CNPJ]';
-const ENDERECO       = '[ENDEREÇO COMPLETO DA SEDE]';
-const EMAIL_CONTATO  = '[E-MAIL DE CONTATO]';
-const EMAIL_DPO      = '[E-MAIL DO DPO/ENCARREGADO]';
+const RAZAO_SOCIAL   = 'Criate Tecnologia em Marketing e Vendas LTDA';
+const CNPJ           = '54.236.008/0001-80';
+const ENDERECO       = 'Rua 14, nº 201, Quadra B8, Lote 20, Sala 02, Setor Oeste, Goiânia/GO, CEP 74120-070';
+const EMAIL_CONTATO  = 'criateoficial@gmail.com';
+const EMAIL_DPO      = 'criateoficial@gmail.com';
 const CIDADE_ESTADO  = 'Goiânia/GO';
-const DATA_VIGENCIA  = '27 de maio de 2026';
-// ────────────────────────────────────────────────────────────────────────────
+const DATA_VIGENCIA  = '1º de julho de 2026';
 
 export default function Termos() {
   const navigate = useNavigate();
