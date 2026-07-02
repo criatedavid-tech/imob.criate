@@ -482,7 +482,7 @@ Updating existing machines in 'imobiflow' with rolling strategy
 
 ---
 
-# 14. Estado Consolidado e Continuidade (atualizado 2026-07-01)
+# 14. Estado Consolidado e Continuidade (atualizado 2026-07-02)
 
 > **Leia esta seção primeiro se você é novo no projeto.** Ela é auto-contida e
 > reflete o estado **real e verificado** do código em produção nesta data.
@@ -789,6 +789,11 @@ credenciais), `N8N_WEBHOOK_URL` (mensagens dos clientes), `CHATBOT_WEBHOOK_URL`
 - [x] **Ajuste manual de atendimentos** no painel admin (bonus/charge).
 - [x] **[Esta rodada] Lock distribuído no billing** — impede cobrança duplicada em 2 VMs.
 - [x] **[Esta rodada] Endurecimento multi-tenant** — 3 rotas corrigidas + RLS de defesa.
+- [x] **[2026-07-01] Correção das 2 regressões pós-rename** — `GET /api/tickets/recent` passou a ler `imf_ticket_events`; `GET /api/agenda` retorna `[]` hardcoded (a feature de slots públicos nunca existiu de fato — expor `imf_agenda` ali vazaria nome/telefone de clientes de todos os corretores, pois o endpoint é público).
+- [x] **[2026-07-01] Idempotência de pagamento + guarda anti-reativação** — `subscriptions` com upsert `ON CONFLICT (asaas_payment_id)`; renovação de um broker com `provisioning_status='disabled'` (cancelado) não reativa mais a conta (grava `paid_after_cancellation` + alerta em `webhook_logs`).
+- [x] **[2026-07-01] Textos legais preenchidos** — `RAZAO_SOCIAL`, `CNPJ`, `ENDERECO`, `EMAIL_CONTATO`/`EMAIL_DPO` em `Termos.tsx`/`Privacidade.tsx` com dados oficiais da Receita Federal.
+- [x] **[2026-07-01] Registro de aceite dos Termos + re-aceite** — colunas `terms_version`/`terms_accepted_at` em `imf_brokers`; constante `TERMS_VERSION` no `server.ts` (mudar quando os Termos mudarem); `GET /api/terms/status` + `POST /api/terms/accept`; modal `TermsGate.tsx` bloqueia o painel até o aceite da versão vigente.
+- [x] **[2026-07-02] Copyright dinâmico** em todas as páginas — componente `src/components/Copyright.tsx` com ano calculado em runtime (`variant='dark'|'light'`, `short` para espaços estreitos como a sidebar).
 
 ### Superfície de endpoints nova/alterada desde a §8
 
@@ -829,6 +834,9 @@ credenciais), `N8N_WEBHOOK_URL` (mensagens dos clientes), `CHATBOT_WEBHOOK_URL`
 | **supabase-js `.rpc()` não é Promise nativa** (`.catch` não existe até dar `await`) | `release_billing_lock` embrulhado em `try/catch` com `await`, dentro do `finally`. |
 | **Sem rota de rede para o Supabase a partir do ambiente de dev** (TLS falha) | Verificação de banco (RLS ativo, funções existem) feita pelo usuário no **SQL Editor** do Supabase. |
 | **`wabaId` ausente → canal "Não ativado"** | Gravar `wabaId = instance.id` no canal e criar o webhook **antes** de conectar (ver §4). |
+| **Cancelamento no painel Asaas não remove cobranças já geradas** — episódio real (broker hunter, 2026-06/07): cancelou a assinatura, mas uma cobrança `PAYMENT_OVERDUE` remanescente sofreu retry do Asaas e reativou a conta | `handleAsaasPaymentReceived` agora checa `provisioning_status==='disabled'` antes de reativar por renovação; grava `paid_after_cancellation` em vez de reativar (commit `267baf0`). |
+| **Webhooks da Asaas chegam duplicados (~200ms de intervalo)** — causava risco de linha dupla em `subscriptions` | `upsert` com `ON CONFLICT (asaas_payment_id)` + `ignoreDuplicates` (commit `267baf0`, migração `20260701_subscriptions_payment_idempotency.sql`). |
+| **Suposição errada: "a Asaas tem tokenização client-side (Asaas.js) para tirar o cartão do backend"** | Verificado na documentação oficial da Asaas (2026-07-02): **não existe**. O fluxo atual (servidor recebe, repassa via HTTPS, nunca loga/persiste) já é o padrão recomendado pela própria Asaas para quem processa cartão no backend (SAQ-D). Reduzir para SAQ-A exigiria migrar para o checkout hospedado deles (redirect), o que é decisão de produto, não bug. |
 
 ---
 
@@ -841,10 +849,18 @@ credenciais), `N8N_WEBHOOK_URL` (mensagens dos clientes), `CHATBOT_WEBHOOK_URL`
 - Isolamento multi-tenant **endurecido** nas rotas de escrita conhecidas.
 - Modelo de cobrança vigente: **R$ 5,00 (validação) + R$ 3,00/atendimento
   excedente acima de 100/ciclo**. Trocar para R$ 297,00 após validação ponta a ponta.
+- Regressões pós-rename corrigidas, billing com idempotência de pagamento e
+  guarda anti-reativação, textos legais completos, aceite de Termos rastreado
+  e copyright dinâmico em todas as telas — tudo deployado e verificado em produção.
+- **Sem assinante pagante ativo no momento** (o único broker de teste com cartão
+  real foi cancelado/removido) — a validação viva do lock de billing na renovação
+  (§14.11.A item 4) segue pendente por falta de um ciclo real para observar.
 
-> Commits desta rodada: `fc5b7e7` (isolamento + billing lock) e `b4d441c`
-> (correção da migration). Migration versionada em
-> `supabase/migrations/20260630_billing_lock_and_rls.sql`.
+> Commits desta rodada (2026-07-01/02): `649d88c`, `7adbb11`, `34ff34e`,
+> `267baf0`, `869e3db`, `0b6ff89`, `d03dbed`. Commits da rodada anterior:
+> `fc5b7e7` (isolamento + billing lock) e `b4d441c` (correção da migration).
+> Migrations versionadas em `supabase/migrations/20260630_billing_lock_and_rls.sql`,
+> `20260701_subscriptions_payment_idempotency.sql`, `20260701_terms_acceptance.sql`.
 
 ---
 
@@ -855,22 +871,48 @@ credenciais), `N8N_WEBHOOK_URL` (mensagens dos clientes), `CHATBOT_WEBHOOK_URL`
 1. **⚠️ Rotacionar a `service_role key` do Supabase** *(segurança, bloqueante)*.
    A chave antiga ficou no histórico git (já expurgado, mas a chave real
    continua válida). Regenerar no dashboard → `fly secrets set SUPABASE_SERVICE_ROLE_KEY=...`.
-2. **Corrigir 2 regressões de nomenclatura pós-rename** *(ver §14.12 — Riscos)*:
-   - `GET /api/agenda` lê `.from('agenda')` (deveria ser `imf_agenda`) — hoje
-     mascarado por fallback que retorna `[]`.
-   - Dashboard "atendimentos recentes" lê `.from('ticket_events')` (deveria ser
-     `imf_ticket_events`) — **sem fallback**, provavelmente retornando 500.
+   Travado: chave compartilhada entre vários projetos, aguardando autorização do líder.
+2. ~~Corrigir 2 regressões de nomenclatura pós-rename~~ ✅ **RESOLVIDO 2026-07-01**
+   (commits `649d88c` + `34ff34e`) — ver §14.7.
 3. **Teste de isolamento com 2 corretores** *(validação da §14.5.2)*: autenticar
    como corretor A e tentar deletar/editar recurso do corretor B → esperar 403.
-   Requer acesso de rede à produção (indisponível no ambiente de dev).
-4. **Validar billing ponta a ponta** em sandbox (R$ 5,00): checkout → acumular
-   >100 tickets → aguardar renovação → conferir `imf_overage_charges` e a
-   cobrança única no Asaas. Rodar em 2 VMs por 1h e confirmar **1 linha/ciclo**.
-5. **Preencher constantes legais** (`RAZAO_SOCIAL`, `CNPJ`, `ENDERECO`,
-   `EMAIL_CONTATO`, `EMAIL_DPO`) no topo de `Termos.tsx` e `Privacidade.tsx`.
-6. **Observabilidade:** ativar Sentry (`SENTRY_DSN`) — há `catch` silenciosos.
-7. **Ativar Redis distribuído** (`fly redis create` → `REDIS_URL`) para o
-   rate-limit ser correto entre as 2 VMs.
+   Requer acesso de rede à produção (indisponível no ambiente de dev) — ainda não
+   executado ao vivo (o sweep de código foi feito, mas não o teste black-box).
+4. **Validar billing de renovação ponta a ponta**: lock distribuído (`fc5b7e7`) e
+   idempotência de pagamento (`267baf0`) já estão deployados, mas **nunca foram
+   testados com uma renovação real** — o único broker com cartão real (hunter)
+   foi cancelado e removido do painel em 2026-07-01. Falta um teste dedicado em
+   sandbox ou aguardar o próximo cliente pagante real. Monitorar
+   `imf_overage_charges` (esperar 1 linha/ciclo) e `subscriptions.asaas_payment_id`
+   (sem duplicatas) nesse teste.
+5. ~~Preencher constantes legais~~ ✅ **RESOLVIDO 2026-07-01** (commit `869e3db`).
+5b. ~~Registro de aceite dos Termos + re-aceite~~ ✅ **RESOLVIDO 2026-07-01**
+    (commit `0b6ff89`). Aviso prévio de 30 dias por e-mail quando os Termos
+    mudarem (seção 18) segue **manual** — o sistema não automatiza esse envio.
+6. **Observabilidade:** confirmar se `SENTRY_DSN` está de fato setado nos Fly
+   secrets — o código já suporta (`server.ts`, ativa sozinho se a env existir),
+   mas não foi possível confirmar via `fly secrets list` neste ambiente
+   (CLI sem permissão de execução no dev). Sem ele, exceções caem em `catch`
+   silenciosos sem alerta.
+7. **Ativar Redis distribuído** (`fly redis create` → `REDIS_URL`) — mesma
+   observação do item 6: suportado no código, status real não confirmado.
+8. **PCI — investigado em 2026-07-02, sem mudança de código ainda**: o item
+   antigo "considerar tokenização Asaas.js no front" partia de uma premissa
+   errada — a Asaas **não** oferece SDK de tokenização client-side (não existe
+   "Asaas.js"). A documentação oficial recomenda que o comerciante que processa
+   cartão no próprio backend seja certificado **SAQ-D** — que é exatamente o
+   modelo atual (`POST /api/checkout` recebe os dados, repassa para a Asaas via
+   HTTPS e **nunca loga nem persiste** PAN/CVV; só o `creditCardToken` de
+   retorno é salvo em `imf_brokers.asaas_credit_card_token`). A única forma real
+   de reduzir o escopo para **SAQ-A** seria trocar o formulário próprio
+   (`PaymentPending.tsx`) pelo **checkout hospedado da Asaas** (redirect do
+   cliente para a `invoiceUrl`, onde ele digita o cartão fora do seu domínio) —
+   isso é uma mudança de produto/UX (perde o formulário com a marca própria),
+   não uma correção técnica. Decisão de negócio pendente do usuário.
+9. **Limpar registros de teste** em `imf_ticket_adjustments` (`+10`, `+50`, `-1`
+   etc. lançados durante o desenvolvimento do ajuste manual de admin) — cosmético,
+   não afeta billing real. Como o ambiente de dev não tem rota de rede ao
+   Supabase, a limpeza precisa ser feita pelo usuário no SQL Editor (ver §14.13).
 
 ### B. Quais componentes devem ser alterados
 
@@ -938,19 +980,19 @@ Ver §14.12.
 
 ## 14.12. Riscos e pontos de atenção (leitura obrigatória)
 
-1. **Regressão pós-rename (`ticket_events`):** o dashboard de "atendimentos
-   recentes" lê `.from('ticket_events')` sem fallback — como a tabela foi
-   renomeada para `imf_ticket_events`, essa rota **provavelmente retorna 500**.
-   Verificar em produção e corrigir (prioridade alta, é visível ao usuário).
-2. **`GET /api/agenda` silenciosamente vazio:** lê `.from('agenda')`, mas o
-   calendário real usa `imf_agenda`. O fallback devolve `[]`, então **falha em
-   silêncio** — não confie neste endpoint legado.
+1. ~~Regressão pós-rename (`ticket_events`)~~ ✅ **RESOLVIDO 2026-07-01** (commit
+   `649d88c`) — `GET /api/tickets/recent` já lê `imf_ticket_events`.
+2. ~~`GET /api/agenda` silenciosamente vazio~~ ✅ **RESOLVIDO 2026-07-01** (commit
+   `34ff34e`) — decidiu-se **não** apontar para `imf_agenda` (o endpoint é
+   público e vazaria dados de clientes de todos os corretores); retorna `[]`
+   hardcoded porque a feature de slots públicos nunca existiu de fato.
 3. **RLS não protege o backend:** `service_role` ignora RLS por design. A
    proteção real do multitenant continua sendo o **código**. RLS só blinda
    acesso via `anon`. Nunca relaxe a regra do `getBrokerId`.
-4. **Sweep de isolamento incompleto:** apenas 3 rotas foram corrigidas nesta
-   rodada. Um novo dev deve varrer **todas** as rotas que aceitam `broker_id`
-   do cliente antes de considerar o tema fechado.
+4. ~~Sweep de isolamento incompleto~~ ✅ **FEITO 2026-07-01** — revisados todos
+   os ~180 usos de `broker_id`/`brokerId` em `server.ts`; nenhuma rota nova
+   vulnerável encontrada além das 3 já corrigidas pelo `b4d441c`. Falta apenas
+   o teste black-box ao vivo com 2 corretores reais (§14.11.A item 3).
 5. **`service_role` ainda não rotacionada:** a chave antiga é válida e vazou no
    histórico git (mesmo expurgado). Bloqueante comercial.
 6. **Instância Supabase compartilhada:** nunca rode migration/DROP sem filtrar
@@ -959,3 +1001,63 @@ Ver §14.12.
 7. **§13 corrompida e §4 desatualizada:** use a §14 como fonte de verdade.
 8. **Billing só é seguro se as 3 camadas estiverem ativas** (lock + idempotência
    + UNIQUE). Se alguém remover o índice único, a rede final cai.
+
+---
+
+## 14.13. Atualização 2026-07-02 — hardening de billing, legal, copyright e limpeza
+
+Resumo do que mudou desde a última consolidação (todos os itens já **deployados
+e verificados em produção**, exceto onde indicado):
+
+- **Regressões pós-rename corrigidas** (`649d88c`, `34ff34e`) e **sweep completo
+  de isolamento multi-tenant** (nenhuma rota nova vulnerável) — ver §14.7 e §14.12.
+- **Episódio hunter (cancelamento + cobrança órfã):** broker de teste cancelou a
+  assinatura no painel Asaas, mas uma cobrança remanescente sofreu retry e
+  reativou a conta. Corrigido com idempotência de pagamento + guarda
+  anti-reativação (`267baf0`, migração `20260701_subscriptions_payment_idempotency.sql`).
+  Episódio encerrado sem dano financeiro real (usuário confirmou no app do
+  cartão); o broker de teste foi removido do painel — **não há mais assinante
+  pagante ativo**, então a validação viva do lock de billing (§14.11.A item 4)
+  segue pendente.
+- **Textos legais e aceite de Termos** (`869e3db`, `0b6ff89`): `Termos.tsx`/
+  `Privacidade.tsx` com dados oficiais da empresa; rastreamento de aceite
+  (`terms_version`/`terms_accepted_at` em `imf_brokers`) com modal de re-aceite
+  (`TermsGate.tsx`) sempre que `TERMS_VERSION` mudar no `server.ts`.
+- **Copyright dinâmico** (`d03dbed`): componente `Copyright.tsx` em todas as
+  páginas (auth, legal, dashboard, admin, landing pública), ano calculado em
+  runtime — nada para atualizar manualmente na virada do ano.
+- **Investigação PCI (sem mudança de código):** confirmado com a documentação
+  oficial da Asaas que não existe tokenização client-side ("Asaas.js"); o fluxo
+  atual do checkout já segue o padrão recomendado (SAQ-D). Ver §14.11.A item 8
+  para as opções reais caso se queira reduzir o escopo de PCI no futuro.
+- **Organização de arquivos:** scratch de trabalho do workflow N8N do agente de
+  IA (`agent_params.json`, `agent_system_message.txt`, `n8n_sdk_read.txt`,
+  `n8n_workflow_update.js`, `gen_n8n_sdk.py`) e um rascunho de commit
+  (`.commit_msg.txt`) foram movidos da raiz do repo para `scratch/`, agora no
+  `.gitignore` — não afetam build/deploy (nenhum é importado por `server.ts`
+  ou `src/`).
+
+### Pendente: limpeza de `imf_ticket_adjustments` de teste
+
+Existem lançamentos de teste (`+10`, `+50`, `-1` etc.) feitos durante o
+desenvolvimento do ajuste manual de admin. São cosméticos — não afetam o
+cálculo de billing real de nenhum corretor — mas poluem a visão do admin.
+Como o ambiente de dev não tem rota de rede ao Supabase, rode você mesmo no
+SQL Editor:
+
+```sql
+-- 1) Identifique o(s) broker(s) de teste e os lançamentos suspeitos
+select ta.id, ta.broker_id, b.name, ta.type, ta.amount, ta.reason, ta.created_at
+from imf_ticket_adjustments ta
+join imf_brokers b on b.id = ta.broker_id
+order by ta.created_at desc;
+
+-- 2) Depois de confirmar quais IDs são de teste, apague só esses
+-- (troque a lista de IDs pelos que você identificou no passo 1)
+delete from imf_ticket_adjustments where id in ('<uuid1>', '<uuid2>');
+```
+
+Não deletei nada automaticamente porque a tabela é histórico financeiro
+(mesmo que hoje sem impacto, o `historicTotal` de cada `type` é usado para
+limitar estornos futuros — ver `server.ts` linha ~2601) e o comerciante deve
+confirmar visualmente quais linhas são realmente de teste antes de apagar.
