@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 const RAZAO_SOCIAL  = 'Criate Tecnologia em Marketing e Vendas LTDA';
 const CNPJ          = '54.236.008/0001-80';
@@ -425,6 +426,7 @@ export default function Privacidade() {
           <p className="text-white/40 text-xs pt-4 border-t border-white/10">
             Encarregado / DPO: {EMAIL_DPO} · {RAZAO_SOCIAL} · CNPJ {CNPJ} · {ENDERECO} · {EMAIL_CONTATO}
           </p>
+          <Copyright />
         </div>
       </motion.div>
     </div>

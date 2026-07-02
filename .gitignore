@@ -15,3 +15,6 @@ target/
 # Claude / IDE
 .claude/
 .vscode/
+
+# Rascunhos de trabalho (workflows n8n, notas de commit) — não são código fonte
+scratch/

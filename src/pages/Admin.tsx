@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../services/auth';
+import Copyright from '../components/Copyright';
 
 interface Broker {
   id: string;
@@ -393,6 +394,7 @@ export default function Admin() {
             </div>
           </>
         )}
+        <Copyright className="mt-10 pb-4" />
       </div>
 
       {/* Drawer de detalhes */}

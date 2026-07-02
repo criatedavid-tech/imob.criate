@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion, AnimatePresence } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 const STEPS = ['Seu nome', 'Telefone', 'Acesso'];
 
@@ -262,6 +263,7 @@ export default function Signup() {
           </AnimatePresence>
         </div>
       </div>
+      <Copyright className="pb-6" />
     </div>
   );
 }

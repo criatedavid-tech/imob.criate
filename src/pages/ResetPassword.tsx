@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Home, Lock, Loader2, CheckCircle2, Eye, EyeOff, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 const inputClass =
   'block w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium ' +
@@ -145,6 +146,7 @@ export default function ResetPassword() {
           )}
         </div>
       </motion.div>
+      <Copyright className="pb-6" />
     </div>
   );
 }

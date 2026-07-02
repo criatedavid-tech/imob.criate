@@ -7,6 +7,7 @@ import {
   Sofa, UtensilsCrossed, Waves
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 // ── Animation variants ──────────────────────────────────────────────────────
 const fadeUp = {
@@ -618,6 +619,11 @@ export default function PropertyLanding() {
           </div>
         </div>
       </section>
+
+      {/* ── Footer ── */}
+      <footer className="bg-[#FAFAFA] py-8 px-6 border-t border-[#E8E4E0]">
+        <Copyright variant="light" />
+      </footer>
 
       {/* ── Fixed WhatsApp ── */}
       <motion.button

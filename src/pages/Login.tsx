@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Home, Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 const inputClass =
   'block w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium ' +
@@ -131,6 +132,7 @@ export default function Login() {
           </form>
         </div>
       </motion.div>
+      <Copyright className="pb-6" />
     </div>
   );
 }

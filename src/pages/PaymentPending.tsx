@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Home, CreditCard, Lock, Loader2, CheckCircle2, XCircle, User, Hash, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { authService } from '../services/auth';
+import Copyright from '../components/Copyright';
 
 interface CardForm {
   cpfCnpj: string;
@@ -417,6 +418,7 @@ export default function PaymentPending() {
           Sair da conta
         </button>
       </motion.div>
+      <Copyright className="pb-6" />
     </div>
   );
 }

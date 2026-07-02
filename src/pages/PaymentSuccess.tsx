@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader2, Home, Smartphone } from 'lucide-react';
 import { motion } from 'motion/react';
+import Copyright from '../components/Copyright';
 
 export default function PaymentSuccess() {
   const navigate = useNavigate();
@@ -74,6 +75,7 @@ export default function PaymentSuccess() {
           Ir para o Dashboard agora
         </button>
       </motion.div>
+      <Copyright className="pb-6" />
     </div>
   );
 }

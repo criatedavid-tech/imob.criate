@@ -39,6 +39,7 @@ import FollowUpSettings from '../components/FollowUpSettings';
 import AgendaCalendar from '../components/AgendaCalendar';
 import { authService } from '../services/auth';
 import MagicWandTextarea from '../components/MagicWandTextarea';
+import Copyright from '../components/Copyright';
 
 
 /**
@@ -490,6 +491,7 @@ export default function Dashboard() {
           )}
           <NavItem icon={<LogOut size={20} />}   label="Sair"       className="text-red-300 hover:bg-red-500/15" onClick={() => authService.logout()} />
         </div>
+        <Copyright short className="mt-4" />
       </aside>
 
       {/* ── SIDEBAR MOBILE — drawer overlay ── */}
@@ -536,6 +538,7 @@ export default function Dashboard() {
               )}
               <NavItem icon={<LogOut size={20} />}   label="Sair"       className="text-red-300 hover:bg-red-500/15" onClick={() => authService.logout()} />
             </div>
+            <Copyright short className="mt-4" />
           </motion.aside>
         </div>
       )}
