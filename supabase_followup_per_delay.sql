@@ -1,5 +1,13 @@
 -- ─── Migração: delay por follow ────────────────────────────────────────────
 -- Rodar no Supabase SQL Editor do projeto umvbrahsqvqeondwtikm
+--
+-- ⚠️ HISTÓRICO — a função claim_due_followups() abaixo NÃO é mais a versão
+-- que está rodando no banco. Em algum momento após esta migração, a função
+-- foi recriada diretamente no Supabase com uma melhoria (Follow 2/3 contam
+-- o atraso a partir de follow_sent_at, não de last_customer_message_at) que
+-- nunca voltou pra este arquivo. Não rode este arquivo de novo — ele
+-- regrediria essa melhoria. Fonte de verdade atual: 20260702_fix_claim_due_followups.sql
+-- (auditoria de schema em 2026-07-02, ver DOCUMENTACAO.md §14.14).
 
 -- 1. Adicionar colunas de delay individuais
 ALTER TABLE followup_config
@@ -74,5 +82,5 @@ AS $$
     b.zpro_api_token
   FROM claimed c
   JOIN followup_config cfg ON cfg.broker_id = c.broker_id
-  JOIN brokers b           ON b.id = c.broker_id;
+  JOIN imf_brokers b       ON b.id = c.broker_id;
 $$;

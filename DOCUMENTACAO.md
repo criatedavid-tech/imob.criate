@@ -565,9 +565,34 @@ flowchart TB
 
 ### Características arquiteturais-chave
 
-- **Monólito intencional.** Todo o backend vive em um único arquivo
-  `server.ts` (~3900 linhas). Isso é uma **decisão deliberada** (ver §14.8),
-  não dívida acidental. Não fragmente sem necessidade real.
+- **Monólito intencional — agora modular (concluído em 2026-07-02).** Um único
+  processo/deploy no Fly continua sendo a decisão certa (ver §14.8); só o
+  **arquivo** deixou de ser monolítico. `server.ts` caiu de **181KB (4025
+  linhas) para 3,2KB (~85 linhas)** — virou puramente um orquestrador: cria o
+  app Express, monta os middlewares globais, monta os routers por domínio e
+  os cron jobs, e sobe o servidor. Toda a lógica foi redistribuída em 22
+  arquivos sob `server/`:
+  - `server/config.ts` — todas as env vars.
+  - `server/supabase.ts` — cliente Supabase.
+  - `server/lib/` — `crypto.ts` (encrypt/decrypt/normalizePhoneBR),
+    `zproAuth.ts` (JWT do Z-PRO), `infra.ts` (Sentry/Redis).
+  - `server/middleware/` — `auth.ts` (requireUser/optionalUser/requireAdmin/
+    getBrokerId), `rateLimits.ts` (os 3 limiters).
+  - `server/services/` — `billing.ts` (handleAsaasPaymentReceived,
+    prepareOverageBilling, chargeOverageIfDue, asaasHeaders),
+    `provisioning.ts` (toda a esteira Z-PRO/UAZAPI — createZproTenantAndChannel
+    e as ~12 funções auxiliares), `followup.ts` (runFollowupTick + engine).
+  - `server/routes/` — um arquivo por domínio (auth, brokers, properties,
+    corretora, ai, dashboard, leads, agenda, billing, whatsapp, llmProxy,
+    admin, followup), cada um exportando um `express.Router()` montado em
+    `server.ts`.
+  - Verificação: **65 de 65** combinações método+rota conferidas 1:1 contra o
+    arquivo original (nenhuma perdida/duplicada), `tsc --noEmit` limpo, build
+    ok, `tsx server.ts` sobe sem erro. Nenhum comportamento foi alterado —
+    é reorganização pura de código.
+  - Domínios novos do roadmap (Locação, Lançamentos, Financeiro, Equipe...)
+    já nascem como `server/routes/<dominio>.ts` a partir de agora — ver
+    `UX_MASTERPLAN.md`.
 - **Multitenant por `broker_id`.** Cada corretor é um *tenant*. O isolamento
   é **100% responsabilidade do código de aplicação**, porque o backend usa a
   `service_role` do Supabase, que **ignora RLS** (ver §14.5.2 e §14.9).
@@ -1061,3 +1086,89 @@ Não deletei nada automaticamente porque a tabela é histórico financeiro
 (mesmo que hoje sem impacto, o `historicTotal` de cada `type` é usado para
 limitar estornos futuros — ver `server.ts` linha ~2601) e o comerciante deve
 confirmar visualmente quais linhas são realmente de teste antes de apagar.
+
+## 14.14. Atualização 2026-07-02 (continuação) — Carteira real + bug de follow-up encontrado
+
+**Nova interface (`/app`) — sequência de 3 tarefas concluída** (ver `UX_MASTERPLAN.md`
+§9 para o histórico completo):
+1. Backend modularizado: `server.ts` (4025 linhas) → 22 arquivos em `server/`
+   (config/supabase/lib/middleware/services/routes), `server.ts` virou orquestrador
+   de ~85 linhas. Zero rota perdida (diff método+path 1:1 contra o original).
+2. Cockpit "Hoje" do Corretor ligado a dados reais (`src/experience/realData.ts`).
+3. Carteira real (`src/experience/CarteiraArea.tsx`) — lista/cria/edita/exclui
+   imóveis reaproveitando `GET/DELETE /api/properties`, `PATCH .../status` e o
+   `PropertyForm.tsx` já existentes, sem nenhuma rota nova.
+
+Tudo verificado com `tsc --noEmit` limpo, `vite build` limpo e teste ao vivo (login
+real, dados reais). **Nada disso foi commitado nem deployado ainda** — aguardando
+aprovação explícita do usuário, dado que altera o backend inteiro de um sistema de
+pagamento em produção sem suíte de testes automatizada.
+
+**Pendente de decisão do usuário:** hoje o login sempre redireciona para `/`
+(Dashboard antigo); a experiência nova só é vista acessando `/app` manualmente. Se
+`/app` virar o destino padrão, é preciso portar antes a checagem de assinatura que
+hoje só existe em `PrivateRoute` (bloqueia corretor inadimplente) — `ExperienceShell`
+ainda só checa login, não status de pagamento.
+
+**Bug encontrado (não relacionado à refatoração, pré-existente) — follow-up
+automático quebrado, e correção detalhada na §14.15** (a primeira versão desta
+seção continha um SQL baseado no arquivo local desatualizado — **não a use**;
+a versão certa está na §14.15 e no arquivo `20260702_fix_claim_due_followups.sql`).
+
+## 14.15. Auditoria de schema 2026-07-02 — tabelas, colunas e funções reais do Supabase
+
+Rodada uma auditoria read-only (`information_schema`/`pg_catalog`) no banco
+compartilhado, filtrando só o que é do ImobiFlow (prefixo `imf_` + `leads`,
+`corretoras`, `subscriptions`, `webhook_logs`, `followup_*`, `broker_agents`).
+Resultado: **nenhuma tabela faltando, nenhuma tabela nova sem o prefixo `imf_`
+(sem risco de isolamento)**. Achados pontuais:
+
+- **`claim_due_followups()` diverge do arquivo local `supabase_followup_per_delay.sql`.**
+  A função que está rodando de verdade no banco já tem uma melhoria que nunca
+  voltou pro repo: Follow 2 e Follow 3 contam o atraso a partir de
+  `follow_sent_at` (quando o follow anterior foi enviado), não de
+  `last_customer_message_at` como o arquivo local ainda diz. Além disso, a
+  função ao vivo **também** tem o bug do `JOIN brokers` (tabela renomeada pra
+  `imf_brokers`) — confirmado na definição real via `pg_get_functiondef`, não
+  só suposto pelo arquivo.
+- **Segundo bug, novo, achado na mesma função:** `claim_due_followups()` nunca
+  devolve `zpro_ticket_id` no `RETURNS TABLE`. `server/services/followup.ts`
+  já espera esse campo (`checkTicketOpen(row.zpro_ticket_id)`) pra não mandar
+  follow-up se o corretor já assumiu a conversa manualmente no Z-PRO — sem o
+  campo, `ticketId` chega sempre `undefined` e essa proteção nunca roda de
+  verdade (o follow-up sai mesmo com o corretor já respondendo por fora).
+- **Correção única para os 2 bugs:** `20260702_fix_claim_due_followups.sql`
+  (raiz do repo) — recria a função preservando a lógica de cascata já em
+  produção, corrige o nome da tabela e passa a devolver `zpro_ticket_id`.
+  ✅ **APLICADO pelo usuário no Supabase em 2026-07-02** (precisou `DROP
+  FUNCTION` antes — Postgres não deixa `CREATE OR REPLACE` mudar o tipo de
+  retorno de uma função existente, erro `42P13`; arquivo já atualizado com o
+  DROP incluso).
+- **Doc desatualizada (cosmético):** §14.4 lista `lead_id` como coluna de
+  `imf_agenda` — não existe. As colunas reais de cliente na agenda são
+  `client_name`/`client_phone`/`client_email` (denormalizadas, sem FK pra
+  `leads`). Não é bug de código, só a tabela deste doc estava errada.
+- **Bug adicional achado ao verificar a correção acima — `GET /api/agenda/visits`
+  sempre retornava 500.** O código usa `select('*, imf_properties(title))`
+  (sintaxe de embed do PostgREST), que exige uma foreign key entre
+  `imf_agenda.property_id` e `imf_properties.id` — a coluna existia, a FK não.
+  Afetava o Dashboard antigo, o `AgendaCalendar.tsx` **e** o cockpit novo (os
+  três chamam o mesmo endpoint); passou despercebido porque `imf_agenda`
+  estava com 0 linhas. ✅ **CORRIGIDO em 2026-07-02** — usuário rodou
+  `ALTER TABLE imf_agenda ADD CONSTRAINT imf_agenda_property_id_fkey FOREIGN KEY (property_id) REFERENCES imf_properties(id) ON DELETE SET NULL;`
+  no Supabase (tabela vazia = zero risco de dado órfão travar o ALTER).
+  Verificado ao vivo: endpoint voltou a responder `200 []` em vez de 500.
+- **Colunas legadas do Stripe, sem uso** (não são bug, só ruído): `imf_brokers`
+  tem `stripe_customer_id`/`stripe_subscription_id` e `subscriptions` tem
+  `stripe_session_id`/`stripe_customer_id`/`stripe_subscription_id`/
+  `stripe_payment_intent_id` + `UNIQUE(stripe_session_id)` — sobra de quando o
+  billing era Stripe, antes de migrar pra Asaas. Nenhum código atual lê essas
+  colunas. Seguro ignorar; só vale limpar se um dia normalizar o schema.
+- **Nomes de constraint legados** (cosmético, sem impacto): `imf_brokers`,
+  `imf_properties`, `imf_overage_charges`, `imf_ticket_adjustments`,
+  `imf_ticket_events` têm PK/UNIQUE com nome antigo (ex.: `brokers_pkey` em vez
+  de `imf_brokers_pkey`) — sobra do rename para o prefixo `imf_`, que não
+  renomeou as constraints. Não afeta nada, não vale o churn de renomear.
+- **Constraints de idempotência conferidas e intactas:**
+  `followup_config_broker_id_key`, `followup_conversations_broker_id_customer_phone_key`,
+  `uq_overage_broker_period`, `imf_properties_slug_key` — todas presentes.

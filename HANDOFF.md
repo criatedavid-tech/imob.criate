@@ -127,7 +127,7 @@ A `service_role key` do Supabase ficou hardcoded em commits antigos (`check.ts`,
 - [x] **Billing de excedente** — contagem de tickets + cobrança automática via Asaas (ver §13 DOCUMENTACAO.md)
 
 ### Pendente / próximos passos
-- [ ] **⚠️ URGENTE:** Rotacionar service_role key do Supabase (ver §7)
+- [ ] **⚠️ URGENTE:** Rotacionar service_role key do Supabase (ver §7) — ainda não foi feito
 - [ ] Páginas legais: preencher constantes no topo de `Termos.tsx` e `Privacidade.tsx` (Razão Social, CNPJ, Endereço, Emails)
 - [ ] Ativar Redis distribuído: `fly redis create --app imobiflow` → `fly secrets set REDIS_URL=<url>`
 - [ ] Ativar Sentry: criar conta em sentry.io → `fly secrets set SENTRY_DSN=<dsn>`
