@@ -22,6 +22,8 @@ import { llmProxyRouter } from "./server/routes/llmProxy";
 import { adminRouter } from "./server/routes/admin";
 import { followupRouter } from "./server/routes/followup";
 import { wppShimRouter } from "./server/routes/wppShim";
+import { locacaoRouter } from "./server/routes/locacao";
+import { lancamentosRouter } from "./server/routes/lancamentos";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +56,8 @@ async function startServer() {
   app.use(adminRouter);
   app.use(followupRouter);
   app.use(wppShimRouter);
+  app.use(locacaoRouter);
+  app.use(lancamentosRouter);
 
   // --- Jobs em background (ver server/services/) ---
   setInterval(runFollowupTick, 60_000);

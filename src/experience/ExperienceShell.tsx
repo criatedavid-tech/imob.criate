@@ -8,6 +8,10 @@ import { buildLayout, PERSONA_LABEL, AREAS } from './engine';
 import { fetchCorretorLayout } from './realData';
 import { CarteiraArea } from './CarteiraArea';
 import { ConversasArea } from './ConversasArea';
+import { NegociosArea } from './NegociosArea';
+import { AgendaArea } from './AgendaArea';
+import { LocacaoArea } from './LocacaoArea';
+import { LancamentosArea } from './LancamentosArea';
 import type { Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
@@ -148,6 +152,14 @@ export function ExperienceShell() {
             <CarteiraArea />
           ) : area === 'conversas' ? (
             <ConversasArea />
+          ) : area === 'negocios' ? (
+            <NegociosArea />
+          ) : area === 'agenda' ? (
+            <AgendaArea />
+          ) : area === 'locacao' ? (
+            <LocacaoArea />
+          ) : area === 'lancamentos' ? (
+            <LancamentosArea />
           ) : area !== 'hoje' ? (
             <AreaEmptyState areaKey={area} />
           ) : loadingLayout || !layout ? (

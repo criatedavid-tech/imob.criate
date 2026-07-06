@@ -5,6 +5,16 @@ import {
   XCircle, AlertCircle, Edit3
 } from 'lucide-react';
 import { authService } from '../services/auth';
+import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+
+// Tira o DDI 55 pra exibir só DDD+número ao lado do prefixo fixo "+55" —
+// evita duplicar o 55 quando reabre um agendamento já salvo no formato novo.
+// Usa o dígito cru (sem o corte de 11 do digitsOnly) porque precisa ver os
+// 12-13 dígitos completos pra decidir se tem DDI antes de cortar.
+function stripDDI(raw: string): string {
+  const d = (raw || '').replace(/\D/g, '');
+  return d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
+}
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +99,7 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
 
   const [form, setForm] = useState({
     client_name:      initial?.client_name      ?? '',
-    client_phone:     initial?.client_phone     ?? '',
+    client_phone:     stripDDI(initial?.client_phone ?? ''),
     client_email:     initial?.client_email     ?? '',
     date:             defaultDate,
     time:             defaultTime,
@@ -116,7 +126,7 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
     const scheduled_at = new Date(`${form.date}T${form.time}:00`).toISOString();
     const body: any = {
       client_name:      form.client_name,
-      client_phone:     form.client_phone  || null,
+      client_phone:     form.client_phone ? normalizePhoneBR(form.client_phone) : null,
       client_email:     form.client_email  || null,
       scheduled_at,
       duration_minutes: Number(form.duration_minutes),
@@ -190,14 +200,22 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Phone size={11} /> Telefone
               </label>
-              <input
-                value={form.client_phone}
-                onChange={e => set('client_phone', e.target.value)}
-                placeholder="(00) 00000-0000"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
-              />
+              <div className="flex items-stretch gap-2">
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50
+                  bg-white/5 border border-white/12">
+                  +55
+                </span>
+                <input
+                  value={form.client_phone}
+                  onChange={e => set('client_phone', digitsOnly(e.target.value))}
+                  inputMode="numeric"
+                  maxLength={11}
+                  placeholder="62994381279"
+                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white
+                    bg-white/8 border border-white/12 placeholder-white/25
+                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+                />
+              </div>
             </div>
             <div>
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">

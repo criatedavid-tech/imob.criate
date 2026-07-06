@@ -280,5 +280,60 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   mostra os 4 imóveis reais (bate com o KPI do cockpit), "Editar" abre o formulário
   com todos os campos (quartos, banheiros, área, garagem, descrição, fotos) já
   preenchidos corretamente a partir do dado real.
-- **Próximo:** nenhuma etapa nova aprovada ainda — aguardando o usuário decidir a
-  próxima (Etapa 2 completa/Conversas, Etapa 4/Negócios, ou deploy do que já existe).
+- **2026-07-03 — Etapa 2 (Conversas) PARCIAL — ~50%, dentro da iniciativa maior de
+  eliminar o Z-PRO (ver [[project_imobiflow_zpro_elimination]] e o plano
+  `C:\Users\Criate\.claude\plans\stateless-drifting-turing.md`).
+  `src/experience/ConversasArea.tsx` construído (abas ia/aguardando/encerrado,
+  thread, resposta manual, toggle de IA), backend em `server/routes/wppShim.ts` +
+  `server/services/wppShim.ts` (disfarce que substitui o Z-PRO no envio de
+  mensagens). Saída (IA/corretor→cliente) testada de ponta a ponta com envio real
+  contra a instância do Hunter. Entrada (cliente→IA) ainda é formato hipotético,
+  nunca observado com tráfego real. Nenhum corretor migrado de fato — Hunter
+  continua 100% no Z-PRO até a Fase 3 do plano.
+- ✅ **Commit feito 2026-07-03 (`8443173`)** — todo o backend modularizado
+  (Etapas 0/1/3 desta rodada) + Etapa 2 acima, tudo em `main`. **Ainda NÃO
+  deployado** — produção (`imobiflow.fly.dev`) continua no código anterior.
+  Achado: `.github/workflows/deploy.yml` faz `flyctl deploy` automático em todo
+  `git push` pra `main` — o próximo push já É o deploy.
+- **2026-07-06 — Etapa 4 (Negócios) CONCLUÍDA — núcleo real.** Novo
+  `src/experience/NegociosArea.tsx`: funil kanban (Novo/Em contato/Visita/Proposta/
+  Fechado) sobre os leads já existentes (`GET /api/leads`, mesma fonte do widget
+  "leads recentes" do cockpit) — nenhuma tabela nova. Mover de coluna reaproveita
+  `PATCH /api/leads/:id/status`, que já existia mas nunca tinha UI nenhuma. Cadastro
+  manual de lead (modal "Novo lead") é a primeira forma do corretor adicionar um lead
+  direto, sem depender da landing page pública. **Deixado de fora de propósito:**
+  previsão de fechamento por IA e alerta de "negócio esfriando" — a lista mestre
+  pede isso, mas não existe fonte real pra calcular ainda.
+- **2026-07-06 — Etapa 5 (Agenda) CONCLUÍDA — reaproveita 100%.** Novo
+  `src/experience/AgendaArea.tsx` é só um cabeçalho em volta do `AgendaCalendar.tsx`
+  que já existia (calendário mensal + CRUD de visitas via `/api/agenda/visits`) —
+  zero rota nova.
+- **2026-07-06 — Correção de telefone (Negócios + Agenda).** Campo de telefone
+  aceitava qualquer caractere e qualquer tamanho. Criado `src/lib/phone.ts`
+  (`digitsOnly` com limite de 11 dígitos, `normalizePhoneBR` — mesma lógica de
+  `server/lib/crypto.ts`) — campo agora só aceita dígitos, trava em 11, e mostra
+  prefixo fixo "+55". Valor salvo já sai no formato `55DDDNNNNNNNN`, igual ao que
+  N8N/UAZAPI esperam.
+- **2026-07-06 — Etapa 6 (Locação) CONCLUÍDA — núcleo real.** Novo
+  `server/routes/locacao.ts` (`imf_rental_contracts`, migração
+  `20260706_locacao_lancamentos.sql`) + `src/experience/LocacaoArea.tsx`: CRUD de
+  contrato de locação (inquilino, proprietário, imóvel opcional, valor do aluguel,
+  dia de vencimento, encerrar). **Deixado de fora de propósito** (dependem de
+  integração externa que não existe ainda): reajuste automático (precisa de índice
+  IGPM/IPCA), repasse ao proprietário (precisa de split de pagamento), boletos
+  (precisa de gateway), DIMOB (emissão fiscal real), vistoria (upload de fotos),
+  área do locatário/proprietário (portal separado, outra superfície de auth).
+- **2026-07-06 — Etapa 7 (Lançamentos) CONCLUÍDA — núcleo real.** Novo
+  `server/routes/lancamentos.ts` (`imf_developments` + `imf_units`, mesma migração
+  acima) + `src/experience/LancamentosArea.tsx`: espelho de vendas (mesma paleta de
+  cor do widget mock do cockpit) + reserva com trava por tempo (expira sozinha ao
+  recarregar a tela, sem cron novo) + marcar vendida/liberar. **Deixado de fora de
+  propósito:** tabela de preço avançada (plano de pagamento), simulador de
+  proposta+PIX (precisa de gateway), backoffice de aprovação de documentos.
+- **Estado do deploy:** tudo acima commitado (ver git log), **nada foi publicado
+  ainda** — produção continua no código anterior a 2026-07-03. Push pendente de
+  decisão do usuário (aciona deploy automático via `.github/workflows/deploy.yml`).
+- **Próximo:** com Locação/Lançamentos no nível "núcleo", falta Etapa 8
+  (Financeiro), Etapa 9 (Equipe), Etapa 10 (Divulgação), Etapa 11 (Relatórios),
+  Etapa 12 (Onboarding+Autonomia de verdade), Etapa 13 (cérebro LLM real) — ou
+  decidir publicar o que já existe.
