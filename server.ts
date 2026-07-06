@@ -27,6 +27,7 @@ import { lancamentosRouter } from "./server/routes/lancamentos";
 import { financeiroRouter } from "./server/routes/financeiro";
 import { equipeRouter } from "./server/routes/equipe";
 import { agentRouter } from "./server/routes/agent";
+import { relatoriosRouter } from "./server/routes/relatorios";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +65,7 @@ async function startServer() {
   app.use(financeiroRouter);
   app.use(equipeRouter);
   app.use(agentRouter);
+  app.use(relatoriosRouter);
 
   // --- Jobs em background (ver server/services/) ---
   setInterval(runFollowupTick, 60_000);

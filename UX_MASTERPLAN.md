@@ -387,9 +387,28 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   chave"), não some como bug genérico. **Decisão do operador antes de confiar:**
   confirmar que a chave Gemini de produção tem cota pra esse uso a mais, ou
   fornecer uma chave com billing pra teste local.
-- **Próximo:** falta rodar a migração `20260706_financeiro_equipe_metas.sql`
-  no Supabase (`closed_at` em `leads` + tabela `imf_broker_goals`) — sem ela,
-  Equipe e o `create`/fechamento de lead pela IA quebram. Depois: validar o
-  agente ao vivo (com chave Gemini com cota); Etapa 10 (Divulgação), Etapa 11
-  (Relatórios), Etapa 14 (Documentos/Conta/mobile) — ou decidir publicar
-  (merge `v2`→`main` + push) o que já existe.
+- **2026-07-06 — Sobre o agente: chave de IA sem cota (bloqueio de credencial,
+  confirmado 2x).** Duas chaves Gemini distintas devolveram `free_tier ...
+  limit: 0` — a conta Google não tem cota de free-tier de Gemini (região/projeto
+  sem grant, ou sem billing). A `OPENROUTER_API_KEY` local também é inválida
+  (sem prefixo `sk-or-`). O print do usuário provou que TODO o encanamento da
+  command bar funciona ponta a ponta (só a chamada ao modelo falha, com a
+  mensagem honesta de cota). Usuário optou por **pausar o teste ao vivo** do
+  agente — fica construído e commitado, acende quando houver chave com cota
+  (OpenRouter free ou billing Gemini). ⚠️ Implicação: se a chave Gemini de
+  produção for dessa mesma conta, o "melhorar texto" (`ai.ts`) também está
+  quebrado em prod — vale confirmar.
+- **2026-07-06 — Etapa 11 (Relatórios) CONSTRUÍDA — dado real determinístico,
+  sem depender de LLM (testável já).** `server/routes/relatorios.ts`
+  (`GET /api/relatorios/summary?months=N`) + `RelatoriosArea.tsx`: métricas de
+  conversão (lead→fechado via `closed_at`), leads por mês (gráfico de barras
+  CSS, sem lib nova), distribuição no funil, receita do período (locação +
+  vendas), visitas realizadas/agendadas, e um resumo em linguagem natural
+  montado dos números reais. A versão "a IA escreve o relatório" pluga no mesmo
+  agente (`server/services/agent.ts`) quando a chave tiver cota — por ora o
+  resumo é determinístico e honesto sobre isso.
+- **Próximo:** rodar a migração `20260706_financeiro_equipe_metas.sql` no
+  Supabase (`closed_at` em `leads` + `imf_broker_goals`) — Relatórios usa
+  `closed_at`, então sem ela a conversão fica sempre 0. Depois: dar cota à IA e
+  validar o agente ao vivo; Etapa 10 (Divulgação), Etapa 14 (Documentos/Conta/
+  mobile) — ou decidir publicar (merge `v2`→`main` + push) o que já existe.
