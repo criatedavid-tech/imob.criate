@@ -360,8 +360,36 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   deploy, só push em `main` aciona (`.github/workflows/deploy.yml`). `main` e
   produção continuam intocados de propósito, a pedido do usuário, até decisão
   explícita de dar merge.
+- **2026-07-06 — Etapa 13 (cérebro real) + Etapa 12 (autonomia real)
+  CONSTRUÍDAS — as duas peças centrais da tese, num golpe só.** A command bar
+  deixou de ser mock: `server/services/agent.ts` monta um snapshot REAL da
+  conta (imóveis com id/preço/status, contagem de leads por estágio, próximas
+  visitas, contratos ativos) e manda pro Gemini com saída estruturada
+  (`responseSchema`), que decide entre `answer` / `navigate` / `create_lead` /
+  `create_visit`. `server/routes/agent.ts`: `POST /api/agent/command` (interpreta)
+  + `POST /api/agent/execute` (confirma ação proposta). `CommandBar.tsx` virou
+  um chat de verdade (transcrição, navegação automática, card de confirmação).
+  **A autonomia agora GOVERNA de verdade** (antes era só um selo): piloto
+  executa a ação na hora; copiloto/manual propõem e esperam o "Confirmar".
+  Toda mutação revalida posse do imóvel no backend (`executeAction`), e a
+  execução usa os mesmos inserts das telas manuais — a IA não tem atalho
+  privilegiado. Ação concluída dá `refresh` → a área atual remonta e mostra o
+  resultado na hora.
+- ⚠️ **NÃO testado ao vivo — bloqueio de credencial, não de código.** `tsc` +
+  `vite build` limpos, servidor sobe, rotas respondem 401 (autenticadas). Mas
+  as DUAS chaves de LLM deste ambiente estão inutilizáveis: `GEMINI_API_KEY`
+  local está com cota free-tier = 0 (429 em qualquer chamada, os dois modelos),
+  e `OPENROUTER_API_KEY` local não é uma chave OpenRouter válida (39 chars, sem
+  prefixo `sk-or-`). O agente usa `gemini-2.0-flash-lite`, o MESMO modelo do
+  `enhance-text` (`ai.ts`) que já roda em produção — então a chave Gemini de
+  PRODUÇÃO (no Fly) provavelmente tem cota e faz funcionar lá. Erro de cota
+  agora devolve mensagem honesta e distinta ("a IA atingiu o limite de uso da
+  chave"), não some como bug genérico. **Decisão do operador antes de confiar:**
+  confirmar que a chave Gemini de produção tem cota pra esse uso a mais, ou
+  fornecer uma chave com billing pra teste local.
 - **Próximo:** falta rodar a migração `20260706_financeiro_equipe_metas.sql`
-  no Supabase (`closed_at` em `leads` + tabela `imf_broker_goals`). Depois:
-  Etapa 10 (Divulgação), Etapa 11 (Relatórios), Etapa 12 (Onboarding+Autonomia
-  de verdade), Etapa 13 (cérebro LLM real) — ou decidir publicar (merge
-  `v2`→`main` + push) o que já existe.
+  no Supabase (`closed_at` em `leads` + tabela `imf_broker_goals`) — sem ela,
+  Equipe e o `create`/fechamento de lead pela IA quebram. Depois: validar o
+  agente ao vivo (com chave Gemini com cota); Etapa 10 (Divulgação), Etapa 11
+  (Relatórios), Etapa 14 (Documentos/Conta/mobile) — ou decidir publicar
+  (merge `v2`→`main` + push) o que já existe.

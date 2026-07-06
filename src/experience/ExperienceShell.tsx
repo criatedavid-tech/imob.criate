@@ -67,6 +67,9 @@ export function ExperienceShell() {
   const [autonomy, setAutonomy] = useState<Autonomy>('piloto');
   const [layout, setLayout] = useState<LayoutSpec | null>(null);
   const [loadingLayout, setLoadingLayout] = useState(false);
+  // Bump quando a IA executa uma ação — remonta a área atual (refetch) e
+  // refaz o cockpit, pra a tela nunca ficar defasada do que a IA acabou de fazer.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // /app exige login: o cockpit do corretor mostra dados reais da conta,
   // então precisa saber quem está logado — sem isso não há o que buscar.
@@ -93,7 +96,7 @@ export function ExperienceShell() {
       setLayout(buildLayout(persona));
     }
     return () => { cancelled = true; };
-  }, [persona, checkingAuth]);
+  }, [persona, checkingAuth, refreshKey]);
 
   const cycleAutonomy = () =>
     setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
@@ -148,8 +151,9 @@ export function ExperienceShell() {
           </div>
         </div>
 
-        {/* Conteúdo: canvas generativo (Hoje) ou área manual */}
-        <div className="px-6 pt-6 pb-32">
+        {/* Conteúdo: canvas generativo (Hoje) ou área manual.
+            key inclui refreshKey → ação da IA remonta a área e força refetch. */}
+        <div key={`${area}-${refreshKey}`} className="px-6 pt-6 pb-32">
           {area === 'carteira' ? (
             <CarteiraArea />
           ) : area === 'conversas' ? (
@@ -177,7 +181,12 @@ export function ExperienceShell() {
           )}
         </div>
 
-        <CommandBar />
+        <CommandBar
+          persona={persona}
+          autonomy={autonomy}
+          onNavigate={setArea}
+          onActionDone={() => setRefreshKey((k) => k + 1)}
+        />
       </main>
     </div>
   );
