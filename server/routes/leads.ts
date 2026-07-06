@@ -171,9 +171,15 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     const ids = (propIds || []).map((p: any) => p.id);
     if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
 
+    // closed_at marca quando o negócio foi de fato fechado (usado pela meta
+    // do mês em /api/equipe/goal) — seta ao entrar em "fechado", limpa se
+    // for movido de volta por engano.
+    const updates: Record<string, any> = { status };
+    updates.closed_at = status === 'fechado' ? new Date().toISOString() : null;
+
     const { data, error } = await supabase
       .from('leads')
-      .update({ status })
+      .update(updates)
       .eq('id', req.params.id)
       .in('property_id', ids)
       .select()

@@ -12,6 +12,8 @@ import { NegociosArea } from './NegociosArea';
 import { AgendaArea } from './AgendaArea';
 import { LocacaoArea } from './LocacaoArea';
 import { LancamentosArea } from './LancamentosArea';
+import { FinanceiroArea } from './FinanceiroArea';
+import { EquipeArea } from './EquipeArea';
 import type { Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
@@ -160,6 +162,10 @@ export function ExperienceShell() {
             <LocacaoArea />
           ) : area === 'lancamentos' ? (
             <LancamentosArea />
+          ) : area === 'financeiro' ? (
+            <FinanceiroArea />
+          ) : area === 'equipe' ? (
+            <EquipeArea />
           ) : area !== 'hoje' ? (
             <AreaEmptyState areaKey={area} />
           ) : loadingLayout || !layout ? (

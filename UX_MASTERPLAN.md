@@ -330,10 +330,38 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   recarregar a tela, sem cron novo) + marcar vendida/liberar. **Deixado de fora de
   propósito:** tabela de preço avançada (plano de pagamento), simulador de
   proposta+PIX (precisa de gateway), backoffice de aprovação de documentos.
-- **Estado do deploy:** tudo acima commitado (ver git log), **nada foi publicado
-  ainda** — produção continua no código anterior a 2026-07-03. Push pendente de
-  decisão do usuário (aciona deploy automático via `.github/workflows/deploy.yml`).
-- **Próximo:** com Locação/Lançamentos no nível "núcleo", falta Etapa 8
-  (Financeiro), Etapa 9 (Equipe), Etapa 10 (Divulgação), Etapa 11 (Relatórios),
-  Etapa 12 (Onboarding+Autonomia de verdade), Etapa 13 (cérebro LLM real) — ou
-  decidir publicar o que já existe.
+- **2026-07-06 — Rodada de bugs achados testando ao vivo, todos corrigidos:**
+  campo de valor (aluguel/preço) sem limite de tamanho/formatação → máscara
+  estilo calculadora de banco (`src/lib/money.ts`); dropdown de imóvel com
+  fundo branco no Chrome/Windows → estiliza `<option>` direto; não dava pra
+  editar lead depois de criado → `PATCH /api/leads/:id` novo + modal dual
+  create/edit; widgets "Leads recentes"/"Próximas visitas" do cockpit não
+  levavam a lugar nenhum → agora navegam pra Negócios/Agenda.
+- **2026-07-06 — Etapa 8 (Financeiro) CONCLUÍDA — núcleo real, bem mais fino
+  que a lista mestre.** Novo `server/routes/financeiro.ts` + `FinanceiroArea.tsx`:
+  resumo agregando receita de locação ativa + receita de vendas de lançamentos
+  (dado que já existe, nenhuma tabela nova). Carteira (`imf_properties`) fica de
+  fora do agregado de propósito — o preço lá é texto livre, não confiável de
+  somar. **Deixado de fora** (bloqueado, não é só "não fiz ainda"): fluxo de
+  caixa com histórico de movimentos, comissão com pagamento real,
+  inadimplência, informe de rendimentos — todos dependem de rastrear
+  pagamento de aluguel de verdade, que a Etapa 6 não construiu de propósito.
+- **2026-07-06 — Etapa 9 (Equipe) CONCLUÍDA — só a fatia que dava pra
+  construir sem inventar dado.** Novo `server/routes/equipe.ts` +
+  `EquipeArea.tsx`: meta pessoal do mês vs. negócios fechados de verdade
+  (`leads.closed_at`, novo — setado no `PATCH /api/leads/:id/status` quando o
+  status vira "fechado"). **Bloqueado por decisão de produto, não construído:**
+  cadastro de corretores/equipes, hierarquia/permissões, ranking, distribuição
+  de leads — tudo isso pressupõe múltiplos usuários numa mesma conta, e hoje
+  o ImobiFlow é 1 conta = 1 corretor. Isso é uma decisão de produto (permitir
+  contas com vários corretores? como fica o billing por conta?), não uma tela
+  que falta desenhar — precisa ser decidida antes de qualquer código novo aqui.
+- ✅ Tudo commitado na branch `v2` (não `main`) — `git push` normal não aciona
+  deploy, só push em `main` aciona (`.github/workflows/deploy.yml`). `main` e
+  produção continuam intocados de propósito, a pedido do usuário, até decisão
+  explícita de dar merge.
+- **Próximo:** falta rodar a migração `20260706_financeiro_equipe_metas.sql`
+  no Supabase (`closed_at` em `leads` + tabela `imf_broker_goals`). Depois:
+  Etapa 10 (Divulgação), Etapa 11 (Relatórios), Etapa 12 (Onboarding+Autonomia
+  de verdade), Etapa 13 (cérebro LLM real) — ou decidir publicar (merge
+  `v2`→`main` + push) o que já existe.

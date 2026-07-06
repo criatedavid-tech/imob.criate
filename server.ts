@@ -24,6 +24,8 @@ import { followupRouter } from "./server/routes/followup";
 import { wppShimRouter } from "./server/routes/wppShim";
 import { locacaoRouter } from "./server/routes/locacao";
 import { lancamentosRouter } from "./server/routes/lancamentos";
+import { financeiroRouter } from "./server/routes/financeiro";
+import { equipeRouter } from "./server/routes/equipe";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +60,8 @@ async function startServer() {
   app.use(wppShimRouter);
   app.use(locacaoRouter);
   app.use(lancamentosRouter);
+  app.use(financeiroRouter);
+  app.use(equipeRouter);
 
   // --- Jobs em background (ver server/services/) ---
   setInterval(runFollowupTick, 60_000);
