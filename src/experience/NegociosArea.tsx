@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase, Plus, X, User } from 'lucide-react';
+import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase, Plus, X, User, Pencil } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
-import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 
 interface Lead {
   id: string;
@@ -10,6 +10,7 @@ interface Lead {
   phone: string;
   property?: string;
   property_id?: string;
+  notes?: string;
   status: string;
   created_at: string;
 }
@@ -19,22 +20,25 @@ interface PropertyOption {
   title: string;
 }
 
-// Cadastro manual de lead — hoje POST /api/leads só era chamado pela landing
+// Cadastro/edição de lead — hoje POST /api/leads só era chamado pela landing
 // page pública (cliente preenchendo formulário sozinho); esse modal é a
-// primeira forma do corretor adicionar um lead direto, sem depender disso.
+// primeira forma do corretor adicionar/editar um lead direto, sem depender disso.
 function NewLeadModal({
   properties,
+  initial,
   onClose,
   onCreated,
 }: {
   properties: PropertyOption[];
+  initial?: Lead | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [propertyId, setPropertyId] = useState(properties[0]?.id || '');
-  const [notes, setNotes] = useState('');
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name || '');
+  const [phone, setPhone] = useState(initial?.phone ? stripDDI(initial.phone) : '');
+  const [propertyId, setPropertyId] = useState(initial?.property_id || properties[0]?.id || '');
+  const [notes, setNotes] = useState(initial?.notes || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,19 +50,22 @@ function NewLeadModal({
     setSaving(true);
     setError('');
     try {
-      const res = await fetch('/api/leads', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/leads/${initial!.id}` : '/api/leads', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ property_id: propertyId, name, phone: normalizePhoneBR(phone), notes: notes || 'Cadastro manual' }),
+        body: JSON.stringify({
+          property_id: propertyId, name, phone: normalizePhoneBR(phone),
+          notes: notes || (isEdit ? undefined : 'Cadastro manual'),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || 'Falha ao criar lead.');
+        throw new Error(body?.error || `Falha ao ${isEdit ? 'editar' : 'criar'} lead.`);
       }
       onCreated();
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Falha ao criar lead.');
+      setError(e.message || `Falha ao ${isEdit ? 'editar' : 'criar'} lead.`);
     } finally {
       setSaving(false);
     }
@@ -72,7 +79,7 @@ function NewLeadModal({
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
 
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
-          <h3 className="text-lg font-bold text-white">Novo lead</h3>
+          <h3 className="text-lg font-bold text-white">{isEdit ? 'Editar lead' : 'Novo lead'}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors">
             <X size={20} />
           </button>
@@ -85,7 +92,7 @@ function NewLeadModal({
             </div>
           )}
 
-          {properties.length === 0 ? (
+          {properties.length === 0 && !isEdit ? (
             <p className="text-sm text-white/50">
               Cadastre um imóvel na Carteira primeiro — todo lead precisa estar ligado a um.
             </p>
@@ -137,7 +144,7 @@ function NewLeadModal({
                     focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
                 >
                   {properties.map((p) => (
-                    <option key={p.id} value={p.id}>{p.title}</option>
+                    <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b', color: '#fff' }}>{p.title}</option>
                   ))}
                 </select>
               </div>
@@ -167,7 +174,7 @@ function NewLeadModal({
           >
             Cancelar
           </button>
-          {properties.length > 0 && (
+          {(properties.length > 0 || isEdit) && (
             <button
               onClick={handleSave}
               disabled={saving}
@@ -176,7 +183,7 @@ function NewLeadModal({
                 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : null}
-              Criar
+              {isEdit ? 'Salvar' : 'Criar'}
             </button>
           )}
         </div>
@@ -218,6 +225,7 @@ export function NegociosArea() {
   const [movingId, setMovingId] = useState<string | null>(null);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -339,7 +347,13 @@ export function NegociosArea() {
                     stageLeads.map((lead) => (
                       <div key={lead.id}>
                       <GlassCard className="!p-4">
-                        <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
+                          <button onClick={() => setEditingLead(lead)}
+                            className="shrink-0 p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
                         {lead.property && (
                           <p className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
                             <HomeIcon className="w-3 h-3 shrink-0" /> {lead.property}
@@ -390,6 +404,14 @@ export function NegociosArea() {
         <NewLeadModal
           properties={properties}
           onClose={() => setShowCreate(false)}
+          onCreated={load}
+        />
+      )}
+      {editingLead && (
+        <NewLeadModal
+          properties={properties}
+          initial={editingLead}
+          onClose={() => setEditingLead(null)}
           onCreated={load}
         />
       )}

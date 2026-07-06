@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, X, Building2, User, Phone, Clock } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
 
 interface Development {
   id: string;
@@ -30,11 +32,6 @@ const mirrorColor: Record<string, string> = {
   reservado: 'bg-amber-400/25 border-amber-300/30 text-amber-100',
   vendido: 'bg-white/[0.04] border-white/10 text-white/30',
 };
-
-function centsToReais(cents?: number): string {
-  if (!cents) return '—';
-  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 function hoursLeft(iso?: string): string {
   if (!iso) return '';
@@ -112,7 +109,7 @@ function NewDevelopmentModal({ onClose, onCreated }: { onClose: () => void; onCr
 
 function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: string; onClose: () => void; onCreated: () => void }) {
   const [code, setCode] = useState('');
-  const [price, setPrice] = useState('');
+  const [priceCents, setPriceCents] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -121,12 +118,10 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
     setSaving(true);
     setError('');
     try {
-      const normalized = price.replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
-      const priceCents = normalized ? Math.round(parseFloat(normalized) * 100) : undefined;
       const res = await fetch(`/api/lancamentos/developments/${developmentId}/units`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ code, price_cents: priceCents }),
+        body: JSON.stringify({ code, price_cents: priceCents || undefined }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -160,9 +155,13 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
           </div>
           <div>
             <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Preço (opcional)</label>
-            <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="450000,00" inputMode="decimal"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+            <div className="flex items-stretch gap-2">
+              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+              <input value={maskFromCents(priceCents)} onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
+                placeholder="0,00" inputMode="numeric"
+                className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+            </div>
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-white/10">
@@ -192,7 +191,7 @@ function UnitActionModal({ unit, onClose, onChanged }: { unit: Unit; onClose: ()
       const res = await fetch(`/api/lancamentos/units/${unit.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ action, buyer_name: buyerName || undefined, buyer_phone: buyerPhone || undefined, hold_hours: Number(holdHours) || 1 }),
+        body: JSON.stringify({ action, buyer_name: buyerName || undefined, buyer_phone: buyerPhone ? normalizePhoneBR(buyerPhone) : undefined, hold_hours: Number(holdHours) || 1 }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -243,9 +242,12 @@ function UnitActionModal({ unit, onClose, onChanged }: { unit: Unit; onClose: ()
                 <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <Phone size={11} /> Telefone
                 </label>
-                <input value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value)} placeholder="(00) 00000-0000"
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                <div className="flex items-stretch gap-2">
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+                  <input value={buyerPhone} onChange={(e) => setBuyerPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279"
+                    className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                      focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                </div>
               </div>
             </>
           )}

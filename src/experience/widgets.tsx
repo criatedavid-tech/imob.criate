@@ -125,14 +125,15 @@ function Conversations({ spec }: { spec: WidgetSpec }) {
 }
 
 // ── Leads recentes: dado real (lead da landing/portal), sem fingir ser conversa de WhatsApp ──
-function LeadsList({ spec }: { spec: WidgetSpec }) {
+function LeadsList({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (area: string) => void }) {
   const items = spec.data as any[];
   return (
     <GlassCard>
       <WidgetHeader title={spec.title} />
       <div className="space-y-2">
         {items.map((l, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors">
+          <div key={i} onClick={() => onAreaClick?.('negocios')}
+            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors cursor-pointer">
             <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-white
               bg-gradient-to-br from-slate-500/40 to-slate-700/40 border border-white/15">
               {(l.name || '?').charAt(0).toUpperCase()}
@@ -294,14 +295,15 @@ function SalesMirror({ spec }: { spec: WidgetSpec }) {
 }
 
 // ── Agenda (lista de próximas visitas) ──
-function Agenda({ spec }: { spec: WidgetSpec }) {
+function Agenda({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (area: string) => void }) {
   const items = spec.data as any[];
   return (
     <GlassCard>
       <WidgetHeader title={spec.title} />
       <div className="space-y-2">
         {items.map((v, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors">
+          <div key={i} onClick={() => onAreaClick?.('agenda')}
+            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors cursor-pointer">
             <div className="text-center shrink-0 w-12">
               <p className="text-[15px] font-black text-white leading-none">{v.time}</p>
             </div>
@@ -319,7 +321,9 @@ function Agenda({ spec }: { spec: WidgetSpec }) {
 }
 
 // ── Registro: WidgetType → componente. Base da interface generativa. ──
-export const REGISTRY: Record<WidgetType, React.FC<{ spec: WidgetSpec }>> = {
+// onAreaClick é opcional — só leadsList/agenda usam, pra levar pra tela manual
+// completa (Negócios/Agenda) quando a pessoa clica num item do resumo.
+export const REGISTRY: Record<WidgetType, React.FC<{ spec: WidgetSpec; onAreaClick?: (area: string) => void }>> = {
   briefing: Briefing,
   kpis: Kpis,
   decisions: Decisions,

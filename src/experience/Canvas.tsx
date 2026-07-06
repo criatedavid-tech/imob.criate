@@ -11,7 +11,7 @@ const SPAN_CLASS: Record<Span, string> = {
 };
 
 // O Canvas não conhece regra de negócio — só desenha o LayoutSpec que o cérebro entrega.
-export function Canvas({ layout }: { layout: LayoutSpec }) {
+export function Canvas({ layout, onAreaClick }: { layout: LayoutSpec; onAreaClick?: (area: string) => void }) {
   const Briefing = REGISTRY.briefing;
   return (
     <div className="max-w-6xl mx-auto w-full">
@@ -29,7 +29,7 @@ export function Canvas({ layout }: { layout: LayoutSpec }) {
           return (
             <div key={w.id} className={SPAN_CLASS[w.span]}>
               <WidgetMotion index={i + 1}>
-                <Comp spec={w} />
+                <Comp spec={w} onAreaClick={onAreaClick} />
               </WidgetMotion>
             </div>
           );

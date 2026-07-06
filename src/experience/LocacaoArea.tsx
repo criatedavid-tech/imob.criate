@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
+
+// Dark-mode do <select> nativo é inconsistente entre navegadores — Chrome no
+// Windows ignora color-scheme pro popup da lista, então estiliza a <option>
+// direto (isso ele respeita).
+const optionStyle = { backgroundColor: '#1e293b', color: '#fff' };
 
 interface Contract {
   id: string;
@@ -23,17 +30,6 @@ interface PropertyOption {
   title: string;
 }
 
-function centsToReais(cents: number): string {
-  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-// Aceita "1500", "1500,00" ou "1500.00" digitado e converte pra centavos.
-function reaisToCents(raw: string): number {
-  const normalized = raw.replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
-  const value = parseFloat(normalized);
-  return Number.isFinite(value) ? Math.round(value * 100) : 0;
-}
-
 function NewContractModal({
   properties,
   onClose,
@@ -48,7 +44,7 @@ function NewContractModal({
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [propertyId, setPropertyId] = useState('');
-  const [rent, setRent] = useState('');
+  const [rentCents, setRentCents] = useState(0);
   const [dueDay, setDueDay] = useState('10');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [saving, setSaving] = useState(false);
@@ -57,8 +53,7 @@ function NewContractModal({
   async function handleSave() {
     if (!tenantName.trim()) { setError('Nome do inquilino é obrigatório.'); return; }
     if (!ownerName.trim()) { setError('Nome do proprietário é obrigatório.'); return; }
-    const cents = reaisToCents(rent);
-    if (!cents) { setError('Informe o valor do aluguel.'); return; }
+    if (!rentCents) { setError('Informe o valor do aluguel.'); return; }
     const due = Number(dueDay);
     if (!due || due < 1 || due > 28) { setError('Dia de vencimento deve ser entre 1 e 28.'); return; }
 
@@ -69,10 +64,10 @@ function NewContractModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
         body: JSON.stringify({
-          tenant_name: tenantName, tenant_phone: tenantPhone || null,
-          owner_name: ownerName, owner_phone: ownerPhone || null,
+          tenant_name: tenantName, tenant_phone: tenantPhone ? normalizePhoneBR(tenantPhone) : null,
+          owner_name: ownerName, owner_phone: ownerPhone ? normalizePhoneBR(ownerPhone) : null,
           property_id: propertyId || null,
-          rent_amount_cents: cents, due_day: due, start_date: startDate,
+          rent_amount_cents: rentCents, due_day: due, start_date: startDate,
         }),
       });
       if (!res.ok) {
@@ -123,9 +118,12 @@ function NewContractModal({
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Phone size={11} /> Telefone
               </label>
-              <input value={tenantPhone} onChange={(e) => setTenantPhone(e.target.value)} placeholder="(00) 00000-0000"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              <div className="flex items-stretch gap-2">
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+                <input value={tenantPhone} onChange={(e) => setTenantPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279"
+                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              </div>
             </div>
           </div>
 
@@ -142,9 +140,12 @@ function NewContractModal({
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Phone size={11} /> Telefone
               </label>
-              <input value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="(00) 00000-0000"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              <div className="flex items-stretch gap-2">
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+                <input value={ownerPhone} onChange={(e) => setOwnerPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279"
+                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              </div>
             </div>
           </div>
 
@@ -155,8 +156,8 @@ function NewContractModal({
             <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)}
               className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12
                 focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]">
-              <option value="">— nenhum —</option>
-              {properties.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+              <option value="" style={optionStyle}>— nenhum —</option>
+              {properties.map((p) => <option key={p.id} value={p.id} style={optionStyle}>{p.title}</option>)}
             </select>
           </div>
 
@@ -165,9 +166,13 @@ function NewContractModal({
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
                 Aluguel (R$)
               </label>
-              <input value={rent} onChange={(e) => setRent(e.target.value)} placeholder="1500,00" inputMode="decimal"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              <div className="flex items-stretch gap-2">
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+                <input value={maskFromCents(rentCents)} onChange={(e) => setRentCents(centsFromMaskInput(e.target.value))}
+                  placeholder="0,00" inputMode="numeric"
+                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              </div>
             </div>
             <div>
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">

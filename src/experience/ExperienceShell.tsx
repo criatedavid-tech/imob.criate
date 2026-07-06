@@ -167,7 +167,7 @@ export function ExperienceShell() {
               <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
             </div>
           ) : (
-            <Canvas layout={layout} />
+            <Canvas layout={layout} onAreaClick={setArea} />
           )}
         </div>
 

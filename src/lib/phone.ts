@@ -20,3 +20,12 @@ export const BR_LOCAL_MAX_LEN = 11;
 export function digitsOnly(raw: string, maxLen = BR_LOCAL_MAX_LEN): string {
   return (raw || '').replace(/\D/g, '').slice(0, maxLen);
 }
+
+// Tira o DDI 55 de um telefone já salvo (formato 55DDDNNNNNNNN) pra exibir só
+// DDD+número ao lado do prefixo fixo "+55" — evita duplicar o 55 ao editar.
+// Usa o dígito cru (sem o corte do digitsOnly) porque precisa ver os 12-13
+// dígitos completos antes de decidir se tem DDI.
+export function stripDDI(raw: string): string {
+  const d = (raw || '').replace(/\D/g, '');
+  return d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
+}

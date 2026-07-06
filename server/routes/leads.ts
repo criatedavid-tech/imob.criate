@@ -187,3 +187,47 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Edita os dados do lead (nome/telefone/imóvel/observações) — diferente do
+// /status acima, que só move o estágio do funil.
+leadsRouter.patch("/api/leads/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { data: propIds } = await supabase
+      .from('imf_properties')
+      .select('id')
+      .eq('broker_id', brokerId);
+    const ids = (propIds || []).map((p: any) => p.id);
+    if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
+
+    const allowed = ['name', 'phone', 'email', 'notes', 'property_id'];
+    const updates: Record<string, any> = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nada para atualizar.' });
+    if (updates.property_id && !ids.includes(updates.property_id)) {
+      return res.status(403).json({ error: 'Imóvel não pertence a este corretor.' });
+    }
+
+    const { data, error } = await supabase
+      .from('leads')
+      .update(updates)
+      .eq('id', req.params.id)
+      .in('property_id', ids)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(403).json({ error: 'Acesso negado.' });
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/leads/:id:", err);
+    res.status(500).json({ error: err.message });
+  }
+});

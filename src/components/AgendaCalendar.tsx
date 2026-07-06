@@ -5,16 +5,7 @@ import {
   XCircle, AlertCircle, Edit3
 } from 'lucide-react';
 import { authService } from '../services/auth';
-import { digitsOnly, normalizePhoneBR } from '../lib/phone';
-
-// Tira o DDI 55 pra exibir só DDD+número ao lado do prefixo fixo "+55" —
-// evita duplicar o 55 quando reabre um agendamento já salvo no formato novo.
-// Usa o dígito cru (sem o corte de 11 do digitsOnly) porque precisa ver os
-// 12-13 dígitos completos pra decidir se tem DDI antes de cortar.
-function stripDDI(raw: string): string {
-  const d = (raw || '').replace(/\D/g, '');
-  return d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
-}
+import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -277,10 +268,10 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
                   bg-white/8 border border-white/12
                   focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
               >
-                <option value={30}>30 min</option>
-                <option value={60}>1 hora</option>
-                <option value={90}>1h30</option>
-                <option value={120}>2 horas</option>
+                <option value={30} style={{ backgroundColor: '#1e293b', color: '#fff' }}>30 min</option>
+                <option value={60} style={{ backgroundColor: '#1e293b', color: '#fff' }}>1 hora</option>
+                <option value={90} style={{ backgroundColor: '#1e293b', color: '#fff' }}>1h30</option>
+                <option value={120} style={{ backgroundColor: '#1e293b', color: '#fff' }}>2 horas</option>
               </select>
             </div>
             <div>
@@ -294,9 +285,9 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
                   bg-white/8 border border-white/12
                   focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
               >
-                <option value="">— nenhum —</option>
+                <option value="" style={{ backgroundColor: '#1e293b', color: '#fff' }}>— nenhum —</option>
                 {properties.map(p => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
+                  <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b', color: '#fff' }}>{p.title}</option>
                 ))}
               </select>
             </div>
