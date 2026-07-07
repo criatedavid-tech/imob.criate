@@ -243,8 +243,8 @@ export default function Admin() {
       <div className="text-center">
         <Shield className="w-12 h-12 text-red-400 mx-auto mb-3" />
         <p className="text-white/70 font-semibold">{error}</p>
-        <button onClick={() => navigate('/')} className="mt-4 text-sm text-white/40 hover:text-white transition-colors">
-          Voltar ao Dashboard
+        <button onClick={() => navigate('/app')} className="mt-4 text-sm text-white/40 hover:text-white transition-colors">
+          Voltar
         </button>
       </div>
     </div>
@@ -270,8 +270,8 @@ export default function Admin() {
           <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </button>
-          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
-            <Home className="w-3.5 h-3.5" /> Dashboard
+          <button onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
+            <Home className="w-3.5 h-3.5" /> Voltar ao app
           </button>
           <button onClick={() => authService.logout()} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
             <LogOut className="w-3.5 h-3.5" /> Sair

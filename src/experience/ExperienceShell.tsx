@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Plus, ChevronDown, Loader2 } from 'lucide-react';
+import { Sparkles, Plus, ChevronDown, Loader2, Shield } from 'lucide-react';
 import { ManualRail } from './ManualRail';
 import { Canvas } from './Canvas';
 import { CommandBar } from './CommandBar';
@@ -175,6 +175,16 @@ export function ExperienceShell() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Painel admin — só is_admin. Reusa o painel completo do 1.0 (/admin). */}
+              {isAdmin && (
+                <button onClick={() => navigate('/admin')}
+                  title="Painel administrativo"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-[12px] font-semibold text-amber-200
+                    bg-amber-400/12 border border-amber-300/25 hover:bg-amber-400/20 transition-colors">
+                  <Shield className="w-3.5 h-3.5" /> Admin
+                </button>
+              )}
+
               {/* Conta logada — clicável leva pra Config (onde vive o "Sair") */}
               {accountLabel && (
                 <button onClick={() => setArea('config')}
