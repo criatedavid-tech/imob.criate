@@ -12,6 +12,7 @@ import Termos from './pages/Termos';
 import Privacidade from './pages/Privacidade';
 import Admin from './pages/Admin';
 import Experiencia from './pages/Experiencia';
+import Vitrine from './pages/Vitrine';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
 import TermsGate from './components/TermsGate';
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/termos" element={<Termos />} />
           <Route path="/privacidade" element={<Privacidade />} />
           <Route path="/p/:slug" element={<PropertyLanding />} />
+          <Route path="/vitrine/:brokerId" element={<Vitrine />} />
 
           {/* Preview do novo paradigma (interface generativa) — Etapa 0/1, dados mock */}
           <Route path="/app" element={<Experiencia />} />

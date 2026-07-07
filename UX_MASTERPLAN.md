@@ -407,8 +407,34 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   montado dos números reais. A versão "a IA escreve o relatório" pluga no mesmo
   agente (`server/services/agent.ts`) quando a chave tiver cota — por ora o
   resumo é determinístico e honesto sobre isso.
-- **Próximo:** rodar a migração `20260706_financeiro_equipe_metas.sql` no
-  Supabase (`closed_at` em `leads` + `imf_broker_goals`) — Relatórios usa
-  `closed_at`, então sem ela a conversão fica sempre 0. Depois: dar cota à IA e
-  validar o agente ao vivo; Etapa 10 (Divulgação), Etapa 14 (Documentos/Conta/
-  mobile) — ou decidir publicar (merge `v2`→`main` + push) o que já existe.
+- **2026-07-06 — Etapa 10 (Divulgação, vitrine pública) CONSTRUÍDA — testada
+  de ponta a ponta, é pública (sem auth).** Novo `GET /api/vitrine/:brokerId`
+  (`server/routes/vitrine.ts`) + página `/vitrine/:brokerId`
+  (`src/pages/Vitrine.tsx`) reaproveitando o landing individual `/p/:slug` já
+  existente — cada card leva pro imóvel, onde já vive contato/agendamento.
+  `DivulgacaoArea.tsx` (rail "Divulgação") mostra o link, copiar/abrir, e
+  contagem de imóveis no ar. **Bug real achado testando ao vivo, corrigido:**
+  `imf_brokers.broker_address` do Hunter tinha um JSON de outra origem
+  (`{"title":"Principal Broker",...}`) em vez de endereço — a vitrine pública
+  ia mostrar esse JSON cru. Corrigido com uma guarda (endereço que começa com
+  `{` não é exibido) tanto no endpoint público quanto no Config. **Deixado de
+  fora:** portais (OLX/ZAP/Viva Real, cada um exige integração própria) e
+  disparo de campanha em massa (depende do envio direto por WhatsApp, RESOLVE
+  junto com a eliminação do Z-PRO).
+- **2026-07-06 — Etapa 14 (Conta/Config, fatia de perfil) CONSTRUÍDA.** Novo
+  `ConfigArea.tsx` (rail "Config") reaproveita 100% endpoints que já existiam
+  (`GET/POST /api/brokers/me|settings|my-agent`) — zero rota nova: perfil
+  (nome, nome da IA, telefone, cidade), plano/status da assinatura, e as
+  instruções da IA numa tela só. **Deixado de fora:** billing/faturas
+  (existe só no sistema antigo), termos/aceite (idem), documentos/assinatura
+  eletrônica (precisa de serviço externo), preferências de notificação.
+- **Estado do teste:** vitrine pública testada de ponta a ponta (é pública,
+  sem auth — deu pra confirmar sozinho). Config e Divulgação (as partes atrás
+  de login) só passaram por `tsc`/`build`/boot limpos — ainda sem confirmação
+  do usuário ao vivo.
+- **Próximo:** você testar Config e Divulgação logado; rodar a migração
+  `20260706_financeiro_equipe_metas.sql` no Supabase se ainda não rodou
+  (`closed_at` em `leads` + `imf_broker_goals` — sem ela Relatórios mostra
+  conversão sempre 0). Depois: dar cota à IA e validar o agente ao vivo;
+  Etapa 14 completa (Documentos, billing na experiência nova) — ou decidir
+  publicar (merge `v2`→`main` + push) o que já existe.
