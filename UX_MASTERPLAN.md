@@ -434,6 +434,48 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   sem auth — deu pra confirmar sozinho). Config e Divulgação (as partes atrás
   de login) só passaram por `tsc`/`build`/boot limpos — ainda sem confirmação
   do usuário ao vivo.
+- **2026-07-07 — Cobrança real de aluguel (boleto/PIX) CONSTRUÍDA, mesmo
+  padrão da assinatura — código completo, NÃO testada ao vivo de propósito.**
+  Nova migração `20260707_locacao_boleto_pix.sql` (`imf_rental_payments` +
+  `tenant_cpf_cnpj`/`asaas_customer_id` em `imf_rental_contracts`). Novo
+  `server/services/rentalBilling.ts` (`generateRentCharge` — cria cliente Asaas
+  do inquilino se não existir, gera boleto+PIX, idempotente por mês —, e
+  `handleRentalPaymentWebhook`, plugado em `server/routes/billing.ts` ANTES da
+  cadeia de assinatura, pra pagamento de aluguel nunca ser confundido com
+  pagamento de assinatura). Novo `POST /api/locacao/contracts/:id/charge` e
+  `GET /api/locacao/contracts/:id/payments`. `GET /api/locacao/contracts`
+  agora devolve `current_month_payment_status` por contrato (com enforcement
+  preguiçoso: `pending` com `due_date` vencido já mostra `overdue` na hora,
+  mesmo padrão do `grace_until` da assinatura), base real de inadimplência
+  usada no cockpit da Imobiliária. **⚠️ Bloqueio de credencial, não de
+  código:** `.env` local aponta `ASAAS_ENV=production` e a chave sandbox já foi
+  retirada — não existe ambiente seguro pra disparar uma chamada de teste
+  daqui. Fica construído e revisado (segue o padrão comprovado de
+  `services/billing.ts`), mas nunca invocado neste ambiente. **Requer rodar a
+  migração no Supabase antes de qualquer teste.**
+- **2026-07-07 — Cockpits de Imobiliária e Incorporadora deixaram de ser mock
+  — agora 100% dado real, igual ao do Corretor.** `engine.ts` teve o motor
+  mock inteiro removido (`buildLayout`/`LAYOUTS` e os 3 `LayoutSpec` literais —
+  confirmado por grep que nada mais referenciava). Novo em `realData.ts`:
+  `fetchIncorporadoraLayout()` (KPIs de VGV vendido/unidades vendidas/reservas
+  ativas/leads do dia — reaproveita `financeiro/summary` pro VGV, sem resomar
+  preço; espelho de vendas real; decisão real quando uma reserva está a <3h de
+  expirar, com "Estender"/"Liberar" agindo de verdade via `PATCH
+  /api/lancamentos/units/:id`) e `fetchImobiliariaLayout()` (KPIs de leads/
+  conversão/contratos ativos/inadimplência — usa o `current_month_payment_status`
+  acima; decisão real "Ver contrato" nos até 2 primeiros contratos em atraso,
+  navega pra Locação). `ExperienceShell.tsx` agora chama as 3 fetchers reais
+  sem fallback pra mock. Nova ação `estender` em `PATCH
+  /api/lancamentos/units/:id` (recalcula `reserved_until` a partir de AGORA,
+  só se a unidade estiver `reservado`). `Decisions` (`widgets.tsx`) deixou de
+  ser decorativo — aceita `onPrimary`/`onGhost` (closures reais montadas em
+  `realData.ts`), com spinner e disabled durante a ação. **Deixado de fora de
+  propósito:** "Sua equipe"/ranking/distribuição de leads pra Imobiliária —
+  mesmo bloqueio de decisão de produto já registrado na Etapa 9 (1 conta = 1
+  corretor hoje). **Estado do teste:** `tsc`/`vite build` limpos, servidor
+  sobe limpo, todas as rotas novas/alteradas respondem 401 (autenticadas, não
+  404/500) — ainda sem confirmação ao vivo do usuário (preciso da sessão dele
+  pra ver dado real na tela).
 - **Próximo:** você testar Config e Divulgação logado; rodar a migração
   `20260706_financeiro_equipe_metas.sql` no Supabase se ainda não rodou
   (`closed_at` em `leads` + `imf_broker_goals` — sem ela Relatórios mostra

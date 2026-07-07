@@ -166,6 +166,13 @@ lancamentosRouter.patch("/api/lancamentos/units/:id", requireUser, async (req, r
       updates.buyer_name = null;
       updates.buyer_phone = null;
       updates.reserved_until = null;
+    } else if (action === "estender") {
+      // Estende a partir de AGORA (não da data original) — reflete o pedido
+      // real do cockpit ("estendo mais 30min?"), não soma em cima do prazo vencido.
+      const { data: current } = await supabase.from("imf_units").select("status").eq("id", req.params.id).maybeSingle();
+      if (current?.status !== "reservado") return res.status(400).json({ error: "Só dá pra estender uma unidade reservada." });
+      const minutes = Number(req.body.extend_minutes) || 30;
+      updates.reserved_until = new Date(Date.now() + minutes * 60_000).toISOString();
     } else {
       if (price_cents !== undefined) updates.price_cents = price_cents;
       if (code !== undefined) updates.code = code;

@@ -1,11 +1,13 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
+import { generateRentCharge } from "../services/rentalBilling";
 
 export const locacaoRouter = express.Router();
 
 // Etapa 6 do UX_MASTERPLAN.md — núcleo real: contrato de locação (CRUD +
-// encerrar). Reajuste/repasse/boletos/DIMOB/vistoria/portal ficam para depois.
+// encerrar) + cobrança real de boleto/PIX via Asaas (mesmo padrão da
+// assinatura). Reajuste/repasse/DIMOB/vistoria/portal ficam para depois.
 
 locacaoRouter.get("/api/locacao/contracts", requireUser, async (req, res) => {
   try {
@@ -21,9 +23,34 @@ locacaoRouter.get("/api/locacao/contracts", requireUser, async (req, res) => {
 
     if (error) throw error;
 
-    res.json((data || []).map((c: any) => ({
+    const contracts = data || [];
+    const ids = contracts.map((c: any) => c.id);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    const monthIso = monthStart.toISOString().split("T")[0];
+
+    // Status do pagamento do mês atual, por contrato — base real de
+    // inadimplência (usada no cockpit da Imobiliária). null = ainda não gerou cobrança.
+    // Enforcement lazy: se está "pending" mas o vencimento já passou, mostra
+    // "overdue" na hora — não depende só do webhook do Asaas ter chegado
+    // (mesmo padrão do grace_until em billing.ts).
+    const today = new Date().toISOString().split("T")[0];
+    const paymentByContract: Record<string, string> = {};
+    if (ids.length > 0) {
+      const { data: payments } = await supabase
+        .from("imf_rental_payments")
+        .select("contract_id, status, due_date")
+        .in("contract_id", ids)
+        .eq("reference_month", monthIso);
+      for (const p of payments || []) {
+        paymentByContract[p.contract_id] = (p.status === "pending" && p.due_date < today) ? "overdue" : p.status;
+      }
+    }
+
+    res.json(contracts.map((c: any) => ({
       ...c,
       property: c.imf_properties?.title || null,
+      current_month_payment_status: paymentByContract[c.id] || null,
     })));
   } catch (err: any) {
     console.error("Erro GET /api/locacao/contracts:", err);
@@ -38,7 +65,7 @@ locacaoRouter.post("/api/locacao/contracts", requireUser, async (req, res) => {
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
     const {
-      property_id, tenant_name, tenant_phone, owner_name, owner_phone,
+      property_id, tenant_name, tenant_phone, tenant_cpf_cnpj, owner_name, owner_phone,
       rent_amount_cents, due_day, start_date, end_date, notes,
     } = req.body;
 
@@ -55,6 +82,7 @@ locacaoRouter.post("/api/locacao/contracts", requireUser, async (req, res) => {
         broker_id: brokerId,
         property_id: property_id || null,
         tenant_name, tenant_phone: tenant_phone || null,
+        tenant_cpf_cnpj: tenant_cpf_cnpj || null,
         owner_name, owner_phone: owner_phone || null,
         rent_amount_cents, due_day, start_date,
         end_date: end_date || null,
@@ -78,7 +106,7 @@ locacaoRouter.patch("/api/locacao/contracts/:id", requireUser, async (req, res) 
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
     const allowed = [
-      "tenant_name", "tenant_phone", "owner_name", "owner_phone",
+      "tenant_name", "tenant_phone", "tenant_cpf_cnpj", "owner_name", "owner_phone",
       "rent_amount_cents", "due_day", "start_date", "end_date", "status", "notes",
     ];
     const updates: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -100,5 +128,46 @@ locacaoRouter.patch("/api/locacao/contracts/:id", requireUser, async (req, res) 
   } catch (err: any) {
     console.error("Erro PATCH /api/locacao/contracts/:id:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+async function ownsContract(brokerId: string, contractId: string): Promise<boolean> {
+  const { data } = await supabase.from("imf_rental_contracts").select("id").eq("id", contractId).eq("broker_id", brokerId).maybeSingle();
+  return !!data;
+}
+
+locacaoRouter.get("/api/locacao/contracts/:id/payments", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await ownsContract(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+    const { data, error } = await supabase
+      .from("imf_rental_payments")
+      .select("*")
+      .eq("contract_id", req.params.id)
+      .order("reference_month", { ascending: false });
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err: any) {
+    console.error("Erro GET /api/locacao/contracts/:id/payments:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Gera boleto/PIX do mês atual pra esse contrato — chama a Asaas de verdade
+// (ver server/services/rentalBilling.ts). Idempotente: se já existe cobrança
+// pro mês, devolve a mesma em vez de duplicar.
+locacaoRouter.post("/api/locacao/contracts/:id/charge", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await ownsContract(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+    const result = await generateRentCharge(req.params.id, new Date());
+    res.json(result.payment);
+  } catch (err: any) {
+    console.error("Erro POST /api/locacao/contracts/:id/charge:", err);
+    res.status(400).json({ error: err.message });
   }
 });

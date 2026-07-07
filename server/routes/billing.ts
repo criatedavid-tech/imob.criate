@@ -7,6 +7,7 @@ import {
   PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, ASAAS_WEBHOOK_TOKEN,
 } from "../config";
 import { asaasHeaders, handleAsaasPaymentReceived } from "../services/billing";
+import { handleRentalPaymentWebhook } from "../services/rentalBilling";
 
 export const billingRouter = express.Router();
 
@@ -284,6 +285,22 @@ billingRouter.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
     payload: event,
     status: 'received'
   });
+
+  // Cobrança de aluguel (Locação) usa o MESMO Asaas, mas o customer é o
+  // inquilino, não o corretor — nunca vai bater no lookup por
+  // asaas_customer_id em imf_brokers abaixo. Verifica primeiro, por
+  // asaas_payment_id (ver server/services/rentalBilling.ts); se for uma
+  // cobrança de aluguel, trata e sai — não é evento de assinatura do broker.
+  if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED'].includes(event.event)) {
+    const wasRentalPayment = await handleRentalPaymentWebhook(event).catch((e) => {
+      console.error('[Webhook] erro tratando possível pagamento de aluguel:', e.message);
+      return false;
+    });
+    if (wasRentalPayment) {
+      res.json({ received: true });
+      return;
+    }
+  }
 
   if (event.event === 'PAYMENT_RECEIVED' || event.event === 'PAYMENT_CONFIRMED') {
     const p = event.payment;

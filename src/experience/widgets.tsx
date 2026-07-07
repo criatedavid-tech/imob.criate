@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Sparkles, Calendar, MessageCircle, Users, KeyRound, Clock,
-  Check, ChevronRight, TrendingUp, Bot, UserPlus,
+  Check, ChevronRight, TrendingUp, Bot, UserPlus, Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GlassCard, WidgetHeader } from './ui';
@@ -59,8 +59,19 @@ function Kpis({ spec }: { spec: WidgetSpec }) {
 }
 
 // ── Decisões: onde você supervisiona — o coração do modelo ──
+// d.onPrimary/d.onGhost (opcionais) são closures reais montadas no cérebro
+// (realData.ts) — quando presentes, o clique executa de verdade e não é só
+// decoração. Sem elas (persona mock), os botões continuam só visuais.
 function Decisions({ spec }: { spec: WidgetSpec }) {
   const items = spec.data as any[];
+  const [busyIdx, setBusyIdx] = React.useState<number | null>(null);
+
+  const run = async (idx: number, fn?: () => void | Promise<void>) => {
+    if (!fn || busyIdx !== null) return;
+    setBusyIdx(idx);
+    try { await fn(); } finally { setBusyIdx(null); }
+  };
+
   return (
     <GlassCard>
       <WidgetHeader title={spec.title} />
@@ -75,13 +86,15 @@ function Decisions({ spec }: { spec: WidgetSpec }) {
               <p className="text-[14px] text-white/80 leading-snug flex-1">{d.text}</p>
             </div>
             <div className="flex gap-2 mt-3 pl-11">
-              <button className="px-4 py-2 rounded-xl text-[13px] font-bold text-white
+              <button onClick={() => run(i, d.onPrimary)} disabled={busyIdx !== null}
+                className="px-4 py-2 rounded-xl text-[13px] font-bold text-white
                 bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/45 transition-colors
-                flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5" /> {d.primary}
+                flex items-center gap-1.5 disabled:opacity-50">
+                {busyIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} {d.primary}
               </button>
-              <button className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white/60
-                hover:text-white hover:bg-white/10 transition-colors">
+              <button onClick={() => run(i, d.onGhost)} disabled={busyIdx !== null}
+                className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white/60
+                hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50">
                 {d.ghost}
               </button>
             </div>

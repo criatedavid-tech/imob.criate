@@ -4,8 +4,8 @@ import { Sparkles, Plus, ChevronDown, Loader2 } from 'lucide-react';
 import { ManualRail } from './ManualRail';
 import { Canvas } from './Canvas';
 import { CommandBar } from './CommandBar';
-import { buildLayout, PERSONA_LABEL, AREAS } from './engine';
-import { fetchCorretorLayout } from './realData';
+import { PERSONA_LABEL, AREAS } from './engine';
+import { fetchCorretorLayout, fetchIncorporadoraLayout, fetchImobiliariaLayout } from './realData';
 import { CarteiraArea } from './CarteiraArea';
 import { ConversasArea } from './ConversasArea';
 import { NegociosArea } from './NegociosArea';
@@ -84,20 +84,20 @@ export function ExperienceShell() {
     setCheckingAuth(false);
   }, [navigate]);
 
-  // Corretor = dados reais (busca no backend). Imobiliária/Incorporadora ainda
-  // não têm backend próprio (Locação/Lançamentos são etapas futuras do roadmap)
-  // — permanecem em modo demonstração, com o mock claramente identificado como tal.
+  // As 3 personas têm cockpit com dado real agora (Locação/Lançamentos/
+  // Relatórios já existem) — nenhuma cai mais em mock puro.
   useEffect(() => {
     if (checkingAuth) return;
     let cancelled = false;
-    if (persona === 'corretor') {
-      setLoadingLayout(true);
-      fetchCorretorLayout()
-        .then((l) => { if (!cancelled) setLayout(l); })
-        .finally(() => { if (!cancelled) setLoadingLayout(false); });
-    } else {
-      setLayout(buildLayout(persona));
-    }
+    const refresh = () => setRefreshKey((k) => k + 1);
+    setLoadingLayout(true);
+    const fetcher =
+      persona === 'corretor' ? fetchCorretorLayout() :
+      persona === 'incorporadora' ? fetchIncorporadoraLayout(refresh) :
+      fetchImobiliariaLayout(refresh, setArea);
+    fetcher
+      .then((l) => { if (!cancelled) setLayout(l); })
+      .finally(() => { if (!cancelled) setLoadingLayout(false); });
     return () => { cancelled = true; };
   }, [persona, checkingAuth, refreshKey]);
 
