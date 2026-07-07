@@ -421,13 +421,15 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   fora:** portais (OLX/ZAP/Viva Real, cada um exige integração própria) e
   disparo de campanha em massa (depende do envio direto por WhatsApp, RESOLVE
   junto com a eliminação do Z-PRO).
-- **2026-07-06 — Etapa 14 (Conta/Config, fatia de perfil) CONSTRUÍDA.** Novo
-  `ConfigArea.tsx` (rail "Config") reaproveita 100% endpoints que já existiam
-  (`GET/POST /api/brokers/me|settings|my-agent`) — zero rota nova: perfil
-  (nome, nome da IA, telefone, cidade), plano/status da assinatura, e as
-  instruções da IA numa tela só. **Deixado de fora:** billing/faturas
-  (existe só no sistema antigo), termos/aceite (idem), documentos/assinatura
-  eletrônica (precisa de serviço externo), preferências de notificação.
+- **2026-07-06 — Etapa 14 (Conta/Config) CONSTRUÍDA, incluindo faturas +
+  termos.** `ConfigArea.tsx` (rail "Config") reaproveita 100% endpoints que já
+  existiam — zero rota nova: perfil (`brokers/me|settings`), plano/status,
+  **histórico de faturas de excedente + uso do ciclo** (`billing/usage`, já
+  existia mas nunca tinha UI), **status dos Termos aceitos** (`terms/status`,
+  idem), e instruções da IA (`brokers/my-agent`). **Deixado de fora:**
+  documentos/assinatura eletrônica (precisa de serviço externo de e-sign),
+  preferências de notificação, mudar plano/forma de pagamento pela tela nova
+  (checkout completo só existe no sistema antigo).
 - **Estado do teste:** vitrine pública testada de ponta a ponta (é pública,
   sem auth — deu pra confirmar sozinho). Config e Divulgação (as partes atrás
   de login) só passaram por `tsc`/`build`/boot limpos — ainda sem confirmação
