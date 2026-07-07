@@ -476,9 +476,47 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   sobe limpo, todas as rotas novas/alteradas respondem 401 (autenticadas, não
   404/500) — ainda sem confirmação ao vivo do usuário (preciso da sessão dele
   pra ver dado real na tela).
-- **Próximo:** você testar Config e Divulgação logado; rodar a migração
-  `20260706_financeiro_equipe_metas.sql` no Supabase se ainda não rodou
-  (`closed_at` em `leads` + `imf_broker_goals` — sem ela Relatórios mostra
-  conversão sempre 0). Depois: dar cota à IA e validar o agente ao vivo;
-  Etapa 14 completa (Documentos, billing na experiência nova) — ou decidir
-  publicar (merge `v2`→`main` + push) o que já existe.
+- **2026-07-07 — DEPLOY + ROLLBACK + correções de auth/perfil (episódio real).**
+  Sequência: mergeamos `v2`→`main` e demos push → deploy automático no Fly OK
+  (release v100, ~9min). Usuário testou `imobiflow.fly.dev/app` com 2 perfis do
+  Chrome e caiu direto em contas de outros corretores (Diego/David) sem tela de
+  login. **Revertemos produção NA HORA** via `fly deploy -i <imagem da v99>`
+  (redeploy da imagem anterior, sem passar pelo Git/CI — mais rápido). Produção
+  voltou pro código antigo (v99 = commit `9be41c1`); confirmado por curl (rotas
+  novas voltaram a dar 404). ⚠️ **Drift consciente:** `main` no GitHub segue em
+  `8311af1` (código novo), mas o que RODA em produção é a imagem da v99 — logo,
+  qualquer push em `main` REFAZ o deploy do código novo e desfaz o rollback.
+  Diagnóstico da causa raiz: **não era vazamento de auth** — o backend valida o
+  JWT de verdade (`requireUser`/`verifyAccessToken`) e isola tudo por `broker_id`
+  derivado do token, sem OAuth Google nem fallback compartilhado. Eram DUAS
+  lacunas de UX no `/app`: (1) não existia botão de "Sair" em lugar nenhum →
+  sessão antiga salva no localStorage de cada perfil do Chrome ficava presa;
+  (2) a barra não mostrava em qual conta você estava. Corrigido: botão "Sair da
+  conta" no Config (commit `41c9401`) + indicador de conta logada na barra.
+- **2026-07-07 — Tipo de conta REAL (corretor/imobiliaria/incorporadora) —
+  commit `6ee1c6e` na `v2`.** Auditoria pedida pelo usuário antes de re-deployar
+  revelou que a "persona" era 100% um toggle no front ("ver como") que qualquer
+  logado clicava — não havia coluna de tipo em `imf_brokers`, o cadastro nunca
+  perguntava, e o backend lia a persona do corpo do request sem verificar.
+  Decisões do usuário: tipo **escolhido no cadastro**; "ver como" **só pra
+  admin**. Construído: migração `20260707_account_type.sql` (coluna
+  `account_type`, default `corretor`, CHECK na lista fechada, backfill das
+  contas existentes); seletor "Você é" no passo 1 do signup (grava o tipo);
+  `/api/auth/signup` valida+grava, `/api/brokers/me` devolve `account_type` +
+  `is_admin`; `ExperienceShell` trava a persona no `account_type` da conta e só
+  mostra o seletor "ver como" pra `is_admin` (usuário normal vê o mundo dele
+  como label fixo). **Isolamento de dados não mudou (já era sólido).**
+  **⚠️ Requer rodar `20260707_account_type.sql` no Supabase ANTES de testar** —
+  o `/api/brokers/me` já seleciona `account_type`; sem a coluna, dá 500.
+  Gap conhecido não-bloqueante (dado já é isolado): rotas de feature específica
+  (ex.: `/api/locacao/*` pra imobiliária) ainda não checam `account_type` no
+  backend — um corretor que chamasse a rota direto veria só os PRÓPRIOS dados
+  (provavelmente vazios), não de outra conta. Trava de UI cobre o visível;
+  gating por tipo no backend fica como refino futuro.
+- **Próximo:** rodar as migrações pendentes no Supabase (`20260707_account_type.sql`
+  — obrigatória pro app local voltar a funcionar; `20260706_financeiro_equipe_metas.sql`
+  e `20260707_locacao_boleto_pix.sql` se ainda não rodaram). Testar o `/app`
+  local logado: cadastro escolhendo tipo, login, botão Sair, persona travada no
+  tipo, admin vendo o "ver como". Só depois decidir re-deployar (merge já está
+  em `main`; um push refaz o deploy do código novo — garantir que login/tipo/
+  logout estão validados ao vivo ANTES disso).

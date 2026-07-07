@@ -66,8 +66,13 @@ export default function App() {
           <Route path="/p/:slug" element={<PropertyLanding />} />
           <Route path="/vitrine/:brokerId" element={<Vitrine />} />
 
-          {/* Preview do novo paradigma (interface generativa) — Etapa 0/1, dados mock */}
-          <Route path="/app" element={<Experiencia />} />
+          {/* Experiência nova (interface generativa) — destino padrão pós-login.
+              Mesma trava do dashboard: login + assinatura ativa + aceite de termos. */}
+          <Route path="/app" element={
+            <PrivateRoute>
+              <Experiencia />
+            </PrivateRoute>
+          } />
 
           {/* Pagamento */}
           <Route path="/payment" element={

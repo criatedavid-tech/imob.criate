@@ -24,7 +24,9 @@ export default function Login() {
     setError('');
     try {
       await authService.login(email, password);
-      window.location.replace('/');
+      // Destino padrão agora é a experiência nova (/app). A trava de assinatura
+      // vive no PrivateRoute que embrulha /app — pendente cai em /payment.
+      window.location.replace('/app');
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -11,7 +11,7 @@ export default function PaymentSuccess() {
   useEffect(() => {
     const t = setInterval(() => {
       setCountdown(c => {
-        if (c <= 1) { clearInterval(t); navigate('/'); }
+        if (c <= 1) { clearInterval(t); navigate('/app'); }
         return c - 1;
       });
     }, 1000);
@@ -64,7 +64,7 @@ export default function PaymentSuccess() {
 
         {/* Botão */}
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/app')}
           className="w-full h-12 flex items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white
             transition-all active:scale-[0.99]
             backdrop-blur-md bg-white/15 border border-white/25
