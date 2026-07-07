@@ -21,10 +21,14 @@ const supabaseKey = SUPABASE_SERVICE_ROLE_KEY;
  */
 authRouter.post("/api/auth/signup", authLimiter, async (req, res) => {
   try {
-    const { email, password, name, phone } = req.body;
+    const { email, password, name, phone, account_type } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     }
+    // Tipo da conta define o "mundo" que o app mostra (menus + cockpit).
+    // Valida contra a lista fechada; valor inválido cai no padrão (corretor).
+    const VALID_TYPES = ['corretor', 'imobiliaria', 'incorporadora'];
+    const accountType = VALID_TYPES.includes(account_type) ? account_type : 'corretor';
 
     // Verifica se já existe conta com este e-mail
     const { data: existing } = await supabase.from('imf_brokers').select('id').eq('email', email.toLowerCase().trim()).maybeSingle();
@@ -51,6 +55,7 @@ authRouter.post("/api/auth/signup", authLimiter, async (req, res) => {
         email: cleanEmail,
         ai_name: 'Minha Assistente IA',
         broker_address: '',
+        account_type: accountType,
         status: 'pendente'
       }]);
       if (profileError) console.error("Error creating profile:", profileError);

@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff, Building2, Landmark } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import Copyright from '../components/Copyright';
 
-const STEPS = ['Seu nome', 'Telefone', 'Acesso'];
+const STEPS = ['Seu perfil', 'Telefone', 'Acesso'];
+
+// O tipo define o "mundo" que a conta enxerga (menus + cockpit). Escolhido aqui,
+// no cadastro, e gravado em imf_brokers.account_type — não é mais um toggle no app.
+const ACCOUNT_TYPES = [
+  { value: 'corretor',      label: 'Corretor autônomo', desc: 'Trabalho por conta própria',        icon: User },
+  { value: 'imobiliaria',   label: 'Imobiliária',       desc: 'Equipe, locação e carteira',        icon: Building2 },
+  { value: 'incorporadora', label: 'Incorporadora',     desc: 'Lançamentos e espelho de vendas',   icon: Landmark },
+] as const;
 
 const inputClass =
   'block w-full py-3.5 rounded-2xl outline-none transition-all text-sm font-medium ' +
@@ -25,7 +33,7 @@ const btnBack =
 export default function Signup() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
-    name: '', phone: '', email: '', password: '', confirmPassword: ''
+    name: '', phone: '', email: '', password: '', confirmPassword: '', account_type: 'corretor'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,6 +47,7 @@ export default function Signup() {
 
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.account_type) { setError('Escolha o tipo do seu perfil.'); return; }
     if (!formData.name.trim()) { setError('Informe seu nome completo.'); return; }
     next();
   };
@@ -58,7 +67,7 @@ export default function Signup() {
     setLoading(true);
     setError('');
     try {
-      await authService.signup(formData.email, formData.password, formData.name, formData.phone);
+      await authService.signup(formData.email, formData.password, formData.name, formData.phone, formData.account_type);
 
       // Se o auto-login do signup falhou (session null), faz login explícito
       if (!authService.isLoggedIn()) {
@@ -144,10 +153,36 @@ export default function Signup() {
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
                 transition={{ duration: 0.2 }} onSubmit={handleStep1} className="space-y-5">
                 <div>
+                  <label className="block text-[10px] font-bold text-white/40 mb-2 uppercase tracking-widest pl-1">Você é</label>
+                  <div className="space-y-2">
+                    {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon }) => {
+                      const selected = formData.account_type === value;
+                      return (
+                        <button key={value} type="button"
+                          onClick={() => setFormData({ ...formData, account_type: value })}
+                          className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
+                            selected
+                              ? 'bg-white/20 border-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
+                              : 'bg-white/8 border-white/12 hover:bg-white/12'
+                          }`}>
+                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-violet-500/40' : 'bg-white/10'}`}>
+                            <Icon className="w-4.5 h-4.5 text-white" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-bold text-white">{label}</span>
+                            <span className="block text-[11px] text-white/45 truncate">{desc}</span>
+                          </span>
+                          <span className={`ml-auto w-4 h-4 rounded-full border shrink-0 ${selected ? 'bg-violet-400 border-violet-300' : 'border-white/30'}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
                   <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nome Completo</label>
                   <div className="relative">
                     <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
-                    <input autoFocus required value={formData.name}
+                    <input required value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       className={`${inputClass} pl-11 pr-4`}
                       placeholder="Seu nome completo" />

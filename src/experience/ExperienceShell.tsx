@@ -66,6 +66,9 @@ export function ExperienceShell() {
   const navigate = useNavigate();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [persona, setPersona] = useState<Persona>('corretor');
+  // Só admin pode trocar de persona ("ver como"); usuário normal fica travado
+  // no tipo da própria conta (imf_brokers.account_type).
+  const [isAdmin, setIsAdmin] = useState(false);
   const [area, setArea] = useState('hoje');
   const [autonomy, setAutonomy] = useState<Autonomy>('piloto');
   const [layout, setLayout] = useState<LayoutSpec | null>(null);
@@ -74,14 +77,27 @@ export function ExperienceShell() {
   // refaz o cockpit, pra a tela nunca ficar defasada do que a IA acabou de fazer.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // /app exige login: o cockpit do corretor mostra dados reais da conta,
-  // então precisa saber quem está logado — sem isso não há o que buscar.
+  // /app exige login: o cockpit mostra dados reais da conta, então precisa saber
+  // quem está logado. Aqui também buscamos o account_type (o "mundo" da conta) pra
+  // travar a persona no tipo certo, e is_admin pra liberar o "ver como".
   useEffect(() => {
     if (!authService.isLoggedIn()) {
       navigate('/login');
       return;
     }
-    setCheckingAuth(false);
+    let cancelled = false;
+    fetch('/api/brokers/me', { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => {
+        if (cancelled) return;
+        if (me?.account_type && (PERSONAS as string[]).includes(me.account_type)) {
+          setPersona(me.account_type as Persona);
+        }
+        setIsAdmin(!!me?.is_admin);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCheckingAuth(false); });
+    return () => { cancelled = true; };
   }, [navigate]);
 
   // As 3 personas têm cockpit com dado real agora (Locação/Lançamentos/
@@ -107,6 +123,11 @@ export function ExperienceShell() {
   // Ao trocar de persona, volta para "Hoje" (área comum a todas).
   const changePersona = (p: Persona) => { setPersona(p); setArea('hoje'); };
 
+  // Quem está logado — precisa ficar visível na barra pra nunca haver dúvida
+  // de "em qual conta eu estou" (foi o que causou a confusão do Diego/David).
+  const currentUser = authService.getUser();
+  const accountLabel = currentUser?.name || currentUser?.email || '';
+
   if (checkingAuth) return <FullScreenSpinner />;
 
   return (
@@ -123,18 +144,28 @@ export function ExperienceShell() {
         <div className="sticky top-0 z-20 backdrop-blur-2xl bg-slate-900/30 border-b border-white/8">
           <div className="max-w-6xl mx-auto w-full px-6 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-white/35 mr-1 hidden sm:inline">ver como</span>
-              <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
-                {PERSONAS.map((p) => (
-                  <button key={p} onClick={() => changePersona(p)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
-                      persona === p ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
-                    )}>
-                    {PERSONA_LABEL[p]}
-                  </button>
-                ))}
-              </div>
+              {isAdmin ? (
+                <>
+                  {/* Só admin troca de persona — pra demonstrar/dar suporte */}
+                  <span className="text-[11px] text-white/35 mr-1 hidden sm:inline">ver como</span>
+                  <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
+                    {PERSONAS.map((p) => (
+                      <button key={p} onClick={() => changePersona(p)}
+                        className={cn(
+                          'px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
+                          persona === p ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+                        )}>
+                        {PERSONA_LABEL[p]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                // Usuário normal: só vê o mundo da própria conta (sem troca).
+                <span className="px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.06] border border-white/10">
+                  {PERSONA_LABEL[persona]}
+                </span>
+              )}
               {/* Aviso honesto: nunca deixar parecer que o mock é dado real da conta */}
               {layout && !layout.isRealData && (
                 <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300 bg-amber-400/15 px-2 py-1 rounded-full">
@@ -143,14 +174,29 @@ export function ExperienceShell() {
               )}
             </div>
 
-            {/* Botão de autonomia */}
-            <button onClick={cycleAutonomy}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-2xl text-[12px] font-semibold text-white
-                bg-white/[0.06] border border-white/12 hover:bg-white/[0.12] transition-colors">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              {AUTONOMY_LABEL[autonomy]}
-              <ChevronDown className="w-3.5 h-3.5 text-white/40" />
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Conta logada — clicável leva pra Config (onde vive o "Sair") */}
+              {accountLabel && (
+                <button onClick={() => setArea('config')}
+                  title={currentUser?.email || ''}
+                  className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl
+                    bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] transition-colors max-w-[180px]">
+                  <span className="w-5 h-5 rounded-full bg-violet-500/40 border border-white/15 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                    {accountLabel.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="text-[12px] font-semibold text-white/70 truncate">{accountLabel}</span>
+                </button>
+              )}
+
+              {/* Botão de autonomia */}
+              <button onClick={cycleAutonomy}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl text-[12px] font-semibold text-white
+                  bg-white/[0.06] border border-white/12 hover:bg-white/[0.12] transition-colors">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                {AUTONOMY_LABEL[autonomy]}
+                <ChevronDown className="w-3.5 h-3.5 text-white/40" />
+              </button>
+            </div>
           </div>
         </div>
 
