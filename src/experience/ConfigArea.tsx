@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Bot, Check, CreditCard, FileText, Receipt } from 'lucide-react';
+import { Loader2, User, Phone, MapPin, Bot, Check, CreditCard, FileText, Receipt, LogOut } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -290,6 +290,14 @@ export function ConfigArea() {
             {agentSaved ? 'Salvo' : 'Salvar instruções'}
           </button>
         </div>
+      </GlassCard>
+
+      {/* Sessão — sem isso não havia como sair do app pra logar com outra conta */}
+      <GlassCard className="!p-6 mt-5">
+        <button onClick={() => authService.logout()}
+          className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-red-300 bg-red-500/10 border border-red-400/20 hover:bg-red-500/20 transition-colors">
+          <LogOut size={15} /> Sair da conta
+        </button>
       </GlassCard>
     </div>
   );
