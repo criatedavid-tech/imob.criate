@@ -47,7 +47,7 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
 
     const action = req.body?.action as AgentAction;
     if (!action || !action.type) return res.status(400).json({ error: "Ação inválida." });
-    if (!["create_lead", "create_visit"].includes(action.type)) {
+    if (!["create_lead", "create_visit", "send_message"].includes(action.type)) {
       return res.status(400).json({ error: "Essa ação não precisa de confirmação." });
     }
 
