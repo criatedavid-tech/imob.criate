@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
+import { sendUazapiText } from "./wppShim";
+import { pauseAiForHumanTakeover } from "./followup";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -13,7 +15,7 @@ import { normalizePhoneBR } from "../lib/crypto";
 export type Autonomy = "piloto" | "copiloto" | "manual";
 
 export interface AgentAction {
-  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda";
+  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "send_message";
   area?: string;
   // create_lead / create_visit
   name?: string;
@@ -25,6 +27,8 @@ export interface AgentAction {
   // (data específica ou intervalo, passado ou futuro).
   date_from?: string; // YYYY-MM-DD
   date_to?: string;   // YYYY-MM-DD, opcional — omitido = mesmo dia de date_from
+  // send_message — manda uma mensagem REAL pelo WhatsApp (usa phone acima).
+  message?: string;
 }
 
 export interface AgentTurn {
@@ -194,18 +198,20 @@ ${propsList}
 - Visitas neste mês: ${snap.visitsThisMonth.total} agendadas, ${snap.visitsThisMonth.done} realizadas
 - Contratos de locação ativos: ${snap.activeRentals}
 
-Você pode fazer 5 coisas, escolhendo uma no campo action.type:
+Você pode fazer 6 coisas, escolhendo uma no campo action.type:
 1. "answer" — responder uma pergunta ou conversar, usando SÓ os dados acima (imóveis, leads, contratos). Nunca invente números.
 2. "navigate" — levar o corretor até uma área do sistema. Preencha action.area com uma destas: ${areas.join(", ")}. Use quando ele pedir "me mostra X", "abre X", "quero ver X".
 3. "create_lead" — cadastrar um lead novo. Precisa de name, phone e property_id (escolha o id do imóvel mais provável da lista acima; se nenhum imóvel combinar ou não houver imóveis, use "answer" pedindo pra ele especificar o imóvel).
 4. "create_visit" — agendar uma visita. Precisa de name (cliente), date (YYYY-MM-DD) e time (HH:MM); phone e property_id são opcionais. Resolva datas relativas ("amanhã", "sexta") a partir da data de hoje.
 5. "query_agenda" — SEMPRE que perguntarem sobre visitas de uma data ou período que NÃO esteja coberto pelos dados acima (qualquer data específica, passada ou futura, fora das "próximas visitas" listadas, ou fora do mês corrente). Preencha date_from (YYYY-MM-DD, obrigatório) e date_to (YYYY-MM-DD, só se for um intervalo — se for um único dia, omita date_to). Você NÃO tem esse dado agora; o sistema vai buscar de verdade e só depois responder — por isso NUNCA use "answer" pra afirmar que não há nada num período que você não tem na lista acima, use "query_agenda".
+6. "send_message" — mandar uma mensagem REAL pelo WhatsApp do cliente. Use SEMPRE que o pedido for claramente "manda/envia uma mensagem pro número X dizendo/oferecendo Y" — NUNCA confunda isso com "create_lead" (cadastrar é diferente de enviar). Precisa de phone (o número) e message (o texto que você mesmo compõe a partir do que foi pedido, natural e cordial, em nome do corretor).
 
 Regras:
 - O campo reply é SEMPRE preenchido, em linguagem natural, confirmando o que você entendeu ou respondendo (exceto em query_agenda, onde reply pode ser um placeholder curto tipo "Deixa eu ver..." — a resposta final vem da consulta real).
-- Para create_lead/create_visit, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro.").
+- Para create_lead/create_visit/send_message, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro." / "Vou mandar essa mensagem pro 5511999999999.").
 - phone: pode vir como o corretor falar; não precisa formatar.
-- Só use create_lead/create_visit quando o pedido for claramente uma ação de criar. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).`;
+- "enviar/mandar mensagem" é SEMPRE send_message, nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
+- Só use create_lead/create_visit/send_message quando o pedido for claramente uma ação de criar/enviar. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).`;
 }
 
 const responseSchema = {
@@ -215,7 +221,7 @@ const responseSchema = {
     action: {
       type: Type.OBJECT,
       properties: {
-        type: { type: Type.STRING, enum: ["answer", "navigate", "create_lead", "create_visit", "query_agenda"] },
+        type: { type: Type.STRING, enum: ["answer", "navigate", "create_lead", "create_visit", "query_agenda", "send_message"] },
         area: { type: Type.STRING },
         name: { type: Type.STRING },
         phone: { type: Type.STRING },
@@ -224,6 +230,7 @@ const responseSchema = {
         time: { type: Type.STRING },
         date_from: { type: Type.STRING },
         date_to: { type: Type.STRING },
+        message: { type: Type.STRING },
       },
       required: ["type"],
     },
@@ -276,6 +283,34 @@ export async function executeAction(brokerId: string, action: AgentAction): Prom
     return { summary: `Visita com ${action.name} agendada para ${quando}.`, navigate: "agenda" };
   }
 
+  if (action.type === "send_message") {
+    if (!action.phone || !action.message?.trim()) throw new Error("Preciso do telefone e do texto da mensagem.");
+
+    // ⚠️ Envio REAL pelo WhatsApp — mesmo caminho de Conversas (wppShim.ts).
+    // Sem instância configurada, falha honesto em vez de fingir que enviou.
+    const { data: broker } = await supabase.from("imf_brokers").select("uazapi_instance_token").eq("id", brokerId).maybeSingle();
+    if (!broker?.uazapi_instance_token) {
+      throw new Error("Instância de WhatsApp não configurada pra este corretor ainda — não enviei nada.");
+    }
+
+    const customerPhone = normalizePhoneBR(action.phone);
+    const sent = await sendUazapiText(broker.uazapi_instance_token, customerPhone, action.message);
+    if (!sent.ok) throw new Error("Falha ao enviar via WhatsApp (UAZAPI). Nada foi entregue.");
+
+    await supabase.from("imf_conversation_messages").insert({
+      broker_id: brokerId,
+      customer_phone: customerPhone,
+      direction: "out",
+      sender_type: "broker_manual", // é o corretor mandando, só que ditado pra IA — não é a IA de atendimento respondendo sozinha
+      body: action.message,
+    });
+    // Mesmo efeito de handover de uma resposta manual em Conversas — evita o
+    // atendimento automático (Z-PRO/N8N) responder em cima dessa mensagem.
+    await pauseAiForHumanTakeover(brokerId, customerPhone).catch(() => {});
+
+    return { summary: `Mensagem enviada para ${customerPhone}.`, navigate: "conversas" };
+  }
+
   throw new Error("Ação não executável.");
 }
 
@@ -283,7 +318,7 @@ export async function executeAction(brokerId: string, action: AgentAction): Prom
 // OpenRouter — que não valida schema, só garante JSON válido, então o formato
 // exato também é reforçado em texto no fim do system prompt (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
