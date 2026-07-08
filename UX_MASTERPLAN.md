@@ -582,10 +582,67 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   criado via curl direto (bypassando o fluxo normal do app) ficou salvo com
   fuso ambíguo, mostrando hora errada — não era bug de código, era o dado de
   teste malformado (corrigido recriando com offset explícito `-03:00`).
+- **2026-07-08 — Agente ganha 6ª ação, `send_message` (envio real de
+  WhatsApp) — commits `79ae753` + `8556623`.** Achado ao vivo: pedir "envie
+  uma mensagem pro número X oferecendo Y" fazia a IA cadastrar um LEAD em vez
+  de enviar mensagem nenhuma — não existia ação de envio, só as 5 anteriores,
+  então o LLM escolhia a mais parecida (create_lead). Nova ação reaproveita o
+  MESMO caminho real de Conversas (`sendUazapiText` + insert em
+  `imf_conversation_messages` sender_type `broker_manual` +
+  `pauseAiForHumanTakeover`) — é mutação como create_lead/create_visit,
+  autonomia governa. **Bug encontrado e corrigido na sequência**: esqueci de
+  adicionar `send_message` na whitelist de `/api/agent/execute` (só aceitava
+  create_lead/create_visit) — no modo copiloto, "Confirmar" sempre falhava
+  com um erro genérico enganoso. Corrigido e revalidado.
+- **2026-07-08 — Episódio real: teste de entrada UAZAPI desconectou o
+  WhatsApp real do Hunter, reconectado com sucesso.** Tentativa de validar o
+  payload real de entrada (`/api/wpp-shim/inbound/:instanceId`, ainda em modo
+  sombra) usando uma instância UAZAPI isolada de teste + ngrok. **Causa raiz
+  do incidente**: o "número reserva" usado pra conectar a instância de teste
+  era, sem querer, o MESMO número real do Hunter — WhatsApp não permite duas
+  sessões "principais" simultâneas pro mesmo número em instâncias/servidores
+  diferentes, então cada nova conexão derruba a anterior. A instância real do
+  Hunter (`rf925ed61e05cb0`) ficou `disconnected`; **reconectada com sucesso**
+  via código de pareamento por telefone (mais confiável que QR, que expirava
+  antes de escanear). Instância de teste isolada apagada, túnel ngrok
+  encerrado. **Decisão:** validar o payload real de entrada fica pra uma
+  sessão futura, com um número reserva GENUINAMENTE separado (não o do
+  Hunter) — sem isso, qualquer teste de entrada arrisca derrubar o
+  atendimento real dele de novo. Lição registrada: publicar QR/pairing code
+  de uma instância REAL via link público (mesmo "privado por padrão") foi
+  bloqueado pelo classificador de segurança — código de pareamento por
+  WhatsApp é uma credencial de acesso à conta, nunca deve virar link
+  compartilhável; mostrar sempre inline na conversa.
+- **2026-07-08 — Varredura completa de validação funcional nas 3 personas —
+  tudo passou, zero bugs de código novos.** Testado via API com as 3 contas
+  de teste (login → perfil → todos os endpoints → CRUD real → agente):
+  **Corretor** (dashboard/leads/agenda/carteira/billing/termos/relatórios/
+  conversas/vitrine, todos 200 com dado real); **Imobiliária** (+ contrato de
+  Locação criado→listado→encerrado de verdade, Financeiro refletindo o
+  valor, meta de Equipe salva); **Incorporadora** (+ empreendimento+unidade
+  criados de verdade, reservar→vender, Financeiro capturando a venda).
+  **O mais importante: as 6 ações do agente testadas cruzado entre personas**
+  (ex.: corretor pedindo "financeiro", imobiliária pedindo "lançamentos",
+  incorporadora pedindo "locação") — em TODOS os casos o agente recusou
+  `navigate` pra área fora do tipo de conta, respondendo honesto em vez de
+  navegar errado (a separação por `account_type` está reforçada até no
+  system prompt da IA, não só no menu visual). 2 falsos alarmes descartados
+  (não eram bugs): rota `/api/equipe/summary` testada errada (a real é
+  `/api/equipe/goal`, funciona); acento corrompido ("Goiânia"→"Goi�nia") era
+  o terminal Windows/Git Bash mangling o argumento do curl, não o app —
+  confirmado via `fetch` direto no Node que o UTF-8 é salvo perfeitamente.
+- **Estado atual (2026-07-08, fim de sessão):** `v2` no commit `8556623`,
+  árvore de trabalho limpa, tudo commitado. `main`/produção seguem no código
+  ANTERIOR (revertido manualmente no Fly após o incidente de sessão/logout —
+  ver entrada de deploy/rollback acima); `main` no GitHub já tem o código
+  novo (`8311af1`), então um push refaz o deploy automaticamente.
 - **Próximo:** rodar as migrações pendentes no Supabase (`20260707_account_type.sql`
   já confirmada; `20260706_financeiro_equipe_metas.sql` e
-  `20260707_locacao_boleto_pix.sql` se ainda não rodaram). Terminar de validar
-  as 3 personas de teste (menus certos por tipo). Revogar/trocar a chave
-  OpenRouter exposta. Só depois decidir re-deployar (merge já está em `main`;
-  um push refaz o deploy do código novo — garantir que login/tipo/logout/
-  agente estão validados ao vivo ANTES disso).
+  `20260707_locacao_boleto_pix.sql` — confirmar se já rodaram, senão rodar
+  antes do deploy). Revogar/trocar a chave OpenRouter exposta (`sk-or-v1-
+  612d...`, em uso temporário no agente — ver nota de segurança). Decidir
+  quando fazer o deploy de tudo (merge já está pronto em `main`) — sabendo
+  que login/logout/tipo de conta/agente já foram validados localmente com as
+  3 personas. Entrada real de WhatsApp (Fase 3-5 da eliminação do Z-PRO)
+  continua pendente, precisa de um número de teste genuinamente separado do
+  Hunter antes de tentar de novo.
