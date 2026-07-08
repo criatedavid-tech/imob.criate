@@ -13,7 +13,7 @@ import { normalizePhoneBR } from "../lib/crypto";
 export type Autonomy = "piloto" | "copiloto" | "manual";
 
 export interface AgentAction {
-  type: "answer" | "navigate" | "create_lead" | "create_visit";
+  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda";
   area?: string;
   // create_lead / create_visit
   name?: string;
@@ -21,6 +21,10 @@ export interface AgentAction {
   property_id?: string;
   date?: string; // YYYY-MM-DD
   time?: string; // HH:MM
+  // query_agenda — consulta real de visitas fora da janela do snapshot
+  // (data específica ou intervalo, passado ou futuro).
+  date_from?: string; // YYYY-MM-DD
+  date_to?: string;   // YYYY-MM-DD, opcional — omitido = mesmo dia de date_from
 }
 
 export interface AgentTurn {
@@ -116,6 +120,50 @@ async function buildSnapshot(brokerId: string): Promise<Snapshot> {
   };
 }
 
+const VISIT_STATUS_LABEL: Record<string, string> = {
+  pendente: "pendente",
+  confirmado: "confirmado",
+  realizado: "realizada",
+  cancelado: "cancelada",
+};
+
+// Consulta real de visitas fora da janela do snapshot (ação "query_agenda") —
+// data específica ou intervalo, passado ou futuro. Formatado direto em código
+// (sem 2ª chamada ao LLM) pra número/nome nunca passar por uma "reformulação"
+// que poderia inventar algo — mesmo princípio determinístico de Relatórios.
+async function queryAgendaRange(brokerId: string, dateFrom?: string, dateTo?: string): Promise<string> {
+  const isValidDate = (d?: string) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(d).getTime());
+  if (!isValidDate(dateFrom)) return "Não consegui entender qual data você quer consultar.";
+  const from = dateFrom!;
+  const to = isValidDate(dateTo) ? dateTo! : from;
+
+  const { data, error } = await supabase
+    .from("imf_agenda")
+    .select("scheduled_at, client_name, status, imf_properties(title)")
+    .eq("broker_id", brokerId)
+    .gte("scheduled_at", `${from}T00:00:00`)
+    .lte("scheduled_at", `${to}T23:59:59`)
+    .order("scheduled_at", { ascending: true });
+  if (error) return "Não consegui consultar a agenda agora. Pode tentar de novo?";
+
+  const periodo = from === to
+    ? new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : `${new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR")} a ${new Date(`${to}T12:00:00`).toLocaleDateString("pt-BR")}`;
+
+  if (!data || data.length === 0) {
+    return `Não há nenhuma visita registrada em ${periodo}.`;
+  }
+
+  const linhas = data.map((v: any) => {
+    const hora = new Date(v.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const prop = v.imf_properties?.title ? ` (${v.imf_properties.title})` : "";
+    const status = VISIT_STATUS_LABEL[v.status] || v.status;
+    return `${hora} — ${v.client_name || "cliente"}${prop}, ${status}`;
+  });
+
+  return `Em ${periodo}, ${data.length} visita(s):\n${linhas.join("\n")}`;
+}
+
 function buildSystemPrompt(snap: Snapshot, persona: string, autonomy: Autonomy): string {
   const areas = AREAS_BY_PERSONA[persona] || AREAS_BY_PERSONA.corretor;
   const hoje = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
@@ -146,17 +194,18 @@ ${propsList}
 - Visitas neste mês: ${snap.visitsThisMonth.total} agendadas, ${snap.visitsThisMonth.done} realizadas
 - Contratos de locação ativos: ${snap.activeRentals}
 
-Você pode fazer 4 coisas, escolhendo uma no campo action.type:
-1. "answer" — responder uma pergunta ou conversar. Use os dados acima. Se a pergunta for sobre algo que não está na lista acima (ex.: uma data específica fora das 5 próximas visitas, ou uma data passada), diga que não tem visibilidade sobre isso especificamente — NUNCA conclua "não há nada" só porque não está na lista curta que você recebeu.
+Você pode fazer 5 coisas, escolhendo uma no campo action.type:
+1. "answer" — responder uma pergunta ou conversar, usando SÓ os dados acima (imóveis, leads, contratos). Nunca invente números.
 2. "navigate" — levar o corretor até uma área do sistema. Preencha action.area com uma destas: ${areas.join(", ")}. Use quando ele pedir "me mostra X", "abre X", "quero ver X".
 3. "create_lead" — cadastrar um lead novo. Precisa de name, phone e property_id (escolha o id do imóvel mais provável da lista acima; se nenhum imóvel combinar ou não houver imóveis, use "answer" pedindo pra ele especificar o imóvel).
 4. "create_visit" — agendar uma visita. Precisa de name (cliente), date (YYYY-MM-DD) e time (HH:MM); phone e property_id são opcionais. Resolva datas relativas ("amanhã", "sexta") a partir da data de hoje.
+5. "query_agenda" — SEMPRE que perguntarem sobre visitas de uma data ou período que NÃO esteja coberto pelos dados acima (qualquer data específica, passada ou futura, fora das "próximas visitas" listadas, ou fora do mês corrente). Preencha date_from (YYYY-MM-DD, obrigatório) e date_to (YYYY-MM-DD, só se for um intervalo — se for um único dia, omita date_to). Você NÃO tem esse dado agora; o sistema vai buscar de verdade e só depois responder — por isso NUNCA use "answer" pra afirmar que não há nada num período que você não tem na lista acima, use "query_agenda".
 
 Regras:
-- O campo reply é SEMPRE preenchido, em linguagem natural, confirmando o que você entendeu ou respondendo.
+- O campo reply é SEMPRE preenchido, em linguagem natural, confirmando o que você entendeu ou respondendo (exceto em query_agenda, onde reply pode ser um placeholder curto tipo "Deixa eu ver..." — a resposta final vem da consulta real).
 - Para create_lead/create_visit, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro.").
 - phone: pode vir como o corretor falar; não precisa formatar.
-- Só use create_lead/create_visit quando o pedido for claramente uma ação de criar. Perguntas são sempre "answer".`;
+- Só use create_lead/create_visit quando o pedido for claramente uma ação de criar. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).`;
 }
 
 const responseSchema = {
@@ -166,13 +215,15 @@ const responseSchema = {
     action: {
       type: Type.OBJECT,
       properties: {
-        type: { type: Type.STRING, enum: ["answer", "navigate", "create_lead", "create_visit"] },
+        type: { type: Type.STRING, enum: ["answer", "navigate", "create_lead", "create_visit", "query_agenda"] },
         area: { type: Type.STRING },
         name: { type: Type.STRING },
         phone: { type: Type.STRING },
         property_id: { type: Type.STRING },
         date: { type: Type.STRING },
         time: { type: Type.STRING },
+        date_from: { type: Type.STRING },
+        date_to: { type: Type.STRING },
       },
       required: ["type"],
     },
@@ -232,7 +283,7 @@ export async function executeAction(brokerId: string, action: AgentAction): Prom
 // OpenRouter — que não valida schema, só garante JSON válido, então o formato
 // exato também é reforçado em texto no fim do system prompt (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
@@ -342,12 +393,16 @@ export async function runAgent(opts: {
   const action = parsed.action || { type: "answer" };
   const reply = parsed.reply || "Certo.";
 
-  // answer e navigate nunca são mutação — seguem direto, autonomia não se aplica.
+  // answer, navigate e query_agenda nunca são mutação — seguem direto, autonomia não se aplica.
   if (action.type === "answer") return { reply };
   if (action.type === "navigate") {
     const areas = AREAS_BY_PERSONA[opts.persona] || AREAS_BY_PERSONA.corretor;
     const area = areas.includes(action.area || "") ? action.area : undefined;
     return { reply, navigate: area };
+  }
+  if (action.type === "query_agenda") {
+    const realReply = await queryAgendaRange(opts.brokerId, action.date_from, action.date_to);
+    return { reply: realReply };
   }
 
   // create_lead / create_visit são mutações — a autonomia decide.
