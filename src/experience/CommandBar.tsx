@@ -46,6 +46,10 @@ export function CommandBar({
   const submit = async () => {
     const v = value.trim();
     if (!v || busy) return;
+    // Histórico ANTES de empurrar o turno atual — o backend só precisa do que
+    // já aconteceu antes desta mensagem, senão a IA esquece o que foi dito
+    // 1 pergunta atrás (ex.: nome do cliente antes da data da visita).
+    const history = turns.map(({ role, text }) => ({ role, text }));
     setValue('');
     pushTurn({ role: 'user', text: v });
     setBusy(true);
@@ -53,7 +57,7 @@ export function CommandBar({
       const res = await fetch('/api/agent/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ message: v, persona, autonomy }),
+        body: JSON.stringify({ message: v, persona, autonomy, history }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao falar com a IA.');

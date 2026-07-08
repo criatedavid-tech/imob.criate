@@ -23,6 +23,11 @@ export interface AgentAction {
   time?: string; // HH:MM
 }
 
+export interface AgentTurn {
+  role: "user" | "ai";
+  text: string;
+}
+
 export interface AgentResult {
   reply: string;
   navigate?: string;
@@ -118,11 +123,12 @@ Você conhece o estado REAL da conta e deve responder com base nele, sem inventa
 - Imóveis na carteira:
 ${propsList}
 - Leads: ${leadsResumo} (total ${snap.leadsTotal})
-- Próximas visitas: ${visitasResumo}
+- Próximas visitas (só as 5 mais próximas a partir de agora — NÃO é o calendário
+  inteiro, não inclui visitas passadas nem além da 5ª): ${visitasResumo}
 - Contratos de locação ativos: ${snap.activeRentals}
 
 Você pode fazer 4 coisas, escolhendo uma no campo action.type:
-1. "answer" — responder uma pergunta ou conversar. Use os dados acima. Se não souber, diga que não sabe; nunca invente.
+1. "answer" — responder uma pergunta ou conversar. Use os dados acima. Se a pergunta for sobre algo que não está na lista acima (ex.: uma data específica fora das 5 próximas visitas, ou uma data passada), diga que não tem visibilidade sobre isso especificamente — NUNCA conclua "não há nada" só porque não está na lista curta que você recebeu.
 2. "navigate" — levar o corretor até uma área do sistema. Preencha action.area com uma destas: ${areas.join(", ")}. Use quando ele pedir "me mostra X", "abre X", "quero ver X".
 3. "create_lead" — cadastrar um lead novo. Precisa de name, phone e property_id (escolha o id do imóvel mais provável da lista acima; se nenhum imóvel combinar ou não houver imóveis, use "answer" pedindo pra ele especificar o imóvel).
 4. "create_visit" — agendar uma visita. Precisa de name (cliente), date (YYYY-MM-DD) e time (HH:MM); phone e property_id são opcionais. Resolva datas relativas ("amanhã", "sexta") a partir da data de hoje.
@@ -209,8 +215,19 @@ export async function executeAction(brokerId: string, action: AgentAction): Prom
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
 {"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string"}}`;
 
-async function callGemini(apiKey: string, systemPrompt: string, message: string): Promise<{ reply: string; action: AgentAction }> {
+// A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
+// action) — o modelo não precisa reler a própria estrutura de ação, só o que
+// disse em linguagem natural, pra manter o fio da conversa.
+function replyOnly(text: string): string {
+  return text.split("\n✓ ")[0].split("\n(cancelado)")[0].trim();
+}
+
+async function callGemini(apiKey: string, systemPrompt: string, message: string, history: AgentTurn[]): Promise<{ reply: string; action: AgentAction }> {
   const ai = new GoogleGenAI({ apiKey });
+  const contents = [
+    ...history.map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.role === "user" ? h.text : replyOnly(h.text) }] })),
+    { role: "user", parts: [{ text: message }] },
+  ];
   const response = await ai.models.generateContent({
     // Mesmo modelo do enhance-text (server/routes/ai.ts), já comprovado em
     // produção com esta chave — evita divergência de cota entre features.
@@ -221,12 +238,12 @@ async function callGemini(apiKey: string, systemPrompt: string, message: string)
       responseSchema,
       temperature: 0.3,
     },
-    contents: message,
+    contents,
   });
   return JSON.parse(response.text || "{}");
 }
 
-async function callOpenRouter(apiKey: string, systemPrompt: string, message: string): Promise<{ reply: string; action: AgentAction }> {
+async function callOpenRouter(apiKey: string, systemPrompt: string, message: string, history: AgentTurn[]): Promise<{ reply: string; action: AgentAction }> {
   const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -241,6 +258,7 @@ async function callOpenRouter(apiKey: string, systemPrompt: string, message: str
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: `${systemPrompt}\n\n${JSON_SHAPE_HINT}` },
+        ...history.map((h) => ({ role: h.role === "user" ? "user" : "assistant", content: h.role === "user" ? h.text : replyOnly(h.text) })),
         { role: "user", content: message },
       ],
     }),
@@ -257,7 +275,9 @@ export async function runAgent(opts: {
   message: string;
   persona: string;
   autonomy: Autonomy;
+  history?: AgentTurn[];
 }): Promise<AgentResult> {
+  const history = opts.history || [];
   const geminiKey = process.env.GEMINI_API_KEY;
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const hasGemini = !!geminiKey && geminiKey.length >= 10;
@@ -275,9 +295,9 @@ export async function runAgent(opts: {
     // OpenRouter é o caminho alternativo — usado quando não há chave Gemini
     // com cota, sem exigir nenhuma mudança em produção.
     if (hasGemini) {
-      parsed = await callGemini(geminiKey!, systemPrompt, opts.message);
+      parsed = await callGemini(geminiKey!, systemPrompt, opts.message, history);
     } else {
-      parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message);
+      parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message, history);
     }
   } catch (err: any) {
     const msg = String(err?.message || "");
@@ -286,7 +306,7 @@ export async function runAgent(opts: {
     // Gemini com cota estourada e OpenRouter configurado como plano B → tenta.
     if (hasGemini && hasOpenRouter && (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted"))) {
       try {
-        parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message);
+        parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message, history);
       } catch (err2: any) {
         console.error("[Agent] erro OpenRouter (fallback):", err2.message);
         return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };

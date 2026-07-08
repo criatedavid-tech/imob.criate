@@ -513,10 +513,65 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   backend — um corretor que chamasse a rota direto veria só os PRÓPRIOS dados
   (provavelmente vazios), não de outra conta. Trava de UI cobre o visível;
   gating por tipo no backend fica como refino futuro.
+- **2026-07-07 — Correções pós-teste: `/app` vira destino padrão pós-login +
+  acesso ao admin de dentro do 2.0 (commits `8bce481`, `9c9b087`).** Testando
+  as 3 contas de tipo, achamos que login/pós-pagamento ainda mandavam pra `/`
+  (dashboard antigo) e que `/app` não tinha checagem de assinatura nenhuma
+  (dava pra acessar o 2.0 sem pagar). Corrigido: `Login`/`PaymentSuccess` agora
+  redirecionam pra `/app`; `/app` passou a ser embrulhado pelo mesmo
+  `PrivateRoute` do dashboard antigo (login + assinatura ativa + `TermsGate`).
+  Também: o 2.0 não tinha nenhuma entrada pro painel admin do 1.0 — adicionado
+  botão "Admin" na barra superior (só `is_admin`) que abre `/admin` (reusa
+  100% do painel existente, não reconstruído); o "voltar" de lá agora aponta
+  pro `/app`. De quebra: rate limiter de auth/checkout (`max: 10/15min`)
+  estourava rápido em dev (todo tráfego de teste sai do mesmo IP) — agora é
+  ignorado fora de produção (`commit 05c7511`), produção não muda.
+- **2026-07-07 — 🎉 Agente/cérebro real validado AO VIVO pela primeira vez
+  (commit `d4cf59c`).** Bloqueio de credencial que travava as Etapas 12+13
+  desde 2026-07-06 foi destravado: usuário forneceu uma chave OpenRouter
+  (`sk-or-v1-612d...` — **a mesma chave já marcada em memória como exposta/
+  pendente de revogação num node N8N antigo; usuário optou conscientemente por
+  usá-la mesmo assim por agora, revogação/troca continua pendente**).
+  `runAgent()` (`server/services/agent.ts`) ganhou um segundo caminho via
+  OpenRouter (`openai/gpt-4o-mini`, `response_format: json_object`): usado
+  quando não há chave Gemini configurada, OU como fallback automático se a
+  chamada Gemini falhar por cota (o 429 já esperado — confirmado nos logs,
+  `RESOURCE_EXHAUSTED`, cota free-tier 0). Gemini continua preferido quando
+  configurado — nenhuma mudança em produção. **Testado ao vivo contra a conta
+  de teste real** (`corretor.teste@imobiflow.test`): pergunta (answer) sobre
+  leads respondeu correto com dado real (zero leads); navegação
+  ("me mostra a agenda") resolveu `navigate:"agenda"` certo; criação de lead
+  via IA (autonomia piloto = executa na hora) tentou e falhou HONESTAMENTE
+  porque a conta de teste não tem imóvel na carteira — prova que a validação
+  de posse (`executeAction`) funciona mesmo vindo da IA, sem atalho.
+  **Esta é a primeira confirmação end-to-end da tese central do produto**
+  ("funcionário que você supervisiona") funcionando de verdade.
+- **⚠️ Pendência de segurança em aberto (não resolvida, não bloqueante pro
+  teste):** a chave OpenRouter usada acima precisa ser **revogada e trocada**
+  assim que possível — ela esteve exposta em texto puro num workflow N8N
+  (`Gera resumo`) e está listada pra revogação em pelo menos 3 memórias
+  diferentes há semanas. Usar ela pro agente é aceitável como teste temporário,
+  mas não deve ir pra produção sem antes rotacionar.
+- **2026-07-08 — 2 bugs reais achados testando o agente ao vivo, corrigidos.**
+  (1) **Sem memória de conversa**: `runAgent()` tratava cada mensagem como
+  isolada — o front (`CommandBar.tsx`) guardava o histórico na tela mas nunca
+  mandava pro backend, então pedir "agenda visita com José Maria" e depois só
+  "09/07 às 9h" fazia a IA esquecer o nome já dado. Corrigido: `POST
+  /api/agent/command` agora aceita `history` (últimos turnos), repassado como
+  conversa multi-turno pros dois provedores (`contents` do Gemini,
+  `messages` do OpenRouter). (2) **Falso "não há nada"**: perguntado sobre uma
+  data fora da janela de "próximas 5 visitas" que o snapshot carrega, a IA
+  respondia "não há visita agendada" como se tivesse certeza — mas o snapshot
+  nunca teve visibilidade sobre datas passadas/distantes pra começo de
+  conversa. Prompt ajustado pra IA dizer honestamente "não tenho visibilidade
+  sobre isso" quando a pergunta sai da janela que ela recebe, em vez de
+  inferir ausência a partir de dado que nunca existiu no contexto dela.
+  **Validado ao vivo**: com histórico, "qual o nome dela mesmo?" respondeu
+  certo; sem histórico, respondeu "não tenho visibilidade" em vez de inventar.
 - **Próximo:** rodar as migrações pendentes no Supabase (`20260707_account_type.sql`
-  — obrigatória pro app local voltar a funcionar; `20260706_financeiro_equipe_metas.sql`
-  e `20260707_locacao_boleto_pix.sql` se ainda não rodaram). Testar o `/app`
-  local logado: cadastro escolhendo tipo, login, botão Sair, persona travada no
-  tipo, admin vendo o "ver como". Só depois decidir re-deployar (merge já está
-  em `main`; um push refaz o deploy do código novo — garantir que login/tipo/
-  logout estão validados ao vivo ANTES disso).
+  já confirmada; `20260706_financeiro_equipe_metas.sql` e
+  `20260707_locacao_boleto_pix.sql` se ainda não rodaram). Terminar de validar
+  as 3 personas de teste (menus certos por tipo). Revogar/trocar a chave
+  OpenRouter exposta. Só depois decidir re-deployar (merge já está em `main`;
+  um push refaz o deploy do código novo — garantir que login/tipo/logout/
+  agente estão validados ao vivo ANTES disso).
