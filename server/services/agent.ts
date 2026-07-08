@@ -49,6 +49,7 @@ interface Snapshot {
   leadCounts: Record<string, number>;
   leadsTotal: number;
   upcomingVisits: { when: string; who: string }[];
+  visitsThisMonth: { total: number; done: number };
   activeRentals: number;
 }
 
@@ -85,11 +86,28 @@ async function buildSnapshot(brokerId: string): Promise<Snapshot> {
     .eq("broker_id", brokerId)
     .eq("status", "ativo");
 
+  // Mesma métrica de "visitas realizadas" que Relatórios já mostra
+  // (server/routes/relatorios.ts) — dá pra IA responder "quantas visitas
+  // no mês" sem inventar, já que esse dado existe e não é só "próximas".
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const { data: monthVisits } = await supabase
+    .from("imf_agenda")
+    .select("status")
+    .eq("broker_id", brokerId)
+    .gte("scheduled_at", monthStart.toISOString());
+  const visitsThisMonth = {
+    total: (monthVisits || []).length,
+    done: (monthVisits || []).filter((v: any) => v.status === "realizado").length,
+  };
+
   return {
     brokerName: broker?.name || "corretor",
     properties: (props || []).map((p: any) => ({ id: p.id, title: p.title, price: p.price, status: p.status || "disponivel" })),
     leadCounts,
     leadsTotal,
+    visitsThisMonth,
     upcomingVisits: (visits || []).map((v: any) => ({
       when: new Date(v.scheduled_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
       who: v.client_name || "cliente",
@@ -125,6 +143,7 @@ ${propsList}
 - Leads: ${leadsResumo} (total ${snap.leadsTotal})
 - Próximas visitas (só as 5 mais próximas a partir de agora — NÃO é o calendário
   inteiro, não inclui visitas passadas nem além da 5ª): ${visitasResumo}
+- Visitas neste mês: ${snap.visitsThisMonth.total} agendadas, ${snap.visitsThisMonth.done} realizadas
 - Contratos de locação ativos: ${snap.activeRentals}
 
 Você pode fazer 4 coisas, escolhendo uma no campo action.type:
