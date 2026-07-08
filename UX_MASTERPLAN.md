@@ -568,6 +568,20 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   inferir ausência a partir de dado que nunca existiu no contexto dela.
   **Validado ao vivo**: com histórico, "qual o nome dela mesmo?" respondeu
   certo; sem histórico, respondeu "não tenho visibilidade" em vez de inventar.
+- **2026-07-08 — Agente ganha 5ª ação, `query_agenda` (commit `2c08d4a`).**
+  Pedido explícito do usuário ("isso é muito importante") depois do gap
+  descoberto acima. A IA agora consulta QUALQUER data/período sob demanda
+  (`date_from`/`date_to`) em vez de só saber responder "não tenho
+  visibilidade" pra tudo fora das próximas 5 visitas / mês corrente. A
+  resposta final é formatada direto em código (`queryAgendaRange`, sem 2ª
+  chamada ao LLM) — mesmo princípio determinístico de Relatórios, hora/nome/
+  status nunca passam por uma "reformulação" que poderia inventar algo.
+  **Validado ao vivo**: visita real numa data passada (fora da janela do
+  snapshot) foi encontrada e formatada certo; período vazio respondeu
+  corretamente que não há nada. Um falso alarme no caminho: dado de teste
+  criado via curl direto (bypassando o fluxo normal do app) ficou salvo com
+  fuso ambíguo, mostrando hora errada — não era bug de código, era o dado de
+  teste malformado (corrigido recriando com offset explícito `-03:00`).
 - **Próximo:** rodar as migrações pendentes no Supabase (`20260707_account_type.sql`
   já confirmada; `20260706_financeiro_equipe_metas.sql` e
   `20260707_locacao_boleto_pix.sql` se ainda não rodaram). Terminar de validar
