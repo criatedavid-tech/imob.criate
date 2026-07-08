@@ -203,44 +203,101 @@ export async function executeAction(brokerId: string, action: AgentAction): Prom
   throw new Error("Ação não executável.");
 }
 
+// JSON Schema equivalente ao responseSchema (Gemini), pro modo json_object do
+// OpenRouter — que não valida schema, só garante JSON válido, então o formato
+// exato também é reforçado em texto no fim do system prompt (ver buildSystemPrompt).
+const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string"}}`;
+
+async function callGemini(apiKey: string, systemPrompt: string, message: string): Promise<{ reply: string; action: AgentAction }> {
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    // Mesmo modelo do enhance-text (server/routes/ai.ts), já comprovado em
+    // produção com esta chave — evita divergência de cota entre features.
+    model: "gemini-2.0-flash-lite",
+    config: {
+      systemInstruction: systemPrompt,
+      responseMimeType: "application/json",
+      responseSchema,
+      temperature: 0.3,
+    },
+    contents: message,
+  });
+  return JSON.parse(response.text || "{}");
+}
+
+async function callOpenRouter(apiKey: string, systemPrompt: string, message: string): Promise<{ reply: string; action: AgentAction }> {
+  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": process.env.APP_URL || "https://imobiflow.fly.dev",
+      "X-Title": "ImobiFlow",
+    },
+    body: JSON.stringify({
+      model: "openai/gpt-4o-mini",
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: `${systemPrompt}\n\n${JSON_SHAPE_HINT}` },
+        { role: "user", content: message },
+      ],
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error?.message || `OpenRouter HTTP ${resp.status}`);
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Resposta vazia do OpenRouter.");
+  return JSON.parse(content);
+}
+
 export async function runAgent(opts: {
   brokerId: string;
   message: string;
   persona: string;
   autonomy: Autonomy;
 }): Promise<AgentResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.length < 10) {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const hasGemini = !!geminiKey && geminiKey.length >= 10;
+  const hasOpenRouter = !!openRouterKey && openRouterKey.startsWith("sk-or-");
+  if (!hasGemini && !hasOpenRouter) {
     return { reply: "A assistente de IA não está configurada no servidor (falta a chave da IA)." };
   }
 
   const snap = await buildSnapshot(opts.brokerId);
-  const ai = new GoogleGenAI({ apiKey });
+  const systemPrompt = buildSystemPrompt(snap, opts.persona, opts.autonomy);
 
   let parsed: { reply: string; action: AgentAction };
   try {
-    const response = await ai.models.generateContent({
-      // Mesmo modelo do enhance-text (server/routes/ai.ts), já comprovado em
-      // produção com esta chave — evita divergência de cota entre features.
-      model: "gemini-2.0-flash-lite",
-      config: {
-        systemInstruction: buildSystemPrompt(snap, opts.persona, opts.autonomy),
-        responseMimeType: "application/json",
-        responseSchema,
-        temperature: 0.3,
-      },
-      contents: opts.message,
-    });
-    parsed = JSON.parse(response.text || "{}");
+    // Gemini é preferido quando configurado (é o que roda em produção hoje);
+    // OpenRouter é o caminho alternativo — usado quando não há chave Gemini
+    // com cota, sem exigir nenhuma mudança em produção.
+    if (hasGemini) {
+      parsed = await callGemini(geminiKey!, systemPrompt, opts.message);
+    } else {
+      parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message);
+    }
   } catch (err: any) {
     const msg = String(err?.message || "");
-    console.error("[Agent] erro Gemini:", msg);
-    // Cota/limite é um estado operacional, não um bug — mensagem honesta e
-    // distinta pra você saber que é a chave da IA, não o código.
-    if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
-      return { reply: "A IA atingiu o limite de uso da chave configurada. Verifique o plano/cota da chave Gemini do servidor." };
+    console.error(`[Agent] erro ${hasGemini ? "Gemini" : "OpenRouter"}:`, msg);
+
+    // Gemini com cota estourada e OpenRouter configurado como plano B → tenta.
+    if (hasGemini && hasOpenRouter && (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted"))) {
+      try {
+        parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message);
+      } catch (err2: any) {
+        console.error("[Agent] erro OpenRouter (fallback):", err2.message);
+        return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
+      }
+    } else if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
+      // Cota/limite é um estado operacional, não um bug — mensagem honesta e
+      // distinta pra você saber que é a chave da IA, não o código.
+      return { reply: "A IA atingiu o limite de uso da chave configurada. Verifique o plano/cota da chave do servidor." };
+    } else {
+      return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
     }
-    return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
   }
 
   const action = parsed.action || { type: "answer" };
