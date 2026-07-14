@@ -1,24 +1,25 @@
 import express from "express";
-import { GoogleGenAI } from "@google/genai";
 import { fetchWithTimeout } from "../lib/http";
 import { requireUser } from "../middleware/auth";
 
 export const aiRouter = express.Router();
 
-const SYSTEM_INSTRUCTION = "Você é um especialista em redação imobiliária de alto padrão.\nReescreva a descrição abaixo com linguagem sofisticada, clara e atrativa,\nadequada para apresentação de residências premium.\nMantenha as informações originais, melhore a estrutura, o vocabulário\ne a formatação. Responda apenas com o texto melhorado, sem explicações adicionais.";
-
-async function enhanceWithGemini(apiKey: string, text: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 15000 } });
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash-lite",
-    config: { systemInstruction: SYSTEM_INSTRUCTION },
-    contents: text,
-  });
-  return response.text || "";
+// OpenRouter é a ÚNICA fonte de IA deste arquivo (decisão explícita
+// 2026-07-14) — a chave Gemini pessoal ficava com cota zerada repetidamente
+// (confirmado direto contra a API: "limit: 0" em todos os modelos, texto e
+// áudio), então deixou de valer a pena manter como principal/fallback.
+function hasOpenRouterKey(): boolean {
+  const key = process.env.OPENROUTER_API_KEY;
+  return !!key && key.startsWith("sk-or-");
 }
 
-// Mesmo caminho alternativo já usado pelo agente (server/services/agent.ts)
-// quando a chave Gemini está sem cota — reaproveita as mesmas env vars.
+function isQuotaError(err: any): boolean {
+  const msg = String(err?.message || "");
+  return msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("high demand") || msg.toLowerCase().includes("resource_exhausted");
+}
+
+const SYSTEM_INSTRUCTION = "Você é um especialista em redação imobiliária de alto padrão.\nReescreva a descrição abaixo com linguagem sofisticada, clara e atrativa,\nadequada para apresentação de residências premium.\nMantenha as informações originais, melhore a estrutura, o vocabulário\ne a formatação. Responda apenas com o texto melhorado, sem explicações adicionais.";
+
 async function enhanceWithOpenRouter(apiKey: string, text: string): Promise<string> {
   const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -44,20 +45,52 @@ async function enhanceWithOpenRouter(apiKey: string, text: string): Promise<stri
   return content;
 }
 
-function isQuotaError(err: any): boolean {
-  const msg = String(err?.message || "");
-  return msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("high demand") || msg.toLowerCase().includes("resource_exhausted");
-}
-
 const TRANSCRIBE_INSTRUCTION = "Transcreva o áudio a seguir em português do Brasil. Responda APENAS com o texto transcrito, sem comentários, sem aspas e sem formatação. Se o áudio estiver em silêncio ou não for possível entender, responda com uma string vazia.";
+
+// google/gemini-2.5-flash-lite VIA OpenRouter (cota própria da OpenRouter,
+// não uma chave Gemini pessoal). Testado direto contra a API real antes de
+// integrar: os modelos de áudio da própria OpenAI (gpt-audio-mini) só
+// aceitam format "wav"/"mp3" e REJEITAM "webm" com 400 — inviável, já que o
+// MediaRecorder do navegador grava webm/opus por padrão e não tem como
+// gerar wav nativamente. Os modelos Gemini via OpenRouter aceitam "webm"
+// (formato real do navegador) sem validar à risca — confirmado com request real.
+async function transcribeWithOpenRouter(apiKey: string, base64Data: string, mimeType: string): Promise<string> {
+  const format = mimeType.includes("mp3") ? "mp3"
+    : mimeType.includes("wav") ? "wav"
+    : mimeType.includes("ogg") ? "ogg"
+    : mimeType.includes("mp4") ? "mp4"
+    : "webm";
+  const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": process.env.APP_URL || "https://imobiflow.fly.dev",
+      "X-Title": "ImobiFlow",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash-lite",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: TRANSCRIBE_INSTRUCTION },
+          { type: "input_audio", input_audio: { data: base64Data, format } },
+        ],
+      }],
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error?.message || `OpenRouter HTTP ${resp.status}`);
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new Error("Resposta vazia do OpenRouter.");
+  return content.trim();
+}
 
 /**
  * Botão de microfone do Assistente IA (CommandBar.tsx) — grava com
  * MediaRecorder no navegador (funciona em qualquer browser/celular,
  * diferente da Web Speech API que não existe no Firefox/Safari) e manda o
- * blob pra cá só pra virar texto. Usa gemini-2.0-flash (não o -lite usado no
- * resto do app) porque tem suporte a áudio mais confiável e, na prática, é
- * outro bucket de cota — útil enquanto a cota do -lite andar zerada.
+ * blob pra cá só pra virar texto.
  */
 aiRouter.post("/api/ai/transcribe", requireUser, async (req, res) => {
   const { audioData, mimeType } = req.body;
@@ -65,8 +98,7 @@ aiRouter.post("/api/ai/transcribe", requireUser, async (req, res) => {
     return res.status(400).json({ error: "Nenhum áudio enviado." });
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey || geminiKey.length < 10) {
+  if (!hasOpenRouterKey()) {
     return res.status(500).json({ error: "A transcrição de áudio não está configurada no servidor (falta a chave da IA)." });
   }
 
@@ -76,23 +108,13 @@ aiRouter.post("/api/ai/transcribe", requireUser, async (req, res) => {
   if (Buffer.byteLength(base64Data, "base64") > 15 * 1024 * 1024) {
     return res.status(413).json({ error: "Áudio muito grande (máx. 15MB)." });
   }
+  const audioMimeType = typeof mimeType === "string" ? mimeType : "audio/webm";
 
   try {
-    const ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { timeout: 20000 } });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [{
-        role: "user",
-        parts: [
-          { text: TRANSCRIBE_INSTRUCTION },
-          { inlineData: { mimeType: typeof mimeType === "string" ? mimeType : "audio/webm", data: base64Data } },
-        ],
-      }],
-    });
-    const text = (response.text || "").trim();
+    const text = await transcribeWithOpenRouter(process.env.OPENROUTER_API_KEY!, base64Data, audioMimeType);
     res.json({ text });
   } catch (error: any) {
-    console.error("Erro na transcrição de áudio (Gemini):", error);
+    console.error("Erro na transcrição de áudio (OpenRouter):", error);
     const errorMsg = isQuotaError(error)
       ? "O sistema atingiu o limite de uso temporário da IA (Cota). Por favor, aguarde 1 minuto e tente novamente."
       : "Não foi possível transcrever o áudio agora. Tente de novo ou digite a mensagem.";
@@ -102,8 +124,6 @@ aiRouter.post("/api/ai/transcribe", requireUser, async (req, res) => {
 
 /**
  * Rota para aprimorar textos de descrições de imóveis.
- * Usa Gemini como principal; cai pro OpenRouter (mesmo padrão do agente)
- * quando a chave Gemini está sem cota.
  */
 aiRouter.post("/api/ai/enhance-text", async (req, res) => {
   const { text } = req.body;
@@ -111,43 +131,21 @@ aiRouter.post("/api/ai/enhance-text", async (req, res) => {
     return res.status(400).json({ error: "Nenhum texto fornecido para aprimoramento." });
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  const hasGemini = !!geminiKey && geminiKey.length >= 10;
-  const hasOpenRouter = !!openRouterKey && openRouterKey.startsWith("sk-or-");
-
-  if (!hasGemini && !hasOpenRouter) {
-    console.error("ERRO: nenhuma chave de IA (Gemini/OpenRouter) configurada no servidor.");
+  if (!hasOpenRouterKey()) {
+    console.error("ERRO: nenhuma chave de IA (OpenRouter) configurada no servidor.");
     return res.status(500).json({
       error: "A funcionalidade de IA não está configurada corretamente (Chave de API ausente)."
     });
   }
 
   try {
-    const suggestedText = hasGemini
-      ? await enhanceWithGemini(geminiKey!, text)
-      : await enhanceWithOpenRouter(openRouterKey!, text);
+    const suggestedText = await enhanceWithOpenRouter(process.env.OPENROUTER_API_KEY!, text);
     res.json({ suggestedText });
   } catch (error: any) {
-    console.error(`Erro na API da IA (${hasGemini ? "Gemini" : "OpenRouter"}):`, error);
-
-    if (hasGemini && hasOpenRouter && isQuotaError(error)) {
-      try {
-        const suggestedText = await enhanceWithOpenRouter(openRouterKey!, text);
-        return res.json({ suggestedText });
-      } catch (error2: any) {
-        console.error("Erro na API da IA (OpenRouter, fallback):", error2);
-        return res.status(500).json({ error: "Não foi possível gerar a sugestão no momento." });
-      }
-    }
-
-    let errorMsg = "Não foi possível gerar a sugestão no momento.";
-    if (error.message?.includes("API key not valid")) {
-      errorMsg = "Erro de autenticação com a API da IA. Verifique a configuração da chave.";
-    } else if (isQuotaError(error)) {
-      errorMsg = "O sistema atingiu o limite de uso temporário da IA (Cota). Por favor, aguarde 1 minuto e tente novamente.";
-    }
-
+    console.error("Erro na API da IA (OpenRouter):", error);
+    const errorMsg = isQuotaError(error)
+      ? "O sistema atingiu o limite de uso temporário da IA (Cota). Por favor, aguarde 1 minuto e tente novamente."
+      : "Não foi possível gerar a sugestão no momento.";
     res.status(500).json({ error: errorMsg });
   }
 });

@@ -1642,12 +1642,10 @@ Pedido do usuário: botão de microfone pro Assistente "ouvir". Implementado
 com `MediaRecorder` do navegador (funciona em qualquer browser/celular,
 diferente da Web Speech API que não existe no Firefox/Safari) — grava,
 manda o blob pro novo endpoint `POST /api/ai/transcribe`
-(`server/routes/ai.ts`, `requireUser`), que usa
-`gemini-2.0-flash` (multimodal, diferente do `-lite` usado no resto do
-agente — outra faixa de cota, útil enquanto a do `-lite` andar instável)
-pra transcrever em português. O texto cai no campo de digitação pra
-revisão — nunca envia a mensagem sozinho. Botão de enviar fica bloqueado
-enquanto grava/transcreve.
+(`server/routes/ai.ts`, `requireUser`) pra virar texto. O texto cai no
+campo de digitação pra revisão — nunca envia a mensagem sozinho. Botão de
+enviar fica bloqueado enquanto grava/transcreve. **Modelo/provider usado
+nessa transcrição mudou logo depois — ver §14.19 abaixo.**
 
 ### Status final da rodada
 
@@ -1664,3 +1662,83 @@ gravação/transcrição de voz (não há login disponível nesta ferramenta pra
 testar a UI autenticada); Fly ficou temporariamente rodando em 1 máquina
 em vez de 2 por falta de capacidade momentânea na região (app seguiu
 saudável, vale monitorar se persistir).
+
+## 14.19. Atualização 2026-07-14 (continuação) — Microfone bloqueado por header, e Gemini removido de vez (OpenRouter é a única fonte de IA)
+
+### Botão de voz não funcionava: `Permissions-Policy` bloqueava o microfone
+
+Usuário testou o botão de voz (§14.18) e recebeu "Não consegui acessar o
+microfone" sempre, mesmo aceitando a permissão. Causa: `server.ts` seta um
+header `Permissions-Policy` (parte do hardening de segurança de
+2026-07-13) com `microphone=()` — nega a API de microfone pro site
+INTEIRO, antes mesmo do navegador oferecer o prompt de permissão pro
+usuário. Corrigido pra `microphone=(self)` (libera só pro próprio
+domínio, mantém `camera`/`geolocation`/etc. negados). Confirmado via
+`curl -I` em produção.
+
+### Gravação funcionou, mas a transcrição falhava — cota do Gemini zerada em TODOS os modelos
+
+Corrigido o microfone, a transcrição em si passou a falhar com erro de
+cota. Investigando, **testei a chave Gemini direto contra a API do Google,
+sem passar pelo app** (bypassa toda a aplicação) com dois modelos
+diferentes (`gemini-2.0-flash` e `gemini-2.0-flash-lite`), texto puro e
+áudio: **todos os 4 testes retornaram `RESOURCE_EXHAUSTED` com
+`limit: 0`** — não é cota estourada por uso, é cota **zero** alocada pro
+projeto Google associado a essa chave. Confirma um padrão que já
+aparecia nos logs do dia inteiro (§14.18): provavelmente boa parte das
+respostas de IA do dia já vinham só do fallback OpenRouter, mascarado
+pelo `try Gemini / catch quota / fallback OpenRouter` que já existia.
+
+### Decisão do usuário: descartar a chave Gemini pessoal, OpenRouter é a única fonte
+
+Diante disso, o usuário decidiu de forma explícita: **"a key utilizada
+sempre será openrouter, a key pessoal pode ser descartada"**. Removido o
+caminho Gemini por completo (não só reordenado) dos 3 pontos de IA do
+app:
+
+- `server/services/agent.ts` — apagados `callGemini()`, `responseSchema`
+  (schema estruturado só usado pela chamada Gemini) e o import de
+  `@google/genai`/`Type`. `runAgent()` chama só `callOpenRouter()`
+  (`openai/gpt-4o-mini`, já validado em produção).
+- `server/routes/ai.ts` — apagados `enhanceWithGemini()` e
+  `transcribeWithGemini()`. `enhance-text` usa só `openai/gpt-4o-mini`.
+  `transcribe` usa `google/gemini-2.5-flash-lite` **via OpenRouter**
+  (cota da própria OpenRouter, não do projeto Gemini pessoal — resolve a
+  causa raiz também pra essa rota específica). Escolha testada
+  diretamente contra a API real antes de integrar: os modelos de áudio da
+  própria OpenAI no catálogo da OpenRouter (`openai/gpt-audio-mini`) só
+  aceitam `format: "wav"|"mp3"` e **rejeitam `"webm"` com 400** — inviável,
+  já que o `MediaRecorder` do navegador grava webm/opus por padrão e não
+  tem como gerar wav nativamente sem lib extra. Os modelos Gemini
+  servidos pela OpenRouter aceitam `"webm"` sem validar à risca —
+  confirmado com request real antes de trocar o código.
+
+### Achado de brinde: chave Gemini exposta no bundle do navegador (vetor de vazamento dormente)
+
+Lendo `vite.config.ts` pra confirmar que nenhum outro lugar dependia do
+Gemini, achei um `define: { 'process.env.GEMINI_API_KEY':
+JSON.stringify(env.GEMINI_API_KEY) }` — isso expõe o valor da chave
+diretamente no JS que roda no **navegador do cliente**, não só no
+servidor. Alimentava um arquivo `src/services/gemini.ts` (resíduo de v1,
+`generatePropertyDescription()`) que **nunca era importado em lugar
+nenhum** — não vazava hoje só porque o tree-shaking do Vite descartava o
+arquivo morto do bundle final, mas era um vetor de vazamento de segredo
+latente: bastaria alguém importar aquela função um dia (ex. copiar/colar
+de um exemplo antigo) pra a chave aparecer em texto puro no JS servido a
+qualquer visitante. Removidos os dois — arquivo deletado, `define`
+apagado do `vite.config.ts`.
+
+### Verificação
+
+`tsc --noEmit` limpo. `vite build` gerou o **mesmo hash de bundle** do
+build anterior (`index-CvByTcAj.js`) — confirma que o arquivo morto já
+não influenciava o output final, então a remoção foi puramente defensiva,
+sem risco de regressão visual/funcional. Testado ao vivo em produção:
+`POST /api/ai/enhance-text` (rota pública, não exige login) respondeu
+corretamente via OpenRouter. Deployado
+(`fly deploy -a imobiflow-v2 --config fly.toml --remote-only`),
+`curl` confirmando `200`.
+
+**Pendência**: confirmar ao vivo que a transcrição de voz funciona de
+ponta a ponta agora (gravação → OpenRouter → texto no campo) — ainda não
+testado pelo usuário depois dessa troca de provider.

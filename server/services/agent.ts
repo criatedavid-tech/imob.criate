@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
 import { sendUazapiText, resolveOutboundInstanceToken } from "./wppShim";
@@ -72,7 +71,7 @@ export interface AgentAction {
   buyer_phone?: string;
   // create_property — fotos anexadas na conversa (CommandBar.tsx), já
   // enviadas ao Storage antes de chegar aqui. NUNCA preenchido pelo
-  // modelo (não faz parte do responseSchema/JSON_SHAPE_HINT) — é anexado
+  // modelo (não faz parte do JSON_SHAPE_HINT) — é anexado
   // mecanicamente em runAgent() a partir de opts.imageUrls, pra sobreviver
   // tanto ao caminho piloto (executa na hora) quanto ao copiloto/manual
   // (a ação inteira, incluindo isso, volta pro front e é reenviada em
@@ -445,56 +444,6 @@ Regras:
 - Quando uma ação anterior no histórico falhou só por faltar UM campo (ex.: você pediu o preço) e a mensagem atual do corretor traz só esse campo que faltava (ex.: "1 milhão"), você DEVE refazer a ação INTEIRA de novo, reaproveitando TODOS os outros detalhes que ele já tinha te dado antes na conversa — não só o texto livre da descrição. Isso vale especialmente pra create_property: se ele já tinha mencionado quartos/banheiros/piscina/área/vagas/varanda gourmet na mensagem anterior, preencha esses campos estruturados de novo agora, mesmo que a mensagem atual só tenha o preço.`;
 }
 
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    reply: { type: Type.STRING },
-    action: {
-      type: Type.OBJECT,
-      properties: {
-        type: {
-          type: Type.STRING,
-          enum: [
-            "answer", "navigate", "create_lead", "create_visit", "query_agenda", "send_message",
-            "create_property", "update_property", "cancel_visit", "update_visit", "end_rental_contract", "update_unit",
-          ],
-        },
-        area: { type: Type.STRING },
-        name: { type: Type.STRING },
-        phone: { type: Type.STRING },
-        property_id: { type: Type.STRING },
-        date: { type: Type.STRING },
-        time: { type: Type.STRING },
-        date_from: { type: Type.STRING },
-        date_to: { type: Type.STRING },
-        message: { type: Type.STRING },
-        price: { type: Type.STRING },
-        title: { type: Type.STRING },
-        status: { type: Type.STRING },
-        location: { type: Type.STRING },
-        description: { type: Type.STRING },
-        quartos: { type: Type.STRING },
-        banheiros: { type: Type.STRING },
-        area_m2: { type: Type.STRING },
-        vagas_garagem: { type: Type.STRING },
-        piscina: { type: Type.STRING, enum: ["Sim", "Não"] },
-        tipo_imovel: { type: Type.STRING, enum: ["residencial", "comercial"] },
-        finalidade: { type: Type.STRING, enum: ["venda", "aluguel", "ambos"] },
-        varanda_gourmet: { type: Type.STRING, enum: ["Sim", "Não"] },
-        visit_id: { type: Type.STRING },
-        contract_id: { type: Type.STRING },
-        unit_id: { type: Type.STRING },
-        unit_action: { type: Type.STRING, enum: ["reservar", "vender", "liberar"] },
-        buyer_name: { type: Type.STRING },
-        buyer_phone: { type: Type.STRING },
-        notify_message: { type: Type.STRING },
-      },
-      required: ["type"],
-    },
-  },
-  required: ["reply", "action"],
-};
-
 // Preço no imf_properties é texto livre — o formulário manual sempre grava
 // "R$ 350.000,00". O assistente costuma mandar o número cru ("350000"), que
 // apareceria sem formatação no card. Normaliza pro mesmo padrão: converte o
@@ -802,9 +751,9 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
   throw new Error("Ação não executável.");
 }
 
-// JSON Schema equivalente ao responseSchema (Gemini), pro modo json_object do
-// OpenRouter — que não valida schema, só garante JSON válido, então o formato
-// exato também é reforçado em texto no fim do system prompt (ver buildSystemPrompt).
+// Formato exigido do modelo (OpenRouter/json_object não valida schema, só
+// garante JSON válido) — reforçado em texto no fim do system prompt também
+// (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
 {"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string"}}`;
 
@@ -813,27 +762,6 @@ const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste forma
 // disse em linguagem natural, pra manter o fio da conversa.
 function replyOnly(text: string): string {
   return text.split("\n✓ ")[0].split("\n(cancelado)")[0].trim();
-}
-
-async function callGemini(apiKey: string, systemPrompt: string, message: string, history: AgentTurn[]): Promise<{ reply: string; action: AgentAction }> {
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 15000 } });
-  const contents = [
-    ...history.map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.role === "user" ? h.text : replyOnly(h.text) }] })),
-    { role: "user", parts: [{ text: message }] },
-  ];
-  const response = await ai.models.generateContent({
-    // Mesmo modelo do enhance-text (server/routes/ai.ts), já comprovado em
-    // produção com esta chave — evita divergência de cota entre features.
-    model: "gemini-2.0-flash-lite",
-    config: {
-      systemInstruction: systemPrompt,
-      responseMimeType: "application/json",
-      responseSchema,
-      temperature: 0.3,
-    },
-    contents,
-  });
-  return JSON.parse(response.text || "{}");
 }
 
 async function callOpenRouter(apiKey: string, systemPrompt: string, message: string, history: AgentTurn[]): Promise<{ reply: string; action: AgentAction }> {
@@ -873,11 +801,14 @@ export async function runAgent(opts: {
   imageUrls?: string[]; // fotos anexadas na conversa (já enviadas ao Storage)
 }): Promise<AgentResult> {
   const history = opts.history || [];
-  const geminiKey = process.env.GEMINI_API_KEY;
+  // OpenRouter é a ÚNICA fonte de IA do agente (decisão explícita
+  // 2026-07-14) — a chave Gemini pessoal ficava com cota zerada
+  // repetidamente (confirmado direto contra a API: "limit: 0" em todos os
+  // modelos, texto e áudio), então deixou de valer a pena manter o caminho
+  // Gemini como principal ou fallback.
   const openRouterKey = process.env.OPENROUTER_API_KEY;
-  const hasGemini = !!geminiKey && geminiKey.length >= 10;
   const hasOpenRouter = !!openRouterKey && openRouterKey.startsWith("sk-or-");
-  if (!hasGemini && !hasOpenRouter) {
+  if (!hasOpenRouter) {
     return { reply: "A assistente de IA não está configurada no servidor (falta a chave da IA)." };
   }
 
@@ -886,33 +817,16 @@ export async function runAgent(opts: {
 
   let parsed: { reply: string; action: AgentAction };
   try {
-    // Gemini é preferido quando configurado (é o que roda em produção hoje);
-    // OpenRouter é o caminho alternativo — usado quando não há chave Gemini
-    // com cota, sem exigir nenhuma mudança em produção.
-    if (hasGemini) {
-      parsed = await callGemini(geminiKey!, systemPrompt, opts.message, history);
-    } else {
-      parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message, history);
-    }
+    parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message, history);
   } catch (err: any) {
     const msg = String(err?.message || "");
-    console.error(`[Agent] erro ${hasGemini ? "Gemini" : "OpenRouter"}:`, msg);
-
-    // Gemini com cota estourada e OpenRouter configurado como plano B → tenta.
-    if (hasGemini && hasOpenRouter && (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted"))) {
-      try {
-        parsed = await callOpenRouter(openRouterKey!, systemPrompt, opts.message, history);
-      } catch (err2: any) {
-        console.error("[Agent] erro OpenRouter (fallback):", err2.message);
-        return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
-      }
-    } else if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
+    console.error("[Agent] erro OpenRouter:", msg);
+    if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
       // Cota/limite é um estado operacional, não um bug — mensagem honesta e
       // distinta pra você saber que é a chave da IA, não o código.
       return { reply: "A IA atingiu o limite de uso da chave configurada. Verifique o plano/cota da chave do servidor." };
-    } else {
-      return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
     }
+    return { reply: "Tive um problema pra pensar nisso agora. Pode tentar de novo?" };
   }
 
   const action = parsed.action || { type: "answer" };

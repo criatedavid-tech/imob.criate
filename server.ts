@@ -99,14 +99,16 @@ async function startServer() {
   });
 
   // Permissions-Policy: helmet não seta esse header sozinho. Nega por padrão
-  // as APIs de hardware/privacidade sensíveis que o app não usa (confirmado
-  // via grep em src/ — só navigator.clipboard.writeText, que não é afetado
-  // por essas diretivas) — se um dia usar câmera pra foto de imóvel ou
-  // geolocalização, precisa liberar aqui primeiro.
+  // as APIs de hardware/privacidade sensíveis que o app não usa — exceto
+  // microphone=(self), liberado pro botão de voz do Assistente
+  // (CommandBar.tsx, MediaRecorder + POST /api/ai/transcribe). Sem isso o
+  // navegador rejeitava getUserMedia({audio:true}) direto, sem nem chegar
+  // a pedir permissão ao usuário. Se um dia usar câmera pra foto de imóvel
+  // ou geolocalização, precisa liberar aqui primeiro também.
   app.use((_req, res, next) => {
     res.setHeader(
       'Permissions-Policy',
-      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), interest-cohort=()'
+      'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), interest-cohort=()'
     );
     next();
   });
