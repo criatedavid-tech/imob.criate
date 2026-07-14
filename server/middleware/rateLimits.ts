@@ -5,6 +5,8 @@ import { makeRedisStore } from "../lib/infra";
 // então cadastro+login de teste estouram o limite rápido. Fora de produção o
 // limitador é ignorado; em produção continua valendo integralmente.
 const skipInDev = () => process.env.NODE_ENV !== 'production';
+const AI_WINDOW_MS = 15 * 60 * 1000;
+const authenticatedUserKey = (req: any) => `user:${req.userId || 'unknown'}`;
 
 // --- RATE LIMITERS ---
 export const authLimiter = rateLimit({
@@ -34,4 +36,29 @@ export const webhookLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded.' },
   store: makeRedisStore('webhook', 60 * 1000),
+});
+
+// Aplicados depois de requireUser: a chave vem do JWT validado, não de um
+// header controlado pelo cliente. Limites separados evitam que transcrição,
+// mais cara, consuma toda a janela das melhorias curtas de texto.
+export const aiTextLimiter = rateLimit({
+  windowMs: AI_WINDOW_MS,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Muitas solicitações de texto com IA. Aguarde alguns minutos e tente novamente.' },
+  store: makeRedisStore('ai-text', AI_WINDOW_MS),
+  skip: skipInDev,
+});
+
+export const aiTranscriptionLimiter = rateLimit({
+  windowMs: AI_WINDOW_MS,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Muitas transcrições de áudio. Aguarde alguns minutos e tente novamente.' },
+  store: makeRedisStore('ai-audio', AI_WINDOW_MS),
+  skip: skipInDev,
 });
