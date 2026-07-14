@@ -149,12 +149,34 @@ export function CarteiraArea() {
                   </button>
                 </div>
 
-                {p.status !== 'vendido' && (
-                  <button onClick={() => handleStatusChange(p.id, p.status === 'disponivel' ? 'vendido' : 'disponivel')}
-                    className="w-full mt-2 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-white/70 transition-colors">
-                    Marcar como {p.status === 'disponivel' ? 'vendido' : 'disponível'}
-                  </button>
-                )}
+                {(() => {
+                  const finalidade = p.details?.finalidade || 'venda';
+                  const status = p.status || 'disponivel';
+                  if (status !== 'disponivel') {
+                    return (
+                      <button onClick={() => handleStatusChange(p.id, 'disponivel')}
+                        className="w-full mt-2 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-white/70 transition-colors">
+                        Marcar como disponível
+                      </button>
+                    );
+                  }
+                  return (
+                    <div className="flex gap-1.5 mt-2">
+                      {finalidade !== 'aluguel' && (
+                        <button onClick={() => handleStatusChange(p.id, 'vendido')}
+                          className="flex-1 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-white/70 transition-colors">
+                          Marcar como vendido
+                        </button>
+                      )}
+                      {finalidade !== 'venda' && (
+                        <button onClick={() => handleStatusChange(p.id, 'alugado')}
+                          className="flex-1 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-white/70 transition-colors">
+                          Marcar como alugado
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </GlassCard>
             </div>

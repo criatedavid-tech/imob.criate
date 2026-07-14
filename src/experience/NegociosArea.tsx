@@ -226,6 +226,8 @@ export function NegociosArea() {
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -280,7 +282,7 @@ export function NegociosArea() {
   if (error) {
     return (
       <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Negócios</h2>
+        <h2 className="text-2xl font-black text-white mb-6">Leads</h2>
         <GlassCard className="!py-10 text-center">
           <p className="text-[14px] text-red-300">{error}</p>
         </GlassCard>
@@ -296,7 +298,7 @@ export function NegociosArea() {
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-black text-white">Negócios</h2>
+        <h2 className="text-2xl font-black text-white">Leads</h2>
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-white/40">{(leads || []).length} no funil</span>
           <button
@@ -338,14 +340,33 @@ export function NegociosArea() {
                   <h3 className="text-[12px] font-bold text-white/60 uppercase tracking-wide">{stage.label}</h3>
                   <span className="text-[11px] text-white/30">{stageLeads.length}</span>
                 </div>
-                <div className="space-y-3">
+                <div
+                  className={`space-y-3 rounded-2xl transition-colors min-h-[64px] ${
+                    dragOverStage === stage.key ? 'bg-white/[0.05] ring-2 ring-violet-400/40' : ''
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); if (draggingId) setDragOverStage(stage.key); }}
+                  onDragLeave={() => setDragOverStage((cur) => (cur === stage.key ? null : cur))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverStage(null);
+                    const lead = (leads || []).find((l) => l.id === draggingId);
+                    if (lead && lead.status !== stage.key) moveTo(lead, stage.key);
+                    setDraggingId(null);
+                  }}
+                >
                   {stageLeads.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-white/10 py-8 text-center">
                       <p className="text-[12px] text-white/25">vazio</p>
                     </div>
                   ) : (
                     stageLeads.map((lead) => (
-                      <div key={lead.id}>
+                      <div
+                        key={lead.id}
+                        draggable
+                        onDragStart={(e) => { setDraggingId(lead.id); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragEnd={() => { setDraggingId(null); setDragOverStage(null); }}
+                        className={`cursor-grab active:cursor-grabbing transition-opacity ${draggingId === lead.id ? 'opacity-40' : ''}`}
+                      >
                       <GlassCard className="!p-4">
                         <div className="flex items-start justify-between gap-2">
                           <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>

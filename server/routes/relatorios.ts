@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 
 export const relatoriosRouter = express.Router();
 
@@ -11,10 +11,12 @@ export const relatoriosRouter = express.Router();
 // é montado a partir dos números reais, sem inventar nada.
 relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) => {
   try {
-    const brokerId = await getBrokerId((req as any).userId);
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
     if (!brokerId) {
       return res.json({ totalLeads: 0, closedLeads: 0, conversionRate: 0, byStage: {}, byMonth: [], revenueCents: 0, visitsDone: 0, visitsTotal: 0 });
     }
+    const owner = await isBrokerOwner(userId, brokerId);
 
     const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
     const since = new Date();
@@ -26,11 +28,9 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
 
     let leads: any[] = [];
     if (ids.length > 0) {
-      const { data } = await supabase
-        .from("leads")
-        .select("status, created_at, closed_at")
-        .in("property_id", ids)
-        .gte("created_at", since.toISOString());
+      let leadsQuery = supabase.from("leads").select("status, created_at, closed_at").in("property_id", ids).gte("created_at", since.toISOString());
+      if (!owner) leadsQuery = leadsQuery.eq("owner_user_id", userId);
+      const { data } = await leadsQuery;
       leads = data || [];
     }
 
@@ -74,16 +74,16 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
     const devIds = (devs || []).map((d: any) => d.id);
     let salesTotal = 0;
     if (devIds.length > 0) {
-      const { data: sold } = await supabase.from("imf_units").select("price_cents").in("development_id", devIds).eq("status", "vendido");
+      let soldQuery = supabase.from("imf_units").select("price_cents").in("development_id", devIds).eq("status", "vendido");
+      if (!owner) soldQuery = soldQuery.eq("sold_by_user_id", userId);
+      const { data: sold } = await soldQuery;
       salesTotal = (sold || []).reduce((s: number, u: any) => s + (u.price_cents || 0), 0);
     }
 
     // visitas do período (realizadas vs total)
-    const { data: visits } = await supabase
-      .from("imf_agenda")
-      .select("status")
-      .eq("broker_id", brokerId)
-      .gte("scheduled_at", since.toISOString());
+    let visitsQuery = supabase.from("imf_agenda").select("status").eq("broker_id", brokerId).gte("scheduled_at", since.toISOString());
+    if (!owner) visitsQuery = visitsQuery.eq("owner_user_id", userId);
+    const { data: visits } = await visitsQuery;
     const visitsTotal = (visits || []).length;
     const visitsDone = (visits || []).filter((v: any) => v.status === "realizado").length;
 

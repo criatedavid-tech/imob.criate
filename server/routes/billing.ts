@@ -1,13 +1,16 @@
 import express from "express";
+import { z } from "zod";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
 import { checkoutLimiter, webhookLimiter } from "../middleware/rateLimits";
+import { validateBody } from "../middleware/validate";
 import {
   SUBSCRIPTION_VALUE, ASAAS_API_KEY, ASAAS_BASE_URL, TERMS_VERSION,
   PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, ASAAS_WEBHOOK_TOKEN,
 } from "../config";
 import { asaasHeaders, handleAsaasPaymentReceived } from "../services/billing";
 import { handleRentalPaymentWebhook } from "../services/rentalBilling";
+import { fetchWithTimeout } from "../lib/http";
 
 export const billingRouter = express.Router();
 
@@ -22,8 +25,20 @@ billingRouter.get("/api/config/plan", (_req, res) => {
 // ASAAS — CHECKOUT E WEBHOOK
 // ─────────────────────────────────────────────────────────────────────────
 
+// Mesmos limites que o formulário (PaymentPending.tsx) já valida no cliente —
+// aqui é a rede de segurança server-side, já que validação no browser nunca
+// é confiável sozinha (dá pra chamar a rota direto, sem passar pela tela).
+const checkoutSchema = z.object({
+  cpfCnpj: z.string().trim().refine((v) => { const d = v.replace(/\D/g, ""); return d.length === 11 || d.length === 14; }, "CPF/CNPJ inválido."),
+  cardHolder: z.string().trim().min(1, "Nome no cartão é obrigatório."),
+  cardNumber: z.string().trim().refine((v) => v.replace(/\D/g, "").length >= 13, "Número do cartão inválido."),
+  expiryMonth: z.string().trim().regex(/^(0?[1-9]|1[0-2])$/, "Mês de expiração inválido."),
+  expiryYear: z.string().trim().regex(/^\d{2}(\d{2})?$/, "Ano de expiração inválido."),
+  cvv: z.string().trim().regex(/^\d{3,4}$/, "CVV inválido."),
+});
+
 // Cria cobrança no Asaas (cartão de crédito) e ativa o corretor imediatamente
-billingRouter.post("/api/checkout", checkoutLimiter, requireUser, async (req, res) => {
+billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(checkoutSchema), async (req, res) => {
   const userId = (req as any).userId as string;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -32,9 +47,6 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, async (req, re
   }
 
   const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv } = req.body;
-  if (!cpfCnpj || !cardHolder || !cardNumber || !expiryMonth || !expiryYear || !cvv) {
-    return res.status(400).json({ error: "Dados do cartão incompletos." });
-  }
 
   try {
     const brokerId = await getBrokerId(userId);
@@ -44,7 +56,7 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, async (req, re
     if (!broker) return res.status(404).json({ error: "Corretor não encontrado." });
 
     // 1. Cria cliente no Asaas
-    const customerResp = await fetch(`${ASAAS_BASE_URL}/customers`, {
+    const customerResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/customers`, {
       method: 'POST',
       headers: asaasHeaders(),
       body: JSON.stringify({
@@ -63,7 +75,7 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, async (req, re
 
     // 2. Cria assinatura RECORRENTE mensal com cartão de crédito
     const nextDueDate = new Date().toISOString().split('T')[0];
-    const subscriptionResp = await fetch(`${ASAAS_BASE_URL}/subscriptions`, {
+    const subscriptionResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions`, {
       method: 'POST',
       headers: asaasHeaders(),
       body: JSON.stringify({
@@ -97,7 +109,7 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, async (req, re
     }
 
     // 3. Busca o primeiro payment gerado pela subscription
-    const firstPaymentResp = await fetch(
+    const firstPaymentResp = await fetchWithTimeout(
       `${ASAAS_BASE_URL}/subscriptions/${subscription.id}/payments`,
       { method: 'GET', headers: asaasHeaders() }
     );
@@ -267,14 +279,16 @@ billingRouter.get("/api/billing/usage", requireUser, async (req, res) => {
 // Webhook do Asaas — confirmação de pagamento, cancelamento
 billingRouter.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
   // Verifica token de acesso enviado pelo Asaas no header (configurado em Asaas → Webhooks).
-  // Se ASAAS_WEBHOOK_TOKEN não estiver definido no ambiente, a verificação é pulada
-  // para manter compatibilidade com o sandbox de desenvolvimento.
-  if (ASAAS_WEBHOOK_TOKEN) {
-    const incoming = req.headers['asaas-access-token'];
-    if (incoming !== ASAAS_WEBHOOK_TOKEN) {
-      console.warn(`[Webhook] token inválido — origin: ${req.ip}`);
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  // Falha de configuração deve fechar o endpoint, nunca desativar a autenticação.
+  if (!ASAAS_WEBHOOK_TOKEN) {
+    console.error('[Webhook] ASAAS_WEBHOOK_TOKEN ausente; evento rejeitado.');
+    return res.status(503).json({ error: 'Webhook unavailable' });
+  }
+
+  const incoming = req.headers['asaas-access-token'];
+  if (incoming !== ASAAS_WEBHOOK_TOKEN) {
+    console.warn(`[Webhook] token inválido — origin: ${req.ip}`);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const event = req.body;

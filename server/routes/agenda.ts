@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { INTERNAL_PROXY_TOKEN } from "../config";
 
 export const agendaRouter = express.Router();
@@ -22,11 +22,12 @@ agendaRouter.get("/api/agenda/visits", requireUser, async (req, res) => {
     let query = supabase
       .from('imf_agenda')
       .select('*, imf_properties(title)')
-      .eq('broker_id', brokerId)
-      .order('scheduled_at', { ascending: true });
+      .eq('broker_id', brokerId);
 
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
     if (start) query = query.gte('scheduled_at', start);
     if (end)   query = query.lte('scheduled_at', end);
+    query = query.order('scheduled_at', { ascending: true });
 
     const { data: agendaVisits, error: agendaError } = await query;
     if (agendaError) throw agendaError;
@@ -68,6 +69,7 @@ agendaRouter.post("/api/agenda/visits", requireUser, async (req, res) => {
       .from('imf_agenda')
       .insert({
         broker_id: brokerId,
+        owner_user_id: userId,
         property_id: property_id || null,
         client_name,
         client_phone: client_phone || null,
@@ -109,15 +111,13 @@ agendaRouter.patch("/api/agenda/visits/:id", requireUser, async (req, res) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
-    const { data, error } = await supabase
-      .from('imf_agenda')
-      .update(updates)
-      .eq('id', id)
-      .eq('broker_id', brokerId)
-      .select()
-      .single();
+    const query = supabase.from('imf_agenda').update(updates).eq('id', id).eq('broker_id', brokerId);
+    if (!(await isBrokerOwner(userId, brokerId))) query.eq('owner_user_id', userId);
+
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(403).json({ error: 'Acesso negado.' });
     res.json(data);
   } catch (err: any) {
     console.error("Erro PATCH /api/agenda/visits/:id:", err);
@@ -134,13 +134,12 @@ agendaRouter.delete("/api/agenda/visits/:id", requireUser, async (req, res) => {
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
     const { id } = req.params;
-    const { error } = await supabase
-      .from('imf_agenda')
-      .delete()
-      .eq('id', id)
-      .eq('broker_id', brokerId);
+    const query = supabase.from('imf_agenda').delete().eq('id', id).eq('broker_id', brokerId);
+    if (!(await isBrokerOwner(userId, brokerId))) query.eq('owner_user_id', userId);
 
+    const { data, error } = await query.select('id');
     if (error) throw error;
+    if (!data || data.length === 0) return res.status(403).json({ error: 'Acesso negado.' });
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/agenda/visits/:id:", err);
@@ -192,6 +191,16 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
       scheduled_at:     a.scheduled_at,
       startAt:          a.scheduled_at,
       endAt:            new Date(new Date(a.scheduled_at).getTime() + (a.duration_minutes || 60) * 60000).toISOString(),
+      // Horário já convertido pro fuso de Brasília, pronto pra leitura —
+      // startAt/scheduled_at acima são UTC puro (formato do banco), e pedir
+      // pro modelo fazer a conta de fuso sozinho é frágil (foi exatamente
+      // isso que causou uma visita marcada 3h errada em 2026-07-14: a
+      // ferramenta de agendamento do N8N gravava a hora local como se já
+      // fosse UTC). Sempre usar ESTE campo pra decidir horário ocupado/livre.
+      horario_brasilia: new Date(a.scheduled_at).toLocaleString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      }),
       duration_minutes: a.duration_minutes,
       status:           a.status,
       notes:            a.notes,
@@ -206,6 +215,12 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
 });
 
 // [N8N] Cria agendamento (substitui POST /appointment/create do ZPro)
+// ⚠️ Contrato de fuso: startAt/endAt são passados direto pro `new Date()` do
+// Node — precisam vir com offset EXPLÍCITO. "-03:00" pra hora de Brasília
+// (ex.: "2026-07-14T16:00:00-03:00" pras 16h daqui), nunca "Z"/UTC nem sem
+// offset nenhum pra representar hora local — isso já causou uma visita
+// marcada 3h errada (16h combinada com o cliente virou 13h gravado, porque
+// o prompt do N8N mandava "Z" pra hora que na verdade era de Brasília).
 agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
   if (!requireInternalToken(req, res)) return;
   try {
@@ -214,9 +229,12 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
       startAt, endAt, title, notes, property_id
     } = req.body;
 
-    if (!broker_id)   return res.status(400).json({ error: 'broker_id é obrigatório.' });
-    if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
-    if (!startAt)     return res.status(400).json({ error: 'startAt é obrigatório.' });
+    if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+    if (!startAt)   return res.status(400).json({ error: 'startAt é obrigatório.' });
+    // Nome do cliente costuma não estar disponível ainda no momento de agendar
+    // (o cliente pode marcar visita antes de se identificar) — telefone sempre
+    // temos, vindo da própria conversa, então nunca bloqueia a criação.
+    if (!client_name && !client_phone) return res.status(400).json({ error: 'client_name ou client_phone é obrigatório.' });
 
     const scheduled_at = new Date(startAt).toISOString();
     const duration_minutes = endAt
@@ -227,7 +245,7 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
       .from('imf_agenda')
       .insert({
         broker_id,
-        client_name,
+        client_name: client_name || client_phone || 'Cliente',
         client_phone:     client_phone || null,
         client_email:     client_email || null,
         scheduled_at,
@@ -250,6 +268,8 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
 });
 
 // [N8N] Atualiza agendamento (substitui /appointment/update do ZPro)
+// Mesmo contrato de fuso do POST /create acima: startAt/endAt precisam de
+// offset explícito ("-03:00" pra Brasília, nunca "Z").
 agendaRouter.patch('/api/agenda/n8n/:id', async (req, res) => {
   if (!requireInternalToken(req, res)) return;
   try {

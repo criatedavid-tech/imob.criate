@@ -1,12 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { MessageCircle, Loader2, User, Send, Bot, Archive, ArchiveRestore } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+
+interface Tag { id: string; name: string; color: string | null; }
+interface Queue { id: string; name: string; color: string | null; }
+interface Member { user_id: string; name: string; is_owner: boolean; }
+interface Note { id: string; body: string; user_id: string; created_at: string; }
+
+type TicketStatus = 'pending' | 'open' | 'closed';
 
 interface ConversationSummary {
   customer_phone: string;
   ai_active: boolean;
-  conversation_status: 'open' | 'closed';
+  conversation_status: TicketStatus;
+  queue_id: string | null;
+  assigned_user_id: string | null;
+  tags: Tag[];
   last_message: string | null;
   last_message_from: 'customer' | 'ai' | 'broker_manual' | null;
   last_activity: string | null;
@@ -23,8 +33,9 @@ interface Message {
 type Category = 'ia' | 'aguardando' | 'encerrado';
 
 // Categoriza pelo estado que já temos (ai_active + conversation_status) — não
-// é o Aberto/Pendente/Fechado do Z-PRO, é a pergunta que importa pro corretor:
-// quem está com a bola agora. Nunca fica "sem dono" — é sempre IA ou você.
+// é o Aberto/Pendente/Fechado do Z-PRO puro (isso vira o seletor de status
+// dentro da conversa), é a pergunta que importa pro corretor na lista: quem
+// está com a bola agora. Nunca fica "sem dono" — é sempre IA ou você.
 function categoryOf(c: ConversationSummary): Category {
   if (c.conversation_status === 'closed') return 'encerrado';
   return c.ai_active ? 'ia' : 'aguardando';
@@ -36,11 +47,27 @@ const CATEGORY_LABEL: Record<Category, string> = {
   encerrado: 'Encerrado',
 };
 
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  pending: 'Pendente',
+  open: 'Em atendimento',
+  closed: 'Encerrado',
+};
+
+const TAG_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#facc15', '#4ade80', '#38bdf8'];
+
+async function api(url: string, opts: RequestInit = {}) {
+  const res = await fetch(url, { ...opts, headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Erro ${res.status}`);
+  return data;
+}
+
 // Conversas real — lista quem está falando com a IA agora, a thread de cada
-// conversa, e permite responder manualmente / ligar-desligar a IA / encerrar.
-// Envio (Fase 2) e entrada (Fase 4) precisam de um corretor com UAZAPI
-// conectada pra funcionar de ponta a ponta — sem isso, a lista funciona mas
-// responder/ligar a IA vai dar erro claro, não fingir sucesso.
+// conversa, e permite responder manualmente / ligar-desligar a IA / gerenciar
+// o ticket (status, fila, atribuição, tags, notas — inspirado na API de
+// Tickets do Z-PRO, implementado nativo). Envio e entrada precisam de um
+// corretor com UAZAPI conectada pra funcionar de ponta a ponta — sem isso, a
+// lista funciona mas responder vai dar erro claro, não fingir sucesso.
 export function ConversasArea() {
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +78,22 @@ export function ConversasArea() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [queues, setQueues] = useState<Queue[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [notes, setNotes] = useState<Note[] | null>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [assignPickerOpen, setAssignPickerOpen] = useState(false);
+  const [queuePickerOpen, setQueuePickerOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [showNewConvo, setShowNewConvo] = useState(false);
+  const [newPhone, setNewPhone] = useState('');
+  const [newMessage, setNewMessage] = useState('');
+  const [creatingConvo, setCreatingConvo] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = () => {
     fetch('/api/conversas', { headers: authService.getAuthHeaders() })
@@ -66,19 +109,53 @@ export function ConversasArea() {
   };
 
   useEffect(loadConversations, []);
+  useEffect(() => {
+    api('/api/conversas/queues').then(setQueues).catch(() => setQueues([]));
+    api('/api/conversas/tags').then(setTags).catch(() => setTags([]));
+    api('/api/equipe/members').then(setMembers).catch(() => setMembers([]));
+  }, []);
 
-  const loadMessages = (phone: string) => {
-    setLoadingMessages(true);
+  // Sem isso, uma resposta nova (do cliente ou da IA) só aparecia depois de
+  // um F5 manual — a lista de conversas e a thread aberta agora se atualizam
+  // sozinhas em segundo plano, sem piscar o loading a cada rodada.
+  useEffect(() => {
+    const id = setInterval(loadConversations, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const loadMessages = (phone: string, silent = false) => {
+    if (!silent) setLoadingMessages(true);
     fetch(`/api/conversas/${phone}/messages`, { headers: authService.getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setMessages(Array.isArray(data) ? data : []))
-      .catch(() => setMessages([]))
-      .finally(() => setLoadingMessages(false));
+      .catch(() => { if (!silent) setMessages([]); })
+      .finally(() => { if (!silent) setLoadingMessages(false); });
+  };
+
+  const loadNotes = (phone: string) => {
+    api(`/api/conversas/${phone}/notes`).then(setNotes).catch(() => setNotes([]));
   };
 
   useEffect(() => {
-    if (selected) loadMessages(selected);
+    if (selected) {
+      loadMessages(selected);
+      loadNotes(selected);
+      setShowNotes(false);
+      setTagPickerOpen(false);
+      setAssignPickerOpen(false);
+      setQueuePickerOpen(false);
+    }
   }, [selected]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const id = setInterval(() => loadMessages(selected, true), 3000);
+    return () => clearInterval(id);
+  }, [selected]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages]);
 
   const filtered = useMemo(
     () => (conversations || []).filter((c) => categoryOf(c) === category),
@@ -97,13 +174,7 @@ export function ConversasArea() {
     setSending(true);
     setActionError(null);
     try {
-      const res = await fetch(`/api/conversas/${selected}/reply`, {
-        method: 'POST',
-        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: draft.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Falha ao enviar.');
+      await api(`/api/conversas/${selected}/reply`, { method: 'POST', body: JSON.stringify({ message: draft.trim() }) });
       setDraft('');
       loadMessages(selected);
       loadConversations();
@@ -118,38 +189,127 @@ export function ConversasArea() {
     if (!selected || !selectedConv) return;
     setActionError(null);
     try {
-      const res = await fetch(`/api/conversas/${selected}/ai-toggle`, {
-        method: 'PATCH',
-        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_active: !selectedConv.ai_active }),
-      });
-      if (!res.ok) throw new Error((await res.json())?.error || 'Falha ao mudar a IA.');
+      await api(`/api/conversas/${selected}/ai-toggle`, { method: 'PATCH', body: JSON.stringify({ ai_active: !selectedConv.ai_active }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar a IA.');
     }
   };
 
-  const toggleStatus = async () => {
-    if (!selected || !selectedConv) return;
-    const next = selectedConv.conversation_status === 'closed' ? 'open' : 'closed';
+  const setStatus = async (next: TicketStatus) => {
+    if (!selected) return;
     setActionError(null);
     try {
-      const res = await fetch(`/api/conversas/${selected}/status`, {
-        method: 'PATCH',
-        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_status: next }),
-      });
-      if (!res.ok) throw new Error((await res.json())?.error || 'Falha ao mudar o status.');
+      await api(`/api/conversas/${selected}/status`, { method: 'PATCH', body: JSON.stringify({ conversation_status: next }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar o status.');
     }
   };
 
+  const setAssign = async (userId: string) => {
+    if (!selected) return;
+    setActionError(null);
+    try {
+      await api(`/api/conversas/${selected}/assign`, { method: 'PATCH', body: JSON.stringify({ user_id: userId || null }) });
+      loadConversations();
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao atribuir.');
+    }
+  };
+
+  const setQueue = async (queueId: string) => {
+    if (!selected) return;
+    setActionError(null);
+    try {
+      await api(`/api/conversas/${selected}/queue`, { method: 'PATCH', body: JSON.stringify({ queue_id: queueId || null }) });
+      loadConversations();
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao mudar a fila.');
+    }
+  };
+
+  const addTagToConvo = async (tagId: string) => {
+    if (!selected) return;
+    try {
+      await api(`/api/conversas/${selected}/tags`, { method: 'POST', body: JSON.stringify({ tag_id: tagId }) });
+      loadConversations();
+      setTagPickerOpen(false);
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao marcar tag.');
+    }
+  };
+
+  const removeTagFromConvo = async (tagId: string) => {
+    if (!selected) return;
+    try {
+      await api(`/api/conversas/${selected}/tags/${tagId}`, { method: 'DELETE' });
+      loadConversations();
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao remover tag.');
+    }
+  };
+
+  const createTag = async () => {
+    if (!newTagName.trim()) return;
+    try {
+      const color = TAG_COLORS[tags.length % TAG_COLORS.length];
+      const tag = await api('/api/conversas/tags', { method: 'POST', body: JSON.stringify({ name: newTagName.trim(), color }) });
+      setTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag]);
+      setNewTagName('');
+      if (selected) addTagToConvo(tag.id);
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao criar tag.');
+    }
+  };
+
+  const addNote = async () => {
+    if (!selected || !noteDraft.trim()) return;
+    try {
+      await api(`/api/conversas/${selected}/notes`, { method: 'POST', body: JSON.stringify({ body: noteDraft.trim() }) });
+      setNoteDraft('');
+      loadNotes(selected);
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao salvar nota.');
+    }
+  };
+
+  const createConversation = async () => {
+    if (!newPhone.trim() || !newMessage.trim()) return;
+    setCreatingConvo(true);
+    setActionError(null);
+    try {
+      const digits = newPhone.replace(/\D/g, '');
+      await api('/api/conversas/create', { method: 'POST', body: JSON.stringify({ phone: digits, message: newMessage.trim() }) });
+      setShowNewConvo(false);
+      setNewPhone('');
+      setNewMessage('');
+      loadConversations();
+      setSelected(digits);
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao criar conversa.');
+    } finally {
+      setCreatingConvo(false);
+    }
+  };
+
+  const memberName = (userId: string | null) => {
+    if (!userId) return null;
+    return members.find((m) => m.user_id === userId)?.name || 'Membro';
+  };
+
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-6">Conversas</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-black text-white">Conversas</h2>
+        <button
+          onClick={() => setShowNewConvo(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
+            bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Nova conversa
+        </button>
+      </div>
 
       {error ? (
         <GlassCard className="!py-14 text-center border-red-400/20">
@@ -185,7 +345,7 @@ export function ConversasArea() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5">
-            <GlassCard className="!p-2 h-fit">
+            <GlassCard className="!p-2 h-[640px] overflow-y-auto">
               {filtered.length === 0 ? (
                 <p className="text-[13px] text-white/40 text-center py-8">Nada por aqui.</p>
               ) : (
@@ -205,6 +365,16 @@ export function ConversasArea() {
                       <div className="flex-1 min-w-0">
                         <span className="text-[14px] font-semibold text-white truncate block">{c.customer_phone}</span>
                         <p className="text-[12px] text-white/45 truncate">{c.last_message || 'sem mensagens'}</p>
+                        {c.tags.length > 0 && (
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {c.tags.map((t) => (
+                              <span key={t.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{ backgroundColor: `${t.color}25`, color: t.color || '#fff' }}>
+                                {t.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </button>
                   ))}
@@ -212,30 +382,143 @@ export function ConversasArea() {
               )}
             </GlassCard>
 
-            <GlassCard className="!p-0 min-h-[440px] flex flex-col overflow-hidden">
+            <GlassCard className="!p-0 h-[640px] flex flex-col overflow-hidden">
               {!selected || !selectedConv ? (
                 <div className="h-full flex-1 flex items-center justify-center text-white/40 text-[14px]">
                   Selecione uma conversa
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/8">
-                    <span className="text-[14px] font-semibold text-white">{selected}</span>
-                    <div className="flex items-center gap-2">
+                  <div className="px-5 py-3.5 border-b border-white/8 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[14px] font-semibold text-white">{selected}</span>
                       <button onClick={toggleAi}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
                           selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
                         }`}>
                         <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
                       </button>
-                      <button onClick={toggleStatus}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white/50 hover:text-white/80 hover:bg-white/[0.08] transition-colors">
-                        {selectedConv.conversation_status === 'closed'
-                          ? <><ArchiveRestore className="w-3.5 h-3.5" /> Reabrir</>
-                          : <><Archive className="w-3.5 h-3.5" /> Encerrar</>}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(['pending', 'open', 'closed'] as TicketStatus[]).map((s) => (
+                        <button key={s} onClick={() => setStatus(s)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                            selectedConv.conversation_status === s
+                              ? 'bg-white/[0.16] text-white'
+                              : 'text-white/40 hover:text-white/70 bg-white/[0.04]'
+                          }`}>
+                          {STATUS_LABEL[s]}
+                        </button>
+                      ))}
+
+                      <div className="relative ml-1">
+                        <button onClick={() => { setAssignPickerOpen((v) => !v); setQueuePickerOpen(false); setTagPickerOpen(false); }}
+                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white/[0.04] text-white/70 hover:bg-white/[0.08] transition-colors">
+                          {memberName(selectedConv.assigned_user_id) || 'Sem responsável'}
+                        </button>
+                        {assignPickerOpen && (
+                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-white/15 p-1 shadow-xl">
+                            <button onClick={() => { setAssign(''); setAssignPickerOpen(false); }}
+                              className="w-full text-left text-[11px] text-white/60 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                              Sem responsável
+                            </button>
+                            {members.map((m) => (
+                              <button key={m.user_id} onClick={() => { setAssign(m.user_id); setAssignPickerOpen(false); }}
+                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                                {m.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <button onClick={() => { setQueuePickerOpen((v) => !v); setAssignPickerOpen(false); setTagPickerOpen(false); }}
+                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white/[0.04] text-white/70 hover:bg-white/[0.08] transition-colors">
+                          {queues.find((q) => q.id === selectedConv.queue_id)?.name || 'Sem fila'}
+                        </button>
+                        {queuePickerOpen && (
+                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-white/15 p-1 shadow-xl">
+                            <button onClick={() => { setQueue(''); setQueuePickerOpen(false); }}
+                              className="w-full text-left text-[11px] text-white/60 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                              Sem fila
+                            </button>
+                            {queues.map((q) => (
+                              <button key={q.id} onClick={() => { setQueue(q.id); setQueuePickerOpen(false); }}
+                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                                {q.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button onClick={() => setShowNotes((v) => !v)}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                          showNotes ? 'bg-white/[0.16] text-white' : 'text-white/40 hover:text-white/70 bg-white/[0.04]'
+                        }`}>
+                        <StickyNote className="w-3 h-3" /> Notas {notes && notes.length > 0 ? `(${notes.length})` : ''}
                       </button>
                     </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {selectedConv.tags.map((t) => (
+                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: `${t.color}25`, color: t.color || '#fff' }}>
+                          {t.name}
+                          <button onClick={() => removeTagFromConvo(t.id)}><X className="w-2.5 h-2.5" /></button>
+                        </span>
+                      ))}
+                      <div className="relative">
+                        <button onClick={() => setTagPickerOpen((v) => !v)}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full text-white/40 hover:text-white/70 bg-white/[0.04]">
+                          <Plus className="w-2.5 h-2.5" /> Tag
+                        </button>
+                        {tagPickerOpen && (
+                          <div className="absolute z-10 top-6 left-0 w-48 rounded-xl bg-slate-900 border border-white/15 p-2 space-y-1 shadow-xl">
+                            {tags.filter((t) => !selectedConv.tags.some((st) => st.id === t.id)).map((t) => (
+                              <button key={t.id} onClick={() => addTagToConvo(t.id)}
+                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1">
+                                {t.name}
+                              </button>
+                            ))}
+                            <div className="flex gap-1 pt-1">
+                              <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && createTag()}
+                                placeholder="Nova tag…"
+                                className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[11px] bg-white/[0.06] text-white outline-none" />
+                              <button onClick={createTag} className="text-[11px] text-violet-300 font-bold px-1">+</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {showNotes && (
+                    <div className="px-5 py-3 border-b border-white/8 bg-white/[0.02] space-y-2 max-h-40 overflow-y-auto">
+                      {notes === null ? (
+                        <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
+                      ) : notes.length === 0 ? (
+                        <p className="text-[11px] text-white/35">Nenhuma nota ainda — visível só pro time.</p>
+                      ) : (
+                        notes.map((n) => (
+                          <div key={n.id} className="text-[12px] text-white/70 bg-white/[0.04] rounded-xl px-3 py-2">
+                            {n.body}
+                            <div className="text-[10px] text-white/30 mt-0.5">{memberName(n.user_id) || 'Você'}</div>
+                          </div>
+                        ))
+                      )}
+                      <div className="flex gap-2">
+                        <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                          placeholder="Anotar algo pro time…"
+                          className="flex-1 px-3 py-1.5 rounded-xl text-[12px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none" />
+                        <button onClick={addNote} className="text-[11px] font-bold text-violet-300 px-2">Salvar</button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex-1 p-5 overflow-y-auto">
                     {loadingMessages || !messages ? (
@@ -260,6 +543,7 @@ export function ConversasArea() {
                             </div>
                           </div>
                         ))}
+                        <div ref={messagesEndRef} />
                       </div>
                     )}
                   </div>
@@ -287,6 +571,31 @@ export function ConversasArea() {
             </GlassCard>
           </div>
         </>
+      )}
+
+      {showNewConvo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setShowNewConvo(false)}>
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[16px] font-bold text-white mb-4">Nova conversa</h3>
+            <label className="text-[12px] text-white/50 font-semibold">Número (WhatsApp)</label>
+            <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
+              placeholder="55 62 99999-9999"
+              className="w-full mt-1 mb-3 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30 bg-white/[0.06] border border-white/12 outline-none focus:border-white/25" />
+            <label className="text-[12px] text-white/50 font-semibold">Primeira mensagem</label>
+            <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} rows={3}
+              placeholder="Olá! Aqui é..."
+              className="w-full mt-1 mb-4 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30 bg-white/[0.06] border border-white/12 outline-none focus:border-white/25 resize-none" />
+            {actionError && <p className="text-[12px] text-red-300 mb-3">{actionError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowNewConvo(false)} className="px-4 py-2 rounded-2xl text-[13px] font-semibold text-white/60 hover:text-white/90">Cancelar</button>
+              <button onClick={createConversation} disabled={creatingConvo || !newPhone.trim() || !newMessage.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40">
+                {creatingConvo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Enviar e abrir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

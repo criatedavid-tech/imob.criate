@@ -1,11 +1,117 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Target, Users, Pencil } from 'lucide-react';
+import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { centsToReais } from '../lib/money';
 
 interface Goal {
   goal: number | null;
   progress: number;
+}
+
+interface RankingRow {
+  user_id: string;
+  name: string;
+  is_owner: boolean;
+  closed_leads_month: number;
+  sales_count_total: number;
+  sales_total_cents: number;
+}
+
+interface Member {
+  user_id: string;
+  name: string;
+  email: string;
+  is_owner: boolean;
+  created_at: string;
+}
+
+function InviteModal({ onClose }: { onClose: () => void }) {
+  // Escolha do dono, POR CONVITE: esse corretor vai ter WhatsApp próprio
+  // (dentro do limite do plano) ou vai compartilhar o número da conta?
+  // O convite só é gerado depois da escolha — "própria" pode ser recusada
+  // pelo servidor (sem limite no plano, ou limite já atingido).
+  const [mode, setMode] = useState<'shared' | 'own' | null>(null);
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  function generate(chosenMode: 'shared' | 'own') {
+    setMode(chosenMode);
+    setLoading(true);
+    setError('');
+    fetch('/api/equipe/members/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+      body: JSON.stringify({ whatsapp_mode: chosenMode }),
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body?.error || 'Falha ao gerar convite.');
+        setUrl(body.url);
+      })
+      .catch((e) => setError(e.message || 'Falha ao gerar convite.'))
+      .finally(() => setLoading(false));
+  }
+
+  function copy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-6">
+        <h3 className="text-lg font-bold text-white mb-2">Convidar pra equipe</h3>
+
+        {!mode ? (
+          <>
+            <p className="text-[13px] text-white/50 mb-4">Esse corretor vai ter WhatsApp próprio ou vai compartilhar o número da conta?</p>
+            <div className="space-y-2">
+              <button onClick={() => generate('shared')}
+                className="w-full text-left px-4 py-3 rounded-xl bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
+                <p className="text-sm font-semibold text-white">Compartilhado</p>
+                <p className="text-[12px] text-white/40 mt-0.5">Usa o mesmo número já conectado na conta.</p>
+              </button>
+              <button onClick={() => generate('own')}
+                className="w-full text-left px-4 py-3 rounded-xl bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
+                <p className="text-sm font-semibold text-white">WhatsApp próprio</p>
+                <p className="text-[12px] text-white/40 mt-0.5">Ele conecta o próprio número, dentro do limite do seu plano.</p>
+              </button>
+            </div>
+          </>
+        ) : loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+        ) : error ? (
+          <>
+            <p className="text-sm text-red-300 mb-3">{error}</p>
+            <button onClick={() => setMode(null)} className="text-[12px] text-white/40 hover:text-white/70 transition-colors">
+              ← Escolher outra opção
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-[13px] text-white/50 mb-4">Envie este link pra pessoa — ele vale por 48h e só pode ser usado uma vez.</p>
+            <div className="flex items-stretch gap-2 mb-2">
+              <input readOnly value={url} className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-xs text-white/70 bg-white/8 border border-white/12" />
+              <button onClick={copy} className="px-3 rounded-xl bg-violet-500/20 border border-violet-300/30 text-violet-100 hover:bg-violet-500/30 transition-colors">
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </>
+        )}
+
+        <button onClick={onClose} className="w-full mt-4 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function GoalEditor({ current, onClose, onSaved }: { current: number | null; onClose: () => void; onSaved: () => void }) {
@@ -60,17 +166,22 @@ function GoalEditor({ current, onClose, onSaved }: { current: number | null; onC
   );
 }
 
-// Equipe real: só a parte que dá pra construir sem inventar dado (Etapa 9 do
-// UX_MASTERPLAN.md) — meta pessoal do mês vs. negócios fechados de verdade
-// (leads.closed_at, ver server/routes/leads.ts). Roster de corretores,
-// hierarquia/permissões, ranking e distribuição de leads dependem do produto
-// suportar múltiplos usuários por conta — hoje é 1 conta = 1 corretor, isso
-// não existe. Decisão em aberto, não resolvida aqui.
+// Equipe real: meta pessoal do mês vs. negócios fechados de verdade
+// (leads.closed_at, ver server/routes/leads.ts) + multi-usuário leve (Etapa 9
+// revisada) — vários logins acessando a MESMA conta, mesmos dados, mesma
+// permissão. Sem hierarquia/papéis/ranking/distribuição de leads ainda —
+// isso segue como decisão de produto em aberto.
 export function EquipeArea() {
   const [goal, setGoal] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [membersError, setMembersError] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [ranking, setRanking] = useState<RankingRow[] | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -88,7 +199,51 @@ export function EquipeArea() {
       .finally(() => setLoading(false));
   };
 
+  const loadMembers = () => {
+    fetch('/api/equipe/members', { headers: authService.getAuthHeaders() })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body?.error || `Erro ${r.status} ao carregar a equipe.`);
+        }
+        return r.json();
+      })
+      .then(setMembers)
+      .catch((e) => setMembersError(e.message || 'Erro ao carregar a equipe.'));
+  };
+
   useEffect(load, []);
+  useEffect(loadMembers, []);
+
+  const myUserId = authService.getUser()?.id;
+  const iAmOwner = (members || []).some((m) => m.user_id === myUserId && m.is_owner);
+
+  // Ranking é visão gerencial — só busca depois de saber que sou dono, e só
+  // quando tem mais de 1 membro (ranking de 1 pessoa não diz nada).
+  useEffect(() => {
+    if (!iAmOwner || !members || members.length < 2) return;
+    fetch('/api/equipe/ranking', { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setRanking(data?.ranking || null))
+      .catch(() => {});
+  }, [iAmOwner, members]);
+
+  async function handleRemove(m: Member) {
+    if (!confirm(`Remover ${m.name} da equipe? A pessoa perde acesso à conta imediatamente.`)) return;
+    setRemovingId(m.user_id);
+    try {
+      const res = await fetch(`/api/equipe/members/${m.user_id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao remover membro.');
+      }
+      loadMembers();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao remover membro.');
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   if (loading) {
     return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
@@ -136,19 +291,81 @@ export function EquipeArea() {
         )}
       </GlassCard>
 
-      <GlassCard className="!p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-white/40" />
-          <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Ainda não disponível</h3>
+      <GlassCard className="!p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-white/40" />
+            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Membros da conta</h3>
+          </div>
+          {iAmOwner && (
+            <button onClick={() => setInviting(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70
+                bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+              <UserPlus className="w-3.5 h-3.5" /> Convidar
+            </button>
+          )}
         </div>
-        <p className="text-[13px] text-white/40 leading-relaxed">
-          Cadastro de corretores, hierarquia/permissões, ranking de performance e distribuição automática de leads
-          dependem do ImobiFlow suportar múltiplos usuários numa mesma conta — hoje cada conta é de um corretor só.
-          Isso é uma decisão de produto em aberto, não uma tela que falta desenhar.
+
+        {membersError ? (
+          <p className="text-[13px] text-red-300">{membersError}</p>
+        ) : !members ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+        ) : (
+          <div className="space-y-2">
+            {members.map((m) => (
+              <div key={m.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-white truncate">{m.name}</p>
+                    {m.is_owner && <span title="Dono da conta"><Crown className="w-3.5 h-3.5 text-amber-300 shrink-0" /></span>}
+                  </div>
+                  <p className="text-[12px] text-white/40 truncate">{m.email}</p>
+                </div>
+                {iAmOwner && !m.is_owner && (
+                  <button onClick={() => handleRemove(m)} disabled={removingId === m.user_id}
+                    className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.03] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
+                    {removingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[11px] text-white/30 mt-4 leading-relaxed">
+          Todo membro vê e edita os mesmos dados dele, sem hierarquia nem permissões diferentes ainda — isso é o
+          próximo passo, ainda em decisão de produto.
         </p>
       </GlassCard>
 
+      {iAmOwner && ranking && ranking.length > 0 && (
+        <GlassCard className="!p-6 mt-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="w-4 h-4 text-amber-300" />
+            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Ranking (só você vê)</h3>
+          </div>
+          <div className="space-y-2">
+            {ranking.map((r, i) => (
+              <div key={r.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-6 h-6 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[11px] font-bold text-white/60 shrink-0">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm font-semibold text-white truncate">{r.name}{r.is_owner ? ' (você)' : ''}</p>
+                </div>
+                <div className="flex items-center gap-4 text-[12px] text-white/50 shrink-0">
+                  <span>{r.closed_leads_month} lead{r.closed_leads_month === 1 ? '' : 's'} fechado{r.closed_leads_month === 1 ? '' : 's'} (mês)</span>
+                  <span className="text-white/80 font-semibold">{centsToReais(r.sales_total_cents)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-white/30 mt-4">Vendas somam todo o histórico de Lançamentos; leads fechados são só do mês corrente.</p>
+        </GlassCard>
+      )}
+
       {editing && <GoalEditor current={goal?.goal ?? null} onClose={() => setEditing(false)} onSaved={load} />}
+      {inviting && <InviteModal onClose={() => setInviting(false)} />}
     </div>
   );
 }

@@ -480,6 +480,7 @@ export default function Dashboard() {
           <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
           <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
           <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
+          <NavItem icon={<Smartphone size={20} />}  label="WhatsApp"  active={activeTab === 'whatsapp'}       onClick={() => handleTabChange('whatsapp')} />
           <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => handleTabChange('subscription')} />
         </nav>
 
@@ -527,6 +528,7 @@ export default function Dashboard() {
               <NavItem icon={<Calendar size={20} />}    label="Agenda"    active={activeTab === 'calendar'}      onClick={() => handleTabChange('calendar')} />
               <NavItem icon={<Building2 size={20} />}   label="Corretora" active={activeTab === 'corretora'}     onClick={() => handleTabChange('corretora')} />
               <NavItem icon={<Bot size={20} />}         label="Assistente IA" active={activeTab === 'settings'}   onClick={() => handleTabChange('settings')} />
+              <NavItem icon={<Smartphone size={20} />}  label="WhatsApp"  active={activeTab === 'whatsapp'}       onClick={() => { handleTabChange('whatsapp'); setSidebarOpen(false); }} />
               <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => { handleTabChange('subscription'); setSidebarOpen(false); }} />
             </nav>
 
@@ -785,6 +787,15 @@ export default function Dashboard() {
             </>
           )}
 
+          {/* ─── ABA WHATSAPP ─── */}
+          {activeTab === 'whatsapp' && (
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-xl md:text-2xl font-bold mb-2 text-white">WhatsApp</h2>
+              <p className="text-white/55 mb-8">Conecte o número que vai atender seus clientes pelo WhatsApp.</p>
+              <WhatsAppConnectCard />
+            </div>
+          )}
+
           {/* ─── ABA CORRETORA ─── */}
           {activeTab === 'corretora' && (
             <div className="max-w-2xl mx-auto">
@@ -979,23 +990,127 @@ function SubscriptionTab() {
         </div>
       )}
 
-      {/* IDs Z-PRO */}
-      {broker?.zpro_tenant_id && (
-        <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
-          <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Plataforma WhatsApp</h3>
-          <div className="space-y-1 text-sm">
-            {[
-              ['Tenant ID', broker.zpro_tenant_id],
-              ['Canal ID', broker.zpro_channel_id || '—'],
-            ].map(([label, value]: any) => (
-              <div key={label} className="flex justify-between py-2.5 border-b border-white/8 last:border-0">
-                <span className="text-white/50">{label}</span>
-                <span className="font-mono text-xs text-white/80">{value}</span>
-              </div>
-            ))}
+    </div>
+  );
+}
+
+function WhatsAppConnectCard() {
+  const [status, setStatus] = useState<{ provisioned: boolean; connected: boolean; loggedIn: boolean; profileName?: string | null; owner?: string | null } | null>(null);
+  const [qrcode, setQrcode] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (qrRefreshRef.current) { clearInterval(qrRefreshRef.current); qrRefreshRef.current = null; }
+  };
+
+  const loadStatus = async () => {
+    try {
+      const r = await fetch('/api/brokers/whatsapp/status', { headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao checar status');
+      setStatus(data);
+      if (data.connected) {
+        setQrcode(null);
+        setConnecting(false);
+        stopPolling();
+      }
+      return data;
+    } catch (e: any) {
+      setError(e.message);
+      return null;
+    }
+  };
+
+  const requestQrcode = async () => {
+    try {
+      const r = await fetch('/api/brokers/whatsapp/connect', { method: 'POST', headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao gerar QR code');
+      if (data.qrcode) setQrcode(data.qrcode);
+      if (data.connected) { setConnecting(false); stopPolling(); loadStatus(); }
+    } catch (e: any) {
+      setError(e.message);
+      setConnecting(false);
+      stopPolling();
+    }
+  };
+
+  const startConnecting = async () => {
+    setError(null);
+    setConnecting(true);
+    await requestQrcode();
+    stopPolling();
+    pollRef.current = setInterval(loadStatus, 3000);
+    qrRefreshRef.current = setInterval(requestQrcode, 20000);
+  };
+
+  useEffect(() => {
+    loadStatus();
+    return stopPolling;
+  }, []);
+
+  return (
+    <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
+      <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Smartphone className="w-4 h-4" /> WhatsApp</h3>
+
+      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+
+      {status && !status.provisioned && (
+        <p className="text-sm text-white/50">Sua instância de WhatsApp ainda está sendo configurada. Volte aqui em instantes.</p>
+      )}
+
+      {status?.provisioned && status.connected && !connecting && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-emerald-300 text-sm font-medium">
+            <Wifi className="w-4 h-4" /> Conectado
           </div>
+          <div className="text-xs text-white/50 space-y-1">
+            {status.profileName && <div>Perfil: <span className="text-white/80">{status.profileName}</span></div>}
+            {status.owner && <div>Número: <span className="text-white/80 font-mono">{status.owner}</span></div>}
+          </div>
+          <button
+            onClick={startConnecting}
+            className="inline-flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Reconectar / trocar número
+          </button>
         </div>
       )}
+
+      {status?.provisioned && !status.connected && !connecting && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-amber-300 text-sm font-medium">
+            <WifiOff className="w-4 h-4" /> Desconectado
+          </div>
+          <button
+            onClick={startConnecting}
+            className="inline-flex items-center gap-2 backdrop-blur-md bg-white/15 border border-white/25 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-white/25 transition-all"
+          >
+            Conectar WhatsApp
+          </button>
+        </div>
+      )}
+
+      {connecting && (
+        <div className="space-y-3">
+          {qrcode ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="bg-white p-3 rounded-2xl">
+                <img src={qrcode} alt="QR code do WhatsApp" className="w-48 h-48" />
+              </div>
+              <p className="text-xs text-white/50 text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
+            </div>
+          ) : (
+            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-300 mt-3">{error}</p>}
     </div>
   );
 }

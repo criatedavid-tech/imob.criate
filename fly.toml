@@ -7,8 +7,12 @@
 #   fly deploy
 #
 # IMPORTANTE: troque "app" abaixo pelo nome real criado no fly launch.
+#
+# Este fly.toml só existe na branch v2 — app separado ("imobiflow-v2") da
+# v1 ("imobiflow", deploy automático via .github/workflows/deploy.yml a
+# partir de main). Não faça merge deste arquivo pra main.
 
-app = "imobiflow"
+app = "imobiflow-v2"
 primary_region = "gru"
 
 [build]

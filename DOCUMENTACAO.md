@@ -5,8 +5,13 @@
 > **Não contém valores de segredos** — apenas os nomes das variáveis (os
 > valores ficam no `.env` local, nos *secrets* da Fly e nas notas de memória).
 
-Última atualização: 2026-07-01. **Comece pela §14** (estado consolidado e
-continuidade) — ela é a fonte de verdade atual e supersede as §4 e §13.
+Última atualização: 2026-07-13. **Comece pela §14.16** — ela registra a
+virada de arquitetura mais importante do projeto: **o v2 é agora o projeto
+principal; o v1 (`main`/`imobiflow.fly.dev`) fica só como rollback de
+segurança**, sem receber trabalho ativo. §14.1-14.15 descrevem o estado do
+v1 (ainda válidas para conceitos compartilhados — Asaas, billing, modelo de
+dados core) mas ficaram desatualizadas quanto à experiência de produto, ao
+provisionamento de WhatsApp e a boa parte do backend, que mudaram no v2.
 
 ---
 
@@ -1172,3 +1177,490 @@ Resultado: **nenhuma tabela faltando, nenhuma tabela nova sem o prefixo `imf_`
 - **Constraints de idempotência conferidas e intactas:**
   `followup_config_broker_id_key`, `followup_conversations_broker_id_customer_phone_key`,
   `uq_overage_broker_period`, `imf_properties_slug_key` — todas presentes.
+
+## 14.16. Atualização 2026-07-13 — v2 vira o projeto principal; auditoria de features + hardening de segurança
+
+### 🎯 Decisão de produto — leia isto primeiro
+
+**O projeto principal agora é o v2.** `imobiflow-v2` — branch `v2`, deployado
+num app Fly **separado**, `imobiflow-v2.fly.dev` — é onde todo o
+desenvolvimento ativo acontece daqui pra frente. `imobiflow` (branch `main`,
+app `imobiflow.fly.dev`, o "v1") **deixou de receber trabalho ativo** e
+existe agora só como rollback de segurança, caso o v2 tenha algum problema
+grave. Correções, features e hardening daqui pra frente são feitos no v2;
+não devem ser retroportados pro v1 a menos que seja explicitamente pedido.
+Isolamento de deploy mantido como sempre: `main` continua auto-deployando
+via `.github/workflows/deploy.yml` só quando alguém dá push em `main` — o
+trabalho no v2 não aciona isso.
+
+### O que aconteceu entre a §14.15 (02/07) e hoje (13/07) — resumo da virada pro v2
+
+Entre a última atualização deste documento e hoje, o v2 saiu de protótipo
+(cockpit "Hoje" com dado mock) para um sistema completo com dado real em
+praticamente toda superfície. Resumo do arco (detalhe completo, com commits,
+está no histórico de sessões — este documento não reproduz cada passo):
+
+- **Etapas 4-7 do `UX_MASTERPLAN.md`**: Negócios (funil), Agenda, Locação
+  (contratos de aluguel) e Lançamentos (unidades de incorporadora, com
+  reserva e trava por tempo) saíram de mock para núcleo real.
+- **Etapas 12+13 — "cérebro" e autonomia reais**: a command bar deixou de
+  ser decorativa. Hoje é um agente (`server/services/agent.ts`) que lê o
+  estado real da conta (imóveis, visitas, contratos, unidades — conforme o
+  tipo de conta) e decide, via Gemini com fallback automático pra OpenRouter
+  em caso de cota esgotada, uma entre 12 ações possíveis. A autonomia
+  (piloto/copiloto/manual) governa de verdade: piloto executa na hora,
+  copiloto/manual só propõem e esperam confirmação. Toda mutação revalida
+  posse no backend, independente da IA ter "decidido" a ação.
+- **Tipo de conta real**: corretor/imobiliária/incorporadora deixou de ser
+  um toggle de front (`account_type` em `imf_brokers`, escolhido no
+  cadastro) — cada tipo só acende as superfícies relevantes.
+- **Eliminação do Z-PRO** (plano em `stateless-drifting-turing.md`): Fases 1+2
+  concluídas — provisionamento de WhatsApp passou a ser nativo via UAZAPI
+  (`provisionUazapiInstanceNative`), sem o Z-PRO no meio. Fases 4+6 também
+  prontas — tela de Conversas própria, com abas ia/aguardando/encerrado,
+  substituindo o inbox do Z-PRO.
+- **Episódio de rollback real (07/07)**: o v2 foi publicado direto em cima
+  do `main` uma vez; um bug de UX (sem botão de logout, sessão de conta
+  antiga presa no `localStorage` do navegador) pareceu, a princípio, um
+  vazamento de autenticação entre corretores. Foi revertido na hora via
+  `fly deploy -i <imagem anterior>`. Investigação confirmou que o
+  isolamento por `broker_id` sempre foi sólido — o problema era só a UX de
+  sessão (sem "Sair" visível). Esse episódio é parte do motivo do v2 hoje
+  rodar num app Fly **separado** em vez de em cima do `main`.
+- **Assistente ganhou ações progressivamente**: primeiro 6 (responder,
+  navegar, cadastrar lead, agendar visita, consultar agenda, mandar
+  mensagem real de WhatsApp) — validadas ao vivo com conta real, incluindo
+  envio de WhatsApp de verdade. Hoje soma 12, incluindo `create_property`
+  (ver próxima seção e a seção logo abaixo sobre 13/07).
+
+### Auditoria completa de features (13/07) — 16 funcional / 5 parcial / 1 quebrada
+
+Rodada uma auditoria das 22 funções do sistema, testadas via código e ao
+vivo com 4 personas reais logadas simultaneamente (corretor, imobiliária,
+incorporadora, admin). Achados e correções aplicadas na sequência:
+
+- **Vitrine pública** (era a única "quebrada"): formulário de captação de
+  lead e modal de "Entre em Contato" existiam prontos no código
+  (`src/pages/PropertyLanding.tsx`) mas **nenhum botão os abria** — corrigido,
+  adicionado o gatilho que faltava. De passagem, removido um segundo
+  formulário de lead duplicado e nunca usado, e um passo de "escolher
+  horário" que dependia de um endpoint público intencionalmente stubado
+  (`GET /api/agenda` sempre devolve `[]` pra não vazar dado de agenda entre
+  corretores).
+- **Locação**: adicionado botão de editar contrato (não existia — só dava
+  pra criar), campo de CPF/CNPJ com detecção e máscara automática
+  (`src/lib/document.ts::maskCpfCnpj` — decide CPF vs. CNPJ pela quantidade
+  de dígitos), campo de fim de contrato, e a UI de "gerar cobrança do mês"
+  conectada de verdade ao boleto/PIX real via Asaas (`imf_rental_payments`).
+- **Financeiro**: passou a agregar inadimplência real e um "fluxo de caixa"
+  com os últimos 12 pagamentos de aluguel (`server/routes/financeiro.ts`) —
+  antes só contava contratos ativos, sem nenhum dado de pagamento de fato.
+- **Admin**: removidas 2 rotas Z-PRO órfãs, sem nenhum caller no frontend
+  (`PATCH /brokers/:id/zpro-credentials`, `POST /brokers/:id/relink-uazapi`);
+  botão de "provisionar" corrigido pra checar `uazapi_instance_id` (fluxo
+  nativo) em vez de `zpro_tenant_id` (nunca era limpo pelo fluxo novo, então
+  o botão nunca sumia mesmo já provisionado).
+- **Assistente — 2 bugs reais achados em uso normal, ambos corrigidos**:
+  (1) preço editado pelo assistente gravava número cru (`"350000"`) em vez
+  do formato do app (`"R$ 350.000"`) — `normalizePriceToBRL()` em `agent.ts`
+  resolve; (2) **fuso horário**: o servidor no Fly roda em UTC, então "13h"
+  virava 13h UTC = 10h em Brasília — corrigido ancorando toda escrita e
+  leitura de data/hora do agente em `America/Sao_Paulo`
+  (`agent.ts::brDateTimeToISO` na escrita, `timeZone: BR_TZ` em todo
+  `toLocaleString`/`toLocaleTimeString` de leitura).
+- **Assistente ganhou 5 ações novas** (de 6 para 11), pedidas explicitamente
+  depois da auditoria revelar essas lacunas: `update_property` (editar
+  preço/título/status de imóvel), `cancel_visit`, `update_visit`
+  (remarcar), `end_rental_contract` (só imobiliária), `update_unit`
+  (reservar/vender/liberar, só incorporadora). **Bug real achado testando**:
+  um cliente de teste chamado "Ana Teste Cancel" fez o modelo confundir e
+  executar `cancel_visit` em vez de `create_visit`, cancelando uma visita
+  antiga não relacionada. Corrigido com 2 regras novas no system prompt (id
+  só é escolhido se o nome bater exatamente com a lista de contexto; uma
+  palavra dentro do NOME de alguém não é comando) — retestado e confirmado.
+- **Assistente ganhou a 12ª ação, `create_property`** (achada em uso real
+  pelo usuário, não em auditoria): pedir pra IA "cadastrar um imóvel novo"
+  sempre caía em `update_property` (a única ação relacionada a imóveis até
+  então), que exige um `property_id` existente — resultava numa resposta
+  confusa em vez de cadastrar. `create_property` cadastra de verdade,
+  reaproveitando a MESMA convenção do `PropertyForm.tsx`/`properties.ts`:
+  campos sem coluna própria (quartos, banheiros, área, piscina, vagas,
+  tipo, finalidade, varanda gourmet) vão serializados dentro do
+  `description`, depois de um separador `---DETALHES-GERADOS---`; o que não
+  tem campo estruturado nenhum (suítes, andar, "banheiro de serviço") vira
+  texto natural de venda escrito pela própria IA. Testado ao vivo (função
+  chamada direto, sem precisar de login) com o mesmo pedido que falhou:
+  "apartamento no Setor Oeste, 1 milhão, 3 quartos sendo 3 suítes, 1
+  banheiro de serviço, área gourmet, piscina do prédio, 19º andar" — o
+  agente extraiu preço "R$ 1.000.000", 3 quartos, 4 banheiros (3 suíte + 1
+  serviço, somado corretamente), piscina e área gourmet marcados, e
+  escreveu os detalhes sem campo próprio (andar, suítes) numa descrição de
+  venda natural. Imóvel de teste removido depois da verificação.
+
+### Auditoria de hardening de segurança (13/07) — 46 itens avaliados, 3 críticos
+
+Auditoria separada, focada em segurança de infraestrutura (headers,
+validação, rate limit, dependências, container/CI, testes, isolamento
+multi-tenant, webhooks), cobrindo um checklist de 5 fases. Método: leitura
+direta do billing/checkout, mais 3 agentes de exploração em paralelo
+cobrindo headers/validação/rate-limit, dependências/Docker/CI, e testes de
+segurança — todos só-leitura. Resultado: **3 críticos, 23 não implementados,
+12 parciais, 8 OK**.
+
+**Os 3 críticos, corrigidos e deployados no v2 no mesmo dia:**
+
+1. **Vazamento de segredos na landing pública** —
+   `server/routes/properties.ts` (`GET /api/properties/:slug`) fazia
+   `select('*, imf_brokers(*))` sem allowlist nem autenticação, devolvendo a
+   linha inteira de `imf_brokers` — incluindo `reset_token`,
+   `zpro_api_token`, `uazapi_instance_token`, `asaas_credit_card_token`,
+   `zpro_password`, `is_admin` — pra qualquer um que acessasse um slug de
+   imóvel. **Corrigido**: allowlist explícita
+   (`select('*, brokers:imf_brokers(name, phone, broker_address)')`) —
+   exatamente os 3 campos que `PropertyLanding.tsx` usa. Achado de bônus: o
+   frontend sempre leu a chave `brokers` (não `imf_brokers`), então o bloco
+   "Fale com o corretor" da landing estava silenciosamente quebrado desde
+   sempre — a mesma correção resolveu os dois problemas.
+2. **Chave de serviço do Supabase com prefixo `VITE_`** — o `.env` local
+   tinha `VITE_SUPABASE_SERVICE_ROLE_KEY` (prefixo que o Vite expõe no
+   bundle do navegador) em vez de `SUPABASE_SERVICE_ROLE_KEY`.
+   **Confirmado via `fly secrets list`**: produção (v1 e v2) já usava o
+   nome correto — o erro nunca vazou de verdade, era só local. Corrigido o
+   `.env` local e removido o fallback inseguro em `server/config.ts` que
+   aceitava o nome com `VITE_` (pra esse erro não poder "funcionar
+   silenciosamente" de novo no futuro).
+3. **Webhook de entrada da UAZAPI sem autenticação** —
+   `POST /api/wpp-shim/inbound/:instanceId` (`server/routes/wppShim.ts`)
+   não validava token nem assinatura nenhuma, só confiava que o
+   `:instanceId` da URL batesse com algum corretor no banco. Quem
+   descobrisse um `instanceId` podia injetar "mensagem de cliente" falsa ou
+   acionar a IA a mandar WhatsApp real em nome de um corretor. **Corrigido**:
+   a rota agora exige que `body.token` bata com o `uazapi_instance_token`
+   salvo do corretor — verificado contra 5 payloads reais recentes em
+   `webhook_logs` antes de implementar (a UAZAPI ecoa o token da própria
+   instância em todo evento; bateu 5 de 5).
+
+**Ficou pendente (não crítico, não corrigido ainda)**: CSP desativada
+(`helmet({ contentSecurityPolicy: false })`), `Permissions-Policy` ausente,
+sem validação de schema centralizada (zod/joi), erros de rota vazando
+`err.message` cru quase universalmente, sem `trust proxy` (crítico atrás do
+proxy do Fly), rate limit provavelmente em memória por VM (não confirmado
+`REDIS_URL` ativo), sem timeout/retry nas chamadas a Asaas/UAZAPI/Gemini,
+webhook do Asaas sem `ASAAS_WEBHOOK_TOKEN` setado no v2 (setado no v1),
+7 vulnerabilidades `high` no `npm audit` (2 delas em `nodemailer`/
+`http-proxy-middleware`, dependências mortas sem uso real), Dockerfile
+single-stage rodando como root sem pin de digest, backend nunca compilado
+(roda `tsx` interpretado em produção), e a GitHub Action de deploy pinada
+em `superfly/flyctl-actions/setup-flyctl@master` — um branch mutável, o
+vetor clássico de supply-chain attack via Actions.
+
+### Próximo passo (aguardando o usuário)
+
+Uma nova rodada de auditoria será trazida pelo usuário em breve — os itens
+"pendente" acima são o ponto de partida esperado para essa próxima rodada.
+
+## 14.17. Atualização 2026-07-13 (continuação) — 9 itens de hardening fechados + WhatsApp por membro (codificado, bloqueado)
+
+### 9 itens não-críticos do hardening, fechados um a um (todos deployados no v2)
+
+Depois dos 3 críticos da §14.16, o usuário pediu pra seguir pela lista
+restante "um por um". Cada item abaixo foi implementado, testado
+(`tsc --noEmit`/`vite build`), deployado (`fly deploy -a imobiflow-v2`) e
+confirmado com `curl` antes do próximo:
+
+1. **`trust proxy`** — `app.set('trust proxy', 1)` em `server.ts`, necessário
+   pro rate limit por IP e pros logs refletirem o IP real atrás do proxy do Fly.
+2. **Dependências mortas removidas** — `nodemailer`, `@types/nodemailer`,
+   `http-proxy-middleware` (zero uso real confirmado); `npm audit` high caiu
+   de 7 pra 5.
+3. **`Permissions-Policy`** — nega câmera/microfone/geolocalização/pagamento/
+   USB/sensores/`interest-cohort` por padrão (confirmado que o app não usa
+   nenhuma dessas APIs — só `navigator.clipboard.writeText`, não afetado).
+4. **Health check sem vazamento** — `GET /api/properties/health` parou de
+   devolver `full_error` (objeto de erro completo) numa rota pública; loga
+   só no servidor agora.
+5. **Timeout de 15s em toda chamada externa** — novo `server/lib/http.ts::fetchWithTimeout`
+   (wrapper de `fetch` com `AbortController`), aplicado nos ~29 call sites
+   pra Asaas/UAZAPI/Z-PRO/OpenRouter/N8N, mais `httpOptions.timeout` nas 2
+   chamadas do SDK do Gemini.
+6. **CSP em modo Report-Only** — política real (mapeada por leitura de
+   código: zero script/style inline no build de produção, zero
+   `dangerouslySetInnerHTML`, origens externas reais catalogadas — Google
+   Fonts, iframe do Maps, Storage do Supabase, picsum.photos placeholder),
+   com `POST /api/csp-report` coletando violações. Deliberadamente
+   report-only, não enforcing — sem acesso a browser confiável pra QA visual
+   completa nesta sessão. Trocar `reportOnly: true` → `false` depois de um
+   período sem violação real.
+7. **`Cache-Control` diferenciado** — `no-store` em toda `/api/*`, `no-cache`
+   em `index.html`, `public, max-age=31536000, immutable` nos assets com
+   hash do Vite.
+8. **`noopener,noreferrer`** no único `window.open` que faltava
+   (`PropertyLanding.tsx`, botão de WhatsApp).
+9. **Validação de schema com zod** — novo `server/middleware/validate.ts::validateBody`,
+   aplicado nas 3 rotas de maior risco (`POST /api/auth/signup`, `/login`,
+   `/api/checkout`). Escopo deliberadamente parcial — não cobre as ~115 rotas
+   do sistema, só auth+dinheiro.
+
+**Restam ~23 itens não-críticos** do checklist original (validação nas
+rotas restantes, erros vazando `err.message`, Redis pro rate limit,
+retry/fila, Dockerfile completo, GitHub Action `@master`, RBAC granular,
+`ASAAS_WEBHOOK_TOKEN` ausente no v2, anti-replay Asaas, scanner de segredo
+no CI).
+
+### WhatsApp por membro — ✅ NO AR (2026-07-13)
+
+Decisão de produto que estava em aberto desde 10/07 (ver §11.10 do
+histórico/memória) foi **fechada pelo usuário**: os dois modelos convivem —
+pra cada convite individual, o dono da conta escolhe se o corretor terá
+WhatsApp **próprio** ou vai **compartilhar** o da conta, até um limite por
+conta (`imf_brokers.member_limit`, ajuste manual do admin — sem sistema
+formal de tiers de plano ainda).
+
+Passou por Plan Mode (2 agentes Explore mapeando toda a arquitetura de
+mensageria/provisionamento existente antes de desenhar a solução) e foi
+**100% codificada**: migração de schema (`whatsapp_mode` em
+`imf_broker_members`/`imf_broker_invites`, `instance_owner_user_id` em
+`followup_conversations`), `provisionUazapiInstanceForMember` em
+`provisioning.ts`, resolver `resolveOutboundInstanceToken` em
+`wppShim.ts` usado nos 4 pontos de envio, roteamento de entrada por membro
+no webhook inbound, convite com escolha de modo (`equipe.ts`/`auth.ts`),
+tela de QR por membro (`ConfigArea.tsx`), UI de convite
+(`EquipeArea.tsx`/`JoinTeam.tsx`) e controle de limite no admin. De brinde,
+corrigiu um bug pré-existente não relacionado: o cron de follow-up
+automático estava morto (usava formato Z-PRO que o provisionamento atual
+nunca preenche) — reescrito pra UAZAPI nativo.
+
+**✅ Testada ao vivo e deployada.** A migração `supabase/migrations/20260713_member_whatsapp.sql`
+foi rodada e reconfirmada por checagem direta. Teste ponta a ponta contra
+dados reais (membro existente do broker de teste "hunter"): provisionamento
+real na UAZAPI (criou instância de verdade), simulação do evento inbound
+contra a rota real do webhook confirmando `instance_owner_user_id` setado
+corretamente, e `resolveOutboundInstanceToken` validado nos dois casos
+(instância própria do membro vs. compartilhada da conta). `fly deploy` feito
+e verificado (`200` em `imobiflow-v2.fly.dev`).
+
+**Achado incidental durante o teste, corrigido no caminho:** o CHECK
+constraint de `followup_conversations.conversation_status` só permitia
+`open`/`closed`, mas o código (webhook inbound, validação manual, tela de
+Conversas com 3 abas) sempre tratou `pending` como terceiro status válido —
+toda conversa nova ou reaberta falhava silenciosamente desde que essa
+lógica entrou (confirmado: só 2 linhas na tabela, ambas `open`, nenhuma
+`pending`). Corrigido com `supabase/migrations/20260713b_fix_conversation_status_pending.sql`,
+rodada e reconfirmada antes do deploy.
+
+Detalhe completo do design em `C:\Users\Criate\.claude\plans\agile-sleeping-sphinx.md`
+e na memória `project_imobiflow_whatsapp_por_membro`.
+
+### Auditoria cruzada externa (Codex) — tentada, não concluída
+
+Outra ferramenta (Codex) fez 2 correções locais nos mesmos arquivos
+(`auth.ts`: reset de senha parou de logar o link/token; `billing.ts`:
+webhook Asaas virou fail-closed sem `ASAAS_WEBHOOK_TOKEN`) e pediu uma
+revisão cruzada read-only com resultado anexado a um relatório externo. A
+tarefa foi interrompida pelo usuário duas vezes antes de concluir — nenhuma
+seção foi escrita nesse relatório. Se retomada, começar do zero.
+
+## 14.18. Atualização 2026-07-14 — Teste ponta a ponta ao vivo (persona corretor): 9 bugs reais corrigidos + Assistente ganha voz e memória persistida
+
+Usuário criou uma conta de corretor real ("Jean Carlos") e testou o fluxo
+completo — signup → assinatura sandbox Asaas → WhatsApp provisionado e
+conectado de verdade via UAZAPI → cadastro de imóvel → atendimento
+automático real pelo WhatsApp → uso do Assistente interno do app. Cada bug
+abaixo foi achado em uso real (não em auditoria de código) e corrigido,
+testado e deployado no mesmo dia.
+
+### Atendimento automático (N8N) — 3 bugs em cadeia
+
+1. **N8N ainda chamava o mecanismo de resposta do Z-PRO morto** (IA
+   respondendo "the resource could not be found" pro cliente final). O nó
+   `Enviar Resposta WhatsApp4` do workflow `AUhszL11lwYtzFQe`
+   (`212n8n.criate.online`) apontava pro endpoint Z-PRO — trocado pra
+   chamar um endpoint novo, ver item 3 abaixo.
+2. **IA inventando imóveis que não existem na carteira do corretor.**
+   Causa raiz era wiring errado no N8N, não no backend: o system prompt do
+   nó `Agente IA Corretor1` referenciava `{{ $json.lista_de_imoveis }}`,
+   mas `$json` ali é a saída do nó imediatamente anterior (que não tem
+   essa lista) — a lista real estava 3 nós atrás, em `Aggregate1`. Corrigido
+   pra referência explícita por nome de nó
+   (`{{ $('Aggregate1').item.json.lista_de_imoveis }}`). Bug universal —
+   afetava todo corretor, não só carteira vazia.
+3. **Respostas da IA paravam de aparecer no Conversas do app** — efeito
+   colateral do fix 1: o endpoint Z-PRO antigo fazia duas coisas (enviar +
+   gravar em `imf_conversation_messages`); apontar direto pra UAZAPI
+   resolveu o envio mas perdeu a gravação. Corrigido com endpoint novo
+   `POST /api/wpp-shim/ai-reply` (`server/routes/wppShim.ts`, auth
+   `Bearer INTERNAL_PROXY_TOKEN`) que resolve a instância certa via
+   `resolveOutboundInstanceToken` (respeitando WhatsApp por membro), envia
+   E grava com `sender_type: 'ai'`. O N8N passou a chamar esse endpoint.
+
+### Link de landing page gravando `localhost` — bug sistêmico (9/12 imóveis)
+
+`server/routes/properties.ts` priorizava `req.headers.origin`/`referer`
+sobre `APP_URL` do servidor ao montar o `link` salvo no cadastro — qualquer
+sessão de desenvolvimento local batendo contra o Supabase de produção
+contaminava esse campo pra sempre (só calculado na criação, nunca
+recalculado). **9 dos 12 imóveis da plataforma inteira** tinham o link
+quebrado. Corrigido: sempre usa `APP_URL`, nunca headers do cliente; os 9
+registros existentes foram corrigidos via script direto no banco.
+Divulgação nunca teve esse bug (monta o link no client com
+`window.location.origin`).
+
+### Assistente sem visibilidade de conversas de WhatsApp
+
+Perguntado "quantas pessoas entraram em contato?", o Assistente respondia
+"nenhum lead registrado" mesmo com conversas reais rolando —
+`buildSnapshot()` em `agent.ts` só consultava a tabela formal `leads`
+(populada só via ação explícita `create_lead`), nunca
+`followup_conversations`. Adicionado `conversationsTotal`/
+`conversationCounts` (mesma categorização ia/aguardando/encerrado da tela
+Conversas) ao snapshot, com instrução no prompt pra usar esse número em
+perguntas desse tipo. Depois, ganhou também `recentConversations` (nome,
+telefone, última mensagem, se já tem visita marcada) pra responder "quem é
+o provável comprador" ou "quem está mais perto de fechar visita" apontando
+o contato específico em vez de confundir com lista de imóveis ou dizer que
+não tem a informação.
+
+### Foto no chat da IA + preço unificado + whitelist de confirmação incompleta
+
+Testando `create_property` pelo chat, usuário achou: sem opção de subir
+foto, e o preço gravado pela IA (`R$ 500.000`) divergia em formato do
+gravado pelo formulário manual (`R$ 500.000,00`). Escolheu o escopo maior
+pra foto: anexar direto na conversa (não abrir formulário depois).
+
+- **Preço**: `normalizePriceToBRL()` em `agent.ts` passou a forçar sempre
+  2 casas decimais (`toLocaleString('pt-BR', {minimumFractionDigits:2,
+  maximumFractionDigits:2})`), idêntico ao `maskFromCents()` do formulário
+  manual (`src/lib/money.ts`).
+- **Foto**: anexo é **mecânico, não semântico** — o modelo nunca vê a
+  imagem, só sabe que existe um anexo depois da ação já decidida.
+  `CommandBar.tsx` ganhou botão de clipe, sobe cada foto na hora (mesma
+  compressão 800×800/jpeg 0.6 do `PropertyForm.tsx`) pro endpoint já
+  existente `POST /api/properties/upload-image`, e manda as URLs junto no
+  próximo `POST /api/agent/command`. `runAgent()` anexa essas URLs em
+  `action.image_urls` **depois** da resposta do modelo — nunca faz parte
+  do schema que o modelo preenche, então não tem como ele inventar/
+  alucinar uma URL de imagem.
+- **Bug de brinde, achado lendo o código**: `POST /api/agent/execute`
+  (confirmação de ação nos modos copiloto/manual) tinha uma whitelist
+  desatualizada — só reconhecia `create_lead`/`create_visit`/
+  `send_message`; as outras 9 ações (`create_property`, `update_property`,
+  `cancel_visit`, `update_visit`, `end_rental_contract`, `update_unit`)
+  davam 400 "não precisa de confirmação" mesmo precisando, sempre que a
+  conta não estivesse em modo piloto. Whitelist corrigida pras 9 ações.
+
+### Contato automático por WhatsApp (pushName)
+
+Pedido explícito: quando um cliente manda a primeira mensagem, o sistema
+deve salvar o contato sozinho, identificando o nome do perfil do WhatsApp.
+O payload real da UAZAPI já trazia isso (`message.senderName` e
+`chat.wa_contactName`/`wa_name`), só nunca era usado. `server/routes/
+wppShim.ts` (rota inbound) passou a fazer `upsert` em `imf_contacts`
+(`onConflict: broker_id,phone, ignoreDuplicates: true` — nunca sobrescreve
+um nome que o corretor já editou manualmente). Precisou de
+`UNIQUE (broker_id, phone)` nova em `imf_contacts`
+(`20260714_contacts_auto_save.sql`).
+
+### Visita marcada 3h errada — bug de fuso na ferramenta de agendamento do N8N
+
+Cliente confirmou "16h" pelo WhatsApp; a Agenda do app mostrava 13h.
+Causa raiz **diferente** do bug de fuso já corrigido em `agent.ts` (sessão
+de 13/07) — esse é um caminho de código separado: a tool "agendamento" do
+N8N chama `POST /api/agenda/n8n/create` (`server/routes/agenda.ts`), um
+passthrough puro (`new Date(startAt).toISOString()`) que confia no offset
+que vem de fora. O prompt do N8N instruía o modelo a montar o horário com
+sufixo `"Z"` (UTC) pra uma hora que era, na real, Brasília local — nunca
+convertia. Corrigido em 3 frentes: (1) a linha já quebrada no banco
+ajustada manualmente; (2) `GET /api/agenda/n8n/list` ganhou o campo
+`horario_brasilia` pré-formatado (mesmo princípio de nunca pedir pro
+modelo fazer conta de fuso sozinho); (3) prompt do N8N corrigido pra usar
+offset `"-03:00"` em vez de `"Z"`, tanto no agendamento quanto na
+remarcação.
+
+### "Cancela e avisa" + histórico do Assistente persistido
+
+Pedido: cancelar uma visita E avisar o cliente do motivo — o Assistente
+cancelava mas nunca mandava a mensagem (o esquema de resposta só permite
+uma ação por turno, então o "avisar" da frase combinada se perdia). Campo
+novo `notify_message` em `cancel_visit`/`update_visit`, preenchido pelo
+modelo só quando pedido explicitamente; `executeAction()` cancela/remarca
+e, se preenchido, manda a mensagem de verdade em seguida
+(`sendNotification()`, mesmo caminho de `send_message`). Nunca desfaz a
+ação principal se a notificação falhar.
+
+Também nesta rodada: o histórico do Assistente vivia só no estado local do
+React — fechar o chat ou recarregar a página apagava tudo, sem registro
+pra consultar depois. Nova tabela `imf_agent_log` (por `broker_id`+
+`user_id` — ferramenta pessoal, cada membro só vê a própria conversa),
+`GET /api/agent/history` carrega ao abrir o chat, cada turno é gravado em
+`/api/agent/command` e `/api/agent/execute`.
+
+### Preço inflando 100x ao editar um imóvel criado pela IA — bug crítico
+
+Achado pelo usuário abrindo "Editar Imóvel" de um imóvel cadastrado pelo
+Assistente: preço real `R$ 1.000.000,00` aparecia como `R$
+100.000.000,00` na tela. Causa: `parseLegacyPriceToCents()` em
+`PropertyForm.tsx` foi escrita pra preços legados sem centavos (texto
+livre, só dígitos) e tratava QUALQUER dígito extraído como reais inteiros,
+multiplicando por 100 — mas preços gerados pelo Assistente já vêm
+formatados com centavos (`"R$ 1.000.000,00"`), então os "00" de centavo
+eram lidos como parte do valor e multiplicados de novo. Se o corretor
+salvasse a edição sem perceber, o preço real no banco viraria 100x maior.
+Corrigido detectando vírgula decimal (preço já formatado) e pulando o
+`*100` nesse caso — mesma lógica dupla que `normalizePriceToBRL()` em
+`agent.ts` já usava. Preço real confirmado intacto no banco (nunca foi
+salvo com o bug).
+
+### Campos estruturados (quartos/banheiros/piscina...) não vinham do Assistente — reforço de prompt
+
+Dois casos reais confirmaram: mesmo descrevendo tudo numa mensagem só
+("4 quartos, sendo duas suítes, 1 banheiro interno e 1 externo, área
+gourmet, piscina, garagem pra 2 carros"), a IA escrevia uma descrição
+correta e completa em texto livre, mas deixava os campos estruturados do
+formulário (quartos, banheiros, piscina, vagas_garagem, varanda_gourmet)
+todos zerados/"Não". O modelo claramente entendia a informação — só não
+replicava pros campos estruturados, tratando-os como dispensáveis já que
+"já está no texto". Reforçada a instrução em `buildSystemPrompt()`
+(`agent.ts`): deixou de dizer "campos opcionais" e passou a listar cada
+campo com regra explícita de contagem (ex.: banheiros elípticos — "1
+interno e 1 externo" = 2, mesmo sem repetir a palavra) mais um exemplo de
+mapeamento completo, texto→campos, baseado num dos casos reais. **É
+reforço de prompt, não fix determinístico** — melhora a taxa de acerto mas
+depende do modelo seguir a instrução; vale reconfirmar em testes futuros.
+Os 2 imóveis de teste afetados foram corrigidos manualmente no banco.
+
+### "Nova conversa" no Assistente
+
+Consequência natural do histórico persistido: sem forma de zerar. Botão
+novo no cabeçalho do `CommandBar.tsx` chama `DELETE /api/agent/history`
+(apaga os logs do usuário — é ferramenta pessoal de trabalho, não log de
+auditoria, e não existe tela pra navegar entre "conversas antigas") e
+limpa a tela.
+
+### Assistente ganha entrada por voz
+
+Pedido do usuário: botão de microfone pro Assistente "ouvir". Implementado
+com `MediaRecorder` do navegador (funciona em qualquer browser/celular,
+diferente da Web Speech API que não existe no Firefox/Safari) — grava,
+manda o blob pro novo endpoint `POST /api/ai/transcribe`
+(`server/routes/ai.ts`, `requireUser`), que usa
+`gemini-2.0-flash` (multimodal, diferente do `-lite` usado no resto do
+agente — outra faixa de cota, útil enquanto a do `-lite` andar instável)
+pra transcrever em português. O texto cai no campo de digitação pra
+revisão — nunca envia a mensagem sozinho. Botão de enviar fica bloqueado
+enquanto grava/transcreve.
+
+### Status final da rodada
+
+Todos os itens acima: `tsc --noEmit` + `vite build` limpos, deploy feito
+(`fly deploy -a imobiflow-v2 --config fly.toml --remote-only`) e `curl`
+confirmando `200`, um item de cada vez. A maioria testada contra dados
+reais da conta "Jean Carlos"; exceções documentadas caso a caso (ex.: o
+teste de "avisar por WhatsApp real" foi bloqueado pelo próprio guard-rail
+de segurança do agente ao tentar reusar um número de teste sem autorização
+explícita pra aquele envio específico — não contornado). **Pendências que
+seguem em aberto**: confirmar em uso real se o reforço de prompt de campos
+estruturados realmente melhorou a taxa de acerto; confirmar ao vivo a
+gravação/transcrição de voz (não há login disponível nesta ferramenta pra
+testar a UI autenticada); Fly ficou temporariamente rodando em 1 máquina
+em vez de 2 por falta de capacidade momentânea na região (app seguiu
+saudável, vale monitorar se persistir).

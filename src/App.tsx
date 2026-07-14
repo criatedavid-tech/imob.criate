@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import PropertyLanding from './pages/PropertyLanding';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import JoinTeam from './pages/JoinTeam';
 import PaymentPending from './pages/PaymentPending';
 import PaymentSuccess from './pages/PaymentSuccess';
 import ForgotPassword from './pages/ForgotPassword';
@@ -13,6 +14,7 @@ import Privacidade from './pages/Privacidade';
 import Admin from './pages/Admin';
 import Experiencia from './pages/Experiencia';
 import Vitrine from './pages/Vitrine';
+import VitrineLancamentos from './pages/VitrineLancamentos';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
 import TermsGate from './components/TermsGate';
@@ -59,12 +61,14 @@ export default function App() {
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/equipe/entrar/:code" element={<JoinTeam />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/termos" element={<Termos />} />
           <Route path="/privacidade" element={<Privacidade />} />
           <Route path="/p/:slug" element={<PropertyLanding />} />
           <Route path="/vitrine/:brokerId" element={<Vitrine />} />
+          <Route path="/lancamentos-vitrine/:brokerId" element={<VitrineLancamentos />} />
 
           {/* Experiência nova (interface generativa) — destino padrão pós-login.
               Mesma trava do dashboard: login + assinatura ativa + aceite de termos. */}

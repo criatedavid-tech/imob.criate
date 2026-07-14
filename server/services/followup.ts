@@ -1,52 +1,31 @@
 import { supabase } from "../supabase";
-import { ZPRO_ADMIN_URL } from "../config";
-import { getZproAdminToken } from "../lib/zproAuth";
-import { normalizePhoneBR } from "../lib/crypto";
+import { resolveOutboundInstanceToken, sendUazapiText } from "./wppShim";
 
 // ─── Motor do Follow-Up (tick 60s) ──────────────────────────────────────────
 // claim_due_followups() faz o claim ATÔMICO (seleciona+marca+avança numa só
-// instrução) → multi-máquina safe (Fly roda 2 VMs). Envia via API externa Z-PRO.
-// Em falha de envio, reverte o claim p/ retry no próximo tick (nada se perde).
-// Envia via API externa Z-PRO no MESMO formato do agente N8N (comprovado em produção):
-// POST na URL base (zpro_api_url, sem sufixo) · header "Authorization: Token <token>"
-// · body { body, number, externalKey, isClosed:false }.
-async function checkTicketOpen(ticketId: string | null): Promise<boolean | null> {
-  if (!ticketId || !ZPRO_ADMIN_URL) return null;
-  try {
-    const token = await getZproAdminToken();
-    const r = await fetch(`${ZPRO_ADMIN_URL}/api/tickets/${ticketId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!r.ok) return null; // falha na consulta → não bloqueia envio
-    const d = await r.json();
-    const status = d?.ticket?.status ?? d?.status;
-    return status === 'open' || status === 'pending';
-  } catch {
-    return null;
-  }
-}
+// instrução) → multi-máquina safe (Fly roda 2 VMs). Envia via UAZAPI nativo
+// (mesmo caminho de Conversas/agente — resolveOutboundInstanceToken decide
+// entre instância própria de um membro ou compartilhada da conta). Em falha
+// de envio, reverte o claim p/ retry no próximo tick (nada se perde).
+//
+// Corrigido 2026-07-13: antes enviava no formato Z-PRO (row.zpro_api_url/
+// zpro_api_token), campos que o fluxo de provisionamento atual (UAZAPI
+// nativo) nunca preenche — o cron falhava silenciosamente na primeira linha
+// pra qualquer corretor provisionado hoje, sempre revertendo o claim.
 
-async function sendFollowMessage(apiUrl: string, apiToken: string, customerPhone: string, message: string): Promise<boolean> {
-  if (!apiUrl || !apiToken || !message) return false;
-  try {
-    const r = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Token ${apiToken}` },
-      body: JSON.stringify({
-        // Prefixo ​ (zero-width space, invisível): marca mensagem do SISTEMA.
-        // O nó de handover no N8N só dispara quando a msg fromMe NÃO tem esse marcador
-        // (= corretor digitou manual). Assim o follow-up não causa auto-handover.
-        body: String.fromCharCode(0x200B) + message, // ZWSP: marca msg do sistema
-        number: normalizePhoneBR(customerPhone),
-        externalKey: 'imobiflow-followup',
-        isClosed: false
-      })
-    });
-    return r.ok;
-  } catch (e: any) {
-    console.warn('[Follow-up] sendFollowMessage exceção:', e.message);
-    return false;
-  }
+// Substitui a antiga checagem de ticket aberto no Z-PRO: se a última
+// mensagem da conversa foi o corretor respondendo manualmente (não a IA, não
+// o cliente), ele já assumiu o atendimento — não manda follow-up por cima.
+async function wasRepliedManually(brokerId: string, customerPhone: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("imf_conversation_messages")
+    .select("sender_type")
+    .eq("broker_id", brokerId)
+    .eq("customer_phone", customerPhone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.sender_type === "broker_manual";
 }
 
 // Handover humano: pausa a IA e os follow-ups pra uma conversa. Usado tanto
@@ -75,13 +54,21 @@ export async function runFollowupTick() {
         console.warn(`[Follow-up] follow #${row.message_index} sem mensagem configurada — pulando → ${row.customer_phone}`);
         continue;
       }
-      // Verifica se o ticket ainda está aberto no Z-PRO antes de enviar
-      const ticketOpen = await checkTicketOpen(row.zpro_ticket_id);
-      if (ticketOpen === false) {
-        console.log(`[Follow-up] ticket ${row.zpro_ticket_id} fechado — pulando ${row.customer_phone}`);
+      if (await wasRepliedManually(row.broker_id, row.customer_phone)) {
+        console.log(`[Follow-up] conversa já respondida manualmente — pulando ${row.customer_phone}`);
         continue;
       }
-      const ok = await sendFollowMessage(row.zpro_api_url, row.zpro_api_token, row.customer_phone, row.message);
+      const instanceToken = await resolveOutboundInstanceToken(row.broker_id, row.customer_phone);
+      const sent = instanceToken
+        ? await sendUazapiText(
+            instanceToken,
+            row.customer_phone,
+            // Prefixo ​ (zero-width space, invisível): marca mensagem do SISTEMA
+            // — mesmo padrão de quando o envio ainda ia pelo Z-PRO.
+            String.fromCharCode(0x200B) + row.message
+          )
+        : null;
+      const ok = !!sent?.ok;
       if (ok) {
         console.log(`[Follow-up] follow #${row.message_index} → ${row.customer_phone} (broker ${row.broker_id})`);
         // Após Follow 1 ou 2, reseta follow_sent para que o próximo dispare automaticamente
@@ -94,7 +81,8 @@ export async function runFollowupTick() {
           }).eq('id', row.conversation_id);
         }
       } else {
-        // Falha de envio (rede/API) → reverte claim para retry no próximo tick
+        // Falha de envio (sem instância configurada, ou rede/API) → reverte
+        // claim para retry no próximo tick.
         await supabase.from('followup_conversations').update({
           follow_sent: false,
           follow_sent_at: null,

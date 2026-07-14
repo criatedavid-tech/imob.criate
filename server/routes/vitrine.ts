@@ -55,3 +55,51 @@ vitrineRouter.get("/api/vitrine/:brokerId", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Vitrine pública de Lançamentos (incorporadora) — mesmo espírito do vitrine
+// de Carteira acima: um link único mostrando os empreendimentos, sem expor
+// nome/telefone de comprador (só os contadores agregados por status).
+vitrineRouter.get("/api/vitrine-lancamentos/:brokerId", async (req, res) => {
+  try {
+    const { brokerId } = req.params;
+
+    const { data: broker, error: brokerErr } = await supabase
+      .from("imf_brokers")
+      .select("id, name, broker_address")
+      .eq("id", brokerId)
+      .maybeSingle();
+    if (brokerErr) throw brokerErr;
+    if (!broker) return res.status(404).json({ error: "Incorporadora não encontrada." });
+
+    const { data: devs, error: devsErr } = await supabase
+      .from("imf_developments")
+      .select("id, name, location, tipo, subtipo, amenities, images, imf_units(status)")
+      .eq("broker_id", brokerId)
+      .order("created_at", { ascending: false });
+    if (devsErr) throw devsErr;
+
+    const developments = (devs || []).map((d: any) => {
+      const units = d.imf_units || [];
+      return {
+        id: d.id,
+        name: d.name,
+        location: d.location,
+        tipo: d.tipo,
+        subtipo: d.subtipo,
+        amenities: d.amenities || [],
+        images: d.images || [],
+        total_units: units.length,
+        disponivel: units.filter((u: any) => u.status === "disponivel").length,
+        vendido: units.filter((u: any) => u.status === "vendido").length,
+      };
+    });
+
+    const rawAddress = (broker.broker_address || "").trim();
+    const address = rawAddress.startsWith("{") ? "" : rawAddress;
+
+    res.json({ broker: { name: broker.name || "Incorporadora", address }, developments });
+  } catch (err: any) {
+    console.error("Erro GET /api/vitrine-lancamentos/:brokerId:", err);
+    res.status(500).json({ error: err.message });
+  }
+});

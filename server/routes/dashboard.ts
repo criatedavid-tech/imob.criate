@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 
 export const dashboardRouter = express.Router();
 
@@ -13,16 +13,18 @@ dashboardRouter.get("/api/dashboard/metrics", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json({ totalProperties: 0, activeLeads: 0, scheduledVisits: 0 });
 
+    const owner = await isBrokerOwner(userId, brokerId);
+
     // Count properties
-    const { count: propertyCount, error: propError } = await supabase
-      .from('imf_properties')
-      .select('*', { count: 'exact', head: true })
-      .eq('broker_id', brokerId);
+    const propQuery = supabase.from('imf_properties').select('*', { count: 'exact', head: true }).eq('broker_id', brokerId);
+    if (!owner) propQuery.eq('owner_user_id', userId);
+    const { count: propertyCount, error: propError } = await propQuery;
 
     if (propError) throw propError;
 
     // Count leads for these properties
-    // First get property IDs
+    // First get property IDs (escopo do tenant — todos os imóveis da conta,
+    // não só os do membro; o filtro por membro entra na query de leads abaixo)
     const { data: propIds, error: idsError } = await supabase
       .from('imf_properties')
       .select('id')
@@ -36,18 +38,14 @@ dashboardRouter.get("/api/dashboard/metrics", requireUser, async (req, res) => {
     let scheduledVisits = 0;
 
     if (ids.length > 0) {
-      const { count: leadsCount } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .in('property_id', ids)
-        .neq('status', 'archived');
+      const leadsQuery = supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', ids).neq('status', 'archived');
+      if (!owner) leadsQuery.eq('owner_user_id', userId);
+      const { count: leadsCount } = await leadsQuery;
       activeLeads = leadsCount || 0;
 
-      const { count: visitsCount } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .in('property_id', ids)
-        .in('status', ['visita_agendada', 'agendado']);
+      const visitsQuery = supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', ids).in('status', ['visita_agendada', 'agendado']);
+      if (!owner) visitsQuery.eq('owner_user_id', userId);
+      const { count: visitsCount } = await visitsQuery;
       scheduledVisits = visitsCount || 0;
     }
 
@@ -84,11 +82,9 @@ dashboardRouter.get("/api/dashboard/charts", requireUser, async (req, res) => {
 
     let leads: any[] = [];
     if (ids.length > 0) {
-      const { data } = await supabase
-        .from('leads')
-        .select('created_at')
-        .in('property_id', ids)
-        .gte('created_at', sixMonthsAgo.toISOString());
+      const query = supabase.from('leads').select('created_at').in('property_id', ids).gte('created_at', sixMonthsAgo.toISOString());
+      if (!(await isBrokerOwner(userId, brokerId))) query.eq('owner_user_id', userId);
+      const { data } = await query;
       leads = data || [];
     }
 

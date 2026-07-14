@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   MapPin, CheckCircle2, Calendar, MessageCircle,
-  ArrowRight, X, Mail, User, Phone, Clock, Send,
+  ArrowRight, X, Mail, User, Phone,
   Loader2, ChevronDown, BedDouble, Bath, Maximize2,
   Sofa, UtensilsCrossed, Waves
 } from 'lucide-react';
@@ -25,16 +25,9 @@ export default function PropertyLanding() {
   const [loading, setLoading] = useState(true);
 
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [scheduleStep, setScheduleStep] = useState<'date' | 'form' | 'success'>('date');
+  const [scheduleStep, setScheduleStep] = useState<'form' | 'success'>('form');
   const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [scheduleData, setScheduleData] = useState({ name: '', phone: '', email: '' });
-
-  const [leadData, setLeadData] = useState({ name: '', phone: '' });
-  const [submittingLead, setSubmittingLead] = useState(false);
-  const [leadSuccess, setLeadSuccess] = useState(false);
-  const [leadError, setLeadError] = useState<string | null>(null);
+  const [scheduleData, setScheduleData] = useState({ name: '', phone: '', email: '', preferredTime: '' });
 
   const [isPhilosophyModalOpen, setIsPhilosophyModalOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -64,14 +57,7 @@ export default function PropertyLanding() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const fetchAgenda = async () => {
-    try {
-      const response = await fetch('/api/agenda');
-      if (response.ok) setAvailableSlots(await response.json());
-    } catch { setAvailableSlots([]); }
-  };
-
-  const handleOpenSchedule = () => { setIsScheduleModalOpen(true); fetchAgenda(); };
+  const handleOpenSchedule = () => { setIsScheduleModalOpen(true); setScheduleStep('form'); };
 
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +70,9 @@ export default function PropertyLanding() {
           property_id: property.id,
           name: scheduleData.name, phone: scheduleData.phone, email: scheduleData.email,
           status: 'visita_agendada',
-          notes: `Visita solicitada para: ${selectedSlot}`
+          notes: scheduleData.preferredTime
+            ? `Visita solicitada — horário de preferência: ${scheduleData.preferredTime}`
+            : 'Visita solicitada via landing page'
         })
       });
       if (response.ok) setScheduleStep('success');
@@ -95,23 +83,7 @@ export default function PropertyLanding() {
   const handleWhatsApp = () => {
     const phone = property.brokers?.phone || '5500000000000';
     const text = `Olá, tenho interesse no imóvel: ${property.title} — ${property.location}`;
-    window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
-  };
-
-  const handleLeadSubmit = async () => {
-    if (!leadData.name || !leadData.phone) { setLeadError('Por favor, preencha nome e telefone.'); return; }
-    setLeadError(null);
-    setSubmittingLead(true);
-    try {
-      const response = await fetch('/api/leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ property_id: property.id, ...leadData, status: 'new', notes: 'Via landing page' })
-      });
-      if (response.ok) { setLeadSuccess(true); }
-      else { const err = await response.json(); setLeadError(err.error || 'Erro ao enviar. Tente via WhatsApp.'); }
-    } catch { setLeadError('Erro de conexão. Tente via WhatsApp.'); }
-    finally { setSubmittingLead(false); }
+    window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -574,6 +546,12 @@ export default function PropertyLanding() {
                 >
                   <Calendar size={14} /> Agendar Visita
                 </button>
+                <button
+                  onClick={() => setIsContactModalOpen(true)}
+                  className="flex items-center gap-2 px-7 py-3.5 border border-white/20 text-white rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 transition-all"
+                >
+                  <Mail size={14} /> Enviar Mensagem
+                </button>
               </motion.div>
             </motion.div>
           </div>
@@ -664,30 +642,6 @@ export default function PropertyLanding() {
                   </button>
                 </div>
 
-                {scheduleStep === 'date' && (
-                  <div className="space-y-3">
-                    {availableSlots.length > 0 ? availableSlots.map((slot, idx) => (
-                      <button key={idx} onClick={() => { setSelectedSlot(slot.horario); setScheduleStep('form'); }}
-                        className={`w-full p-5 border rounded-2xl text-left transition-all flex items-center justify-between group ${selectedSlot === slot.horario ? 'border-black bg-black text-white' : 'border-[#E8E4E0] hover:border-black/40 bg-white'}`}>
-                        <div className="flex items-center gap-4">
-                          <Clock size={18} className={selectedSlot === slot.horario ? 'text-white' : 'text-[#6B6B6B]'} />
-                          <span className="font-medium text-sm">{slot.data} às {slot.horario}</span>
-                        </div>
-                        <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 transition-all" />
-                      </button>
-                    )) : (
-                      <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-[#E8E4E0]">
-                        <Calendar size={36} className="mx-auto text-[#E8E4E0] mb-4" />
-                        <p className="font-medium mb-2">Nenhum horário disponível</p>
-                        <p className="text-[#6B6B6B] text-sm mb-8 px-8">Fale diretamente com o corretor via WhatsApp para combinar um horário personalizado.</p>
-                        <button onClick={handleWhatsApp} className="px-8 py-3 bg-black text-white rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all">
-                          Contato via WhatsApp
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {scheduleStep === 'form' && (
                   <form onSubmit={handleScheduleSubmit} className="space-y-4">
                     <div className="relative">
@@ -704,11 +658,15 @@ export default function PropertyLanding() {
                         <input required type="email" placeholder="E-mail" value={scheduleData.email} onChange={e => setScheduleData({ ...scheduleData, email: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
                       </div>
                     </div>
+                    <div className="relative">
+                      <Calendar size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+                      <input type="text" placeholder="Horário de preferência (opcional)" value={scheduleData.preferredTime} onChange={e => setScheduleData({ ...scheduleData, preferredTime: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
+                    </div>
                     <button disabled={scheduleLoading} className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
                       {scheduleLoading ? <Loader2 className="animate-spin" size={16} /> : 'Confirmar Visita'}
                     </button>
-                    <button type="button" onClick={() => setScheduleStep('date')} className="w-full text-[#6B6B6B] text-[10px] font-bold tracking-widest uppercase hover:text-black transition-all pt-1">
-                      Voltar às datas
+                    <button type="button" onClick={handleWhatsApp} className="w-full text-[#6B6B6B] text-[10px] font-bold tracking-widest uppercase hover:text-black transition-all pt-1">
+                      Prefiro combinar por WhatsApp
                     </button>
                   </form>
                 )}

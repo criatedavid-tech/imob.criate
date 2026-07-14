@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, ArrowUp, Loader2, Check, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { Sparkles, ArrowUp, Loader2, Check, X, ArrowLeft, Paperclip, SquarePen, Mic, Square } from 'lucide-react';
 import { authService } from '../services/auth';
+import { PERSONA_LABEL } from './engine';
 import type { Autonomy, Persona } from './types';
 
 interface ProposedAction {
@@ -20,22 +20,193 @@ interface Turn {
 // backend (POST /api/agent/command) que responde, navega ou age sobre os
 // endpoints que já existem. A autonomia (Etapa 12) governa: piloto executa na
 // hora; copiloto/manual propõem e esperam o "Confirmar".
+//
+// Vive no verso do card-flip (ver ExperienceShell) — painel de tela cheia,
+// não mais uma barra fixa por cima de toda página.
 export function CommandBar({
   persona,
   autonomy,
   onNavigate,
   onActionDone,
+  onClose,
 }: {
   persona: Persona;
   autonomy: Autonomy;
   onNavigate: (area: string) => void;
   onActionDone: () => void;
+  onClose: () => void;
 }) {
   const [value, setValue] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmingIdx, setConfirmingIdx] = useState<number | null>(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // O chat é desmontado toda vez que fecha (ver ExperienceShell) e o estado
+  // era só local — fechar/reabrir, ou recarregar a página, apagava tudo.
+  // Agora recarrega o que já foi conversado assim que abre.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/agent/history', { headers: authService.getAuthHeaders() });
+        const data = await res.json();
+        if (!cancelled && res.ok && Array.isArray(data)) setTurns(data);
+      } catch {
+        // silencioso — sem histórico prévio não é erro, é chat novo
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // "Nova conversa" — apaga o histórico salvo (não tem tela pra navegar entre
+  // conversas antigas, então manter apagado só no front reapareceria tudo de
+  // novo na próxima vez que abrir o chat) e limpa a tela.
+  const startNewConversation = async () => {
+    if (clearingHistory || busy) return;
+    setClearingHistory(true);
+    try {
+      await fetch('/api/agent/history', { method: 'DELETE', headers: authService.getAuthHeaders() });
+    } catch {
+      // best-effort — mesmo se falhar, limpa a tela; próxima abertura recarrega do banco
+    } finally {
+      setTurns([]);
+      setClearingHistory(false);
+    }
+  };
+
+  // Fotos anexadas na conversa — sobem pro Storage assim que escolhidas
+  // (mesmo padrão do PropertyForm.tsx), guardamos só as URLs públicas.
+  // Vão junto na próxima mensagem enviada; o backend anexa mecanicamente
+  // a um create_property, se for o caso — a IA nunca "vê" a imagem.
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX = 800;
+          let { width, height } = img;
+          if (width > height) {
+            if (width > MAX) { height = Math.round((height *= MAX / width)); width = MAX; }
+          } else if (height > MAX) {
+            width = Math.round((width *= MAX / height)); height = MAX;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    e.target.value = '';
+    if (!files.length) return;
+    if (attachedImages.length + files.length > 15) {
+      pushTurn({ role: 'ai', text: 'Você pode anexar no máximo 15 fotos por vez.' });
+      return;
+    }
+    files.forEach(async (file) => {
+      setUploadingCount((c) => c + 1);
+      try {
+        const compressed = await compressImage(file);
+        const res = await fetch('/api/properties/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+          body: JSON.stringify({ imageData: compressed }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Falha ao enviar a imagem.');
+        setAttachedImages((cur) => [...cur, data.url]);
+      } catch (err: any) {
+        pushTurn({ role: 'ai', text: err.message || 'Não consegui enviar uma das fotos.' });
+      } finally {
+        setUploadingCount((c) => Math.max(0, c - 1));
+      }
+    });
+  };
+
+  const removeAttachedImage = (idx: number) => {
+    setAttachedImages((cur) => cur.filter((_, i) => i !== idx));
+  };
+
+  // Botão de microfone — grava com MediaRecorder (funciona em qualquer
+  // navegador/celular, diferente da Web Speech API que não existe no
+  // Firefox/Safari) e manda o áudio pro backend só pra virar texto
+  // (POST /api/ai/transcribe). O texto cai no campo de digitação pra você
+  // revisar antes de enviar — nunca manda a mensagem sozinho.
+  const micSupported = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && !!window.MediaRecorder;
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    if (recording || transcribing || busy) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+        .find((t) => MediaRecorder.isTypeSupported(t)) || '';
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || mimeType || 'audio/webm' });
+        setTranscribing(true);
+        try {
+          const audioData: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const res = await fetch('/api/ai/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+            body: JSON.stringify({ audioData, mimeType: blob.type }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Não consegui transcrever o áudio.');
+          if (data.text) {
+            setValue((cur) => (cur ? `${cur} ${data.text}` : data.text));
+            inputRef.current?.focus();
+          } else {
+            pushTurn({ role: 'ai', text: 'Não consegui entender o áudio. Pode tentar de novo ou digitar?' });
+          }
+        } catch (err: any) {
+          pushTurn({ role: 'ai', text: err.message || 'Não consegui transcrever o áudio.' });
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      pushTurn({ role: 'ai', text: 'Não consegui acessar o microfone — verifique a permissão no navegador.' });
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -45,19 +216,21 @@ export function CommandBar({
 
   const submit = async () => {
     const v = value.trim();
-    if (!v || busy) return;
+    if (!v || busy || uploadingCount > 0 || recording || transcribing) return;
     // Histórico ANTES de empurrar o turno atual — o backend só precisa do que
     // já aconteceu antes desta mensagem, senão a IA esquece o que foi dito
     // 1 pergunta atrás (ex.: nome do cliente antes da data da visita).
     const history = turns.map(({ role, text }) => ({ role, text }));
+    const imageUrls = attachedImages;
     setValue('');
-    pushTurn({ role: 'user', text: v });
+    setAttachedImages([]);
+    pushTurn({ role: 'user', text: imageUrls.length ? `${v}\n📎 ${imageUrls.length} foto(s) anexada(s)` : v });
     setBusy(true);
     try {
       const res = await fetch('/api/agent/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ message: v, persona, autonomy, history }),
+        body: JSON.stringify({ message: v, persona, autonomy, history, imageUrls }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao falar com a IA.');
@@ -101,79 +274,160 @@ export function CommandBar({
     setTurns((cur) => cur.map((t, i) => (i === idx ? { ...t, proposedAction: undefined, text: `${t.text}\n(cancelado)` } : t)));
   };
 
-  const hasThread = turns.length > 0;
-
   return (
-    <div className="pointer-events-none fixed bottom-6 inset-x-0 z-30 flex justify-center px-4">
-      <div className="w-full max-w-2xl pointer-events-auto">
-        <AnimatePresence>
-          {hasThread && (
-            <motion.div
-              ref={scrollRef}
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-              className="mb-3 max-h-[46vh] overflow-y-auto rounded-2xl px-4 py-3 space-y-3
-                backdrop-blur-2xl bg-slate-900/60 border border-white/12"
-            >
-              {turns.map((t, i) => (
-                <div key={i} className={t.role === 'user' ? 'text-right' : ''}>
-                  <div className={`inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-[13px] whitespace-pre-line ${
-                    t.role === 'user'
-                      ? 'bg-violet-500/25 border border-violet-300/25 text-white'
-                      : 'bg-white/[0.06] border border-white/10 text-white/85'
-                  }`}>
-                    {t.text}
-                  </div>
-                  {t.proposedAction && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        onClick={() => confirmAction(i, t.proposedAction!)}
-                        disabled={confirmingIdx === i}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold text-white
-                          bg-emerald-500/25 border border-emerald-300/30 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
-                      >
-                        {confirmingIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        Confirmar
-                      </button>
-                      <button
-                        onClick={() => dismissAction(i)}
-                        disabled={confirmingIdx === i}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/60
-                          bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] transition-colors disabled:opacity-50"
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancelar
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {busy && (
-                <div className="flex items-center gap-2 text-[13px] text-white/40">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> pensando…
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <div className="flex flex-col h-full w-full bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
+      {/* Cabeçalho — voltar fecha o chat (flip de volta pro app) */}
+      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-white/10 backdrop-blur-2xl bg-white/[0.03]">
+        <button
+          onClick={onClose}
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+          aria-label="Voltar"
+        >
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </button>
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
+          bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-white/20">
+          <Sparkles className="w-4 h-4 text-violet-100" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-bold text-white leading-tight">Assistente IA</p>
+          <p className="text-[11px] text-white/40 leading-tight truncate">{PERSONA_LABEL[persona]}</p>
+        </div>
+        <button
+          onClick={startNewConversation}
+          disabled={clearingHistory || busy || (turns.length === 0 && !loadingHistory)}
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Nova conversa"
+          title="Nova conversa"
+        >
+          {clearingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <SquarePen className="w-4 h-4" />}
+        </button>
+      </div>
 
+      {/* Histórico */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-3">
+        {turns.length === 0 && !busy && !loadingHistory && (
+          <div className="h-full flex items-center justify-center text-center px-6">
+            <div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
+                bg-white/[0.06] border border-white/12">
+                <Sparkles className="w-5 h-5 text-violet-200" />
+              </div>
+              <p className="text-[14px] text-white/50 max-w-xs mx-auto">
+                Pergunte qualquer coisa ou peça pra eu fazer algo — ex: <em>"cadastra a Maria 62999998888 no apê centro"</em> ou <em>"quantos leads eu tenho?"</em>
+              </p>
+            </div>
+          </div>
+        )}
+        {turns.map((t, i) => (
+          <div key={i} className={t.role === 'user' ? 'text-right' : ''}>
+            <div className={`inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-[13px] whitespace-pre-line ${
+              t.role === 'user'
+                ? 'bg-violet-500/25 border border-violet-300/25 text-white'
+                : 'bg-white/[0.06] border border-white/10 text-white/85'
+            }`}>
+              {t.text}
+            </div>
+            {t.proposedAction && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => confirmAction(i, t.proposedAction!)}
+                  disabled={confirmingIdx === i}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold text-white
+                    bg-emerald-500/25 border border-emerald-300/30 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
+                >
+                  {confirmingIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Confirmar
+                </button>
+                <button
+                  onClick={() => dismissAction(i)}
+                  disabled={confirmingIdx === i}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/60
+                    bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] transition-colors disabled:opacity-50"
+                >
+                  <X className="w-3.5 h-3.5" /> Cancelar
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {busy && (
+          <div className="flex items-center gap-2 text-[13px] text-white/40">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> pensando…
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="shrink-0 px-5 pb-5 pt-2">
+        {(attachedImages.length > 0 || uploadingCount > 0) && (
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            {attachedImages.map((url, i) => (
+              <div key={url} className="relative w-12 h-12 rounded-lg overflow-hidden border border-white/15 shrink-0">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button
+                  onClick={() => removeAttachedImage(i)}
+                  className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-black/60 text-white"
+                  aria-label="Remover foto"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ))}
+            {uploadingCount > 0 && (
+              <div className="w-12 h-12 rounded-lg flex items-center justify-center border border-white/15 bg-white/[0.05] shrink-0">
+                <Loader2 className="w-4 h-4 text-white/50 animate-spin" />
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
           backdrop-blur-2xl bg-white/[0.09] border border-white/15
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
-            bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-white/20">
-            <Sparkles className="w-4 h-4 text-violet-100" />
-          </div>
           <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy || recording || transcribing}
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white/50
+              hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+            aria-label="Anexar foto"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          {micSupported && (
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={busy || transcribing}
+              title={recording ? 'Parar gravação' : 'Falar por voz'}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 ${
+                recording ? 'text-red-300 bg-red-500/20 animate-pulse' : 'text-white/50 hover:text-white hover:bg-white/10'
+              }`}
+              aria-label={recording ? 'Parar gravação' : 'Falar por voz'}
+            >
+              {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : recording ? <Square className="w-3.5 h-3.5" /> : <Mic className="w-4 h-4" />}
+            </button>
+          )}
+          <input
+            ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
             disabled={busy}
-            placeholder="Fale com a IA…  ex: cadastra a Maria 62999998888 no apê centro · quantos leads eu tenho?"
+            placeholder={recording ? 'Gravando… fale sua mensagem' : transcribing ? 'Transcrevendo áudio…' : 'Fale com a IA…  ex: cadastra a Maria 62999998888 no apê centro'}
             className="flex-1 bg-transparent outline-none text-[14px] text-white placeholder:text-white/35 disabled:opacity-60"
           />
-          <button onClick={submit} disabled={busy}
+          <button onClick={submit} disabled={busy || uploadingCount > 0 || recording || transcribing}
+            title={uploadingCount > 0 ? 'Aguarde as fotos terminarem de enviar' : transcribing ? 'Aguarde a transcrição terminar' : undefined}
             className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white
               bg-violet-500/40 border border-violet-300/30 hover:bg-violet-500/60 transition-colors disabled:opacity-50">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
+            {busy || uploadingCount > 0 || transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
           </button>
         </div>
       </div>

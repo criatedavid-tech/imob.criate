@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Plus, ChevronDown, Loader2, Shield } from 'lucide-react';
+import { Sparkles, Plus, ChevronDown, Loader2, Shield, Menu } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ManualRail } from './ManualRail';
 import { Canvas } from './Canvas';
 import { CommandBar } from './CommandBar';
@@ -9,6 +10,7 @@ import { fetchCorretorLayout, fetchIncorporadoraLayout, fetchImobiliariaLayout }
 import { CarteiraArea } from './CarteiraArea';
 import { ConversasArea } from './ConversasArea';
 import { NegociosArea } from './NegociosArea';
+import { ContatosArea } from './ContatosArea';
 import { AgendaArea } from './AgendaArea';
 import { LocacaoArea } from './LocacaoArea';
 import { LancamentosArea } from './LancamentosArea';
@@ -73,6 +75,8 @@ export function ExperienceShell() {
   const [autonomy, setAutonomy] = useState<Autonomy>('piloto');
   const [layout, setLayout] = useState<LayoutSpec | null>(null);
   const [loadingLayout, setLoadingLayout] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   // Bump quando a IA executa uma ação — remonta a área atual (refetch) e
   // refaz o cockpit, pra a tela nunca ficar defasada do que a IA acabou de fazer.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -137,13 +141,26 @@ export function ExperienceShell() {
       <div className="absolute -top-40 -left-20 w-[420px] h-[420px] rounded-full bg-violet-600/20 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-[380px] h-[380px] rounded-full bg-indigo-500/15 blur-[120px] pointer-events-none" />
 
-      <ManualRail persona={persona} active={area} onSelect={setArea} />
+      <ManualRail
+        persona={persona}
+        active={area}
+        onSelect={setArea}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
+      />
 
       <main className="flex-1 relative overflow-y-auto">
         {/* Barra superior */}
         <div className="sticky top-0 z-20 backdrop-blur-2xl bg-slate-900/30 border-b border-white/8">
           <div className="max-w-6xl mx-auto w-full px-6 py-3.5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={() => setMobileNavOpen(true)}
+                className="md:hidden shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors"
+                aria-label="Abrir menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
               {isAdmin ? (
                 <>
                   {/* Só admin troca de persona — pra demonstrar/dar suporte */}
@@ -212,13 +229,15 @@ export function ExperienceShell() {
 
         {/* Conteúdo: canvas generativo (Hoje) ou área manual.
             key inclui refreshKey → ação da IA remonta a área e força refetch. */}
-        <div key={`${area}-${refreshKey}`} className="px-6 pt-6 pb-32">
+        <div key={`${area}-${refreshKey}`} className="px-6 pt-6 pb-16">
           {area === 'carteira' ? (
             <CarteiraArea />
           ) : area === 'conversas' ? (
             <ConversasArea />
           ) : area === 'negocios' ? (
             <NegociosArea />
+          ) : area === 'contatos' ? (
+            <ContatosArea />
           ) : area === 'agenda' ? (
             <AgendaArea />
           ) : area === 'locacao' ? (
@@ -246,13 +265,52 @@ export function ExperienceShell() {
           )}
         </div>
 
-        <CommandBar
-          persona={persona}
-          autonomy={autonomy}
-          onNavigate={setArea}
-          onActionDone={() => setRefreshKey((k) => k + 1)}
-        />
       </main>
+
+      {/* Botão flutuante — abre o chat. */}
+      {!chatOpen && (
+        <button
+          onClick={() => setChatOpen(true)}
+          aria-label="Falar com a IA"
+          className="absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full flex items-center justify-center
+            text-white bg-gradient-to-br from-violet-500/80 to-indigo-600/80 border border-white/25
+            shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_32px_-8px_rgba(76,29,149,0.6)]
+            hover:scale-105 active:scale-95 transition-transform"
+        >
+          <Sparkles className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Chat — overlay independente, NUNCA aninhado dentro de um ancestral com
+          transform (nem em rotateY(0)): qualquer transform em ancestral vira
+          containing block novo pra filhos "fixed", e a app inteira tem vários
+          modais "fixed inset-0" (leads, equipe, lançamentos, locação,
+          conversas) que quebravam — apareciam espelhados/presos no mobile,
+          onde o viewport real diverge do 100vh por causa da barra do Safari.
+          Por isso a animação de entrada vive só aqui, isolada, sem tocar
+          na árvore principal do app. */}
+      <AnimatePresence>
+        {chatOpen && (
+          <div className="fixed inset-0 z-[100]" style={{ perspective: 1800 }}>
+            <motion.div
+              initial={{ rotateY: -100, opacity: 0 }}
+              animate={{ rotateY: 0, opacity: 1 }}
+              exit={{ rotateY: -100, opacity: 0 }}
+              transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
+              style={{ transformStyle: 'preserve-3d', transformOrigin: 'right center' }}
+              className="w-full h-full"
+            >
+              <CommandBar
+                persona={persona}
+                autonomy={autonomy}
+                onNavigate={(a) => { setArea(a); setChatOpen(false); }}
+                onActionDone={() => setRefreshKey((k) => k + 1)}
+                onClose={() => setChatOpen(false)}
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

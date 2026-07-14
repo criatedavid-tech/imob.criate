@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2 } from 'lucide-react';
+import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
-import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
+import { maskCpfCnpj } from '../lib/document';
 
 // Dark-mode do <select> nativo é inconsistente entre navegadores — Chrome no
 // Windows ignora color-scheme pro popup da lista, então estiliza a <option>
@@ -14,6 +15,7 @@ interface Contract {
   id: string;
   tenant_name: string;
   tenant_phone?: string;
+  tenant_cpf_cnpj?: string;
   owner_name: string;
   owner_phone?: string;
   property?: string;
@@ -23,7 +25,22 @@ interface Contract {
   start_date: string;
   end_date?: string;
   status: 'ativo' | 'encerrado';
+  current_month_payment_status?: 'pending' | 'paid' | 'overdue' | 'failed' | null;
 }
+
+interface ChargeInfo {
+  boleto_url: string | null;
+  pix_copy_paste: string | null;
+  due_date: string;
+  amount_cents: number;
+}
+
+const PAYMENT_LABEL: Record<string, { label: string; cls: string }> = {
+  paid: { label: 'Pago', cls: 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20' },
+  pending: { label: 'Pendente', cls: 'bg-amber-400/15 text-amber-200 border-amber-300/20' },
+  overdue: { label: 'Atrasado', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
+  failed: { label: 'Falhou', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
+};
 
 interface PropertyOption {
   id: string;
@@ -32,21 +49,26 @@ interface PropertyOption {
 
 function NewContractModal({
   properties,
+  initial,
   onClose,
   onCreated,
 }: {
   properties: PropertyOption[];
+  initial?: Contract | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [tenantName, setTenantName] = useState('');
-  const [tenantPhone, setTenantPhone] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const [ownerPhone, setOwnerPhone] = useState('');
-  const [propertyId, setPropertyId] = useState('');
-  const [rentCents, setRentCents] = useState(0);
-  const [dueDay, setDueDay] = useState('10');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const isEdit = !!initial;
+  const [tenantName, setTenantName] = useState(initial?.tenant_name || '');
+  const [tenantPhone, setTenantPhone] = useState(initial?.tenant_phone ? stripDDI(initial.tenant_phone) : '');
+  const [tenantCpf, setTenantCpf] = useState(initial?.tenant_cpf_cnpj ? maskCpfCnpj(initial.tenant_cpf_cnpj) : '');
+  const [ownerName, setOwnerName] = useState(initial?.owner_name || '');
+  const [ownerPhone, setOwnerPhone] = useState(initial?.owner_phone ? stripDDI(initial.owner_phone) : '');
+  const [propertyId, setPropertyId] = useState(initial?.property_id || '');
+  const [rentCents, setRentCents] = useState(initial?.rent_amount_cents || 0);
+  const [dueDay, setDueDay] = useState(initial ? String(initial.due_day) : '10');
+  const [startDate, setStartDate] = useState(initial?.start_date?.slice(0, 10) || new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(initial?.end_date?.slice(0, 10) || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -60,24 +82,26 @@ function NewContractModal({
     setSaving(true);
     setError('');
     try {
-      const res = await fetch('/api/locacao/contracts', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/locacao/contracts/${initial!.id}` : '/api/locacao/contracts', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
         body: JSON.stringify({
           tenant_name: tenantName, tenant_phone: tenantPhone ? normalizePhoneBR(tenantPhone) : null,
+          tenant_cpf_cnpj: tenantCpf ? tenantCpf.replace(/\D/g, '') : null,
           owner_name: ownerName, owner_phone: ownerPhone ? normalizePhoneBR(ownerPhone) : null,
           property_id: propertyId || null,
           rent_amount_cents: rentCents, due_day: due, start_date: startDate,
+          end_date: endDate || null,
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || 'Falha ao criar contrato.');
+        throw new Error(body?.error || `Falha ao ${isEdit ? 'editar' : 'criar'} contrato.`);
       }
       onCreated();
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Falha ao criar contrato.');
+      setError(e.message || `Falha ao ${isEdit ? 'editar' : 'criar'} contrato.`);
     } finally {
       setSaving(false);
     }
@@ -92,7 +116,7 @@ function NewContractModal({
         max-h-[85vh] flex flex-col">
 
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-          <h3 className="text-lg font-bold text-white">Novo contrato de locação</h3>
+          <h3 className="text-lg font-bold text-white">{isEdit ? 'Editar contrato de locação' : 'Novo contrato de locação'}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors">
             <X size={20} />
           </button>
@@ -125,6 +149,16 @@ function NewContractModal({
                     focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
               </div>
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+              CPF/CNPJ do inquilino
+            </label>
+            <input value={tenantCpf} onChange={(e) => setTenantCpf(maskCpfCnpj(e.target.value))} placeholder="CPF ou CNPJ" maxLength={18} inputMode="numeric"
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+            <p className="text-[10px] text-white/25 mt-1">Opcional agora — necessário só quando for gerar a primeira cobrança.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -185,13 +219,23 @@ function NewContractModal({
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <Calendar size={11} /> Início do contrato
-            </label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12
-                focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <Calendar size={11} /> Início do contrato
+              </label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12
+                  focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <Calendar size={11} /> Fim do contrato
+              </label>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12
+                  focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]" />
+            </div>
           </div>
         </div>
 
@@ -204,7 +248,7 @@ function NewContractModal({
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30
               hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : null}
-            Criar
+            {isEdit ? 'Salvar' : 'Criar'}
           </button>
         </div>
       </div>
@@ -222,7 +266,11 @@ export function LocacaoArea() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [endingId, setEndingId] = useState<string | null>(null);
+  const [chargingId, setChargingId] = useState<string | null>(null);
+  const [chargeInfo, setChargeInfo] = useState<Record<string, ChargeInfo | undefined>>({});
+  const [chargeError, setChargeError] = useState<Record<string, string>>({});
 
   const load = () => {
     setLoading(true);
@@ -247,6 +295,33 @@ export function LocacaoArea() {
       .then((data) => setProperties(Array.isArray(data) ? data : []))
       .catch(() => setProperties([]));
   }, []);
+
+  async function handleCharge(c: Contract) {
+    setChargingId(c.id);
+    setChargeError((cur) => ({ ...cur, [c.id]: '' }));
+    try {
+      if (!c.current_month_payment_status) {
+        const res = await fetch(`/api/locacao/contracts/${c.id}/charge`, {
+          method: 'POST', headers: authService.getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Falha ao gerar cobrança.');
+        setChargeInfo((cur) => ({ ...cur, [c.id]: data }));
+        load();
+      } else {
+        const res = await fetch(`/api/locacao/contracts/${c.id}/payments`, { headers: authService.getAuthHeaders() });
+        const list = await res.json();
+        const monthPrefix = new Date().toISOString().slice(0, 7);
+        const current = (Array.isArray(list) ? list : []).find((p: any) => p.reference_month?.startsWith(monthPrefix));
+        if (current) setChargeInfo((cur) => ({ ...cur, [c.id]: current }));
+        else throw new Error('Não achei a cobrança deste mês.');
+      }
+    } catch (e: any) {
+      setChargeError((cur) => ({ ...cur, [c.id]: e.message || 'Erro ao processar cobrança.' }));
+    } finally {
+      setChargingId(null);
+    }
+  }
 
   async function endContract(id: string) {
     if (!confirm('Encerrar este contrato de locação?')) return;
@@ -311,13 +386,19 @@ export function LocacaoArea() {
                     <p className="text-[15px] font-bold text-white truncate">{c.tenant_name}</p>
                     <p className="text-[11px] text-white/40 truncate">inquilino</p>
                   </div>
-                  <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${
-                    c.status === 'ativo'
-                      ? 'bg-emerald-400/15 text-emerald-200 border border-emerald-300/20'
-                      : 'bg-white/[0.04] text-white/30 border border-white/10'
-                  }`}>
-                    {c.status === 'ativo' ? 'Ativo' : 'Encerrado'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => setEditingContract(c)}
+                      className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${
+                      c.status === 'ativo'
+                        ? 'bg-emerald-400/15 text-emerald-200 border border-emerald-300/20'
+                        : 'bg-white/[0.04] text-white/30 border border-white/10'
+                    }`}>
+                      {c.status === 'ativo' ? 'Ativo' : 'Encerrado'}
+                    </span>
+                  </div>
                 </div>
 
                 {c.property && (
@@ -330,10 +411,49 @@ export function LocacaoArea() {
                 <p className="text-[11px] text-white/35 mt-1">Vencimento todo dia {c.due_day}</p>
 
                 {c.status === 'ativo' && (
-                  <button onClick={() => endContract(c.id)} disabled={endingId === c.id}
-                    className="w-full mt-4 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-red-300 transition-colors disabled:opacity-40">
-                    {endingId === c.id ? 'Encerrando...' : 'Encerrar contrato'}
-                  </button>
+                  <>
+                    <div className="mt-3 pt-3 border-t border-white/8">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] text-white/40">Cobrança do mês</span>
+                        {c.current_month_payment_status ? (
+                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${PAYMENT_LABEL[c.current_month_payment_status]?.cls || 'bg-white/[0.04] text-white/30 border-white/10'}`}>
+                            {PAYMENT_LABEL[c.current_month_payment_status]?.label || c.current_month_payment_status}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-white/25">sem cobrança</span>
+                        )}
+                      </div>
+
+                      {chargeInfo[c.id] ? (
+                        <div className="space-y-1.5">
+                          {chargeInfo[c.id]!.boleto_url && (
+                            <a href={chargeInfo[c.id]!.boleto_url!} target="_blank" rel="noreferrer"
+                              className="block text-center py-2 rounded-xl text-[11px] font-semibold text-white bg-white/[0.08] hover:bg-white/[0.14] transition-colors">
+                              Ver boleto
+                            </a>
+                          )}
+                          {chargeInfo[c.id]!.pix_copy_paste && (
+                            <button onClick={() => navigator.clipboard.writeText(chargeInfo[c.id]!.pix_copy_paste!)}
+                              className="w-full py-2 rounded-xl text-[11px] font-semibold text-white/70 bg-white/[0.04] hover:bg-white/[0.08] transition-colors">
+                              Copiar código PIX
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button onClick={() => handleCharge(c)} disabled={chargingId === c.id}
+                          className="w-full py-2 rounded-xl text-[11px] font-semibold text-white bg-white/[0.08] hover:bg-white/[0.14] transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+                          {chargingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          {c.current_month_payment_status ? 'Ver cobrança' : 'Gerar cobrança do mês'}
+                        </button>
+                      )}
+                      {chargeError[c.id] && <p className="text-[11px] text-red-300 mt-1.5">{chargeError[c.id]}</p>}
+                    </div>
+
+                    <button onClick={() => endContract(c.id)} disabled={endingId === c.id}
+                      className="w-full mt-3 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-red-300 transition-colors disabled:opacity-40">
+                      {endingId === c.id ? 'Encerrando...' : 'Encerrar contrato'}
+                    </button>
+                  </>
                 )}
               </GlassCard>
             </div>
@@ -343,6 +463,9 @@ export function LocacaoArea() {
 
       {showCreate && (
         <NewContractModal properties={properties} onClose={() => setShowCreate(false)} onCreated={load} />
+      )}
+      {editingContract && (
+        <NewContractModal properties={properties} initial={editingContract} onClose={() => setEditingContract(null)} onCreated={load} />
       )}
     </div>
   );

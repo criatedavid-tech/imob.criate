@@ -1,6 +1,8 @@
 # ImobiFlow
 
-Plataforma B2B SaaS para corretores de imóveis. Cada corretor recebe automaticamente um CRM, landing pages para imóveis e um agente IA no WhatsApp — tudo provisionado em segundos após o pagamento.
+Plataforma B2B SaaS para o mercado imobiliário brasileiro — corretor autônomo, imobiliária ou incorporadora, todos servidos pelo mesmo produto. A proposta: **"pague e, minutos depois, tenha um funcionário de IA no seu WhatsApp"** — não um sistema que você opera, um agente que você supervisiona.
+
+> Este é o app **v2** (`imobiflow-v2.fly.dev`, branch `v2`) — o projeto principal e alvo de todo desenvolvimento ativo desde 2026-07-13. O app v1 (`imobiflow.fly.dev`, branch `main`) existe só como rede de segurança e não recebe mais features. Detalhe técnico completo e histórico de decisões em [`DOCUMENTACAO.md`](./DOCUMENTACAO.md).
 
 ---
 
@@ -8,464 +10,133 @@ Plataforma B2B SaaS para corretores de imóveis. Cada corretor recebe automatica
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React 19 + TypeScript + Tailwind CSS v4 |
-| Backend | Node.js + Express + TypeScript (`server.ts` monolítico) |
-| Banco de dados | Supabase (PostgreSQL) |
-| Autenticação | Supabase Auth |
-| Storage | Supabase Storage (fotos de imóveis e perfis) |
-| IA — texto | Google Gemini 2.0 Flash Lite |
-| IA — agente | OpenRouter (via proxy interno, chave da empresa) |
-| Pagamentos | Asaas (checkout transparente + assinatura recorrente + cobrança de excedente) |
-| WhatsApp | Z-PRO (multi-tenant) + UAZAPI (provider) |
-| Automação | N8N (agente IA + entrega de credenciais) |
-| Deploy | Fly.io — região GRU (São Paulo) |
-| Runtime | `tsx` (TypeScript sem etapa de build) |
+| Frontend | React 19 + TypeScript + Tailwind CSS v4 + Vite 6 + Framer Motion |
+| Backend | Node.js + Express + TypeScript, modularizado sob `server/` (rodado via `tsx`, sem etapa de build) |
+| Banco de dados | Supabase (PostgreSQL) — instância compartilhada com outros produtos da Criate, tabelas núcleo com prefixo `imf_` |
+| Autenticação | Supabase Auth (JWT real — nunca confia em header de identidade) |
+| Storage | Supabase Storage (fotos de imóveis) |
+| IA — agente/texto | Google Gemini (`gemini-2.0-flash-lite`), com fallback automático para OpenRouter (`gpt-4o-mini`) quando a cota falha |
+| IA — voz | Google Gemini (`gemini-2.0-flash`, multimodal) transcreve áudio gravado no navegador |
+| WhatsApp | UAZAPI nativo — provisionamento direto por corretor/membro, sem intermediário (Z-PRO foi eliminado do v2) |
+| Automação do agente do WhatsApp | N8N (`212n8n.criate.online`) — conversa com o cliente final, separado do Assistente interno do app |
+| Pagamentos | Asaas (checkout + assinatura recorrente + cobrança de excedente) |
+| Deploy | Fly.io — app `imobiflow-v2`, região `gru` (São Paulo), deploy manual (`fly deploy --remote-only`) |
 
 ---
 
-## Arquitetura
+## A ideia central: um agente, não um painel
 
-```
-Corretor
-  └─ Signup → Asaas checkout → PAYMENT_CONFIRMED webhook
-       └─ imobiflow.fly.dev (Express)
-            ├─ Cria tenant isolado no Z-PRO   (POST /tenants)
-            ├─ Cria usuário admin no tenant   (POST /userTenants)
-            ├─ Cria canal WhatsApp uazapi      (POST /whatsappTenants)
-            ├─ Cria API Config com UUID        (POST /api-config)
-            ├─ Ativa Bots IA (N8N) no tenant  (PUT /settings/n8n)
-            ├─ Salva webhook URL no canal      (PUT /whatsapp/:id)
-            └─ Dispara webhook → N8N
-                 └─ N8N envia credenciais ao corretor via WhatsApp/e-mail
+O diferencial do produto é a **Assistente IA** (`src/experience/CommandBar.tsx` + `server/services/agent.ts`) — uma barra de comando em linguagem natural que substitui boa parte da navegação por telas. O corretor fala (digitando, colando ou **por voz**) e o agente decide e executa: cadastra imóvel, agenda/cancela/remarca visita (avisando o cliente por WhatsApp se pedido), manda mensagem, cadastra lead, consulta a agenda, navega pra qualquer área do sistema. Cada resposta pode:
 
-Corretor recebe login + URL + bearerToken
-  └─ Loga no Z-PRO → escaneia QR → WhatsApp conectado → agente IA ativo
-```
+- **Executar direto** (modo *piloto*),
+- **Propor e esperar confirmação** (modo *copiloto*/*manual* — o corretor escolhe o nível de autonomia),
+- Ou simplesmente responder, sem ação nenhuma.
+
+Fotos podem ser anexadas na própria conversa (sobem pro Storage antes de qualquer coisa; o modelo nunca "vê" a imagem, só sabe que existe um anexo). O histórico da conversa é persistido por usuário (`imf_agent_log`) e sobrevive a fechar o chat ou recarregar a página — com um botão "Nova conversa" pra recomeçar do zero quando quiser.
+
+**Importante:** este agente interno (o "cérebro" que o corretor usa dentro do app) é **diferente** do agente que atende os *clientes finais* pelo WhatsApp — esse roda inteiramente no N8N (`212n8n.criate.online`), lendo o catálogo real do corretor via API e agendando/cancelando visitas com o fuso de Brasília sempre correto.
 
 ---
 
-## Funcionalidades
+## As 3 personas, as mesmas telas
 
-### Para o corretor
-- Cadastro com e-mail auto-confirmado (via Supabase Admin API)
-- Dashboard responsivo (mobile + desktop) — métricas, gráfico de leads, CRM
-- Criação de imóveis com até 15 fotos, campos detalhados e slug único
-- Landing page exclusiva por imóvel (`/p/[slug]`) — captura leads sem autenticação
-- IA para aprimorar descrições (Gemini 2.0 Flash Lite)
-- Perfil profissional completo (bio, foto, citação, métricas de vendas)
-- Agenda de visitas agendadas via agente IA
-- Instruções personalizadas para a IA (AISettings → `broker_agents`)
-- Acompanhamento de uso de tickets do ciclo (inclusos x excedente)
-- Recuperação de senha via WhatsApp (link de reset por UAZAPI)
+Corretor autônomo, imobiliária e incorporadora usam a **mesma arquitetura de superfícies** (`src/experience/`), que se adapta ao porte da conta:
 
-### Para o administrador
-- Painel `/admin` com lista de todos os corretores
-- Bloquear / ativar corretor manualmente
-- Disparar re-provisionamento Z-PRO
-- Atualizar credenciais Z-PRO diretamente
-- Visualizar status de assinatura Asaas
-
-### Agente IA WhatsApp
-- N8N processa mensagens recebidas pelo Z-PRO (texto, áudio, imagem e documento — mídia transcrita/descrita via Gemini)
-- Interpreta intenção do cliente (agendamento, dúvidas, interesse)
-- Agenda, remarca e cancela visitas via API do Z-PRO (tools do agente)
-- **Prompt personalizado por corretor**: instruções salvas na tabela `broker_agents` são injetadas no system prompt em cada atendimento, com fallback seguro (sem agente cadastrado → injeção vazia, fluxo nunca quebra)
-- Responde automaticamente via Z-PRO
-
-### Proxy LLM
-- N8N chama `POST /api/proxy/llm/:brokerPhone/chat/completions`
-- Token `INTERNAL_PROXY_TOKEN` protege o endpoint
-- O proxy encaminha para o OpenRouter com a chave da empresa (`OPENROUTER_API_KEY`)
-
-### Cobrança de excedente (overage)
-- Plano inclui **100 atendimentos de IA por mês** (`PLAN_INCLUDED_TICKETS`)
-- Atendimento adicional: **R$ 3,00 por ticket** (`PLAN_OVERAGE_PRICE`), cobrado automaticamente na fatura seguinte via Asaas
-- Scheduler "Billing Prep" roda a cada 1h consolidando uso (`ticket_events` → `overage_charges`)
-- Admin pode conceder bônus de tickets via `ticket_adjustments`
-- O checkout informa o excedente e o checkbox de autorização inclui consentimento explícito da cobrança adicional
-
-### Follow-up automático
-- Scheduler interno (tick 60s) reengaja clientes que pararam de responder
-- `POST /api/followup/inbound` (N8N): cliente respondeu → re-arma o timer e informa se a IA deve responder (`respond: false` = handover humano ativo)
-- `POST /api/followup/broker-reply` (N8N): corretor assumiu a conversa → pausa follow-ups
-- Configurável por corretor via `GET/POST /api/followup/config`
-
----
-
-## Fluxo de Provisionamento (7 passos automáticos)
-
-Disparado automaticamente pelo webhook `PAYMENT_CONFIRMED` do Asaas:
-
-| Passo | Ação | Endpoint Z-PRO |
-|---|---|---|
-| 1 | Cria tenant isolado | `POST /tenants` |
-| 2 | Cria usuário admin no tenant | `POST /userTenants` |
-| 3 | Obtém tenant token (forjado localmente) | `forgeTenantJwt()` |
-| 4 | Cria canal WhatsApp (uazapi) | `POST /whatsappTenants` |
-| 5 | Cria API Config vinculada ao canal | `POST /api-config` |
-| 6 | Ativa Bots IA (n8n + n8nAllTickets) | `PUT /settings/:key` |
-| 7 | Salva URL do webhook N8N no canal | `PUT /whatsapp/:id` |
-
-Após os 7 passos o webhook de provisionamento é disparado ao N8N com:
-
-```json
-{
-  "event": "broker_provisioned",
-  "broker": { "id", "name", "email", "phone" },
-  "zpro_login": { "url", "email", "username", "password" },
-  "zpro": {
-    "tenant_id", "channel_id", "channel_name", "channel_type",
-    "url": "https://appback.../v2/api/external/{uuid}",
-    "bearerToken": "..."
-  }
-}
-```
-
----
-
-## Workflows N8N
-
-Instância: `https://212n8n.criate.online` — detalhes operacionais em `GUIA-NOS-WORKFLOWS.md`.
-
-| Workflow | Status | Função |
-|---|---|---|
-| **ImobiFlow - IA Corretor WhatsApp** | Ativo (principal) | Recebe webhook do Z-PRO, identifica o corretor pelo `tenantId`, busca o prompt do agente (`Buscar Agente IA` → `/api/brokers/:id/agent`), monta contexto com imóveis e responde via agente IA. Tools: verificação de agenda, agendamento, update (sub-workflow) e delete (HTTP direto) |
-| **Update de visita imobiliária** | Ativo (sub-workflow) | Chamado como tool pelo principal. Lista agendamentos no Z-PRO, localiza pelo `contactId` e atualiza data/título/notas com valores fornecidos pela IA via `$fromAI` |
-| **Delete Agenda Imobiliária** | **Obsoleto** | Substituído pela tool HTTP direta `Deletar_agendamento` no workflow principal. Mantido como backup — pode ser arquivado |
-
-Fluxo do prompt personalizado: painel do corretor (AISettings) → `POST /api/brokers/my-agent` → tabela `broker_agents` → N8N busca via `GET /api/brokers/:id/agent` (auth `INTERNAL_PROXY_TOKEN`) → injeta no system prompt do agente. O endpoint sempre retorna 200: sem agente cadastrado retorna `system_prompt: ""` e a expressão N8N não injeta nada (fallback).
-
----
-
-## Rotas do Backend
-
-### Autenticação
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/api/auth/signup` | Cadastro + auto-confirmação + login |
-| POST | `/api/auth/login` | Login com e-mail e senha |
-| POST | `/api/auth/forgot-password` | Envia link de reset via WhatsApp |
-| POST | `/api/auth/reset-password` | Valida token e redefine senha |
-
-### Corretor
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/brokers/me` | Perfil do corretor autenticado |
-| POST | `/api/brokers/settings` | Salvar perfil (whitelist anti mass-assignment) |
-| POST | `/api/brokers/upload-photo` | Upload de foto de perfil |
-| GET | `/api/brokers/my-agent` | Agente IA do corretor (prompt personalizado) |
-| POST | `/api/brokers/my-agent` | Criar/atualizar o agente IA do corretor |
-| GET | `/api/corretora` | Dados da corretora do corretor |
-| GET | `/api/corretora/brokers` | Corretores vinculados à corretora |
-| POST | `/api/corretora` | Criar/atualizar corretora |
-
-### Imóveis
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/properties` | Listar imóveis do corretor |
-| POST | `/api/properties` | Criar / editar imóvel (upsert) |
-| DELETE | `/api/properties/:id` | Excluir imóvel |
-| PATCH | `/api/properties/:id/status` | Atualizar status (disponível/vendido/alugado) |
-| GET | `/api/properties/:slug` | Dados da landing page (público, sem autenticação) |
-
-### Leads e Agenda
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/leads` | Todos os leads do corretor |
-| GET | `/api/leads/recent` | Últimos 5 leads |
-| POST | `/api/leads` | Capturar lead via landing page (público) |
-| PATCH | `/api/leads/:id/status` | Atualizar status do lead |
-| GET | `/api/agenda/visits` | Visitas agendadas (agenda + leads legados) |
-
-### Dashboard e IA
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/dashboard/metrics` | Métricas (imóveis, leads, visitas) |
-| GET | `/api/dashboard/charts` | Gráfico de leads por mês |
-| GET | `/api/tickets/recent` | Atendimentos recentes do agente IA |
-| GET | `/api/billing/usage` | Uso de tickets do ciclo (inclusos x excedente) |
-| POST | `/api/ai/enhance-text` | Aprimorar texto com Gemini |
-
-### Pagamentos
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/api/checkout` | Checkout transparente Asaas (cartão) |
-| GET | `/api/subscription` | Status da assinatura |
-| GET | `/api/config/plan` | Preço e dados do plano (público) |
-
-### Integrações internas (N8N — auth `INTERNAL_PROXY_TOKEN`)
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/brokers/:id/agent` | Prompt do agente IA do corretor (com fallback) |
-| POST | `/api/whatsapp/send` | Enviar mensagem WhatsApp via Z-PRO |
-| POST | `/api/followup/inbound` | Cliente respondeu — re-arma follow-up, retorna `respond` |
-| POST | `/api/followup/broker-reply` | Corretor respondeu — pausa follow-up (handover) |
-
-### Follow-up (corretor)
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/followup/config` | Configuração de follow-up do corretor |
-| POST | `/api/followup/config` | Salvar configuração de follow-up |
-
-### Webhooks
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/api/webhooks/asaas` | Webhook Asaas (pagamentos e assinaturas) |
-| POST | `/api/webhooks/asaas/test` | Simular webhook Asaas (testes) |
-
-### Admin (JWT + `is_admin`)
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/admin/brokers` | Listar todos os corretores |
-| GET | `/api/admin/brokers/:id` | Detalhe de um corretor |
-| GET | `/api/admin/brokers/:id/ticket-usage` | Uso de tickets do corretor |
-| GET | `/api/admin/metrics` | Métricas globais da plataforma |
-| PATCH | `/api/admin/brokers/:id/status` | Bloquear/ativar corretor |
-| POST | `/api/admin/brokers/:id/provision` | Disparar provisionamento Z-PRO |
-| POST | `/api/admin/brokers/:id/relink-uazapi` | Reconectar canal UAZAPI |
-| POST | `/api/admin/brokers/:id/cancel-plan` | Cancelar assinatura |
-| POST | `/api/admin/brokers/:id/ticket-adjustment` | Conceder bônus/ajuste de tickets |
-| PATCH | `/api/admin/brokers/:id/zpro-credentials` | Atualizar credenciais Z-PRO |
-| DELETE | `/api/admin/brokers/:id` | Excluir corretor |
-
-### Proxy LLM
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/api/proxy/llm/:brokerPhone/chat/completions` | Proxy OpenRouter por corretor |
-
----
-
-## Banco de Dados (Supabase)
-
-### Tabelas
-
-| Tabela | Descrição |
+| Superfície fixa | Papel |
 |---|---|
-| `brokers` | Perfil, status de assinatura, credenciais Z-PRO e configurações |
-| `broker_agents` | Agente IA por corretor (`agent_name`, `system_prompt`, `is_active`) — RLS + índice único parcial (1 agente ativo por corretor) |
-| `corretoras` | Imobiliárias (vínculo N:1 via `brokers.corretora_id`) |
-| `properties` | Imóveis com slug, fotos (JSON), status e detalhes |
-| `leads` | Leads capturados via landing page |
-| `agenda` | Visitas agendadas via agente IA N8N |
-| `subscriptions` | Histórico de pagamentos Asaas |
-| `ticket_events` | Eventos de atendimento do agente IA (base do billing) |
-| `ticket_adjustments` | Bônus/ajustes de tickets concedidos pelo admin |
-| `overage_charges` | Cobranças de excedente consolidadas (R$ 3,00/ticket acima de 100/mês) |
-| `followup_config` | Configuração de follow-up por corretor |
-| `followup_conversations` | Estado das conversas em follow-up (timers, handover) |
-| `n8n_whatsapp_memory` | Memória de conversa do agente IA (Postgres Chat Memory) |
-| `webhook_logs` | Log completo de todos os webhooks recebidos e disparados |
-| `password_reset_tokens` | Tokens de recuperação de senha (TTL 15 min) |
+| **Hoje** | Cockpit/briefing — a tela que abre |
+| **Conversas** | Inbox unificada do WhatsApp (abas IA atendendo / aguardando você / encerrado), com handover humano |
+| **Carteira** | Imóveis (ou empreendimentos/unidades, no dialeto da incorporadora) |
+| **Negócios** | Funil de leads |
+| **Agenda** | Visitas agendadas via IA ou manualmente |
+| **Contatos** | Contatos capturados automaticamente do WhatsApp (nome do perfil detectado) |
 
-### Campos relevantes em `brokers`
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `status` | text | `pendente` / `ativo` / `inativo` |
-| `plan` | text | `mensal` / `anual` |
-| `valid_until` | timestamptz | Validade da assinatura |
-| `is_admin` | boolean | Acesso ao painel admin |
-| `zpro_tenant_id` | text | ID do tenant no Z-PRO |
-| `zpro_channel_id` | text | ID do canal WhatsApp no Z-PRO |
-| `zpro_password` | text | Senha gerada para login no Z-PRO |
-| `zpro_username` | text | Username gerado para o Z-PRO |
-| `zpro_user_email` | text | E-mail usado no login Z-PRO |
-| `zpro_api_key` | text | Bearer token da API Config |
-| `zpro_api_url` | text | URL externa `/v2/api/external/{uuid}` |
-| `provisioning_status` | text | Estado do provisionamento |
-| `broker_address` | jsonb | Perfil profissional (bio, foto, citação, etc.) |
-| `ai_name` | text | Nome da assistente IA exibido aos clientes |
-| `ai_custom_prompt` | text | **Legado** — migrado para `broker_agents.system_prompt` |
-| `asaas_customer_id` / `asaas_subscription_id` | text | Vínculo com assinatura Asaas |
-| `grace_until` | timestamptz | Período de carência após falha de pagamento |
-
-### Row Level Security (RLS)
-- `agenda`, `subscriptions`, `webhook_logs` — RLS habilitado
-- Backend usa `service_role` key (bypass RLS)
-- Queries do frontend passam exclusivamente pelo Express
+Módulos que acendem por porte de conta: **Locação** (contratos, cobrança de aluguel via Asaas), **Lançamentos** (unidades, reservas, vitrine pública), **Financeiro**, **Equipe** (múltiplos membros por conta, cada um podendo ter WhatsApp próprio ou compartilhado), **Relatórios**, **Divulgação** (landing pages públicas por imóvel).
 
 ---
 
-## Integração Z-PRO — Detalhes Técnicos
-
-### Autenticação
-- **Super Admin JWT**: forjado localmente via `forgeSuperAdminJwt()` com `ZPRO_JWT_SECRET`
-  - Typo intencional do Z-PRO: campo `usarname` (não `username`)
-  - Preferido ao `ZPRO_ADMIN_TOKEN` pois não expira
-- **Tenant JWT**: forjado via `forgeTenantJwt(tenantId, userId, email)` para operações por tenant
-
-### Bugs conhecidos do Z-PRO (com workarounds)
-
-| Bug | Sintoma | Fix aplicado |
-|---|---|---|
-| Status null no cadastro | Login retorna `OUT_RANGE` | Incluir `status: 'active'` no POST /userTenants |
-| `restrictedUser` string truthy | Login retorna `OUT_RANGE` | Usar `restrictedUser: false` (boolean) |
-| GET /tenants/:id ignora o :id | Retorna o tenant do JWT | Usar GET /tenants e filtrar por id |
-| GET /users/:id com super admin | Retorna `ERR_NO_USER_FOUND_8` | Usar tenant JWT para buscar usuários |
-| PUT /whatsapp/:id retorna 500 | Dados são salvos mesmo assim | Verificar com GET após o PUT |
-| PUT /settings sem tenantId no body | Retorna 500, não salva | Incluir `tenantId` no body |
-
-### Endpoints confirmados
+## Estrutura de pastas
 
 ```
-POST /tenants                 → cria tenant isolado
-POST /userTenants             → cria usuário no tenant (NÃO use POST /users)
-POST /whatsappTenants         → cria canal WhatsApp
-POST /api-config              → cria API Config com UUID (painel api-service)
-PUT  /settings/:key           → configura setting com {key, value, tenantId}
-PUT  /whatsapp/:id            → atualiza canal (body mínimo obrigatório)
-POST /auth/login              → login do corretor
-GET  /tenantApi               → lista APIs simples do tenant
-GET  /api-config              → lista API Configs do tenant (com UUID e URL externa)
-DELETE /api-config/:uuid      → remove API Config
+imob.criate/
+├── server.ts                       # Bootstrap do Express (monta os routers, cron jobs)
+├── server/
+│   ├── config.ts                   # Todas as env vars
+│   ├── supabase.ts                 # Cliente Supabase (service_role)
+│   ├── lib/                        # crypto, http (fetchWithTimeout), zproAuth (legado v1)
+│   ├── middleware/                 # auth (requireUser/getBrokerId/isBrokerOwner), validate (zod)
+│   ├── services/
+│   │   ├── agent.ts                # O "cérebro" do Assistente IA — snapshot da conta + Gemini/OpenRouter
+│   │   ├── wppShim.ts              # Envio/recebimento WhatsApp via UAZAPI, roteamento por instância
+│   │   ├── billing.ts / rentalBilling.ts
+│   │   ├── followup.ts             # Reengajamento automático de leads silenciosos
+│   │   └── provisioning.ts         # Provisiona instância UAZAPI no signup/convite
+│   └── routes/                     # Um arquivo por domínio: auth, brokers, properties, agent, ai,
+│                                    # agenda, leads, contacts, equipe, locacao, lancamentos,
+│                                    # financeiro, relatorios, vitrine, wppShim, admin, billing...
+├── src/
+│   ├── experience/                 # A UI real (v2): CommandBar, ExperienceShell, *Area.tsx por superfície
+│   ├── components/                 # PropertyForm, MagicWandTextarea (formulário manual + IA de texto)
+│   ├── pages/                      # Login, Signup, Dashboard (shell), Admin, PropertyLanding, etc.
+│   ├── services/                   # auth.ts (sessão JWT)
+│   └── lib/                        # money.ts (máscara de preço), phone.ts, document.ts (CPF/CNPJ)
+├── supabase/migrations/            # SQL versionado (rodado manualmente no Supabase, não automático)
+├── .env.example                    # Template de variáveis (versionado)
+├── fly.toml                        # App "imobiflow-v2", região gru
+└── DOCUMENTACAO.md                 # Fonte de verdade técnica — arquitetura, decisões, histórico de bugs
 ```
 
 ---
 
-## Asaas — Webhooks processados
+## Banco de dados (Supabase)
 
-| Evento | Ação |
-|---|---|
-| `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED` | Ativa corretor + dispara provisionamento Z-PRO |
-| `PAYMENT_OVERDUE` | Marca assinatura como vencida |
-| `PAYMENT_DELETED` | Remove pagamento registrado |
-| `SUBSCRIPTION_DELETED` / `SUBSCRIPTION_INACTIVATED` | Inativa corretor |
+Instância **compartilhada** com outros produtos da Criate — tabelas núcleo deste projeto usam prefixo `imf_` (`imf_brokers`, `imf_properties`, `imf_agenda`, `imf_leads`... também `leads`, `followup_conversations` sem prefixo, legado). **Sempre filtrar por `broker_id` derivado do JWT** — o backend usa `service_role` (ignora RLS), então isolamento multi-tenant é responsabilidade do código de aplicação em toda rota.
 
-Configurar no Asaas: `https://imobiflow.fly.dev/api/webhooks/asaas`
+Lista completa de tabelas, colunas e RPCs: [`DOCUMENTACAO.md` §14.4](./DOCUMENTACAO.md).
 
 ---
 
-## Segurança
-
-### O que está protegido
-- **Autenticação JWT real** (Supabase Auth): `requireUser` valida o token Bearer em toda rota autenticada; o header `x-user-id` é ignorado para identidade
-- Admin: `requireAdmin` = JWT válido + `is_admin: true` no banco
-- **Anti mass-assignment**: `POST /api/brokers/settings` aceita apenas campos da whitelist `ALLOWED_SETTINGS`
-- Rate limiting (express-rate-limit, com store Redis opcional p/ multi-máquina): auth 15min, checkout 1h, webhooks 1min
-- Helmet habilitado (CSP desativado por causa do SPA Vite)
-- Rotas internas do N8N protegidas por `INTERNAL_PROXY_TOKEN`
-- `.env` no `.gitignore` — nunca versionado
-- Senhas dos corretores armazenadas pelo Supabase Auth (bcrypt)
-- `service_role` key usada apenas no backend
-
-### Aviso de histórico git
-Um commit antigo contém o `UAZAPI_TOKEN` hardcoded como fallback. O arquivo atual usa `|| ""` (sem fallback). Se o repositório for público, **rotacione o token UAZAPI**.
-
-### Boas práticas
-- Gere `INTERNAL_PROXY_TOKEN` com `openssl rand -hex 24`
-- Gere `LLM_PROXY_ENC_KEY` com `openssl rand -hex 32`
-- `ZPRO_JWT_SECRET` permite forjar qualquer JWT Z-PRO — proteja com o mesmo cuidado da senha root
-
----
-
-## Design — Liquid Glass (iOS 26 / macOS Tahoe)
-
-| Elemento | Estilo Tailwind |
-|---|---|
-| Fundo global | `bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900` |
-| Cards / Painéis | `backdrop-blur-xl bg-white/10 border border-white/15` |
-| Sidebar desktop | `backdrop-blur-2xl bg-white/8 border-r border-white/12` |
-| Header | `backdrop-blur-2xl bg-white/8 border-b border-white/10` |
-| Modais | `backdrop-blur-2xl bg-white/12 border border-white/20` |
-
-**Responsividade:** sidebar em drawer no mobile, layout de 2–3 colunas no tablet, sidebar fixa no desktop.
-
----
-
-## Rodar Localmente
+## Rodar localmente
 
 ```bash
-# Instalar dependências
 npm install
-
-# Copiar variáveis de ambiente
 cp .env.example .env
-# Preencher o .env com os valores reais
+# preencher .env com os valores reais (Supabase, Gemini, UAZAPI, Asaas, N8N...)
 
-# Iniciar (backend Express + frontend Vite juntos na porta 3000)
-npm run dev
+npm run dev      # tsx --max-old-space-size=1024 server.ts — Express + Vite juntos, porta 3000
+npm run lint     # tsc --noEmit — sempre rodar antes de commitar
+npm run build    # vite build → dist/
 ```
 
-O Vite roda como middleware do Express — não é necessário processo separado.
-
-**Memória:** se o servidor cravar silenciosamente ao processar imagens, use:
-```bash
-node --max-old-space-size=1024 node_modules/.bin/tsx server.ts
-```
+O Vite roda como middleware do Express — não precisa de processo separado.
 
 ---
 
 ## Deploy (Fly.io)
 
 ```bash
-# Primeiro deploy
-fly launch
-
-# Re-deploy
-fly deploy
-
-# Ver logs em tempo real
-fly logs
-
-# Configurar secrets (equivalente ao .env em produção)
-fly secrets set ZPRO_JWT_SECRET="..." ASAAS_API_KEY="..." ...
+npm run lint && npm run build          # confirma tsc + build limpos antes de qualquer deploy
+fly deploy -a imobiflow-v2 --config fly.toml --remote-only
+fly logs -a imobiflow-v2               # acompanhar
 ```
 
-App em produção: `https://imobiflow.fly.dev`
+Diferente do v1 (`main` → GitHub Actions → deploy automático), o v2 é deployado **manualmente** a partir da working tree — não há CI/CD configurado nesta branch ainda.
+
+App em produção: `https://imobiflow-v2.fly.dev`
 
 ---
 
-## Estrutura de Pastas
+## Segurança — pontos-chave
 
-```
-imob.criate/
-├── server.ts                    # Backend completo (Express + toda lógica de negócio)
-├── src/
-│   ├── App.tsx                  # Roteamento + proteção por status de assinatura
-│   ├── pages/
-│   │   ├── Dashboard.tsx        # CRM principal (responsivo, Liquid Glass)
-│   │   ├── Login.tsx
-│   │   ├── Signup.tsx
-│   │   ├── PaymentPending.tsx   # Tela de checkout Asaas
-│   │   ├── PaymentSuccess.tsx   # Confirmação de pagamento
-│   │   ├── PropertyLanding.tsx  # Landing page pública do imóvel
-│   │   ├── Admin.tsx            # Painel administrativo
-│   │   ├── ForgotPassword.tsx   # Recuperação de senha
-│   │   ├── ResetPassword.tsx    # Redefinição de senha via token
-│   │   └── WhatsAppSetup.tsx    # QR Code e status WhatsApp
-│   ├── components/
-│   │   ├── PropertyForm.tsx     # Modal de cadastro/edição de imóvel
-│   │   ├── MagicWandTextarea.tsx # Campo com IA integrada (Gemini)
-│   │   └── AISettings.tsx       # Configurações de IA do corretor
-│   └── services/
-│       ├── auth.ts              # Gerenciamento de sessão JWT
-│       └── gemini.ts
-├── .env                         # Variáveis locais (NÃO versionado)
-├── .env.example                 # Template de variáveis (versionado)
-├── .gitignore
-├── fly.toml                     # Configuração Fly.io
-└── package.json
-```
+- Autenticação sempre via JWT do Supabase Auth validado no backend (`requireUser`) — nenhuma rota confia em header de identidade do cliente.
+- Rotas internas chamadas pelo N8N exigem `Authorization: Bearer INTERNAL_PROXY_TOKEN`.
+- Webhook inbound da UAZAPI exige `body.token === uazapi_instance_token` da instância.
+- `.env` no `.gitignore` — nunca versionado.
+- Detalhe completo de auditorias de segurança e itens pendentes: `DOCUMENTACAO.md` §14.16+ (hardening) e memória `project_imobiflow_security`.
 
 ---
 
-## Variáveis de Ambiente
+## Onde ler mais
 
-Veja `.env.example` para a lista completa com descrições. Variáveis obrigatórias em produção:
-
-```
-VITE_SUPABASE_URL / SUPABASE_URL
-VITE_SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SERVICE_ROLE_KEY
-VITE_SUPABASE_ANON_KEY
-APP_URL
-ASAAS_API_KEY + ASAAS_ENV
-ZPRO_ADMIN_URL + ZPRO_JWT_SECRET
-UAZAPI_TOKEN
-PROVISIONING_WEBHOOK_URL
-N8N_WEBHOOK_URL
-INTERNAL_PROXY_TOKEN
-LLM_PROXY_ENC_KEY
-OPENROUTER_API_KEY            # chave da empresa usada pelo proxy LLM
-PLAN_INCLUDED_TICKETS=100     # atendimentos inclusos no plano
-PLAN_OVERAGE_PRICE=3.00       # R$ por ticket excedente
-```
+- [`DOCUMENTACAO.md`](./DOCUMENTACAO.md) — arquitetura completa, modelo de dados, todos os endpoints, decisões arquiteturais, e um changelog técnico detalhado de cada rodada de trabalho (o que quebrou, causa raiz, o que foi corrigido).
+- `UX_MASTERPLAN.md` — roteiro de produto por trás da arquitetura de superfícies/personas.

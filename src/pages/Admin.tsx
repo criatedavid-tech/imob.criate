@@ -21,6 +21,7 @@ interface Broker {
   is_admin: boolean;
   asaas_customer_id: string | null;
   zpro_tenant_id: string | null;
+  uazapi_instance_id: string | null;
 }
 
 interface Metrics {
@@ -82,6 +83,8 @@ export default function Admin() {
   const [adjAmount, setAdjAmount] = useState('');
   const [adjReason, setAdjReason] = useState('');
   const [applyingAdj, setApplyingAdj] = useState(false);
+  const [memberLimitInput, setMemberLimitInput] = useState('');
+  const [savingMemberLimit, setSavingMemberLimit] = useState(false);
 
   const headers = authService.getAuthHeaders();
 
@@ -132,10 +135,41 @@ export default function Admin() {
         fetch(`/api/admin/brokers/${id}`, { headers }),
         fetch(`/api/admin/brokers/${id}/ticket-usage`, { headers })
       ]);
-      setDetail(await dRes.json());
+      const detailData = await dRes.json();
+      setDetail(detailData);
+      setMemberLimitInput(String(detailData?.broker?.member_limit ?? 0));
       if (uRes.ok) setTicketUsage(await uRes.json());
     } finally {
       setLoadingDetail(false);
+    }
+  }
+
+  // Quantos corretores da equipe podem ter WhatsApp próprio nessa conta —
+  // sem sistema formal de tiers de plano ainda, ajuste manual do admin
+  // (mesmo padrão do bônus/cobrança de tickets). Validado em
+  // server/routes/equipe.ts::POST /api/equipe/members/invite.
+  async function saveMemberLimit(id: string) {
+    const value = Number(memberLimitInput);
+    if (!Number.isInteger(value) || value < 0) {
+      setActionMsg({ type: 'error', text: 'Informe um número inteiro ≥ 0.' });
+      return;
+    }
+    setSavingMemberLimit(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}/member-limit`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_limit: value })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao salvar o limite.');
+      setDetail(d => d ? { ...d, broker: { ...d.broker, member_limit: value } } : d);
+      setActionMsg({ type: 'success', text: 'Limite atualizado.' });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setSavingMemberLimit(false);
     }
   }
 
@@ -439,7 +473,7 @@ export default function Admin() {
                       ['Válido até', fmtDate(detail.broker.valid_until)],
                       ['Cadastro', fmtDate(detail.broker.created_at)],
                       ['Asaas ID', detail.broker.asaas_customer_id || '—'],
-                      ['Z-PRO Tenant', detail.broker.zpro_tenant_id || '—'],
+                      ['Instância WhatsApp', detail.broker.uazapi_instance_id || '—'],
                     ].map(([k, v]) => (
                       <div key={k} className="flex justify-between text-sm py-1.5 border-b border-white/5 last:border-0">
                         <span className="text-white/40">{k}</span>
@@ -663,8 +697,34 @@ export default function Admin() {
                         )}
                       </div>
 
-                      {/* Provisionar Tenant */}
-                      {!detail.broker.zpro_tenant_id && (
+                      {/* Limite de WhatsApp próprio por membro da equipe */}
+                      <div className={`${glassCard} p-4`}>
+                        <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">
+                          WhatsApp próprio por corretor
+                        </h4>
+                        <p className="text-[12px] text-white/40 mb-3">
+                          Quantos corretores da equipe podem ter instância própria (em vez de compartilhar a da conta).
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={memberLimitInput}
+                            onChange={(e) => setMemberLimitInput(e.target.value)}
+                            className="w-24 py-2 px-3 text-sm rounded-xl bg-white/5 border border-white/15 text-white text-center"
+                          />
+                          <button
+                            onClick={() => saveMemberLimit(detail.broker.id)}
+                            disabled={savingMemberLimit}
+                            className="flex-1 py-2 text-sm font-semibold rounded-xl bg-white/10 border border-white/20 text-white/80 hover:bg-white/20 transition-colors disabled:opacity-40"
+                          >
+                            {savingMemberLimit ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar limite'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Provisionar WhatsApp */}
+                      {!detail.broker.uazapi_instance_id && (
                         <button
                           onClick={() => provisionTenant(detail.broker.id)}
                           disabled={updatingId === detail.broker.id}
@@ -672,7 +732,7 @@ export default function Admin() {
                             bg-violet-500/20 border border-violet-400/30 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-40"
                         >
                           {updatingId === detail.broker.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                          Provisionar Tenant Z-PRO
+                          Provisionar WhatsApp
                         </button>
                       )}
 

@@ -2,12 +2,12 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireAdmin } from "../middleware/auth";
 import {
-  ASAAS_API_KEY, ASAAS_BASE_URL, ZPRO_ADMIN_URL, ZPRO_ADMIN_TOKEN,
+  ASAAS_API_KEY, ASAAS_BASE_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE,
 } from "../config";
 import { asaasHeaders } from "../services/billing";
-import { createZproTenantAndChannel, zproGet, zproPost, zproPut, setUazapiWebhook } from "../services/provisioning";
-import { getZproAdminToken } from "../lib/zproAuth";
+import { provisionUazapiInstanceNative } from "../services/provisioning";
+import { fetchWithTimeout } from "../lib/http";
 
 export const adminRouter = express.Router();
 
@@ -71,6 +71,27 @@ adminRouter.patch("/api/admin/brokers/:id/status", async (req, res) => {
   }
 });
 
+// Quantos corretores da equipe podem ter WhatsApp PRÓPRIO (em vez de
+// compartilhar o da conta) — sem sistema formal de tiers de plano ainda,
+// então isso funciona como um ajuste manual do admin (mesmo padrão de
+// PLAN_OVERAGE_PRICE). 0/null = recurso indisponível pra essa conta (padrão).
+// Validado em server/routes/equipe.ts::POST /api/equipe/members/invite.
+adminRouter.patch("/api/admin/brokers/:id/member-limit", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  const memberLimit = Number(req.body?.member_limit);
+  if (!Number.isInteger(memberLimit) || memberLimit < 0) {
+    return res.status(400).json({ error: "member_limit precisa ser um número inteiro ≥ 0." });
+  }
+  try {
+    const { data, error } = await supabase
+      .from('imf_brokers').update({ member_limit: memberLimit }).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Detalhes de um corretor (imóveis, leads, assinaturas)
 adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
   if (!await requireAdmin(req, res)) return;
@@ -91,10 +112,10 @@ adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
   }
 });
 
-// Disparo manual de provisionamento Z-PRO (admin)
-// Segue a mesma rota do usuário normal pós-pagamento:
+// Disparo manual de provisionamento (admin) — mesma rota do usuário normal
+// pós-pagamento:
 //   1. Garante status=ativo + valid_until (preserva 2099 se já estiver configurado)
-//   2. Chama createZproTenantAndChannel (cria tenant + sessão WhatsApp)
+//   2. Chama provisionUazapiInstanceNative (cria a instância UAZAPI direto, sem Z-PRO)
 adminRouter.post("/api/admin/brokers/:id/provision", async (req, res) => {
   if (!await requireAdmin(req, res)) return;
   try {
@@ -121,37 +142,17 @@ adminRouter.post("/api/admin/brokers/:id/provision", async (req, res) => {
       broker.status = 'ativo';
     }
 
-    // Executa o mesmo fluxo de provisionamento Z-PRO do pós-pagamento
-    if (!ZPRO_ADMIN_URL || !ZPRO_ADMIN_TOKEN) {
-      return res.status(503).json({ error: 'Z-PRO não configurado.' });
+    if (!UAZAPI_HOST || !UAZAPI_TOKEN) {
+      return res.status(503).json({ error: 'UAZAPI não configurada.' });
     }
 
-    await createZproTenantAndChannel(broker);
+    await provisionUazapiInstanceNative(broker);
 
-    res.json({ success: true, message: 'Tenant Z-PRO provisionado com sucesso.' });
+    res.json({ success: true, message: 'Instância WhatsApp provisionada com sucesso.' });
   } catch (err: any) {
     console.error('[Provision] erro:', err?.message);
     res.status(500).json({ error: err.message });
   }
-});
-
-// Atualiza credenciais Z-PRO de um corretor (usado enquanto ZPRO_API_SECRET não configurado)
-// Body: { zpro_api_key, zpro_api_token, zpro_api_url? }
-adminRouter.patch("/api/admin/brokers/:id/zpro-credentials", async (req, res) => {
-  if (!await requireAdmin(req, res)) return;
-  const { zpro_api_key, zpro_api_token, zpro_api_url } = req.body;
-  if (!zpro_api_key || !zpro_api_token) {
-    return res.status(400).json({ error: 'zpro_api_key e zpro_api_token são obrigatórios' });
-  }
-  const url = zpro_api_url || `${ZPRO_ADMIN_URL}/v2/api/external/${zpro_api_key}`;
-  const { error } = await supabase.from('imf_brokers').update({
-    zpro_api_key: String(zpro_api_key),
-    zpro_api_url: url,
-    zpro_api_token: String(zpro_api_token)
-  }).eq('id', req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
-  console.log(`[Admin] zpro-credentials atualizados para broker ${req.params.id}`);
-  res.json({ success: true, zpro_api_key, zpro_api_url: url });
 });
 
 // Cancelar plano (mantém valid_until, cancela no Asaas)
@@ -164,7 +165,7 @@ adminRouter.post("/api/admin/brokers/:id/cancel-plan", async (req, res) => {
 
     // Cancela assinatura no Asaas se existir
     if (broker.asaas_subscription_id && ASAAS_API_KEY) {
-      await fetch(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
+      await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
         method: 'POST',
         headers: asaasHeaders()
       }).catch(e => console.warn('[Asaas] cancel sub falhou:', e?.message));
@@ -193,7 +194,7 @@ adminRouter.delete("/api/admin/brokers/:id", async (req, res) => {
 
     // 1. Cancela assinatura no Asaas
     if (broker.asaas_subscription_id && ASAAS_API_KEY) {
-      await fetch(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
+      await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
         method: 'POST', headers: asaasHeaders()
       }).catch(() => {});
     }
@@ -327,108 +328,3 @@ adminRouter.post("/api/admin/brokers/:id/ticket-adjustment", async (req, res) =>
   }
 });
 
-// Re-vincula instância UAZAPI ao canal Z-PRO: garante wppUser (Number ID) salvo
-// E o webhook UAZAPI→Z-PRO configurado, sem recriar a instância nem disparar connect.
-// Corrige canais provisionados antes da correção do webhook (sintoma: CONNECTED mas "Não ativado").
-// IMPORTANTE: lê o canal via LOGIN do tenant (token forjado com userId=0 dá ERR_AUTH_USER_NOT_FOUND;
-// super admin dá 500 em /whatsapp/:id de outro tenant — só o token de login do tenant funciona).
-adminRouter.post("/api/admin/brokers/:id/relink-uazapi", async (req, res) => {
-  if (!await requireAdmin(req, res)) return;
-  try {
-    const { data: broker } = await supabase
-      .from('imf_brokers').select('*').eq('id', req.params.id).single();
-    if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
-    if (!broker.zpro_channel_id) return res.status(400).json({ error: 'Canal Z-PRO não configurado para este corretor.' });
-    if (!UAZAPI_HOST || !UAZAPI_TOKEN) return res.status(503).json({ error: 'UAZAPI não configurado no servidor.' });
-
-    const whatsappId = Number(broker.zpro_channel_id);
-    const tenantId   = Number(broker.zpro_tenant_id) || 0;
-    const tenantEmail = broker.zpro_user_email || broker.email;
-
-    // Obtém token de tenant válido via LOGIN (userId real). Fallback: forja com userId do JWT.
-    let tenantToken: string | undefined;
-    if (tenantEmail && broker.zpro_password) {
-      const loginRes = await zproPost('/auth/login', { email: tenantEmail, password: broker.zpro_password });
-      const rawToken = loginRes.json?.token ?? loginRes.json?.access_token ?? loginRes.json?.accessToken ?? loginRes.json?.data?.token;
-      if (rawToken) {
-        tenantToken = rawToken;
-        console.log(`[ReLink] Login tenant ${tenantId} OK`);
-      } else {
-        console.warn(`[ReLink] Login falhou (${loginRes.status}) — seguindo com super admin`);
-      }
-    }
-    const readToken = tenantToken ?? await getZproAdminToken();
-
-    // 1. Busca canal Z-PRO para obter tokenAPI e wppUser atuais
-    const channelCheck = await zproGet(`/whatsapp/${whatsappId}`, readToken);
-    const currentTokenAPI = channelCheck.json?.tokenAPI;
-    let currentWabaId     = channelCheck.json?.wabaId;
-    console.log(`[ReLink] Canal ${whatsappId}: tokenAPI=${currentTokenAPI?.slice(0,8) ?? 'null'} wabaId=${currentWabaId ?? 'null'}`);
-
-    if (!currentTokenAPI) {
-      return res.status(400).json({
-        error: 'tokenAPI não encontrado no canal Z-PRO. Re-provisione o corretor para recriar a instância UAZAPI.'
-      });
-    }
-
-    // 2. Lista instâncias UAZAPI e encontra a que corresponde ao tokenAPI
-    const uazapiResp = await fetch(`${UAZAPI_HOST}/instance/all`, {
-      headers: { 'admintoken': UAZAPI_TOKEN }
-    });
-    const instances: any[] = await uazapiResp.json().catch(() => []);
-    const instance = instances.find((i: any) =>
-      i.token === currentTokenAPI || i.instance?.token === currentTokenAPI
-    );
-
-    if (!instance) {
-      return res.status(404).json({
-        error: 'Instância UAZAPI não encontrada para o tokenAPI do canal. Pode ter sido removida no UAZAPI.',
-        tokenAPI: currentTokenAPI.slice(0, 8) + '...',
-        totalInstances: instances.length
-      });
-    }
-
-    const instanceId: string    = instance.id ?? instance.instance?.id ?? '';
-    const instanceToken: string = instance.token ?? instance.instance?.token ?? currentTokenAPI;
-    if (!instanceId) {
-      return res.status(500).json({ error: 'instanceId não encontrado na resposta UAZAPI.', instance });
-    }
-    console.log(`[ReLink] Instância UAZAPI encontrada: id=${instanceId}`);
-
-    // 3. Salva o Number ID na coluna `wabaId` (campo real do painel) se ainda não estiver setado.
-    let wabaIdSaved = currentWabaId === instanceId;
-    if (!wabaIdSaved) {
-      const tokens = tenantToken
-        ? [{ label: 'tenant', tok: tenantToken }, { label: 'superAdmin', tok: await getZproAdminToken() }]
-        : [{ label: 'superAdmin', tok: await getZproAdminToken() }];
-      for (const { label, tok } of tokens) {
-        await zproPut(`/whatsapp/${whatsappId}`, { wabaId: instanceId }, tok);
-        const check = await zproGet(`/whatsapp/${whatsappId}`, tok);
-        if (check.json?.wabaId === instanceId) {
-          console.log(`[ReLink] wabaId=${instanceId} salvo via ${label} ✓`);
-          wabaIdSaved = true; currentWabaId = instanceId;
-          break;
-        }
-        console.warn(`[ReLink] wabaId NÃO salvo via ${label}: check=${check.json?.wabaId}`);
-      }
-    }
-    // wppUser também (best-effort, compatibilidade)
-    await zproPut(`/whatsapp/${whatsappId}`, { wppUser: instanceId }, tenantToken);
-
-    // 4. Configura o webhook UAZAPI→Z-PRO (entrega de mensagens) — SEMPRE.
-    const webhookOk = await setUazapiWebhook(instanceToken, instanceId);
-
-    res.json({
-      success: wabaIdSaved && webhookOk,
-      wabaId: instanceId,
-      wabaIdSaved,
-      webhookConfigured: webhookOk,
-      message: (wabaIdSaved && webhookOk)
-        ? `Canal ${whatsappId} corrigido: Number ID "${instanceId}" salvo (wabaId) e webhook ativo. Desconecte e reconecte o WhatsApp para ativar.`
-        : `Parcial — wabaIdSaved=${wabaIdSaved}, webhookConfigured=${webhookOk}. Verifique os logs do servidor.`
-    });
-  } catch (err: any) {
-    console.error('[ReLink] erro:', err?.message);
-    res.status(500).json({ error: err.message });
-  }
-});

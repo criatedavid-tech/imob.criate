@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Building2, User, Phone, Clock } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR } from '../lib/phone';
@@ -9,10 +9,41 @@ interface Development {
   id: string;
   name: string;
   location?: string;
+  tipo: 'vertical' | 'horizontal';
+  subtipo?: 'loteamento' | 'condominio_casas' | null;
+  amenities: string[];
+  images?: string[];
   total_units: number;
   disponivel: number;
   reservado: number;
   vendido: number;
+}
+
+// Mesma compressão client-side já usada em PropertyForm.tsx — evita subir
+// fotos gigantes de celular e mantém o payload pequeno.
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 800;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > MAX) { height = Math.round(height * (MAX / width)); width = MAX; }
+        } else {
+          if (height > MAX) { width = Math.round(width * (MAX / height)); height = MAX; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 interface Unit {
@@ -23,6 +54,36 @@ interface Unit {
   reserved_until?: string;
   buyer_name?: string;
   buyer_phone?: string;
+  quartos?: number;
+  vagas_garagem?: number;
+  area_m2?: number;
+  orientacao?: 'nascente' | 'poente';
+  andar?: number;
+  area_lote_m2?: number;
+  testada_m?: number;
+}
+
+const AMENITY_OPTIONS = [
+  'Piscina', 'Piscina rooftop', 'Área de lazer', 'Churrasqueira', 'Salão de festas',
+  'Academia', 'Playground', 'Portaria 24h', 'Elevador', 'Espaço gourmet',
+  'Coworking', 'Quadra poliesportiva', 'Pet place',
+];
+
+const ORIENTACAO_LABEL: Record<string, string> = {
+  nascente: 'Nascente (sol da manhã)',
+  poente: 'Poente (sol da tarde)',
+};
+
+function unitDetails(u: Unit): string {
+  const parts: string[] = [];
+  if (u.quartos) parts.push(`${u.quartos} quarto${u.quartos > 1 ? 's' : ''}`);
+  if (u.vagas_garagem) parts.push(`${u.vagas_garagem} vaga${u.vagas_garagem > 1 ? 's' : ''}`);
+  if (u.area_m2) parts.push(`${u.area_m2}m²`);
+  if (u.area_lote_m2) parts.push(`lote de ${u.area_lote_m2}m²`);
+  if (u.testada_m) parts.push(`testada ${u.testada_m}m`);
+  if (u.orientacao) parts.push(ORIENTACAO_LABEL[u.orientacao] || u.orientacao);
+  if (u.andar != null) parts.push(`${u.andar}º andar`);
+  return parts.join(' · ');
 }
 
 // Mesma paleta do widget mock "espelho de vendas" do cockpit (engine.ts/
@@ -42,30 +103,77 @@ function hoursLeft(iso?: string): string {
   return h > 0 ? `${h}h${m > 0 ? ` ${m}min` : ''}` : `${m}min`;
 }
 
-function NewDevelopmentModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
+function NewDevelopmentModal({ initial, onClose, onCreated }: { initial?: Development | null; onClose: () => void; onCreated: () => void }) {
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name || '');
+  const [location, setLocation] = useState(initial?.location || '');
+  const [tipo, setTipo] = useState<'vertical' | 'horizontal'>(initial?.tipo || 'vertical');
+  const [subtipo, setSubtipo] = useState<'loteamento' | 'condominio_casas'>(initial?.subtipo === 'condominio_casas' ? 'condominio_casas' : 'loteamento');
+  const initialKnown = (initial?.amenities || []).filter(a => AMENITY_OPTIONS.includes(a));
+  const initialOther = (initial?.amenities || []).filter(a => !AMENITY_OPTIONS.includes(a));
+  const [amenities, setAmenities] = useState<Set<string>>(new Set(initialKnown));
+  const [otherAmenity, setOtherAmenity] = useState(initialOther.join(', '));
+  const [images, setImages] = useState<string[]>(initial?.images || []);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  function toggleAmenity(a: string) {
+    setAmenities(prev => {
+      const next = new Set(prev);
+      if (next.has(a)) next.delete(a); else next.add(a);
+      return next;
+    });
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    if (images.length + files.length > 15) { setError('Você pode enviar no máximo 15 fotos.'); return; }
+    files.forEach(async (file) => {
+      setUploadingCount((c) => c + 1);
+      try {
+        const compressed = await compressImage(file);
+        const res = await fetch('/api/properties/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+          body: JSON.stringify({ imageData: compressed }),
+        });
+        if (!res.ok) throw new Error('Falha ao enviar a imagem.');
+        const { url } = await res.json();
+        setImages((prev) => [...prev, url]);
+      } catch (err: any) {
+        setError(err.message || 'Não foi possível enviar uma das fotos.');
+      } finally {
+        setUploadingCount((c) => Math.max(0, c - 1));
+      }
+    });
+  }
+
+  function removeImage(idx: number) {
+    setImages((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   async function handleSave() {
     if (!name.trim()) { setError('Nome do empreendimento é obrigatório.'); return; }
     setSaving(true);
     setError('');
     try {
-      const res = await fetch('/api/lancamentos/developments', {
-        method: 'POST',
+      const finalAmenities = [...amenities, ...(otherAmenity.trim() ? otherAmenity.split(',').map(s => s.trim()).filter(Boolean) : [])];
+      const res = await fetch(isEdit ? `/api/lancamentos/developments/${initial!.id}` : '/api/lancamentos/developments', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ name, location: location || null }),
+        body: JSON.stringify({ name, location: location || null, tipo, subtipo: tipo === 'horizontal' ? subtipo : undefined, amenities: finalAmenities, images }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || 'Falha ao criar empreendimento.');
+        throw new Error(body?.error || `Falha ao ${isEdit ? 'salvar' : 'criar'} empreendimento.`);
       }
       onCreated();
       onClose();
     } catch (e: any) {
-      setError(e.message || 'Falha ao criar empreendimento.');
+      setError(e.message || `Falha ao ${isEdit ? 'salvar' : 'criar'} empreendimento.`);
     } finally {
       setSaving(false);
     }
@@ -75,12 +183,12 @@ function NewDevelopmentModal({ onClose, onCreated }: { onClose: () => void; onCr
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
-          <h3 className="text-lg font-bold text-white">Novo empreendimento</h3>
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
+          <h3 className="text-lg font-bold text-white">{isEdit ? 'Editar empreendimento' : 'Novo empreendimento'}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
           <div>
             <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Nome</label>
@@ -94,12 +202,75 @@ function NewDevelopmentModal({ onClose, onCreated }: { onClose: () => void; onCr
               className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
                 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
           </div>
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Fotos/renders (opcional)</label>
+            <div className="grid grid-cols-4 gap-2">
+              {images.map((url, idx) => (
+                <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-white/12 group">
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => removeImage(idx)}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+              {images.length + uploadingCount < 15 && (
+                <button type="button" onClick={() => fileInputRef.current?.click()}
+                  className="aspect-square rounded-xl border border-dashed border-white/20 flex items-center justify-center text-white/40 hover:text-white/70 hover:border-white/40 transition-colors">
+                  {uploadingCount > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                </button>
+              )}
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Tipo</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setTipo('vertical')}
+                className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                  tipo === 'vertical' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                }`}>Prédio (vertical)</button>
+              <button type="button" onClick={() => setTipo('horizontal')}
+                className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                  tipo === 'horizontal' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                }`}>Horizontal (lote/casas)</button>
+            </div>
+          </div>
+          {tipo === 'horizontal' && (
+            <div>
+              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Qual tipo de horizontal?</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSubtipo('loteamento')}
+                  className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                    subtipo === 'loteamento' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                  }`}>Loteamento (lote vazio)</button>
+                <button type="button" onClick={() => setSubtipo('condominio_casas')}
+                  className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
+                    subtipo === 'condominio_casas' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                  }`}>Condomínio de casas prontas</button>
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Benefícios (opcional)</label>
+            <div className="grid grid-cols-2 gap-2">
+              {AMENITY_OPTIONS.map((a) => (
+                <button key={a} type="button" onClick={() => toggleAmenity(a)}
+                  className={`px-3 py-2 rounded-xl text-[12px] font-semibold text-left transition-colors border ${
+                    amenities.has(a) ? 'bg-violet-500/20 border-violet-300/30 text-violet-100' : 'bg-white/[0.04] border-white/10 text-white/50 hover:text-white/75'
+                  }`}>{a}</button>
+              ))}
+            </div>
+            <input value={otherAmenity} onChange={(e) => setOtherAmenity(e.target.value)} placeholder="Outro benefício (opcional)"
+              className="w-full mt-2 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
+                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+          </div>
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10">
+        <div className="flex gap-3 px-6 py-4 border-t border-white/10 shrink-0">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? <Loader2 size={16} className="animate-spin" /> : null} Criar
+            {saving ? <Loader2 size={16} className="animate-spin" /> : null} {isEdit ? 'Salvar' : 'Criar'}
           </button>
         </div>
       </div>
@@ -107,11 +278,29 @@ function NewDevelopmentModal({ onClose, onCreated }: { onClose: () => void; onCr
   );
 }
 
-function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: string; onClose: () => void; onCreated: () => void }) {
+function NewUnitModal({ developmentId, developmentTipo, developmentSubtipo, onClose, onCreated }: {
+  developmentId: string;
+  developmentTipo: 'vertical' | 'horizontal';
+  developmentSubtipo?: 'loteamento' | 'condominio_casas' | null;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const [code, setCode] = useState('');
   const [priceCents, setPriceCents] = useState(0);
+  const [quartos, setQuartos] = useState('');
+  const [vagas, setVagas] = useState('');
+  const [areaM2, setAreaM2] = useState('');
+  const [areaLoteM2, setAreaLoteM2] = useState('');
+  const [testadaM, setTestadaM] = useState('');
+  const [orientacao, setOrientacao] = useState<'' | 'nascente' | 'poente'>('');
+  const [andar, setAndar] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Loteamento (lote vazio) usa área do lote + testada; prédio e condomínio
+  // de casas prontas usam quartos/vagas/área construída — só o prédio tem andar.
+  const isLoteamento = developmentTipo === 'horizontal' && developmentSubtipo !== 'condominio_casas';
+  const isVertical = developmentTipo === 'vertical';
 
   async function handleSave() {
     if (!code.trim()) { setError('Código da unidade é obrigatório.'); return; }
@@ -121,7 +310,17 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
       const res = await fetch(`/api/lancamentos/developments/${developmentId}/units`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ code, price_cents: priceCents || undefined }),
+        body: JSON.stringify({
+          code,
+          price_cents: priceCents || undefined,
+          quartos: !isLoteamento && quartos ? Number(quartos) : undefined,
+          vagas_garagem: !isLoteamento && vagas ? Number(vagas) : undefined,
+          area_m2: !isLoteamento && areaM2 ? Number(areaM2.replace(',', '.')) : undefined,
+          andar: isVertical && andar ? Number(andar) : undefined,
+          area_lote_m2: isLoteamento && areaLoteM2 ? Number(areaLoteM2.replace(',', '.')) : undefined,
+          testada_m: isLoteamento && testadaM ? Number(testadaM.replace(',', '.')) : undefined,
+          orientacao: orientacao || undefined,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -136,22 +335,23 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
     }
   }
 
+  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
           <h3 className="text-lg font-bold text-white">Nova unidade</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
           <div>
             <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Código</label>
             <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex.: 801 ou Cobertura 1201"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              className={numInputClass} />
           </div>
           <div>
             <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Preço (opcional)</label>
@@ -163,8 +363,58 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
                   focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
             </div>
           </div>
+          {!isLoteamento ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Quartos</label>
+                <input value={quartos} onChange={(e) => setQuartos(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                  inputMode="numeric" placeholder="0" className={numInputClass} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
+                <input value={vagas} onChange={(e) => setVagas(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                  inputMode="numeric" placeholder="0" className={numInputClass} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
+                <input value={areaM2} onChange={(e) => setAreaM2(e.target.value.replace(/[^\d,]/g, ''))}
+                  inputMode="decimal" placeholder="0" className={numInputClass} />
+              </div>
+              {isVertical && (
+                <div>
+                  <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Andar</label>
+                  <input value={andar} onChange={(e) => setAndar(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    inputMode="numeric" placeholder="0" className={numInputClass} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
+                <input value={areaLoteM2} onChange={(e) => setAreaLoteM2(e.target.value.replace(/[^\d,]/g, ''))}
+                  inputMode="decimal" placeholder="0" className={numInputClass} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Testada (m)</label>
+                <input value={testadaM} onChange={(e) => setTestadaM(e.target.value.replace(/[^\d,]/g, ''))}
+                  inputMode="decimal" placeholder="0" className={numInputClass} />
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Orientação solar (opcional)</label>
+            <div className="flex gap-2">
+              {(['nascente', 'poente'] as const).map((o) => (
+                <button key={o} type="button" onClick={() => setOrientacao(orientacao === o ? '' : o)}
+                  className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors border ${
+                    orientacao === o ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                  }`}>{ORIENTACAO_LABEL[o]}</button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10">
+        <div className="flex gap-3 px-6 py-4 border-t border-white/10 shrink-0">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
@@ -176,12 +426,31 @@ function NewUnitModal({ developmentId, onClose, onCreated }: { developmentId: st
   );
 }
 
-function UnitActionModal({ unit, onClose, onChanged }: { unit: Unit; onClose: () => void; onChanged: () => void }) {
+function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, onChanged }: {
+  unit: Unit;
+  developmentTipo: 'vertical' | 'horizontal';
+  developmentSubtipo?: 'loteamento' | 'condominio_casas' | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
   const [buyerName, setBuyerName] = useState(unit.buyer_name || '');
   const [buyerPhone, setBuyerPhone] = useState(unit.buyer_phone || '');
   const [holdHours, setHoldHours] = useState('1');
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  const isLoteamento = developmentTipo === 'horizontal' && developmentSubtipo !== 'condominio_casas';
+  const isVertical = developmentTipo === 'vertical';
+
+  const [priceCents, setPriceCents] = useState(unit.price_cents || 0);
+  const [quartos, setQuartos] = useState(unit.quartos != null ? String(unit.quartos) : '');
+  const [vagas, setVagas] = useState(unit.vagas_garagem != null ? String(unit.vagas_garagem) : '');
+  const [areaM2, setAreaM2] = useState(unit.area_m2 != null ? String(unit.area_m2) : '');
+  const [andar, setAndar] = useState(unit.andar != null ? String(unit.andar) : '');
+  const [areaLoteM2, setAreaLoteM2] = useState(unit.area_lote_m2 != null ? String(unit.area_lote_m2) : '');
+  const [testadaM, setTestadaM] = useState(unit.testada_m != null ? String(unit.testada_m) : '');
+  const [orientacao, setOrientacao] = useState<'' | 'nascente' | 'poente'>(unit.orientacao || '');
 
   async function act(action: 'reservar' | 'vender' | 'liberar') {
     if (action === 'reservar' && !buyerName.trim()) { setError('Nome do interessado é obrigatório pra reservar.'); return; }
@@ -206,21 +475,142 @@ function UnitActionModal({ unit, onClose, onChanged }: { unit: Unit; onClose: ()
     }
   }
 
+  async function saveEdits() {
+    setSaving('editar');
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/units/${unit.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({
+          price_cents: priceCents || null,
+          quartos: !isLoteamento && quartos ? Number(quartos) : null,
+          vagas_garagem: !isLoteamento && vagas ? Number(vagas) : null,
+          area_m2: !isLoteamento && areaM2 ? Number(areaM2.replace(',', '.')) : null,
+          andar: isVertical && andar ? Number(andar) : null,
+          area_lote_m2: isLoteamento && areaLoteM2 ? Number(areaLoteM2.replace(',', '.')) : null,
+          testada_m: isLoteamento && testadaM ? Number(testadaM.replace(',', '.')) : null,
+          orientacao: orientacao || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao salvar alterações.');
+      }
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao salvar alterações.');
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Excluir a unidade ${unit.code} permanentemente?`)) return;
+    setSaving('excluir');
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/units/${unit.id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao excluir unidade.');
+      }
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao excluir unidade.');
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
           <h3 className="text-lg font-bold text-white">Unidade {unit.code}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
 
-          <p className="text-[13px] text-white/50">
-            {centsToReais(unit.price_cents)} · status atual: <span className="font-semibold">{unit.status}</span>
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] text-white/50">
+              {centsToReais(unit.price_cents)} · status atual: <span className="font-semibold">{unit.status}</span>
+            </p>
+            <button onClick={() => setEditing(e => !e)} className="text-[12px] font-semibold text-violet-200 hover:text-violet-100 transition-colors shrink-0">
+              {editing ? 'fechar' : 'editar'}
+            </button>
+          </div>
+          {!editing && unitDetails(unit) && (
+            <p className="text-[12px] text-white/40">{unitDetails(unit)}</p>
+          )}
+
+          {editing && (
+            <div className="space-y-3 p-3 rounded-xl bg-white/[0.03] border border-white/10">
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Preço</label>
+                <div className="flex items-stretch gap-2">
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+                  <input value={maskFromCents(priceCents)} onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
+                    placeholder="0,00" inputMode="numeric" className={numInputClass} />
+                </div>
+              </div>
+              {isLoteamento ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
+                    <input value={areaLoteM2} onChange={(e) => setAreaLoteM2(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Testada (m)</label>
+                    <input value={testadaM} onChange={(e) => setTestadaM(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Quartos</label>
+                    <input value={quartos} onChange={(e) => setQuartos(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="0" className={numInputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
+                    <input value={vagas} onChange={(e) => setVagas(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="0" className={numInputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
+                    <input value={areaM2} onChange={(e) => setAreaM2(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
+                  </div>
+                  {isVertical && (
+                    <div>
+                      <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Andar</label>
+                      <input value={andar} onChange={(e) => setAndar(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="0" className={numInputClass} />
+                    </div>
+                  )}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Orientação solar</label>
+                <div className="flex gap-2">
+                  {(['nascente', 'poente'] as const).map((o) => (
+                    <button key={o} type="button" onClick={() => setOrientacao(orientacao === o ? '' : o)}
+                      className={`flex-1 py-2 rounded-xl text-[12px] font-semibold transition-colors border ${
+                        orientacao === o ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                      }`}>{ORIENTACAO_LABEL[o]}</button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={saveEdits} disabled={!!saving}
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+                {saving === 'editar' ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          )}
 
           {unit.status === 'reservado' && unit.reserved_until && (
             <p className="text-[12px] text-amber-200 flex items-center gap-1.5">
@@ -292,6 +682,10 @@ function UnitActionModal({ unit, onClose, onChanged }: { unit: Unit; onClose: ()
               {saving === 'liberar' ? 'Desfazendo...' : 'Desfazer venda (voltar a disponível)'}
             </button>
           )}
+          <button onClick={handleDelete} disabled={!!saving}
+            className="w-full py-2.5 rounded-xl text-sm font-bold text-red-300 bg-red-500/10 border border-red-400/20 hover:bg-red-500/20 transition-colors disabled:opacity-50">
+            {saving === 'excluir' ? 'Excluindo...' : 'Excluir unidade'}
+          </button>
         </div>
       </div>
     </div>
@@ -310,6 +704,8 @@ export function LancamentosArea() {
   const [loadingUnits, setLoadingUnits] = useState(false);
   const [error, setError] = useState('');
   const [showNewDev, setShowNewDev] = useState(false);
+  const [editingDev, setEditingDev] = useState(false);
+  const [deletingDev, setDeletingDev] = useState(false);
   const [showNewUnit, setShowNewUnit] = useState(false);
   const [activeUnit, setActiveUnit] = useState<Unit | null>(null);
 
@@ -349,6 +745,24 @@ export function LancamentosArea() {
   }, [selectedId]);
 
   const refreshAll = () => { loadDevelopments(); if (selectedId) loadUnits(selectedId); };
+
+  const handleDeleteDevelopment = async (dev: Development) => {
+    if (!confirm(`Excluir o empreendimento "${dev.name}" e todas as suas unidades permanentemente?`)) return;
+    setDeletingDev(true);
+    try {
+      const res = await fetch(`/api/lancamentos/developments/${dev.id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao excluir empreendimento.');
+      }
+      setSelectedId(null);
+      loadDevelopments();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao excluir empreendimento.');
+    } finally {
+      setDeletingDev(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
@@ -394,9 +808,16 @@ export function LancamentosArea() {
           <div className="flex gap-2 mb-5 flex-wrap">
             {developments!.map((d) => (
               <button key={d.id} onClick={() => setSelectedId(d.id)}
-                className={`px-4 py-2 rounded-2xl text-[13px] font-semibold transition-colors ${
+                className={`inline-flex items-center gap-2 pl-2 pr-4 py-2 rounded-2xl text-[13px] font-semibold transition-colors ${
                   selectedId === d.id ? 'bg-white/[0.14] text-white' : 'bg-white/[0.04] text-white/45 hover:text-white/75'
                 }`}>
+                {d.images && d.images[0] ? (
+                  <img src={d.images[0]} alt="" className="w-6 h-6 rounded-full object-cover border border-white/15" />
+                ) : (
+                  <span className="w-6 h-6 rounded-full bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+                    <Building2 className="w-3 h-3 text-white/40" />
+                  </span>
+                )}
                 {d.name}
               </button>
             ))}
@@ -404,9 +825,23 @@ export function LancamentosArea() {
 
           {selected && (
             <GlassCard>
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              {selected.images && selected.images.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto mb-4 -mx-1 px-1">
+                  {selected.images.map((url) => (
+                    <img key={url} src={url} alt="" className="h-24 w-32 object-cover rounded-xl border border-white/12 shrink-0" />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
                 <div>
-                  <h3 className="text-[15px] font-bold text-white">{selected.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[15px] font-bold text-white">{selected.name}</h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/[0.06] border border-white/12 text-white/50">
+                      {selected.tipo === 'horizontal'
+                        ? (selected.subtipo === 'condominio_casas' ? 'Condomínio de casas' : 'Loteamento')
+                        : 'Vertical'}
+                    </span>
+                  </div>
                   {selected.location && <p className="text-[12px] text-white/40">{selected.location}</p>}
                 </div>
                 <div className="flex items-center gap-4">
@@ -420,8 +855,24 @@ export function LancamentosArea() {
                       bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
                     <Plus className="w-3.5 h-3.5" /> Unidade
                   </button>
+                  <button onClick={() => setEditingDev(true)} title="Editar empreendimento"
+                    className="p-1.5 rounded-xl text-white/50 hover:text-white/80 bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handleDeleteDevelopment(selected)} disabled={deletingDev} title="Excluir empreendimento"
+                    className="p-1.5 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.05] hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
+
+              {selected.amenities && selected.amenities.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {selected.amenities.map((a) => (
+                    <span key={a} className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-white/[0.04] border border-white/10 text-white/50">{a}</span>
+                  ))}
+                </div>
+              )}
 
               {loadingUnits ? (
                 <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
@@ -431,7 +882,7 @@ export function LancamentosArea() {
                 <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-10 gap-2">
                   {units.map((u) => (
                     <button key={u.id} onClick={() => setActiveUnit(u)}
-                      title={`Unidade ${u.code} — ${u.status}`}
+                      title={`Unidade ${u.code} — ${u.status}${unitDetails(u) ? ` · ${unitDetails(u)}` : ''}`}
                       className={`aspect-square rounded-lg border flex items-center justify-center text-[10px] font-bold transition-transform hover:scale-105 ${mirrorColor[u.status]}`}>
                       {u.code}
                     </button>
@@ -444,11 +895,14 @@ export function LancamentosArea() {
       )}
 
       {showNewDev && <NewDevelopmentModal onClose={() => setShowNewDev(false)} onCreated={refreshAll} />}
+      {editingDev && selected && (
+        <NewDevelopmentModal initial={selected} onClose={() => setEditingDev(false)} onCreated={refreshAll} />
+      )}
       {showNewUnit && selectedId && (
-        <NewUnitModal developmentId={selectedId} onClose={() => setShowNewUnit(false)} onCreated={refreshAll} />
+        <NewUnitModal developmentId={selectedId} developmentTipo={selected?.tipo || 'vertical'} developmentSubtipo={selected?.subtipo} onClose={() => setShowNewUnit(false)} onCreated={refreshAll} />
       )}
       {activeUnit && (
-        <UnitActionModal unit={activeUnit} onClose={() => setActiveUnit(null)} onChanged={refreshAll} />
+        <UnitActionModal unit={activeUnit} developmentTipo={selected?.tipo || 'vertical'} developmentSubtipo={selected?.subtipo} onClose={() => setActiveUnit(null)} onChanged={refreshAll} />
       )}
     </div>
   );

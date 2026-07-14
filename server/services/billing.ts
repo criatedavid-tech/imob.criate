@@ -1,9 +1,10 @@
 import { supabase } from "../supabase";
 import {
   ASAAS_API_KEY, ASAAS_BASE_URL, SUBSCRIPTION_VALUE,
-  PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, ZPRO_ADMIN_URL, ZPRO_ADMIN_TOKEN,
+  PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, UAZAPI_HOST, UAZAPI_TOKEN,
 } from "../config";
-import { createZproTenantAndChannel } from "./provisioning";
+import { provisionUazapiInstanceNative } from "./provisioning";
+import { fetchWithTimeout } from "../lib/http";
 
 export const asaasHeaders = () => ({
   'Content-Type': 'application/json',
@@ -90,7 +91,7 @@ async function chargeOverageIfDue(
       `(${periodStart.toISOString().slice(0,10)} a ${periodEnd.toISOString().slice(0,10)}) ` +
       `× R$ ${PLAN_OVERAGE_PRICE.toFixed(2)}`;
 
-    const payResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
+    const payResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments`, {
       method: 'POST',
       headers: asaasHeaders(),
       body: JSON.stringify({
@@ -199,7 +200,7 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
             .update({ status: 'included_in_subscription', charged_at: new Date().toISOString() })
             .eq('id', scheduled.id);
           // Reseta subscription de volta ao valor base para o próximo ciclo
-          fetch(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}`, {
+          fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}`, {
             method: 'PUT',
             headers: asaasHeaders(),
             body: JSON.stringify({ value: SUBSCRIPTION_VALUE, description: 'Criate — Plano mensal' })
@@ -229,7 +230,7 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
     const { data: broker } = await supabase.from('imf_brokers').select('*').eq('id', brokerId).single();
     if (!broker) return;
 
-    if (ZPRO_ADMIN_URL && ZPRO_ADMIN_TOKEN) {
+    if (UAZAPI_HOST && UAZAPI_TOKEN) {
       // Trava atômica: só provisiona se status NÃO for 'completed' nem 'processing'.
       // Evita criação duplicada quando Asaas dispara o mesmo evento 2x.
       const { data: locked } = await supabase.from('imf_brokers')
@@ -239,10 +240,10 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
         .neq('provisioning_status', 'processing')
         .select('id');
       if (!locked?.length) {
-        console.log(`[Z-PRO] Provisionamento já em andamento/concluído para ${brokerId} — webhook duplicado ignorado`);
+        console.log(`[Provisioning] Provisionamento já em andamento/concluído para ${brokerId} — webhook duplicado ignorado`);
         return;
       }
-      await createZproTenantAndChannel({ ...broker, provisioning_status: 'processing' });
+      await provisionUazapiInstanceNative({ ...broker, provisioning_status: 'processing' });
     }
 
     console.log(`✅ Corretor ${brokerId} ativado — Asaas ${id}`);
@@ -327,7 +328,7 @@ export async function prepareOverageBilling(): Promise<void> {
         : 'Criate — Plano mensal';
 
       // Atualiza valor da assinatura no Asaas para o próximo ciclo
-      const upResp = await fetch(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}`, {
+      const upResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}`, {
         method: 'PUT',
         headers: asaasHeaders(),
         body: JSON.stringify({ value: totalValue, description })

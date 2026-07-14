@@ -2,7 +2,8 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
-import { TERMS_VERSION, INTERNAL_PROXY_TOKEN } from "../config";
+import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
+import { fetchWithTimeout } from "../lib/http";
 
 export const brokersRouter = express.Router();
 
@@ -181,6 +182,97 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
 
     res.json({ agent_name: data?.agent_name ?? 'Agente Principal', system_prompt: data?.system_prompt ?? '' });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── WhatsApp — conexão via QR code (substitui o painel externo do Z-PRO) ──
+// A instância UAZAPI já é criada no provisionamento (server/services/provisioning.ts);
+// aqui só expomos status/QR pra o corretor parear o número direto no imob.
+
+// Descobre qual instância ESSE usuário logado deve ver/gerenciar aqui: se
+// ele é membro com WhatsApp próprio (imf_broker_members.whatsapp_mode='own'),
+// é a instância dele; senão (dono da conta, ou membro compartilhado) é a
+// instância da conta — mesmo comportamento de sempre.
+async function resolveManagedInstance(userId: string, brokerId: string): Promise<{ token: string | null; ownInstance: boolean }> {
+  const { data: member } = await supabase
+    .from('imf_broker_members')
+    .select('whatsapp_mode, uazapi_instance_token')
+    .eq('broker_id', brokerId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (member?.whatsapp_mode === 'own') {
+    return { token: member.uazapi_instance_token, ownInstance: true };
+  }
+
+  const { data: broker } = await supabase.from('imf_brokers').select('uazapi_instance_token').eq('id', brokerId).single();
+  return { token: broker?.uazapi_instance_token || null, ownInstance: false };
+}
+
+brokersRouter.get("/api/brokers/whatsapp/status", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+    const { token, ownInstance } = await resolveManagedInstance(userId, brokerId);
+
+    if (!token) {
+      return res.json({ provisioned: false, connected: false, loggedIn: false, ownInstance });
+    }
+
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/status`, {
+      headers: { token },
+    });
+    if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
+    const data = await r.json();
+
+    res.json({
+      provisioned: true,
+      connected: !!data?.status?.connected,
+      loggedIn: !!data?.status?.loggedIn,
+      profileName: data?.instance?.profileName || null,
+      owner: data?.instance?.owner || null,
+      ownInstance,
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/brokers/whatsapp/status:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+    const { token } = await resolveManagedInstance(userId, brokerId);
+
+    if (!token) {
+      return res.status(400).json({ error: "Instância WhatsApp ainda não provisionada pra este corretor." });
+    }
+
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({}),
+    });
+    if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
+    const data = await r.json();
+
+    res.json({
+      connected: !!data?.connected,
+      qrcode: data?.instance?.qrcode || null,
+      paircode: data?.instance?.paircode || null,
+    });
+  } catch (err: any) {
+    console.error("Erro POST /api/brokers/whatsapp/connect:", err);
     res.status(500).json({ error: err.message });
   }
 });

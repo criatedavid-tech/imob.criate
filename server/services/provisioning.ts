@@ -1,14 +1,15 @@
 import { supabase } from "../supabase";
 import {
   PROVISIONING_WEBHOOK_URL, ZPRO_ADMIN_URL, N8N_WEBHOOK_URL,
-  UAZAPI_HOST, UAZAPI_TOKEN, ZPRO_JWT_SECRET,
+  UAZAPI_HOST, UAZAPI_TOKEN, ZPRO_JWT_SECRET, APP_URL,
 } from "../config";
 import { getZproAdminToken, forgeTenantJwt } from "../lib/zproAuth";
+import { fetchWithTimeout } from "../lib/http";
 
 export async function fireProvisioningWebhook(payload: any) {
   if (!PROVISIONING_WEBHOOK_URL) return;
   try {
-    const resp = await fetch(PROVISIONING_WEBHOOK_URL, {
+    const resp = await fetchWithTimeout(PROVISIONING_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -31,6 +32,117 @@ export async function fireProvisioningWebhook(payload: any) {
   }
 }
 
+// ─── Provisionamento nativo (v2) — sem Z-PRO ──────────────────────────────
+// Substitui createZproTenantAndChannel: cria a instância UAZAPI direto (POST
+// /instance/create com admintoken) e aponta o webhook dela pro nosso próprio
+// backend (/api/wpp-shim/inbound/:instanceId — server/routes/wppShim.ts),
+// nunca pro Z-PRO. Sem tenant, sem canal, sem api-config, sem bot Z-PRO —
+// o atendimento roda 100% nativo (backend → n8n → agente).
+//
+// Núcleo comum entre provisionar a CONTA (provisionUazapiInstanceNative) e
+// provisionar um MEMBRO com WhatsApp próprio (provisionUazapiInstanceForMember)
+// — cria a instância na UAZAPI e já aponta o webhook nativo pra ela. Quem
+// chama decide em qual tabela/linha persistir o resultado.
+async function createUazapiInstance(channelName: string): Promise<{ instanceId: string; instanceToken: string }> {
+  const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
+    method: 'POST',
+    headers: { admintoken: UAZAPI_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: channelName }),
+  });
+  const json: any = await res.json().catch(() => null);
+  const instanceToken: string | null = json?.token ?? json?.instance?.token ?? null;
+  const instanceId: string | null = json?.instance?.id ?? json?.id ?? null;
+  console.log(`[Provisioning] POST /instance/create "${channelName}": status=${res.status} instanceId=${instanceId ?? 'null'}`);
+  if (!instanceToken || !instanceId) {
+    throw new Error(`UAZAPI não retornou token/id da instância (status ${res.status}): ${JSON.stringify(json)?.slice(0, 300)}`);
+  }
+
+  // Webhook direto pro nosso backend — NUNCA pro Z-PRO.
+  const inboundUrl = `${APP_URL}/api/wpp-shim/inbound/${instanceId}`;
+  const webhookRes = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
+    method: 'POST',
+    headers: { token: instanceToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: inboundUrl,
+      enabled: true,
+      events: ['messages', 'connection', 'wasSentByApi', 'messages_update', 'call', 'contacts', 'groups', 'history'],
+      excludeMessages: [],
+      addUrlEvents: false,
+      addUrlTypesMessages: false,
+    }),
+  });
+  console.log(`[Provisioning] webhook nativo ${webhookRes.ok ? 'configurado ✓' : 'FALHOU'} → ${inboundUrl}`);
+
+  return { instanceId, instanceToken };
+}
+
+export async function provisionUazapiInstanceNative(broker: any): Promise<void> {
+  if (!UAZAPI_HOST || !UAZAPI_TOKEN) {
+    console.warn('[Provisioning] UAZAPI_HOST/UAZAPI_TOKEN ausente — não é possível provisionar.');
+    await supabase.from('imf_brokers').update({
+      provisioning_status: 'failed',
+      provisioning_error: 'UAZAPI não configurada no servidor.',
+    }).eq('id', broker.id);
+    return;
+  }
+
+  try {
+    const { instanceId, instanceToken } = await createUazapiInstance(`WhatsApp - ${broker.name || 'Corretor'}`);
+
+    await supabase.from('imf_brokers').update({
+      uazapi_instance_id: instanceId,
+      uazapi_instance_token: instanceToken,
+      provisioning_status: 'completed',
+      provisioning_completed_at: new Date().toISOString(),
+      provisioning_error: null,
+    }).eq('id', broker.id);
+
+    console.log(`[Provisioning] Instância nativa criada pra broker ${broker.id}: ${instanceId}`);
+  } catch (err: any) {
+    console.error('[Provisioning] Falha no provisionamento nativo:', err.message);
+    await supabase.from('imf_brokers').update({
+      provisioning_status: 'failed',
+      provisioning_error: err.message,
+    }).eq('id', broker.id);
+  }
+}
+
+// Mesma lógica, pra um MEMBRO da equipe que ganhou WhatsApp próprio
+// (imf_broker_members.whatsapp_mode='own') em vez de compartilhar o da
+// conta — disparado em POST /api/auth/join (server/routes/auth.ts) quando
+// o convite aceito pedia instância própria. `member.id` é o id da linha em
+// imf_broker_members (não o user_id) — mesmo padrão de `broker.id` acima.
+export async function provisionUazapiInstanceForMember(member: { id: string; name: string }): Promise<void> {
+  if (!UAZAPI_HOST || !UAZAPI_TOKEN) {
+    console.warn('[Provisioning] UAZAPI_HOST/UAZAPI_TOKEN ausente — não é possível provisionar membro.');
+    await supabase.from('imf_broker_members').update({
+      provisioning_status: 'failed',
+      provisioning_error: 'UAZAPI não configurada no servidor.',
+    }).eq('id', member.id);
+    return;
+  }
+
+  try {
+    const { instanceId, instanceToken } = await createUazapiInstance(`WhatsApp - ${member.name || 'Corretor'}`);
+
+    await supabase.from('imf_broker_members').update({
+      uazapi_instance_id: instanceId,
+      uazapi_instance_token: instanceToken,
+      provisioning_status: 'completed',
+      provisioning_completed_at: new Date().toISOString(),
+      provisioning_error: null,
+    }).eq('id', member.id);
+
+    console.log(`[Provisioning] Instância própria criada pro membro ${member.id}: ${instanceId}`);
+  } catch (err: any) {
+    console.error('[Provisioning] Falha no provisionamento do membro:', err.message);
+    await supabase.from('imf_broker_members').update({
+      provisioning_status: 'failed',
+      provisioning_error: err.message,
+    }).eq('id', member.id);
+  }
+}
+
 // ─── Z-PRO REST API (nova versão — app.criate.online) ────────────────────────
 // Endpoint raiz confirmado pelo usuário: POST /tenants
 // Todos os endpoints seguem o padrão REST; logs detalhados para cada chamada.
@@ -39,7 +151,7 @@ export async function zproPost(path: string, body: any, token?: string): Promise
   const authToken = token || await getZproAdminToken();
   const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
   try {
-    const r = await fetch(`${ZPRO_ADMIN_URL}${path}`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
+    const r = await fetchWithTimeout(`${ZPRO_ADMIN_URL}${path}`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
     const raw = await r.text();
     let json: any = null;
     try { json = JSON.parse(raw); } catch { /* raw não é JSON */ }
@@ -55,7 +167,7 @@ export async function zproPut(path: string, body: any, token?: string): Promise<
   const authToken = token || await getZproAdminToken();
   const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
   try {
-    const r = await fetch(`${ZPRO_ADMIN_URL}${path}`, { method: 'PUT', headers: hdrs, body: JSON.stringify(body) });
+    const r = await fetchWithTimeout(`${ZPRO_ADMIN_URL}${path}`, { method: 'PUT', headers: hdrs, body: JSON.stringify(body) });
     const raw = await r.text();
     console.log(`[Z-PRO] PUT ${path} → ${r.status} | body=${raw.slice(0, 200)}`);
     return { ok: r.ok, status: r.status, raw };
@@ -69,7 +181,7 @@ export async function zproGet(path: string, token?: string): Promise<{ ok: boole
   const authToken = token || await getZproAdminToken();
   const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
   try {
-    const r = await fetch(`${ZPRO_ADMIN_URL}${path}`, { method: 'GET', headers: hdrs });
+    const r = await fetchWithTimeout(`${ZPRO_ADMIN_URL}${path}`, { method: 'GET', headers: hdrs });
     const raw = await r.text();
     let json: any = null;
     try { json = JSON.parse(raw); } catch { /* raw não é JSON */ }
@@ -85,7 +197,7 @@ export async function zproDelete(path: string, token?: string): Promise<{ ok: bo
   const authToken = token || await getZproAdminToken();
   const hdrs = { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` };
   try {
-    const r = await fetch(`${ZPRO_ADMIN_URL}${path}`, { method: 'DELETE', headers: hdrs });
+    const r = await fetchWithTimeout(`${ZPRO_ADMIN_URL}${path}`, { method: 'DELETE', headers: hdrs });
     const raw = await r.text();
     console.log(`[Z-PRO] DELETE ${path} → ${r.status}`);
     return { ok: r.ok, status: r.status, raw };
@@ -161,7 +273,7 @@ export async function setUazapiWebhook(instanceToken: string, instanceId: string
   }
   const webhookUrl = `${ZPRO_ADMIN_URL}/uazapi-webhook/${instanceId}`;
   try {
-    const r = await fetch(`${UAZAPI_HOST}/webhook`, {
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
       method: 'POST',
       headers: { token: instanceToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -206,7 +318,7 @@ export async function createUazapiInstanceForChannel(
   let instanceToken: string | null = null;
   let instanceId: string | null = null;
   try {
-    const res = await fetch(`${UAZAPI_HOST}/instance/create`, {
+    const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
       method: 'POST',
       headers: { 'admintoken': UAZAPI_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: channelName })

@@ -10,9 +10,10 @@ dotenv.config({ override: true });
 export const SUPABASE_URL = process.env.SUPABASE_URL
   || process.env.VITE_SUPABASE_URL
   || "https://umvbrahsqvqeondwtikm.supabase.co";
-export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-  || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
-  || "";
+// Sem fallback VITE_* de propósito: esse prefixo é exatamente o que o Vite
+// expõe no bundle do navegador — um valor sob esse nome não pode nunca virar
+// um caminho válido de leitura da service_role key no backend.
+export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 if (!SUPABASE_SERVICE_ROLE_KEY) {
   console.error(

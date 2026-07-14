@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import { ASAAS_BASE_URL } from "../config";
 import { asaasHeaders } from "./billing";
+import { fetchWithTimeout } from "../lib/http";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Cobrança real de aluguel via Asaas — MESMO PADRÃO da assinatura do
@@ -31,7 +32,7 @@ async function ensureAsaasTenantCustomer(contract: RentalContract): Promise<stri
   if (contract.asaas_customer_id) return contract.asaas_customer_id;
   if (!contract.tenant_cpf_cnpj) throw new Error("CPF/CNPJ do inquilino é obrigatório pra gerar cobrança.");
 
-  const resp = await fetch(`${ASAAS_BASE_URL}/customers`, {
+  const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/customers`, {
     method: "POST",
     headers: asaasHeaders(),
     body: JSON.stringify({
@@ -88,7 +89,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   const dueDateIso = dueDate.toISOString().split("T")[0];
   const amount = contract.rent_amount_cents / 100;
 
-  const payResp = await fetch(`${ASAAS_BASE_URL}/payments`, {
+  const payResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments`, {
     method: "POST",
     headers: asaasHeaders(),
     body: JSON.stringify({
@@ -106,7 +107,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   // PIX copia-e-cola vem num endpoint separado.
   let pixCopyPaste: string | null = null;
   try {
-    const pixResp = await fetch(`${ASAAS_BASE_URL}/payments/${payment.id}/pixQrCode`, { headers: asaasHeaders() });
+    const pixResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments/${payment.id}/pixQrCode`, { headers: asaasHeaders() });
     if (pixResp.ok) {
       const pix = await pixResp.json();
       pixCopyPaste = pix.payload || null;

@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { ZPRO_ADMIN_URL, ZPRO_ADMIN_TOKEN, ZPRO_JWT_SECRET } from "../config";
+import { fetchWithTimeout } from "./http";
 
 // ─── Z-PRO JWT AUTO-REFRESH ──────────────────────────────────────────────────
 // O JWT do superadmin expira em ~24h. Este objeto mantém o token em memória e
@@ -29,7 +30,7 @@ export async function refreshZproJwt(): Promise<void> {
   _zproJwt.refreshing = true;
   try {
     // Tentativa 1: POST /auth/refresh_token (não exige senha — usa o token atual)
-    const r = await fetch(`${ZPRO_ADMIN_URL}/auth/refresh_token`, {
+    const r = await fetchWithTimeout(`${ZPRO_ADMIN_URL}/auth/refresh_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${_zproJwt.token}` },
       body: JSON.stringify({ token: _zproJwt.token })

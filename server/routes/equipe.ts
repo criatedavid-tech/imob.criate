@@ -1,8 +1,12 @@
 import express from "express";
+import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
+import { APP_URL } from "../config";
 
 export const equipeRouter = express.Router();
+
+const INVITE_TTL_MS = 48 * 3600_000;
 
 // Etapa 9 do UX_MASTERPLAN.md — só a parte que dá pra construir sem inventar
 // dado: meta pessoal do mês vs. progresso real (negócios fechados de
@@ -73,6 +77,182 @@ equipeRouter.post("/api/equipe/goal", requireUser, async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("Erro POST /api/equipe/goal:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Multi-usuário leve: qualquer membro vê a lista, só o dono original
+// (imf_brokers.user_id) convida ou remove — sem hierarquia além disso.
+async function isOwner(userId: string, brokerId: string): Promise<boolean> {
+  const { data } = await supabase.from("imf_brokers").select("id").eq("id", brokerId).eq("user_id", userId).maybeSingle();
+  return !!data;
+}
+
+equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.json([]);
+
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id, name, email").eq("id", brokerId).maybeSingle();
+    const { data: members, error } = await supabase
+      .from("imf_broker_members")
+      .select("user_id, created_at")
+      .eq("broker_id", brokerId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+
+    const list = await Promise.all((members || []).map(async (m: any) => {
+      const isOwnerRow = m.user_id === broker?.user_id;
+      if (isOwnerRow) {
+        return { user_id: m.user_id, name: broker?.name || "Dono da conta", email: broker?.email || "", is_owner: true, created_at: m.created_at };
+      }
+      const { data: userData } = await supabase.auth.admin.getUserById(m.user_id).catch(() => ({ data: { user: null } } as any));
+      const u = userData?.user;
+      return {
+        user_id: m.user_id,
+        name: u?.user_metadata?.full_name || u?.email?.split("@")[0] || "Membro",
+        email: u?.email || "",
+        is_owner: false,
+        created_at: m.created_at,
+      };
+    }));
+
+    res.json(list);
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/members:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode convidar membros." });
+
+    // Dono escolhe, PARA ESSE convite específico, se o corretor vai ter
+    // WhatsApp próprio ou compartilhar o da conta — "própria" só até o
+    // limite do plano (member_limit, ainda sem tiers formais, ajustável
+    // pelo admin). Provisionamento de verdade só acontece no aceite
+    // (POST /api/auth/join), com o valor gravado aqui.
+    const whatsappMode = req.body?.whatsapp_mode === "own" ? "own" : "shared";
+
+    if (whatsappMode === "own") {
+      const { data: brokerRow } = await supabase.from("imf_brokers").select("member_limit").eq("id", brokerId).maybeSingle();
+      const limit = brokerRow?.member_limit || 0;
+      if (limit <= 0) {
+        return res.status(400).json({ error: "Seu plano não inclui WhatsApp próprio para membros da equipe." });
+      }
+      const { count } = await supabase
+        .from("imf_broker_members")
+        .select("id", { count: "exact", head: true })
+        .eq("broker_id", brokerId)
+        .eq("whatsapp_mode", "own");
+      if ((count || 0) >= limit) {
+        return res.status(400).json({ error: `Limite de ${limit} corretor(es) com WhatsApp próprio já atingido no seu plano.` });
+      }
+    }
+
+    const code = randomBytes(16).toString("hex");
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+    const { error } = await supabase
+      .from("imf_broker_invites")
+      .insert({ broker_id: brokerId, code, expires_at: expiresAt, whatsapp_mode: whatsappMode });
+    if (error) throw error;
+
+    res.status(201).json({ code, url: `${APP_URL}/equipe/entrar/${code}`, expires_at: expiresAt, whatsapp_mode: whatsappMode });
+  } catch (err: any) {
+    console.error("Erro POST /api/equipe/members/invite:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode remover membros." });
+
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id").eq("id", brokerId).maybeSingle();
+    if (req.params.userId === broker?.user_id) {
+      return res.status(400).json({ error: "Não é possível remover o dono da conta." });
+    }
+
+    const { error } = await supabase.from("imf_broker_members").delete().eq("broker_id", brokerId).eq("user_id", req.params.userId);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/equipe/members/:userId:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ranking — só o dono vê (visão gerencial); consistente com a regra de que
+// cada membro só enxerga os próprios dados em qualquer outra tela.
+equipeRouter.get("/api/equipe/ranking", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta vê o ranking." });
+
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id, name").eq("id", brokerId).maybeSingle();
+    const { data: members } = await supabase.from("imf_broker_members").select("user_id, created_at").eq("broker_id", brokerId);
+
+    const month = currentMonthStart();
+    const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+    const ids = (propIds || []).map((p: any) => p.id);
+    const { data: devIdsData } = await supabase.from("imf_developments").select("id").eq("broker_id", brokerId);
+    const devIds = (devIdsData || []).map((d: any) => d.id);
+
+    const [{ data: closedLeads }, { data: soldUnits }] = await Promise.all([
+      ids.length
+        ? supabase.from("leads").select("owner_user_id").in("property_id", ids).gte("closed_at", month).not("owner_user_id", "is", null)
+        : Promise.resolve({ data: [] as any[] }),
+      devIds.length
+        ? supabase.from("imf_units").select("sold_by_user_id, price_cents").in("development_id", devIds).eq("status", "vendido").not("sold_by_user_id", "is", null)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const closedByUser = new Map<string, number>();
+    for (const l of closedLeads || []) closedByUser.set(l.owner_user_id, (closedByUser.get(l.owner_user_id) || 0) + 1);
+
+    const salesByUser = new Map<string, { count: number; totalCents: number }>();
+    for (const u of soldUnits || []) {
+      const cur = salesByUser.get(u.sold_by_user_id) || { count: 0, totalCents: 0 };
+      cur.count += 1;
+      cur.totalCents += u.price_cents || 0;
+      salesByUser.set(u.sold_by_user_id, cur);
+    }
+
+    const ranking = await Promise.all((members || []).map(async (m: any) => {
+      const isOwnerRow = m.user_id === broker?.user_id;
+      let name = "Membro";
+      if (isOwnerRow) {
+        name = broker?.name || "Dono da conta";
+      } else {
+        const { data: userData } = await supabase.auth.admin.getUserById(m.user_id).catch(() => ({ data: { user: null } } as any));
+        name = userData?.user?.user_metadata?.full_name || userData?.user?.email?.split("@")[0] || "Membro";
+      }
+      const sales = salesByUser.get(m.user_id) || { count: 0, totalCents: 0 };
+      return {
+        user_id: m.user_id,
+        name,
+        is_owner: isOwnerRow,
+        closed_leads_month: closedByUser.get(m.user_id) || 0,
+        sales_count_total: sales.count,
+        sales_total_cents: sales.totalCents,
+      };
+    }));
+
+    ranking.sort((a, b) => (b.sales_total_cents - a.sales_total_cents) || (b.closed_leads_month - a.closed_leads_month));
+
+    res.json({ month, ranking });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/ranking:", err);
     res.status(500).json({ error: err.message });
   }
 });

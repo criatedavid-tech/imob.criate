@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, optionalUser, getBrokerId } from "../middleware/auth";
+import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { APP_URL } from "../config";
 
 export const propertiesRouter = express.Router();
@@ -12,17 +12,22 @@ export const propertiesRouter = express.Router();
 propertiesRouter.get("/api/properties", optionalUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
+    // Sem usuário válido (token ausente/expirado): nunca retorna a tabela
+    // inteira sem filtro — isso vazaria imóveis de TODOS os corretores da
+    // plataforma. A landing pública usa /api/properties/:slug, não esta rota.
+    if (!userId) return res.json([]);
+
     const query = supabase.from('imf_properties').select('*');
 
-    if (userId) {
-      const brokerId = await getBrokerId(userId);
-      if (brokerId) {
-        query.eq('broker_id', brokerId);
-      } else {
-        // If no broker found/created, maybe show nothing or all?
-        // The user expects to see THEIR houses.
-        query.eq('broker_id', '00000000-0000-0000-0000-000000000000'); // Force empty if no broker
+    const brokerId = await getBrokerId(userId);
+    if (brokerId) {
+      query.eq('broker_id', brokerId);
+      // Isolamento por membro: dono vê a carteira toda, membro só a própria.
+      if (!(await isBrokerOwner(userId, brokerId))) {
+        query.eq('owner_user_id', userId);
       }
+    } else {
+      query.eq('broker_id', '00000000-0000-0000-0000-000000000000'); // Force empty if no broker
     }
 
     const { data, error } = await query;
@@ -99,24 +104,41 @@ propertiesRouter.post("/api/properties", requireUser, async (req, res) => {
     /**
      * Gera o link completo da landing page exclusiva do imóvel.
      * O link segue o padrão: https://[dominio]/p/[slug-do-imovel]
+     *
+     * Usa sempre APP_URL (configurado no servidor), nunca o header
+     * Origin/Referer do cliente — uma sessão local (npm run dev) gravando
+     * contra o Supabase de produção contaminava o link pra sempre com
+     * "localhost" (achado em 9 dos 12 imóveis da plataforma, 2026-07-14).
      */
-    const origin = req.headers.origin || req.headers.referer || APP_URL;
-    // Remove barra final se existir para garantir formatação limpa
-    const cleanOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+    const cleanOrigin = APP_URL.endsWith('/') ? APP_URL.slice(0, -1) : APP_URL;
     property.link = `${cleanOrigin}/p/${property.slug}`;
 
     // Link to broker
     const userId = (req as any).userId as string;
-    if (userId) {
-      const brokerId = await getBrokerId(userId);
-      if (brokerId) {
-        property.broker_id = brokerId;
-      } else {
-        console.error("Could not associate property with a broker (no broker found or created)");
-        return res.status(403).json({ error: "Sua conta não possui um perfil de corretor para cadastrar imóveis. Tente fazer login novamente." });
-      }
-    } else {
+    if (!userId) {
       return res.status(401).json({ error: "O usuário não está autenticado e não pode salvar o imóvel." });
+    }
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) {
+      console.error("Could not associate property with a broker (no broker found or created)");
+      return res.status(403).json({ error: "Sua conta não possui um perfil de corretor para cadastrar imóveis. Tente fazer login novamente." });
+    }
+    property.broker_id = brokerId;
+
+    // Isolamento por membro: em edição (id presente), só o dono do imóvel ou
+    // o dono da conta pode alterar — e a posse original nunca muda de mãos.
+    // Em criação, quem cadastra vira o dono.
+    if (property.id) {
+      const { data: existing } = await supabase.from('imf_properties').select('broker_id, owner_user_id').eq('id', property.id).maybeSingle();
+      if (!existing || existing.broker_id !== brokerId) {
+        return res.status(403).json({ error: "Imóvel não encontrado na sua carteira." });
+      }
+      if (existing.owner_user_id && existing.owner_user_id !== userId && !(await isBrokerOwner(userId, brokerId))) {
+        return res.status(403).json({ error: "Você não tem permissão para editar este imóvel." });
+      }
+      property.owner_user_id = existing.owner_user_id || userId;
+    } else {
+      property.owner_user_id = userId;
     }
 
     console.log("Upserting property with landing page link:", property.link);
@@ -134,6 +156,7 @@ propertiesRouter.post("/api/properties", requireUser, async (req, res) => {
       'created_at',
       'updated_at',
       'broker_id',
+      'owner_user_id',
       'link',
       'status'
     ];
@@ -173,11 +196,13 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
       message: "Node.js Backend via Supabase"
     });
   } catch (err: any) {
-    res.json({
+    // Rota pública sem auth — nunca devolver detalhe interno (mensagem crua
+    // do Postgres/Supabase, objeto de erro completo). O detalhe fica só no
+    // log do servidor; quem chama essa rota só precisa saber que falhou.
+    console.error("[Health] falha ao conectar no Supabase:", err.message || err);
+    res.status(503).json({
       database: "ERROR",
       supabase_api: "ERROR",
-      db_error: err.message || JSON.stringify(err),
-      full_error: err,
       message: "Node.js Backend via Supabase (Error)"
     });
   }
@@ -185,9 +210,13 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
 
 propertiesRouter.get("/api/properties/:slug", async (req, res) => {
   try {
+    // Landing pública — allowlist explícita do corretor embutido: o resto de
+    // imf_brokers tem segredo (reset_token, zpro_api_token, uazapi_instance_token,
+    // asaas_credit_card_token, zpro_password, is_admin), que um select('*') vazava
+    // pra qualquer um que acessasse um slug de imóvel.
     const { data, error } = await supabase
       .from('imf_properties')
-      .select('*, imf_brokers(*)')
+      .select('*, brokers:imf_brokers(name, phone, broker_address)')
       .eq('slug', req.params.slug)
       .single();
 
@@ -240,10 +269,12 @@ propertiesRouter.delete("/api/properties/:id", requireUser, async (req, res) => 
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
-    const { error } = await supabase.from('imf_properties').delete()
-      .eq('id', req.params.id)
-      .eq('broker_id', brokerId);
+    const query = supabase.from('imf_properties').delete().eq('id', req.params.id).eq('broker_id', brokerId);
+    if (!(await isBrokerOwner(userId, brokerId))) query.eq('owner_user_id', userId);
+
+    const { data, error } = await query.select('id');
     if (error) throw error;
+    if (!data || data.length === 0) return res.status(403).json({ error: 'Acesso negado.' });
     res.status(200).json({ success: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/properties:", err);
@@ -263,13 +294,10 @@ propertiesRouter.patch("/api/properties/:id/status", requireUser, async (req, re
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: "Status é obrigatório." });
 
-    const { data, error } = await supabase
-      .from('imf_properties')
-      .update({ status })
-      .eq('id', req.params.id)
-      .eq('broker_id', brokerId)
-      .select()
-      .single();
+    const query = supabase.from('imf_properties').update({ status }).eq('id', req.params.id).eq('broker_id', brokerId);
+    if (!(await isBrokerOwner(userId, brokerId))) query.eq('owner_user_id', userId);
+
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });

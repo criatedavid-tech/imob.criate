@@ -3,8 +3,27 @@ import { X, Upload, Home, MapPin, DollarSign, Camera, Check, Loader2, Sparkles }
 import { motion, AnimatePresence } from 'motion/react';
 
 import { authService } from '../services/auth';
+import { maskFromCents, centsFromMaskInput } from '../lib/money';
 
 import MagicWandTextarea from './MagicWandTextarea';
+
+// Preços antigos foram digitados como texto livre, sem centavos — trata
+// qualquer sequência de dígitos como reais inteiros pra pré-popular a
+// máscara ao editar um imóvel já cadastrado. Preços já formatados com
+// centavos (ex.: "R$ 1.000.000,00", gerados pelo assistente de IA ou por
+// uma edição anterior) têm a vírgula decimal, não sofrem o *100: sem esse
+// caso a formatação inflava 100x (R$1.000.000,00 virava R$100.000.000,00
+// ao abrir "Editar Imóvel" de um cadastro feito pela IA).
+function parseLegacyPriceToCents(raw: string): number {
+  const s = (raw || '').trim();
+  if (!s) return 0;
+  if (s.includes(',')) {
+    const reais = parseFloat(s.replace(/[^\d,]/g, '').replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(reais) ? Math.round(reais * 100) : 0;
+  }
+  const digits = s.replace(/\D/g, '').slice(0, 10);
+  return digits ? parseInt(digits, 10) * 100 : 0;
+}
 
 interface PropertyData {
   id?: string;
@@ -14,6 +33,8 @@ interface PropertyData {
   description: string;
   images?: string[];
   imageUrl?: string; // Para compatibilidade
+  tipo_imovel?: 'residencial' | 'comercial';
+  finalidade?: 'venda' | 'aluguel' | 'ambos';
   quartos?: number;
   sala?: number;
   cozinha?: number;
@@ -21,7 +42,11 @@ interface PropertyData {
   banheiros?: number;
   area?: number;
   varanda_gourmet?: string;
+  vagas_garagem?: number;
+  tipo_comercial?: string;
 }
+
+const TIPO_COMERCIAL_OPTIONS = ['Sala comercial', 'Galpão', 'Loja', 'Terreno'];
 
 export default function PropertyForm({ 
   onClose, 
@@ -34,6 +59,7 @@ export default function PropertyForm({
 }) {
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [priceCents, setPriceCents] = useState(() => parseLegacyPriceToCents(initialData?.price || ''));
   const [formData, setFormData] = useState<PropertyData>(initialData || {
     title: '',
     price: '',
@@ -41,6 +67,8 @@ export default function PropertyForm({
     description: '',
     images: [],
     imageUrl: '',
+    tipo_imovel: 'residencial',
+    finalidade: 'venda',
     quartos: 0,
     sala: 0,
     cozinha: 0,
@@ -48,6 +76,8 @@ export default function PropertyForm({
     banheiros: 0,
     area: 0,
     varanda_gourmet: 'Não',
+    vagas_garagem: 0,
+    tipo_comercial: 'Sala comercial',
   });
   const [successData, setSuccessData] = useState<{isEdit: boolean, url: string} | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -56,7 +86,8 @@ export default function PropertyForm({
   React.useEffect(() => {
     if (initialData) {
       let baseData = { ...initialData };
-      
+      setPriceCents(parseLegacyPriceToCents(initialData.price || ''));
+
       // Deserialize extra data from description if present
       if (initialData.description && initialData.description.includes('---DETALHES-GERADOS---')) {
         const parts = initialData.description.split('---DETALHES-GERADOS---');
@@ -178,6 +209,12 @@ export default function PropertyForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (priceCents <= 0) {
+      setErrorMsg('Informe um preço válido.');
+      return;
+    }
+
     setLoading(true);
 
     const controller = new AbortController();
@@ -188,13 +225,17 @@ export default function PropertyForm({
       
       // Serialize extra fields into description to avoid schema changes
       const extraData = {
+        tipo_imovel: formData.tipo_imovel,
+        finalidade: formData.finalidade,
         quartos: formData.quartos,
         sala: formData.sala,
         cozinha: formData.cozinha,
         piscina: formData.piscina,
         banheiros: formData.banheiros,
         area: formData.area,
-        varanda_gourmet: formData.varanda_gourmet
+        varanda_gourmet: formData.varanda_gourmet,
+        vagas_garagem: formData.vagas_garagem,
+        tipo_comercial: formData.tipo_comercial,
       };
       
       const cleanDescription = formData.description.split('---DETALHES-GERADOS---')[0].trim();
@@ -202,13 +243,14 @@ export default function PropertyForm({
       // Prepare final submission payload
       // We strip out the extra fields that don't exist as columns in the DB
       // to avoid "column does not exist" errors.
-      const { 
-        quartos, sala, cozinha, piscina, banheiros, area, varanda_gourmet,
-        images, imageUrl, ...basePayload 
+      const {
+        tipo_imovel, finalidade, quartos, sala, cozinha, piscina, banheiros, area, varanda_gourmet,
+        vagas_garagem, tipo_comercial, images, imageUrl, ...basePayload
       } = formData;
 
       const submissionData = {
         ...basePayload,
+        price: `R$ ${maskFromCents(priceCents)}`,
         description: `${cleanDescription}\n\n---DETALHES-GERADOS---\n${JSON.stringify(extraData)}`,
         imageUrl: formData.images && formData.images.length > 0 ? JSON.stringify(formData.images) : formData.imageUrl
       };
@@ -350,11 +392,12 @@ export default function PropertyForm({
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-white/50">Preço (R$)</label>
-                  <input 
-                    type="text" 
-                    value={formData.price || ''}
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    placeholder="Ex: 4.500.000" 
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={maskFromCents(priceCents)}
+                    onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
+                    placeholder="0,00"
                     className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
                     required
                   />
@@ -376,6 +419,80 @@ export default function PropertyForm({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Tipo de imóvel</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setFormData({...formData, tipo_imovel: 'residencial'})}
+                  className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
+                    (formData.tipo_imovel || 'residencial') === 'residencial'
+                      ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                  }`}>Residencial (casa/apê)</button>
+                <button type="button" onClick={() => setFormData({...formData, tipo_imovel: 'comercial'})}
+                  className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
+                    formData.tipo_imovel === 'comercial'
+                      ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                  }`}>Comercial (sala/galpão/loja)</button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Finalidade</label>
+              <div className="flex gap-2">
+                {([
+                  ['venda', 'Venda'],
+                  ['aluguel', 'Aluguel'],
+                  ['ambos', 'Venda e aluguel'],
+                ] as const).map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => setFormData({...formData, finalidade: value})}
+                    className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
+                      (formData.finalidade || 'venda') === value
+                        ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                    }`}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {formData.tipo_imovel === 'comercial' ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Tipo de espaço</label>
+                  <select
+                    value={formData.tipo_comercial}
+                    onChange={(e) => setFormData({...formData, tipo_comercial: e.target.value})}
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  >
+                    {TIPO_COMERCIAL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Área (m²)</label>
+                  <input
+                    type="number"
+                    value={formData.area || ''}
+                    onChange={(e) => setFormData({...formData, area: parseInt(e.target.value) || 0})}
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Banheiros</label>
+                  <input
+                    type="number"
+                    value={formData.banheiros || ''}
+                    onChange={(e) => setFormData({...formData, banheiros: parseInt(e.target.value) || 0})}
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Vagas de garagem</label>
+                  <input
+                    type="number"
+                    value={formData.vagas_garagem || ''}
+                    onChange={(e) => setFormData({...formData, vagas_garagem: parseInt(e.target.value) || 0})}
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-white/50">Quartos</label>
@@ -447,12 +564,13 @@ export default function PropertyForm({
                 </select>
               </div>
             </div>
+            )}
 
             <div className="space-y-2 relative">
               <label className="text-xs font-bold uppercase tracking-wider text-white/50 flex justify-between items-center">
                 <span>Descrição Detalhada</span>
               </label>
-              <MagicWandTextarea 
+              <MagicWandTextarea
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 onApply={(text) => setFormData({...formData, description: text})}

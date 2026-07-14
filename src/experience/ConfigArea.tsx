@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Bot, Check, CreditCard, FileText, Receipt, LogOut } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader2, User, Phone, MapPin, Bot, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import FollowUpSettings from '../components/FollowUpSettings';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsToReais } from '../lib/money';
 
@@ -197,6 +198,9 @@ export function ConfigArea() {
         </div>
       </GlassCard>
 
+      {/* WhatsApp */}
+      <WhatsAppConnectCard />
+
       {/* Plano */}
       <GlassCard className="!p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
@@ -292,6 +296,9 @@ export function ConfigArea() {
         </div>
       </GlassCard>
 
+      {/* Follow-up automático — mesma feature do dashboard clássico, reaproveitada aqui */}
+      <FollowUpSettings />
+
       {/* Sessão — sem isso não havia como sair do app pra logar com outra conta */}
       <GlassCard className="!p-6 mt-5">
         <button onClick={() => authService.logout()}
@@ -300,5 +307,134 @@ export function ConfigArea() {
         </button>
       </GlassCard>
     </div>
+  );
+}
+
+function WhatsAppConnectCard() {
+  const [status, setStatus] = useState<{ provisioned: boolean; connected: boolean; loggedIn: boolean; profileName?: string | null; owner?: string | null; ownInstance?: boolean } | null>(null);
+  const [qrcode, setQrcode] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (qrRefreshRef.current) { clearInterval(qrRefreshRef.current); qrRefreshRef.current = null; }
+  };
+
+  const loadStatus = async () => {
+    try {
+      const r = await fetch('/api/brokers/whatsapp/status', { headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao checar status');
+      setStatus(data);
+      if (data.connected) {
+        setQrcode(null);
+        setConnecting(false);
+        stopPolling();
+      }
+      return data;
+    } catch (e: any) {
+      setError(e.message);
+      return null;
+    }
+  };
+
+  const requestQrcode = async () => {
+    try {
+      const r = await fetch('/api/brokers/whatsapp/connect', { method: 'POST', headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao gerar QR code');
+      if (data.qrcode) setQrcode(data.qrcode);
+      if (data.connected) { setConnecting(false); stopPolling(); loadStatus(); }
+    } catch (e: any) {
+      setError(e.message);
+      setConnecting(false);
+      stopPolling();
+    }
+  };
+
+  const startConnecting = async () => {
+    setError(null);
+    setConnecting(true);
+    await requestQrcode();
+    stopPolling();
+    pollRef.current = setInterval(loadStatus, 3000);
+    qrRefreshRef.current = setInterval(requestQrcode, 20000);
+  };
+
+  useEffect(() => {
+    loadStatus();
+    return stopPolling;
+  }, []);
+
+  return (
+    <GlassCard className="!p-6 mb-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Smartphone className="w-4 h-4 text-white/40" />
+        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">WhatsApp</h3>
+        {status?.ownInstance && (
+          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-violet-400/15 text-violet-200 border-violet-300/20">
+            Sua instância própria
+          </span>
+        )}
+      </div>
+
+      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+
+      {status && !status.provisioned && (
+        <p className="text-[13px] text-white/50">Sua instância de WhatsApp ainda está sendo configurada. Volte aqui em instantes.</p>
+      )}
+
+      {status?.provisioned && status.connected && !connecting && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-emerald-300 text-[13px] font-semibold">
+            <Wifi className="w-4 h-4" /> Conectado
+          </div>
+          <div className="text-[12px] text-white/40 space-y-1">
+            {status.profileName && <div>Perfil: <span className="text-white/70">{status.profileName}</span></div>}
+            {status.owner && <div>Número: <span className="text-white/70 font-mono">{status.owner}</span></div>}
+          </div>
+          <button
+            onClick={startConnecting}
+            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Reconectar / trocar número
+          </button>
+        </div>
+      )}
+
+      {status?.provisioned && !status.connected && !connecting && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-amber-300 text-[13px] font-semibold">
+            <WifiOff className="w-4 h-4" /> Desconectado
+          </div>
+          <button
+            onClick={startConnecting}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors"
+          >
+            Conectar WhatsApp
+          </button>
+        </div>
+      )}
+
+      {connecting && (
+        <div className="space-y-3">
+          {qrcode ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="bg-white p-3 rounded-2xl">
+                <img src={qrcode} alt="QR code do WhatsApp" className="w-48 h-48" />
+              </div>
+              <p className="text-[12px] text-white/40 text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
+            </div>
+          ) : (
+            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-[12px] text-red-300 mt-3">{error}</p>}
+    </GlassCard>
   );
 }

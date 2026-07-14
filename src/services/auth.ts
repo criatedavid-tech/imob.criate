@@ -20,13 +20,13 @@ class AuthService {
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    const savedUser = localStorage.getItem('user');
-    const savedToken = localStorage.getItem('token');
+    const savedUser = sessionStorage.getItem('user');
+    const savedToken = sessionStorage.getItem('token');
     if (savedUser && savedToken) {
       this.user = JSON.parse(savedUser);
       this.token = savedToken;
-      this.refreshToken = localStorage.getItem('refresh_token');
-      this.expiresAt = Number(localStorage.getItem('token_expires_at') || 0);
+      this.refreshToken = sessionStorage.getItem('refresh_token');
+      this.expiresAt = Number(sessionStorage.getItem('token_expires_at') || 0);
       this.scheduleRefresh();
       // O access_token do Supabase expira em ~1h; renova já se está vencido ou perto disso
       if (this.refreshToken && Date.now() / 1000 > this.expiresAt - 300) {
@@ -41,10 +41,10 @@ class AuthService {
     this.refreshToken = session?.refresh_token || this.refreshToken;
     this.expiresAt = session?.expires_at || 0;
 
-    localStorage.setItem('user', JSON.stringify(this.user));
-    localStorage.setItem('token', this.token || '');
-    if (this.refreshToken) localStorage.setItem('refresh_token', this.refreshToken);
-    localStorage.setItem('token_expires_at', String(this.expiresAt));
+    sessionStorage.setItem('user', JSON.stringify(this.user));
+    sessionStorage.setItem('token', this.token || '');
+    if (this.refreshToken) sessionStorage.setItem('refresh_token', this.refreshToken);
+    sessionStorage.setItem('token_expires_at', String(this.expiresAt));
     this.scheduleRefresh();
   }
 
@@ -105,7 +105,7 @@ class AuthService {
 
     const data = await res.json();
 
-    // Atualiza a instância singleton (não só o localStorage) para que
+    // Atualiza a instância singleton (não só o sessionStorage) para que
     // isLoggedIn() reconheça a sessão imediatamente após o cadastro,
     // permitindo o redirect direto para /payment sem passar pelo login.
     if (data?.session?.access_token && data?.user) {
@@ -115,16 +115,35 @@ class AuthService {
     return data;
   }
 
+  async join(code: string, name: string, phone: string, email: string, password: string) {
+    const res = await fetch('/api/auth/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, name, phone, email, password })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao entrar na equipe');
+    }
+
+    const data = await res.json();
+    if (data?.session?.access_token && data?.user) {
+      this.saveSession(data.user, data.session);
+    }
+    return data;
+  }
+
   logout() {
     this.user = null;
     this.token = null;
     this.refreshToken = null;
     this.expiresAt = 0;
     if (this.refreshTimer) clearInterval(this.refreshTimer);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('token_expires_at');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('token_expires_at');
     window.location.href = '/login';
   }
 

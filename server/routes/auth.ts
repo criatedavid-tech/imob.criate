@@ -1,13 +1,17 @@
 import express from "express";
+import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
 import { authLimiter } from "../middleware/rateLimits";
+import { validateBody } from "../middleware/validate";
 import { normalizePhoneBR } from "../lib/crypto";
 import {
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
 } from "../config";
+import { fetchWithTimeout } from "../lib/http";
+import { provisionUazapiInstanceForMember } from "../services/provisioning";
 
 export const authRouter = express.Router();
 
@@ -19,12 +23,17 @@ const supabaseKey = SUPABASE_SERVICE_ROLE_KEY;
  * Realiza o cadastro de um novo usuário (corretor) no sistema.
  * Cria também um perfil inicial na tabela 'brokers'.
  */
-authRouter.post("/api/auth/signup", authLimiter, async (req, res) => {
+const signupSchema = z.object({
+  email: z.string().trim().min(1, "E-mail é obrigatório.").email("E-mail inválido."),
+  password: z.string().min(6, "Senha precisa ter pelo menos 6 caracteres."),
+  name: z.string().trim().min(1, "Nome é obrigatório."),
+  phone: z.string().optional(),
+  account_type: z.string().optional(),
+});
+
+authRouter.post("/api/auth/signup", authLimiter, validateBody(signupSchema), async (req, res) => {
   try {
     const { email, password, name, phone, account_type } = req.body;
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
-    }
     // Tipo da conta define o "mundo" que o app mostra (menus + cockpit).
     // Valida contra a lista fechada; valor inválido cai no padrão (corretor).
     const VALID_TYPES = ['corretor', 'imobiliaria', 'incorporadora'];
@@ -84,10 +93,14 @@ authRouter.post("/api/auth/signup", authLimiter, async (req, res) => {
   }
 });
 
-authRouter.post("/api/auth/login", authLimiter, async (req, res) => {
+const loginSchema = z.object({
+  email: z.string().trim().min(1, "E-mail é obrigatório.").email("E-mail inválido."),
+  password: z.string().min(1, "Senha é obrigatória."),
+});
+
+authRouter.post("/api/auth/login", authLimiter, validateBody(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
 
     const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data, error } = await authClient.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
@@ -159,19 +172,108 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
         `${resetLink}\n\n` +
         `_Se não foi você, ignore esta mensagem._`;
 
-      await fetch(`${UAZAPI_HOST}/message/text/${UAZAPI_PLATFORM_SESSION}`, {
+      await fetchWithTimeout(`${UAZAPI_HOST}/message/text/${UAZAPI_PLATFORM_SESSION}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
         body: JSON.stringify({ number: phone, text: wppText })
       }).catch(e => console.warn('[WPP] Envio de reset falhou:', e?.message));
     } else {
-      console.warn('[WPP] UAZAPI_PLATFORM_SESSION não configurado — link gerado mas não enviado:', resetLink);
+      console.warn('[WPP] Recuperação de senha não enviada: sessão da plataforma ou telefone indisponível.');
     }
 
     res.json(genericMsg);
   } catch (err: any) {
     console.error("Forgot password error:", err);
     res.json(genericMsg);
+  }
+});
+
+// Convite de Equipe (multi-usuário leve) — a pessoa convidada ainda não tem
+// conta; essas 2 rotas são públicas de propósito, como signup/login.
+
+// Antes de mostrar o formulário: valida o código e diz de qual conta é o convite.
+authRouter.get("/api/auth/join/:code", async (req, res) => {
+  try {
+    const { data: invite } = await supabase
+      .from("imf_broker_invites")
+      .select("broker_id, expires_at, used_at, whatsapp_mode, imf_brokers(name)")
+      .eq("code", req.params.code)
+      .maybeSingle();
+
+    if (!invite) return res.status(404).json({ error: "Convite não encontrado." });
+    if (invite.used_at) return res.status(410).json({ error: "Este convite já foi utilizado." });
+    if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "Este convite expirou." });
+
+    res.json({ brokerName: (invite as any).imf_brokers?.name || "a conta", whatsappMode: invite.whatsapp_mode });
+  } catch (err: any) {
+    console.error("Erro GET /api/auth/join/:code:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+authRouter.post("/api/auth/join", authLimiter, async (req, res) => {
+  try {
+    const { code, name, phone, email, password } = req.body;
+    if (!code || !email || !password || !name) {
+      return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
+    }
+
+    // Reivindica o convite de forma atômica — só segue se ninguém usou antes.
+    const { data: claimed, error: claimError } = await supabase
+      .from("imf_broker_invites")
+      .update({ used_at: new Date().toISOString() })
+      .eq("code", code)
+      .is("used_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .select("broker_id, whatsapp_mode")
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimed) return res.status(410).json({ error: "Convite inválido, expirado ou já utilizado." });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      email: cleanEmail,
+      password,
+      email_confirm: true,
+    });
+    if (createErr) throw createErr;
+    if (!created.user) return res.status(500).json({ error: "Falha ao criar usuário." });
+
+    const { data: memberRow, error: memberError } = await supabase
+      .from("imf_broker_members")
+      .insert({ broker_id: claimed.broker_id, user_id: created.user.id, whatsapp_mode: claimed.whatsapp_mode })
+      .select("id")
+      .single();
+    if (memberError) throw memberError;
+
+    await supabase.from("imf_broker_invites").update({ used_by: created.user.id }).eq("code", code);
+
+    // Guarda nome/telefone no próprio usuário auth (não tem imf_brokers próprio) —
+    // fica disponível via user_metadata pra quem listar os membros depois.
+    await supabase.auth.admin.updateUserById(created.user.id, {
+      user_metadata: { full_name: name.trim(), phone: normalizePhoneBR(phone || "") },
+    });
+
+    // Convite pedia WhatsApp próprio — provisiona agora, síncrono (mesmo
+    // padrão de esperar a conclusão que o checkout já usa pra conta). Nunca
+    // lança: falha vira provisioning_status='failed' na linha do membro,
+    // sem travar o cadastro — dá pra tentar de novo depois em Config.
+    if (claimed.whatsapp_mode === "own") {
+      await provisionUazapiInstanceForMember({ id: memberRow.id, name: name.trim() });
+    }
+
+    const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: loginData, error: loginErr } = await authClient.auth.signInWithPassword({ email: cleanEmail, password });
+    if (loginErr || !loginData?.session) {
+      return res.json({ user: created.user, session: null });
+    }
+    res.json({ user: loginData.user, session: loginData.session });
+  } catch (err: any) {
+    console.error("Erro POST /api/auth/join:", err);
+    const msg = err.message?.includes("already registered")
+      ? "Este e-mail já possui uma conta. Faça login."
+      : err.message;
+    res.status(400).json({ error: msg });
   }
 });
 

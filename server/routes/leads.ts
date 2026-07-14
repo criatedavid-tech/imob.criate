@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { fetchWithTimeout } from "../lib/http";
 
 export const leadsRouter = express.Router();
 
@@ -24,12 +25,9 @@ leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
 
     let leads: any[] = [];
     if (ids.length > 0) {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('*')
-        .in('property_id', ids)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      let query = supabase.from('leads').select('*').in('property_id', ids);
+      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(5);
       if (error) throw error;
       leads = data || [];
     }
@@ -53,13 +51,23 @@ leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
 /**
  * Endpoint aprimorado para salvar leads e disparar integrações automáticas.
  */
-leadsRouter.post("/api/leads", async (req, res) => {
+leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
   try {
     const { property_id, name, phone, email, status, notes } = req.body;
 
     // 1. Validação básica
     if (!name || !phone || !property_id) {
       return res.status(400).json({ error: "Nome, telefone e ID do imóvel são obrigatórios." });
+    }
+
+    // Dono do lead: se foi um membro logado que cadastrou manualmente, o
+    // lead é dele. Se veio da landing pública (cliente se cadastrando
+    // sozinho, sem sessão), o lead herda o dono do imóvel anunciado.
+    const userId = (req as any).userId as string | null;
+    let ownerUserId = userId || null;
+    if (!ownerUserId) {
+      const { data: prop } = await supabase.from('imf_properties').select('owner_user_id').eq('id', property_id).maybeSingle();
+      ownerUserId = prop?.owner_user_id || null;
     }
 
     // 2. Inserir na tabela leads
@@ -71,6 +79,7 @@ leadsRouter.post("/api/leads", async (req, res) => {
         email: email || '',
         status: status || 'new',
         notes: notes || 'Lead via Landing Page',
+        owner_user_id: ownerUserId,
         created_at: new Date()
       }
     ]).select().single();
@@ -83,7 +92,7 @@ leadsRouter.post("/api/leads", async (req, res) => {
 
     if (webhookUrl) {
       // Envio assíncrono para o Webhook (Fire and Forget)
-      fetch(webhookUrl, {
+      fetchWithTimeout(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,11 +139,9 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
 
     let leads: any[] = [];
     if (ids.length > 0) {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('*')
-        .in('property_id', ids)
-        .order('created_at', { ascending: false });
+      let query = supabase.from('leads').select('*').in('property_id', ids);
+      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+      const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
       leads = data || [];
     }
@@ -177,13 +184,9 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     const updates: Record<string, any> = { status };
     updates.closed_at = status === 'fechado' ? new Date().toISOString() : null;
 
-    const { data, error } = await supabase
-      .from('leads')
-      .update(updates)
-      .eq('id', req.params.id)
-      .in('property_id', ids)
-      .select()
-      .maybeSingle();
+    let query = supabase.from('leads').update(updates).eq('id', req.params.id).in('property_id', ids);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });
@@ -221,13 +224,9 @@ leadsRouter.patch("/api/leads/:id", requireUser, async (req, res) => {
       return res.status(403).json({ error: 'Imóvel não pertence a este corretor.' });
     }
 
-    const { data, error } = await supabase
-      .from('leads')
-      .update(updates)
-      .eq('id', req.params.id)
-      .in('property_id', ids)
-      .select()
-      .maybeSingle();
+    let query = supabase.from('leads').update(updates).eq('id', req.params.id).in('property_id', ids);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });

@@ -385,7 +385,7 @@ export default function Privacidade() {
                 serviço não funciona;
               </li>
               <li>
-                <strong>localStorage:</strong> dados de sessão para manutenção do login ativo no navegador.
+                <strong>sessionStorage:</strong> dados de sessão para manutenção do login ativo, isolados por aba do navegador.
               </li>
             </ul>
             <p className="mt-2">

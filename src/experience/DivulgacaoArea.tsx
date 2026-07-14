@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Megaphone, Copy, Check, ExternalLink, Home } from 'lucide-react';
+import { Loader2, Megaphone, Copy, Check, ExternalLink, Home, Building2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -10,32 +10,36 @@ import { GlassCard } from './ui';
 export function DivulgacaoArea() {
   const [brokerId, setBrokerId] = useState<string | null>(null);
   const [availableCount, setAvailableCount] = useState<number | null>(null);
+  const [developmentsCount, setDevelopmentsCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'vitrine' | 'lancamentos' | null>(null);
 
   useEffect(() => {
     Promise.all([
       fetch('/api/brokers/me', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : null)),
       fetch('/api/properties', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : [])),
+      fetch('/api/lancamentos/developments', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : [])),
     ])
-      .then(([me, props]) => {
+      .then(([me, props, devs]) => {
         if (!me?.id) throw new Error('Não consegui carregar seu perfil.');
         setBrokerId(me.id);
         const list = Array.isArray(props) ? props : [];
         setAvailableCount(list.filter((p: any) => !['vendido', 'alugado'].includes((p.status || 'disponivel').toLowerCase())).length);
+        setDevelopmentsCount(Array.isArray(devs) ? devs.length : 0);
       })
       .catch((e) => setError(e.message || 'Erro ao carregar.'))
       .finally(() => setLoading(false));
   }, []);
 
   const vitrineUrl = brokerId ? `${window.location.origin}/vitrine/${brokerId}` : '';
+  const lancamentosVitrineUrl = brokerId ? `${window.location.origin}/lancamentos-vitrine/${brokerId}` : '';
 
-  const copy = () => {
-    if (!vitrineUrl) return;
-    navigator.clipboard.writeText(vitrineUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+  const copy = (url: string, which: 'vitrine' | 'lancamentos') => {
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(which);
+      setTimeout(() => setCopied(null), 1600);
     });
   };
 
@@ -75,11 +79,11 @@ export function DivulgacaoArea() {
                 bg-white/[0.05] border border-white/12">
                 {vitrineUrl}
               </div>
-              <button onClick={copy}
+              <button onClick={() => copy(vitrineUrl, 'vitrine')}
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white
                   bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/50 transition-colors">
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? 'Copiado' : 'Copiar'}
+                {copied === 'vitrine' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied === 'vitrine' ? 'Copiado' : 'Copiar'}
               </button>
               <a href={vitrineUrl} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/70
@@ -90,6 +94,42 @@ export function DivulgacaoArea() {
           </div>
         </div>
       </GlassCard>
+
+      {developmentsCount !== null && developmentsCount > 0 && (
+        <GlassCard className="!p-6 mb-5">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
+              bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-white/20">
+              <Building2 className="w-5 h-5 text-violet-200" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[16px] font-bold text-white">Vitrine de Lançamentos</h3>
+              <p className="text-[13px] text-white/55 mt-1">
+                Um link único com seus <span className="text-white/80 font-semibold">{developmentsCount} empreendimento{developmentsCount === 1 ? '' : 's'}</span>,
+                com foto, benefícios e % vendido — sem expor dado de comprador.
+              </p>
+
+              <div className="flex items-center gap-2 mt-4 flex-wrap">
+                <div className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-[13px] text-white/70 font-mono truncate
+                  bg-white/[0.05] border border-white/12">
+                  {lancamentosVitrineUrl}
+                </div>
+                <button onClick={() => copy(lancamentosVitrineUrl, 'lancamentos')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white
+                    bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/50 transition-colors">
+                  {copied === 'lancamentos' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied === 'lancamentos' ? 'Copiado' : 'Copiar'}
+                </button>
+                <a href={lancamentosVitrineUrl} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/70
+                    bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
+                  <ExternalLink className="w-4 h-4" /> Abrir
+                </a>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       <GlassCard className="!p-6">
         <div className="flex items-center gap-2 mb-3">

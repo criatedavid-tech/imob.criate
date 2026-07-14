@@ -1,5 +1,6 @@
 import express from "express";
 import { INTERNAL_PROXY_TOKEN, OPENROUTER_API_KEY, APP_URL } from "../config";
+import { fetchWithTimeout } from "../lib/http";
 
 export const llmProxyRouter = express.Router();
 
@@ -24,7 +25,7 @@ llmProxyRouter.all('/api/proxy/llm/:brokerPhone/*', async (req, res) => {
   const suffix = ((req.params as any)[0] || 'chat/completions').replace(/^\//, '');
   const openRouterUrl = `https://openrouter.ai/api/v1/${suffix}`;
   try {
-    const proxyResp = await fetch(openRouterUrl, {
+    const proxyResp = await fetchWithTimeout(openRouterUrl, {
       method: req.method,
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,

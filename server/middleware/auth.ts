@@ -52,6 +52,12 @@ export async function requireAdmin(req: any, res: any): Promise<boolean> {
 export async function getBrokerId(userId: string) {
   if (!userId) return null;
   try {
+    // Membros (Equipe) resolvem primeiro — inclui o dono original, que a
+    // migração 20260708d faz virar membro de si mesmo. Isso cobre tanto o
+    // dono quanto quem entrou depois via convite, sem duplicar lógica.
+    const { data: membership } = await supabase.from('imf_broker_members').select('broker_id').eq('user_id', userId).maybeSingle();
+    if (membership?.broker_id) return membership.broker_id;
+
     const { data: brokers, error } = await supabase.from('imf_brokers').select('id').eq('user_id', userId).order('created_at', { ascending: true }).limit(1);
 
     if (error) {
@@ -80,12 +86,24 @@ export async function getBrokerId(userId: string) {
         console.error("Error creating broker profile on the fly:", createError);
         return null;
       }
+      await supabase.from('imf_broker_members').upsert({ broker_id: newBroker.id, user_id: userId }, { onConflict: 'user_id' });
       return newBroker.id;
     }
 
+    // Dono encontrado pelo caminho antigo mas sem linha de membership ainda
+    // (ex.: conta criada antes da migração 20260708d) — auto-cura aqui.
+    await supabase.from('imf_broker_members').upsert({ broker_id: brokers[0].id, user_id: userId }, { onConflict: 'user_id' });
     return brokers[0].id;
   } catch (err) {
     console.error("error in getBrokerId:", err);
     return null;
   }
+}
+
+// Isolamento por membro (Etapa 9 revisada): dono da conta (imf_brokers.user_id)
+// enxerga os dados de todos os membros; cada membro só enxerga (e só pode
+// mutar) o que ele mesmo criou. Usado em Carteira, Leads, Agenda e Conversas.
+export async function isBrokerOwner(userId: string, brokerId: string): Promise<boolean> {
+  const { data } = await supabase.from('imf_brokers').select('id').eq('id', brokerId).eq('user_id', userId).maybeSingle();
+  return !!data;
 }

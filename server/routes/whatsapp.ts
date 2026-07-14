@@ -2,6 +2,7 @@ import express from "express";
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
 import { INTERNAL_PROXY_TOKEN } from "../config";
+import { fetchWithTimeout } from "../lib/http";
 
 export const whatsappRouter = express.Router();
 
@@ -50,7 +51,7 @@ whatsappRouter.post("/api/whatsapp/send", async (req, res) => {
       zpro_body = { number: toNumber, text: message };
     }
 
-    const zpro_res = await fetch(endpoint, {
+    const zpro_res = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: zpro_headers,
       body: JSON.stringify(zpro_body)
