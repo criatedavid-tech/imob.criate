@@ -17,3 +17,14 @@ export function centsToReais(cents?: number): string {
   if (!cents) return '—';
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+
+// Para cálculos em que zero é um valor real (ex.: entrada/saldo do simulador),
+// não deve ser confundido com campo ausente e exibido como travessão.
+export function formatCentsBR(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}

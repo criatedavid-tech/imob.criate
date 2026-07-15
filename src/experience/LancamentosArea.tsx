@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera } from 'lucide-react';
+import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera, Calculator } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR } from '../lib/phone';
-import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
+import { centsFromMaskInput, maskFromCents, centsToReais, formatCentsBR } from '../lib/money';
+import { simulateFinancing } from '../lib/financing';
 
 interface Development {
   id: string;
@@ -451,6 +452,20 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   const [areaLoteM2, setAreaLoteM2] = useState(unit.area_lote_m2 != null ? String(unit.area_lote_m2) : '');
   const [testadaM, setTestadaM] = useState(unit.testada_m != null ? String(unit.testada_m) : '');
   const [orientacao, setOrientacao] = useState<'' | 'nascente' | 'poente'>(unit.orientacao || '');
+  const [entryMode, setEntryMode] = useState<'percent' | 'amount'>('percent');
+  const [entryPercent, setEntryPercent] = useState('20');
+  const [entryAmountCents, setEntryAmountCents] = useState(Math.round((unit.price_cents || 0) * 0.2));
+  const [installmentCount, setInstallmentCount] = useState('36');
+
+  const parsedPercent = entryPercent.trim() ? Number(entryPercent.replace(',', '.')) : Number.NaN;
+  const parsedInstallments = Number(installmentCount);
+  const simulation = simulateFinancing(
+    unit.price_cents || 0,
+    entryMode === 'percent'
+      ? { mode: 'percent', percent: parsedPercent }
+      : { mode: 'amount', amountCents: entryAmountCents },
+    parsedInstallments,
+  );
 
   async function act(action: 'reservar' | 'vender' | 'liberar') {
     if (action === 'reservar' && !buyerName.trim()) { setError('Nome do interessado é obrigatório pra reservar.'); return; }
@@ -550,6 +565,82 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           {!editing && unitDetails(unit) && (
             <p className="text-[12px] text-white/40">{unitDetails(unit)}</p>
           )}
+
+          <div className="space-y-3 p-3 rounded-xl bg-violet-500/[0.06] border border-violet-300/15">
+            <div className="flex items-center gap-2">
+              <Calculator size={14} className="text-violet-200" />
+              <div>
+                <p className="text-[12px] font-bold text-white/80">Simulador de financiamento</p>
+                <p className="text-[10px] text-white/35">Cálculo simples, sem juros e sem salvar proposta.</p>
+              </div>
+            </div>
+
+            {!unit.price_cents ? (
+              <p className="text-[12px] text-amber-200/80">Cadastre o preço da unidade para simular.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setEntryMode('percent')}
+                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'percent' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-white/[0.03] text-white/40 border-white/10'}`}>
+                    Entrada em %
+                  </button>
+                  <button type="button" onClick={() => setEntryMode('amount')}
+                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'amount' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-white/[0.03] text-white/40 border-white/10'}`}>
+                    Entrada em R$
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1 block">Entrada</label>
+                    {entryMode === 'percent' ? (
+                      <div className="flex items-stretch gap-1.5">
+                        <input value={entryPercent}
+                          onChange={(e) => setEntryPercent(e.target.value.replace(/[^\d,]/g, '').slice(0, 6))}
+                          inputMode="decimal" aria-label="Percentual de entrada"
+                          className={numInputClass} />
+                        <span className="flex items-center px-3 rounded-xl text-sm text-white/45 bg-white/5 border border-white/12">%</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-stretch gap-1.5">
+                        <span className="flex items-center px-2.5 rounded-xl text-xs text-white/45 bg-white/5 border border-white/12">R$</span>
+                        <input value={maskFromCents(entryAmountCents)}
+                          onChange={(e) => setEntryAmountCents(centsFromMaskInput(e.target.value))}
+                          inputMode="numeric" aria-label="Valor da entrada"
+                          className={numInputClass} />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1 block">Parcelas</label>
+                    <input value={installmentCount}
+                      onChange={(e) => setInstallmentCount(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      inputMode="numeric" min={1} max={120} aria-label="Quantidade de parcelas"
+                      className={numInputClass} />
+                  </div>
+                </div>
+
+                {simulation ? (
+                  <div className="rounded-xl bg-black/15 border border-white/8 px-3 py-2.5 space-y-1.5 text-[11px]">
+                    <div className="flex justify-between text-white/50"><span>Entrada</span><strong className="text-white/75">{formatCentsBR(simulation.entryCents)}</strong></div>
+                    <div className="flex justify-between text-white/50"><span>Saldo sem juros</span><strong className="text-white/75">{formatCentsBR(simulation.financedCents)}</strong></div>
+                    <div className="pt-1.5 border-t border-white/8 text-violet-100">
+                      {simulation.installmentCount === 1 ? (
+                        <strong>1 parcela de {formatCentsBR(simulation.finalInstallmentCents)}</strong>
+                      ) : simulation.regularInstallmentCents === simulation.finalInstallmentCents ? (
+                        <strong>{simulation.installmentCount} parcelas de {formatCentsBR(simulation.regularInstallmentCents)}</strong>
+                      ) : (
+                        <strong>{simulation.installmentCount - 1} parcelas de {formatCentsBR(simulation.regularInstallmentCents)} + última de {formatCentsBR(simulation.finalInstallmentCents)}</strong>
+                      )}
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-white/30">Fórmula: (preço − entrada) ÷ parcelas. Diferença de centavos fica na última parcela.</p>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-red-300">Use entrada entre 0% e 100% (ou até o preço) e de 1 a 120 parcelas.</p>
+                )}
+              </>
+            )}
+          </div>
 
           {editing && (
             <div className="space-y-3 p-3 rounded-xl bg-white/[0.03] border border-white/10">
@@ -694,8 +785,8 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
 
 // Lançamentos real: núcleo (Etapa 7 do UX_MASTERPLAN.md) — empreendimento +
 // espelho de unidades + reserva com trava por tempo (expira sozinha ao
-// recarregar). Tabela de preço avançada, simulador de proposta+PIX e
-// backoffice de aprovação de documentos ficam para uma rodada futura.
+// recarregar). A simulação simples de financiamento é local e sem persistência;
+// proposta+PIX e backoffice de aprovação de documentos são fases separadas.
 export function LancamentosArea() {
   const [developments, setDevelopments] = useState<Development[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);

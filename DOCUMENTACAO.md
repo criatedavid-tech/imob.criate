@@ -1742,3 +1742,44 @@ corretamente via OpenRouter. Deployado
 **Pendência**: confirmar ao vivo que a transcrição de voz funciona de
 ponta a ponta agora (gravação → OpenRouter → texto no campo) — ainda não
 testado pelo usuário depois dessa troca de provider.
+
+## 14.20. Atualização 2026-07-15 — Lançamentos, Fase 1: simulador de financiamento
+
+### Escopo entregue
+
+O detalhe da unidade em `src/experience/LancamentosArea.tsx` ganhou um
+simulador de pagamento para o mundo Incorporadora. O corretor escolhe entrada
+em percentual ou em reais e informa de 1 a 120 parcelas. O cálculo usa sempre
+o `price_cents` real da unidade e formata os resultados pelas convenções de
+`src/lib/money.ts`; não existem valores mockados.
+
+A fórmula deliberadamente simples e transparente é:
+
+`saldo = preço - entrada`; `parcela = saldo / quantidade`, sem juros.
+
+Todo o cálculo acontece em centavos por `src/lib/financing.ts`. A divisão usa
+parcelas regulares inteiras e coloca apenas o eventual resto de centavos na
+última parcela, garantindo que entrada + parcelas sejam exatamente iguais ao
+preço. Entradas fora de 0–100%/acima do preço e quantidades fora de 1–120 são
+rejeitadas na simulação.
+
+### Decisões e limites desta fase
+
+- A simulação não é persistida e não chama backend ou provedor externo.
+- Não representa aprovação de crédito, CET, juros bancários, correção por índice
+  ou compromisso comercial; a própria UI identifica o cálculo como “sem juros”.
+- A separação evita criar proposta incompleta antes do histórico de reservas e
+  da cobrança PIX, que pertencem à Fase 2.
+- `src/pages/*` não foi alterado; a entrega existe somente no produto ativo
+  `/app`, em `src/experience/*`.
+
+### Validação local do checkpoint
+
+- `tsc --noEmit` passou sem erros.
+- O build Vite passou com 2.135 módulos; permaneceu somente o aviso conhecido
+  do chunk principal acima de 500 kB.
+- Testes determinísticos cobriram entrada percentual, entrada em reais,
+  distribuição do resto na última parcela e rejeição de percentual/valor/
+  quantidade fora do intervalo.
+- A inspeção visual, o release Fly e os smoke tests serão registrados aqui após
+  a publicação separada desta fase.
