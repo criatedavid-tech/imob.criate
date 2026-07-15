@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS imf_unit_reservations (
   buyer_name            TEXT NOT NULL,
   buyer_phone           TEXT,
   buyer_document_last4  TEXT NOT NULL CHECK (buyer_document_last4 ~ '^\d{4}$'),
+  -- Compatibilidade de schema: contém somente 7 zeros + os 4 dígitos finais,
+  -- nunca o CPF/CNPJ real. Pode ser removida numa migração futura controlada.
+  buyer_cpf_cnpj        TEXT NOT NULL CHECK (buyer_cpf_cnpj ~ '^0{7}\d{4}$'),
   signal_amount_cents   BIGINT NOT NULL CHECK (signal_amount_cents > 0),
   status                TEXT NOT NULL DEFAULT 'creating' CHECK (status IN (
                           'creating', 'pending', 'paid', 'overdue',

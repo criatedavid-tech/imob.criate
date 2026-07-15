@@ -395,6 +395,9 @@ lancamentosRouter.post(
           buyer_name: req.body.buyer_name,
           buyer_phone: normalizedPhone,
           buyer_document_last4: documentDigits.slice(-4),
+          // Compatibilidade com a primeira versão aplicada da migração, na qual
+          // buyer_cpf_cnpj era NOT NULL. Nunca persiste o documento real.
+          buyer_cpf_cnpj: `0000000${documentDigits.slice(-4)}`,
           signal_amount_cents: req.body.signal_amount_cents,
           status: "creating",
           reserved_until: reservedUntil,

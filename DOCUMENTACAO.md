@@ -1806,7 +1806,9 @@ Decisões de segurança e integridade:
 
 - o CPF/CNPJ completo não é persistido pelo ImobiFlow: passa pela memória do
   servidor durante a criação do customer Asaas e o histórico guarda somente os
-  quatro últimos dígitos;
+  quatro últimos dígitos. A coluna legada obrigatória `buyer_cpf_cnpj`, presente
+  numa versão intermediária já aplicada, recebe apenas `0000000` + últimos 4
+  dígitos e nunca o documento real;
 - o runtime não depende de RPC: primeiro cria o histórico protegido pelo índice
   único parcial e depois atualiza a unidade somente se ela ainda estiver
   `disponivel`; retries com a mesma request key recuperam com segurança uma
@@ -1860,6 +1862,9 @@ sem cobrança continua disponível como opção explícita. Toda mutação verif
 - a primeira release encontrou `PGRST202` para a função SQL opcional; o runtime
   foi ajustado para usar diretamente índice único + update condicional, mantendo
   concorrência e recuperação idempotente sem depender do cache de RPC;
+- a inspeção de schema também encontrou a coluna legada obrigatória
+  `buyer_cpf_cnpj`; o runtime passou a preenchê-la somente com um sentinel
+  redigido, preservando compatibilidade sem reintroduzir CPF/CNPJ completo;
 - neste ponto do checkpoint, a fase ainda não havia sido publicada nem testada
   contra a Asaas sandbox; essas evidências serão acrescentadas após o deploy;
 - reembolso/chargeback coloca o histórico em `refunded`, mas a decisão comercial
