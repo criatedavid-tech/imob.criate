@@ -45,6 +45,35 @@ const financialReservationSchema = z.object({
   hold_hours: z.number().int().min(1).max(168).default(24),
 });
 
+const ACTIVE_FINANCIAL_STATUSES = ["creating", "pending", "paid", "overdue", "payment_failed"];
+
+async function ensureUnitReservedForFinancialRecord(unit: any, reservation: any): Promise<boolean> {
+  if (unit.status === "reservado") {
+    const sameExpiry = (!unit.reserved_until && !reservation.reserved_until)
+      || new Date(unit.reserved_until).getTime() === new Date(reservation.reserved_until).getTime();
+    return unit.buyer_name === reservation.buyer_name
+      && (unit.buyer_phone || null) === (reservation.buyer_phone || null)
+      && sameExpiry;
+  }
+  if (unit.status !== "disponivel") return false;
+
+  const { data, error } = await supabase
+    .from("imf_units")
+    .update({
+      status: "reservado",
+      buyer_name: reservation.buyer_name,
+      buyer_phone: reservation.buyer_phone || null,
+      reserved_until: reservation.reserved_until,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", unit.id)
+    .eq("status", "disponivel")
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error("Falha ao travar a unidade para a reserva.");
+  return !!data;
+}
+
 // Etapa 7 do UX_MASTERPLAN.md — empreendimento + espelho de unidades,
 // simulador local e reserva com trava por tempo e sinal PIX opcional.
 
@@ -321,7 +350,7 @@ lancamentosRouter.post(
 
       const { data: unit } = await supabase
         .from("imf_units")
-        .select("id, development_id, status")
+        .select("id, development_id, status, buyer_name, buyer_phone, reserved_until")
         .eq("id", req.params.id)
         .maybeSingle();
       if (!unit || !(await ownsDevelopment(brokerId, unit.development_id))) {
@@ -331,7 +360,7 @@ lancamentosRouter.post(
       const documentDigits = req.body.buyer_cpf_cnpj.replace(/\D/g, "");
       const { data: existing } = await supabase
         .from("imf_unit_reservations")
-        .select("id, unit_id, buyer_document_last4")
+        .select("id, unit_id, buyer_document_last4, buyer_name, buyer_phone, reserved_until, status")
         .eq("broker_id", brokerId)
         .eq("request_key", req.body.request_key)
         .maybeSingle();
@@ -342,6 +371,10 @@ lancamentosRouter.post(
         if (existing.buyer_document_last4 !== documentDigits.slice(-4)) {
           return res.status(409).json({ error: "O documento nao corresponde a esta tentativa de reserva." });
         }
+        if (ACTIVE_FINANCIAL_STATUSES.includes(existing.status)
+          && !(await ensureUnitReservedForFinancialRecord(unit, existing))) {
+          return res.status(409).json({ error: "A unidade foi ocupada por outra operacao." });
+        }
         const reservation = await generateUnitReservationPix(existing.id, documentDigits);
         return res.json({ reservation, idempotent_replay: true });
       }
@@ -351,27 +384,37 @@ lancamentosRouter.post(
       }
 
       const reservedUntil = new Date(Date.now() + req.body.hold_hours * 3_600_000).toISOString();
-      const { data: created, error: createError } = await supabase.rpc("imf_create_unit_reservation", {
-        p_broker_id: brokerId,
-        p_unit_id: unit.id,
-        p_created_by_user_id: userId,
-        p_request_key: req.body.request_key,
-        p_buyer_name: req.body.buyer_name,
-        p_buyer_phone: req.body.buyer_phone ? normalizePhoneBR(req.body.buyer_phone) : "",
-        p_buyer_document_last4: documentDigits.slice(-4),
-        p_signal_amount_cents: req.body.signal_amount_cents,
-        p_reserved_until: reservedUntil,
-      });
+      const normalizedPhone = req.body.buyer_phone ? normalizePhoneBR(req.body.buyer_phone) : null;
+      const { data: created, error: createError } = await supabase
+        .from("imf_unit_reservations")
+        .insert({
+          broker_id: brokerId,
+          unit_id: unit.id,
+          created_by_user_id: userId,
+          request_key: req.body.request_key,
+          buyer_name: req.body.buyer_name,
+          buyer_phone: normalizedPhone,
+          buyer_document_last4: documentDigits.slice(-4),
+          signal_amount_cents: req.body.signal_amount_cents,
+          status: "creating",
+          reserved_until: reservedUntil,
+        })
+        .select("id, unit_id, buyer_document_last4, buyer_name, buyer_phone, reserved_until, status")
+        .single();
 
       if (createError || !created) {
         if (createError?.code === "23505") {
           const { data: raced } = await supabase
             .from("imf_unit_reservations")
-            .select("id, unit_id, buyer_document_last4")
+            .select("id, unit_id, buyer_document_last4, buyer_name, buyer_phone, reserved_until, status")
             .eq("broker_id", brokerId)
             .eq("request_key", req.body.request_key)
             .maybeSingle();
           if (raced?.id && raced.unit_id === unit.id && raced.buyer_document_last4 === documentDigits.slice(-4)) {
+            if (ACTIVE_FINANCIAL_STATUSES.includes(raced.status)
+              && !(await ensureUnitReservedForFinancialRecord(unit, raced))) {
+              return res.status(409).json({ error: "A unidade foi ocupada por outra operacao." });
+            }
             const reservation = await generateUnitReservationPix(raced.id, documentDigits);
             return res.json({ reservation, idempotent_replay: true });
           }
@@ -386,8 +429,15 @@ lancamentosRouter.post(
         throw new Error("Falha ao registrar a reserva.");
       }
 
-      const createdRow = Array.isArray(created) ? created[0] : created;
-      const reservation = await generateUnitReservationPix(createdRow.id, documentDigits);
+      if (!(await ensureUnitReservedForFinancialRecord(unit, created))) {
+        await supabase.from("imf_unit_reservations").update({
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        }).eq("id", created.id).eq("status", "creating");
+        return res.status(409).json({ error: "A unidade foi ocupada por outra operacao." });
+      }
+
+      const reservation = await generateUnitReservationPix(created.id, documentDigits);
       res.status(201).json({ reservation, idempotent_replay: false });
     } catch (error: any) {
       const message = String(error?.message || "Falha ao gerar o PIX.").slice(0, 300);

@@ -1807,8 +1807,10 @@ Decisões de segurança e integridade:
 - o CPF/CNPJ completo não é persistido pelo ImobiFlow: passa pela memória do
   servidor durante a criação do customer Asaas e o histórico guarda somente os
   quatro últimos dígitos;
-- `imf_create_unit_reservation(...)` registra o histórico e muda a unidade de
-  `disponivel` para `reservado` na mesma transação e com lock da linha;
+- o runtime não depende de RPC: primeiro cria o histórico protegido pelo índice
+  único parcial e depois atualiza a unidade somente se ela ainda estiver
+  `disponivel`; retries com a mesma request key recuperam com segurança uma
+  interrupção entre as etapas antes de chamar a Asaas;
 - `(broker_id, request_key)` e o índice parcial por unidade impedem cobranças e
   reservas financeiras ativas duplicadas, inclusive sob concorrência;
 - a função SQL é `SECURITY INVOKER`, tem `search_path` fixo e só pode ser
@@ -1855,6 +1857,9 @@ sem cobrança continua disponível como opção explícita. Toda mutação verif
 - a migração foi aplicada externamente e confirmada por consulta read-only com a
   service role: `imf_unit_reservations` existe e tinha zero registros antes do
   primeiro teste;
+- a primeira release encontrou `PGRST202` para a função SQL opcional; o runtime
+  foi ajustado para usar diretamente índice único + update condicional, mantendo
+  concorrência e recuperação idempotente sem depender do cache de RPC;
 - neste ponto do checkpoint, a fase ainda não havia sido publicada nem testada
   contra a Asaas sandbox; essas evidências serão acrescentadas após o deploy;
 - reembolso/chargeback coloca o histórico em `refunded`, mas a decisão comercial
