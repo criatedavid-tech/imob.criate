@@ -1792,7 +1792,7 @@ rejeitadas na simulação.
   credencial de teste autenticada; não foi criado usuário nem reutilizado segredo
   para contornar esse bloqueio.
 
-## 14.21. Atualização 2026-07-15 — Lançamentos, Fase 2: reserva com sinal PIX (checkpoint local)
+## 14.21. Atualização 2026-07-15 — Lançamentos, Fase 2: reserva com sinal PIX (release v70; migração pendente)
 
 ### Escopo implementado localmente
 
@@ -1856,17 +1856,29 @@ sem cobrança continua disponível como opção explícita. Toda mutação verif
 - `npm run build` passou com 2.135 módulos, bundle JS inicial de 872,44 kB e
   somente o aviso conhecido de chunk acima de 500 kB;
 - `git diff --check` passou;
-- a migração foi aplicada externamente e confirmada por consulta read-only com a
-  service role: `imf_unit_reservations` existe e tinha zero registros antes do
-  primeiro teste;
-- a primeira release encontrou `PGRST202` para a função SQL opcional; o runtime
-  foi ajustado para usar diretamente índice único + update condicional, mantendo
-  concorrência e recuperação idempotente sem depender do cache de RPC;
-- a inspeção de schema também encontrou a coluna legada obrigatória
-  `buyer_cpf_cnpj`; o runtime passou a preenchê-la somente com um sentinel
-  redigido, preservando compatibilidade sem reintroduzir CPF/CNPJ completo;
-- neste ponto do checkpoint, a fase ainda não havia sido publicada nem testada
-  contra a Asaas sandbox; essas evidências serão acrescentadas após o deploy;
+- a verificação definitiva pelo OpenAPI do PostgREST mostrou
+  `table_exposed: false`: **a migração ainda não está aplicada**. Consultas
+  anteriores com método `HEAD` mascararam o `404 {}` e produziram um falso
+  positivo, corrigido neste registro;
+- o SQL final foi simplificado: não cria RPC, revoga acesso direto de
+  `anon`/`authenticated` e concede escrita explicitamente somente à
+  `service_role`. O runtime usa índice único + update condicional e recuperação
+  idempotente;
+- commits da fase: `5c2a67c` (feature), `702172a` (remoção da dependência de RPC)
+  e `e51251e` (redação compatível do campo legado);
+- código publicado no Fly V2 `v70`, imagem
+  `deployment-01KXKTCANJTK8DXRPW9BQPQ8DK`, manifesto
+  `sha256:0c9777487c7cf05f89a275a3ea29524ee5c384f9060a0ae28621a6304b3343cc`;
+  máquina `d8d1340c77e168` em GRU, `started`, health check passando;
+- smoke test externo: `/` e `/app` = `200`; GET/POST das reservas sem sessão =
+  `401`; webhook sem token = `401`; GET no webhook = `405`;
+- `ASAAS_WEBHOOK_TOKEN` foi criado com alta entropia e armazenado somente no
+  Fly. Webhook sandbox `cc203c60-3102-423c-a607-5533fe24619b` está habilitado,
+  não interrompido, apontando para a V2 e observando sete eventos de pagamento;
+- o teste funcional criou e removeu usuários, empreendimento e unidade efêmeros,
+  mas parou no `POST` da tabela ausente antes de chamar a Asaas. Portanto,
+  **nenhum customer/payment PIX foi criado** e QR/idempotência/webhook pago ainda
+  dependem da aplicação do SQL final;
 - reembolso/chargeback coloca o histórico em `refunded`, mas a decisão comercial
   de liberar ou manter a unidade é manual; ainda não existe política automática
   de retenção/anonimização para nome e telefone do histórico.
