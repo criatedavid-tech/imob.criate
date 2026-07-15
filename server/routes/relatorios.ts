@@ -12,13 +12,13 @@ export const relatoriosRouter = express.Router();
 relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
+    const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
     const brokerId = await getBrokerId(userId);
     if (!brokerId) {
-      return res.json({ totalLeads: 0, closedLeads: 0, conversionRate: 0, byStage: {}, byMonth: [], revenueCents: 0, visitsDone: 0, visitsTotal: 0 });
+      return res.json({ months, totalLeads: 0, closedLeads: 0, conversionRate: 0, byStage: {}, byMonth: [], revenueCents: 0, rentalMonthlyCents: 0, salesTotalCents: 0, visitsDone: 0, visitsTotal: 0 });
     }
     const owner = await isBrokerOwner(userId, brokerId);
 
-    const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
     const since = new Date();
     since.setMonth(since.getMonth() - (months - 1), 1);
     since.setHours(0, 0, 0, 0);

@@ -509,14 +509,18 @@ export default function AgendaCalendar() {
   async function deleteAppointment(appt: Appointment) {
     setDeleting(true);
     try {
-      await fetch(`/api/agenda/visits/${appt.id}`, {
+      const res = await fetch(`/api/agenda/visits/${appt.id}`, {
         method: 'DELETE',
         headers: authService.getAuthHeaders(),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao excluir agendamento.');
+      }
       await fetchAppointments();
       setDeleteTarget(null);
-    } catch {
-      /* ignore */
+    } catch (e: any) {
+      alert(e.message || 'Falha ao excluir agendamento.');
     } finally {
       setDeleting(false);
     }
@@ -524,13 +528,19 @@ export default function AgendaCalendar() {
 
   async function changeStatus(appt: Appointment, status: AppointmentStatus) {
     try {
-      await fetch(`/api/agenda/visits/${appt.id}`, {
+      const res = await fetch(`/api/agenda/visits/${appt.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
         body: JSON.stringify({ status }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao atualizar status do agendamento.');
+      }
       await fetchAppointments();
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      alert(e.message || 'Falha ao atualizar status do agendamento.');
+    }
   }
 
   // ── Build calendar grid ──────────────────────────────────────────────────────

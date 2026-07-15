@@ -327,12 +327,18 @@ export function LocacaoArea() {
     if (!confirm('Encerrar este contrato de locação?')) return;
     setEndingId(id);
     try {
-      await fetch(`/api/locacao/contracts/${id}`, {
+      const res = await fetch(`/api/locacao/contracts/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
         body: JSON.stringify({ status: 'encerrado', end_date: new Date().toISOString().split('T')[0] }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao encerrar contrato.');
+      }
       load();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao encerrar contrato.');
     } finally {
       setEndingId(null);
     }

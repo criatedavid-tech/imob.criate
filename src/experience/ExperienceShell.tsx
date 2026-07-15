@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Plus, ChevronDown, Loader2, Shield, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -120,6 +120,19 @@ export function ExperienceShell() {
       .finally(() => { if (!cancelled) setLoadingLayout(false); });
     return () => { cancelled = true; };
   }, [persona, checkingAuth, refreshKey]);
+
+  // Mutação manual noutra área (ex.: criar contrato em Locação, sem passar
+  // pela IA) não bump a refreshKey — só a IA fazia isso (onActionDone). Sem
+  // isso, voltar pro Hoje mostrava número velho até trocar de persona ou dar
+  // F5. Dispara só na TRANSIÇÃO pra 'hoje' (não no mount, que o efeito acima
+  // já cobre), pra não duplicar a busca inicial.
+  const prevAreaRef = useRef(area);
+  useEffect(() => {
+    if (prevAreaRef.current !== 'hoje' && area === 'hoje') {
+      setRefreshKey((k) => k + 1);
+    }
+    prevAreaRef.current = area;
+  }, [area]);
 
   const cycleAutonomy = () =>
     setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);

@@ -85,8 +85,16 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
 
   const customerId = await ensureAsaasTenantCustomer(contract as RentalContract);
 
-  const dueDate = new Date(refMonthStart.getFullYear(), refMonthStart.getMonth(), contract.due_day);
-  const dueDateIso = dueDate.toISOString().split("T")[0];
+  // Achado testando ao vivo: se o dia de vencimento do contrato já passou
+  // neste mês (ex.: due_day=10 e hoje é dia 14), a Asaas rejeita com "não é
+  // permitido data de vencimento inferior a hoje" — e como a cobrança é
+  // sempre gerada pro mês corrente (referenceMonth = "agora"), esse contrato
+  // ficava permanentemente impossível de cobrar até o mês seguinte. Vencimento
+  // atrasado vence HOJE em vez de manter a data original no passado.
+  const rawDueDate = new Date(refMonthStart.getFullYear(), refMonthStart.getMonth(), contract.due_day);
+  const rawDueDateIso = rawDueDate.toISOString().split("T")[0];
+  const todayIso = new Date().toISOString().split("T")[0];
+  const dueDateIso = rawDueDateIso < todayIso ? todayIso : rawDueDateIso;
   const amount = contract.rent_amount_cents / 100;
 
   const payResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments`, {

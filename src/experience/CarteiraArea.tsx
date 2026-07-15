@@ -52,20 +52,34 @@ export function CarteiraArea() {
     if (!confirm('Remover este imóvel permanentemente?')) return;
     setDeletingId(id);
     try {
-      await fetch(`/api/properties/${id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      const res = await fetch(`/api/properties/${id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao remover imóvel.');
+      }
       setProperties((prev) => (prev || []).filter((p) => p.id !== id));
+    } catch (e: any) {
+      alert(e.message || 'Falha ao remover imóvel.');
     } finally {
       setDeletingId(null);
     }
   };
 
   const handleStatusChange = async (id: string, status: string) => {
-    await fetch(`/api/properties/${id}/status`, {
-      method: 'PATCH',
-      headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    setProperties((prev) => (prev || []).map((p) => (p.id === id ? { ...p, status } : p)));
+    try {
+      const res = await fetch(`/api/properties/${id}/status`, {
+        method: 'PATCH',
+        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao atualizar status.');
+      }
+      setProperties((prev) => (prev || []).map((p) => (p.id === id ? { ...p, status } : p)));
+    } catch (e: any) {
+      alert(e.message || 'Falha ao atualizar status.');
+    }
   };
 
   const handleCopyLink = (p: Property) => {
