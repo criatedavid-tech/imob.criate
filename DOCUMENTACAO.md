@@ -1781,5 +1781,13 @@ rejeitadas na simulação.
 - Testes determinísticos cobriram entrada percentual, entrada em reais,
   distribuição do resto na última parcela e rejeição de percentual/valor/
   quantidade fora do intervalo.
-- A inspeção visual, o release Fly e os smoke tests serão registrados aqui após
-  a publicação separada desta fase.
+- Commit funcional: `78e86d7` (`feat(lancamentos): add simple financing simulator`).
+- Publicado no Fly V2 `v65` em 15/07/2026 17:17 BRT, imagem
+  `deployment-01KXKPSEVQ0T24SEK7EV5ZKZ4P`, manifesto
+  `sha256:2d15d1b8c4ee52da33a5dbd74396ead183f3c3bdc9496f11400fe9182d5f3c3f`.
+- A máquina em GRU voltou a `started`, health check `1/1`, e `/`/`/app`
+  responderam `200` externamente.
+- O navegador sem sessão foi redirecionado corretamente de `/app` para `/login`.
+  A interação visual dentro do modal de unidade não foi executada por ausência de
+  credencial de teste autenticada; não foi criado usuário nem reutilizado segredo
+  para contornar esse bloqueio.
