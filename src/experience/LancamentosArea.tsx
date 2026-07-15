@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera, Calculator } from 'lucide-react';
+import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera, Calculator, Copy, QrCode, Check } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
-import { digitsOnly, normalizePhoneBR } from '../lib/phone';
+import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais, formatCentsBR } from '../lib/money';
 import { simulateFinancing } from '../lib/financing';
+import { maskCpfCnpj } from '../lib/document';
 
 interface Development {
   id: string;
@@ -62,6 +63,22 @@ interface Unit {
   andar?: number;
   area_lote_m2?: number;
   testada_m?: number;
+}
+
+interface UnitReservationPayment {
+  id: string;
+  unit_id: string;
+  request_key: string;
+  buyer_name: string;
+  buyer_phone: string | null;
+  buyer_document_last4: string;
+  signal_amount_cents: number;
+  status: 'creating' | 'pending' | 'paid' | 'overdue' | 'payment_failed';
+  reserved_until: string | null;
+  due_date: string | null;
+  pix_qr_code: string | null;
+  pix_copy_paste: string | null;
+  payment_id: string | null;
 }
 
 const AMENITY_OPTIONS = [
@@ -435,11 +452,17 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   onChanged: () => void;
 }) {
   const [buyerName, setBuyerName] = useState(unit.buyer_name || '');
-  const [buyerPhone, setBuyerPhone] = useState(unit.buyer_phone || '');
+  const [buyerPhone, setBuyerPhone] = useState(stripDDI(unit.buyer_phone || ''));
   const [holdHours, setHoldHours] = useState('1');
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const [buyerDocument, setBuyerDocument] = useState('');
+  const [signalAmountCents, setSignalAmountCents] = useState(0);
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  const [reservation, setReservation] = useState<UnitReservationPayment | null>(null);
+  const [copiedPix, setCopiedPix] = useState(false);
+  const [financialAccess, setFinancialAccess] = useState(false);
 
   const isLoteamento = developmentTipo === 'horizontal' && developmentSubtipo !== 'condominio_casas';
   const isVertical = developmentTipo === 'vertical';
@@ -466,6 +489,80 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
       : { mode: 'amount', amountCents: entryAmountCents },
     parsedInstallments,
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadReservation() {
+      try {
+        const res = await fetch(`/api/lancamentos/units/${unit.id}/reservation`, {
+          headers: authService.getAuthHeaders(),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || 'Falha ao carregar a reserva financeira.');
+        }
+        const body = await res.json();
+        if (!cancelled) setFinancialAccess(body?.financial_access === true);
+        if (cancelled || !body?.reservation) return;
+        const current = body.reservation as UnitReservationPayment;
+        setReservation(current);
+        setRequestKey(current.request_key);
+        setBuyerName(current.buyer_name || '');
+        setBuyerPhone(stripDDI(current.buyer_phone || ''));
+        setSignalAmountCents(current.signal_amount_cents || 0);
+      } catch (loadError: any) {
+        if (!cancelled) setError(loadError?.message || 'Falha ao carregar a reserva financeira.');
+      }
+    }
+    loadReservation();
+    return () => { cancelled = true; };
+  }, [unit.id]);
+
+  async function reserveWithPix() {
+    const documentDigits = buyerDocument.replace(/\D/g, '');
+    if (!buyerName.trim()) { setError('Nome do comprador é obrigatório.'); return; }
+    if (![11, 14].includes(documentDigits.length)) { setError('Informe um CPF ou CNPJ completo.'); return; }
+    if (!Number.isSafeInteger(signalAmountCents) || signalAmountCents <= 0) { setError('Informe um valor de sinal maior que zero.'); return; }
+    if (unit.price_cents && signalAmountCents > unit.price_cents) { setError('O sinal não pode superar o preço da unidade.'); return; }
+
+    setSaving('pix');
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/units/${unit.id}/reservations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({
+          request_key: requestKey,
+          buyer_name: buyerName.trim(),
+          buyer_phone: buyerPhone ? normalizePhoneBR(buyerPhone) : '',
+          buyer_cpf_cnpj: documentDigits,
+          signal_amount_cents: signalAmountCents,
+          hold_hours: Math.min(168, Math.max(1, Number(holdHours) || 1)),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao gerar o PIX da reserva.');
+      if (!body?.reservation) throw new Error('A reserva foi criada sem os dados do PIX.');
+      setReservation(body.reservation);
+      setBuyerDocument('');
+      onChanged();
+    } catch (reserveError: any) {
+      setError(reserveError?.message || 'Falha ao gerar o PIX da reserva.');
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function copyPixCode() {
+    if (!reservation?.pix_copy_paste) return;
+    try {
+      await navigator.clipboard.writeText(reservation.pix_copy_paste);
+      setCopiedPix(true);
+      window.setTimeout(() => setCopiedPix(false), 1800);
+    } catch {
+      setError('Não foi possível copiar o PIX automaticamente.');
+    }
+  }
 
   async function act(action: 'reservar' | 'vender' | 'liberar') {
     if (action === 'reservar' && !buyerName.trim()) { setError('Nome do interessado é obrigatório pra reservar.'); return; }
@@ -541,6 +638,18 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   }
 
   const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+  const effectiveStatus = reservation ? 'reservado' : unit.status;
+  const canRetryPix = reservation?.status === 'creating' || reservation?.status === 'payment_failed';
+  const reservationStatusLabel: Record<string, string> = {
+    creating: 'preparando cobrança',
+    pending: 'aguardando pagamento',
+    paid: 'sinal pago',
+    overdue: 'PIX vencido',
+    payment_failed: 'falha ao gerar PIX',
+  };
+  const qrCodeSource = reservation?.pix_qr_code
+    ? (reservation.pix_qr_code.startsWith('data:') ? reservation.pix_qr_code : `data:image/png;base64,${reservation.pix_qr_code}`)
+    : null;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -556,7 +665,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
 
           <div className="flex items-center justify-between gap-2">
             <p className="text-[13px] text-white/50">
-              {centsToReais(unit.price_cents)} · status atual: <span className="font-semibold">{unit.status}</span>
+              {centsToReais(unit.price_cents)} · status atual: <span className="font-semibold">{effectiveStatus}</span>
             </p>
             <button onClick={() => setEditing(e => !e)} className="text-[12px] font-semibold text-violet-200 hover:text-violet-100 transition-colors shrink-0">
               {editing ? 'fechar' : 'editar'}
@@ -703,19 +812,56 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </div>
           )}
 
-          {unit.status === 'reservado' && unit.reserved_until && (
+          {(reservation?.reserved_until || (unit.status === 'reservado' && unit.reserved_until)) && (
             <p className="text-[12px] text-amber-200 flex items-center gap-1.5">
-              <Clock size={12} /> reserva expira em {hoursLeft(unit.reserved_until)}
+              <Clock size={12} /> reserva expira em {hoursLeft(reservation?.reserved_until || unit.reserved_until || undefined)}
             </p>
           )}
 
-          {unit.status !== 'vendido' && (
+          {reservation && (
+            <div className="space-y-3 rounded-xl bg-emerald-500/[0.07] border border-emerald-300/20 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <QrCode size={16} className="text-emerald-200 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-bold text-white/80">Sinal da reserva</p>
+                    <p className="text-[10px] text-white/40">Documento final •••• {reservation.buyer_document_last4}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold text-emerald-100 text-right">
+                  {reservationStatusLabel[reservation.status] || reservation.status}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[12px] text-white/55">
+                <span>Valor do sinal</span>
+                <strong className="text-white/85">{formatCentsBR(reservation.signal_amount_cents)}</strong>
+              </div>
+              {qrCodeSource && (
+                <img src={qrCodeSource} alt="QR Code PIX da reserva" className="w-44 h-44 mx-auto rounded-xl bg-white p-2" />
+              )}
+              {reservation.pix_copy_paste && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-white/35 break-all line-clamp-2">{reservation.pix_copy_paste}</p>
+                  <button type="button" onClick={copyPixCode}
+                    className="w-full py-2 rounded-xl text-[12px] font-semibold text-emerald-100 bg-emerald-500/10 border border-emerald-300/20 hover:bg-emerald-500/20 flex items-center justify-center gap-2">
+                    {copiedPix ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedPix ? 'PIX copiado' : 'Copiar PIX copia e cola'}
+                  </button>
+                </div>
+              )}
+              {reservation.status === 'paid' && (
+                <p className="text-[11px] text-emerald-100">Pagamento confirmado. A venda definitiva já pode ser concluída.</p>
+              )}
+            </div>
+          )}
+
+          {effectiveStatus !== 'vendido' && (
             <>
               <div>
                 <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <User size={11} /> Interessado/comprador
                 </label>
-                <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="Nome"
+                <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="Nome" disabled={!!reservation && !canRetryPix}
                   className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
                     focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
               </div>
@@ -725,7 +871,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 </label>
                 <div className="flex items-stretch gap-2">
                   <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
-                  <input value={buyerPhone} onChange={(e) => setBuyerPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279"
+                  <input value={buyerPhone} onChange={(e) => setBuyerPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" disabled={!!reservation && !canRetryPix}
                     className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
                       focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
                 </div>
@@ -733,7 +879,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </>
           )}
 
-          {unit.status === 'disponivel' && (
+          {(unit.status === 'disponivel' && !reservation) && (
             <div>
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Reservar por quantas horas?</label>
               <input value={holdHours} onChange={(e) => setHoldHours(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="1"
@@ -741,13 +887,39 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                   focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
             </div>
           )}
+
+          {financialAccess && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
+            <div className="space-y-3 p-3 rounded-xl bg-emerald-500/[0.05] border border-emerald-300/15">
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
+                <input value={buyerDocument} onChange={(e) => setBuyerDocument(maskCpfCnpj(e.target.value))}
+                  inputMode="numeric" maxLength={18} placeholder="000.000.000-00" className={numInputClass} />
+                <p className="text-[9px] text-white/30 mt-1">O documento completo vai direto para a Asaas e não fica salvo no ImobiFlow.</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Valor do sinal</label>
+                <div className="flex items-stretch gap-2">
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+                  <input value={maskFromCents(signalAmountCents)} onChange={(e) => setSignalAmountCents(centsFromMaskInput(e.target.value))}
+                    inputMode="numeric" placeholder="0,00" className={numInputClass} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-2 px-6 py-4 border-t border-white/10">
-          {unit.status === 'disponivel' && (
+          {unit.status === 'disponivel' && !reservation && (
             <>
+              {financialAccess && (
+                <button onClick={reserveWithPix} disabled={!!saving}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}
+                  {saving === 'pix' ? 'Gerando PIX...' : 'Reservar e gerar PIX'}
+                </button>
+              )}
               <button onClick={() => act('reservar')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-amber-200 bg-amber-500/15 border border-amber-400/25 hover:bg-amber-500/25 transition-colors disabled:opacity-50">
-                {saving === 'reservar' ? 'Reservando...' : 'Reservar'}
+                {saving === 'reservar' ? 'Reservando...' : 'Reservar sem cobrança'}
               </button>
               <button onClick={() => act('vender')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
@@ -755,7 +927,14 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               </button>
             </>
           )}
-          {unit.status === 'reservado' && (
+          {financialAccess && canRetryPix && (
+            <button onClick={reserveWithPix} disabled={!!saving}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}
+              {saving === 'pix' ? 'Gerando PIX...' : 'Tentar gerar o PIX novamente'}
+            </button>
+          )}
+          {effectiveStatus === 'reservado' && (
             <>
               <button onClick={() => act('vender')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">

@@ -10,9 +10,29 @@ import {
 } from "../config";
 import { asaasHeaders, handleAsaasPaymentReceived } from "../services/billing";
 import { handleRentalPaymentWebhook } from "../services/rentalBilling";
+import { handleUnitReservationPaymentWebhook } from "../services/unitReservationBilling";
 import { fetchWithTimeout } from "../lib/http";
 
 export const billingRouter = express.Router();
+
+function webhookAuditPayload(event: any) {
+  const payment = event?.payment;
+  const subscription = event?.subscription;
+  return {
+    event: typeof event?.event === "string" ? event.event.slice(0, 80) : "unknown",
+    ...(payment ? {
+      payment: {
+        id: payment.id || null,
+        status: payment.status || null,
+        value: payment.value ?? null,
+        customer: payment.customer || null,
+        subscription: payment.subscription || null,
+        externalReference: payment.externalReference || null,
+      },
+    } : {}),
+    ...(subscription ? { subscription: { id: subscription.id || null, status: subscription.status || null } } : {}),
+  };
+}
 
 // Retorna configurações públicas do plano (preço atual)
 billingRouter.get("/api/config/plan", (_req, res) => {
@@ -296,7 +316,7 @@ billingRouter.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
   await supabase.from('webhook_logs').insert({
     source: 'asaas',
     event_type: event.event,
-    payload: event,
+    payload: webhookAuditPayload(event),
     status: 'received'
   });
 
@@ -305,6 +325,22 @@ billingRouter.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
   // asaas_customer_id em imf_brokers abaixo. Verifica primeiro, por
   // asaas_payment_id (ver server/services/rentalBilling.ts); se for uma
   // cobrança de aluguel, trata e sai — não é evento de assinatura do broker.
+  if ([
+    'PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED',
+    'PAYMENT_REFUNDED', 'PAYMENT_REFUND_IN_PROGRESS', 'PAYMENT_CHARGEBACK_REQUESTED',
+  ].includes(event.event)) {
+    try {
+      const wasUnitReservation = await handleUnitReservationPaymentWebhook(event);
+      if (wasUnitReservation) {
+        res.json({ received: true });
+        return;
+      }
+    } catch (error: any) {
+      console.error('[Webhook] falha ao processar reserva de unidade:', String(error?.message || 'erro desconhecido').slice(0, 300));
+      return res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  }
+
   if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED'].includes(event.event)) {
     const wasRentalPayment = await handleRentalPaymentWebhook(event).catch((e) => {
       console.error('[Webhook] erro tratando possível pagamento de aluguel:', e.message);

@@ -1791,3 +1791,72 @@ rejeitadas na simulação.
   A interação visual dentro do modal de unidade não foi executada por ausência de
   credencial de teste autenticada; não foi criado usuário nem reutilizado segredo
   para contornar esse bloqueio.
+
+## 14.21. Atualização 2026-07-15 — Lançamentos, Fase 2: reserva com sinal PIX (checkpoint local)
+
+### Escopo implementado localmente
+
+O fluxo de reserva financeira foi separado do estado atual de `imf_units`. A
+migração `supabase/migrations/20260715_unit_reservations_pix.sql` cria
+`imf_unit_reservations`, que preserva cada tentativa de reserva, comprador,
+valor do sinal em centavos, prazo, estado do pagamento e identificadores Asaas.
+A unidade continua guardando somente o resumo operacional atual.
+
+Decisões de segurança e integridade:
+
+- o CPF/CNPJ completo não é persistido pelo ImobiFlow: passa pela memória do
+  servidor durante a criação do customer Asaas e o histórico guarda somente os
+  quatro últimos dígitos;
+- `imf_create_unit_reservation(...)` registra o histórico e muda a unidade de
+  `disponivel` para `reservado` na mesma transação e com lock da linha;
+- `(broker_id, request_key)` e o índice parcial por unidade impedem cobranças e
+  reservas financeiras ativas duplicadas, inclusive sob concorrência;
+- a função SQL é `SECURITY INVOKER`, tem `search_path` fixo e só pode ser
+  executada por `service_role`; a tabela tem RLS e policy por `broker_id`;
+- unidades com histórico financeiro não são apagadas em cascata nem podem ser
+  excluídas pela API, preservando a trilha de auditoria;
+- o endpoint de criação valida checksum de CPF/CNPJ, nome, telefone, valor em
+  centavos, prazo de 1–168 horas e limita a geração a 12 tentativas/hora por JWT;
+- respostas de erro da Asaas são sanitizadas. O webhook compartilhado deixou de
+  persistir o payload bruto do provedor e grava apenas identificadores, estado e
+  valor necessários para auditoria, reduzindo retenção acidental de PII;
+- QR e copia-e-cola são removidos do banco quando o pagamento é confirmado,
+  cancelado ou reembolsado.
+
+`server/services/unitReservationBilling.ts` cria/relocaliza customer e payment
+por `externalReference: unit-reservation:<reservation_id>`, gera cobrança
+`billingType: PIX`, busca QR/copia-e-cola e processa os eventos compartilhados
+`PAYMENT_RECEIVED`, `PAYMENT_CONFIRMED`, `PAYMENT_OVERDUE`, `PAYMENT_DELETED` e
+eventos de reembolso/chargeback. A venda fica bloqueada enquanto houver reserva
+financeira não paga; um sinal pago exige conclusão da venda ou conciliação antes
+da liberação.
+
+Rotas novas, sempre protegidas por JWT e isolamento do broker:
+
+- `GET /api/lancamentos/units/:id/reservation` — reserva financeira ativa, sem
+  documento completo; membros recebem `financial_access: false`;
+- `POST /api/lancamentos/units/:id/reservations` — exclusivo do titular da
+  conta; cria/reexecuta de forma idempotente a reserva e o PIX;
+- `POST /api/webhooks/asaas` — passou a despachar pagamentos de reserva antes de
+  aluguel/assinatura.
+
+Na UI ativa, `src/experience/LancamentosArea.tsx`, o modal da unidade ganhou
+CPF/CNPJ com a máscara existente, valor livre do sinal, ação “Reservar e gerar
+PIX”, QR Code, copia-e-cola e estados reais da cobrança. A reserva operacional
+sem cobrança continua disponível como opção explícita. Toda mutação verifica
+`res.ok` antes de alterar a interface; `src/pages/*` não foi tocado.
+
+### Validação e bloqueio deste checkpoint
+
+- `npx tsc --noEmit` e `npm run lint` passaram sem erros;
+- `npm run build` passou com 2.135 módulos, bundle JS inicial de 872,44 kB e
+  somente o aviso conhecido de chunk acima de 500 kB;
+- `git diff --check` passou;
+- a migração foi aplicada externamente e confirmada por consulta read-only com a
+  service role: `imf_unit_reservations` existe e tinha zero registros antes do
+  primeiro teste;
+- neste ponto do checkpoint, a fase ainda não havia sido publicada nem testada
+  contra a Asaas sandbox; essas evidências serão acrescentadas após o deploy;
+- reembolso/chargeback coloca o histórico em `refunded`, mas a decisão comercial
+  de liberar ou manter a unidade é manual; ainda não existe política automática
+  de retenção/anonimização para nome e telefone do histórico.

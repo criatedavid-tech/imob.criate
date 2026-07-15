@@ -29,6 +29,19 @@ export const checkoutLimiter = rateLimit({
   skip: skipInDev,
 });
 
+// Gera customer/payment na Asaas. Aplicado depois de requireUser para que o
+// limite seja por conta autenticada, e não pelo IP compartilhado da equipe.
+export const reservationPaymentLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Muitas tentativas de gerar PIX. Aguarde 1 hora e tente novamente.' },
+  store: makeRedisStore('reservation-payment', 60 * 60 * 1000),
+  skip: skipInDev,
+});
+
 export const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
