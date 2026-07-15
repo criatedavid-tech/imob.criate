@@ -1882,3 +1882,125 @@ sem cobrança continua disponível como opção explícita. Toda mutação verif
 - reembolso/chargeback coloca o histórico em `refunded`, mas a decisão comercial
   de liberar ou manter a unidade é manual; ainda não existe política automática
   de retenção/anonimização para nome e telefone do histórico.
+
+## 14.22. Atualização 2026-07-15 (continuação) — Auditoria cruzada das Fases 1+2 de Lançamentos + confirmação ao vivo
+
+### Migração confirmada aplicada
+
+O checkpoint da Fase 2 (§14.21) tinha ficado com a migração
+`20260715_unit_reservations_pix.sql` sem aplicar, segundo o próprio
+Codex. Usuário rodou o SQL no Supabase; confirmado por checagem direta
+(service role, consulta real — não `HEAD`) que a tabela
+`imf_unit_reservations` existe, com RLS ativa e grants corretos (só
+`service_role` lê/escreve; `anon`/`authenticated` sem acesso).
+
+⚠️ **Gotcha técnico registrado**: uma primeira checagem via
+`supabase-js` com `{ head: true }` (requisição `HTTP HEAD`) deu falso
+positivo de "tabela existe" mesmo com a migração ainda não aplicada.
+Só uma consulta real (`GET`) revelou o erro verdadeiro
+(`42P01 — relation does not exist`). É o mesmo comportamento que o
+Codex já tinha documentado no checkpoint anterior ("HEAD mascarou o 404
+e produziu falso positivo") — vale sempre confirmar schema com consulta
+real, nunca `HEAD`, daqui pra frente.
+
+### Auditoria de código (diff `88a143d..b8c5f7b`)
+
+Revisão completa de todos os arquivos tocados pelo Codex
+(`server/routes/lancamentos.ts`, `server/services/unitReservationBilling.ts`,
+`server/routes/billing.ts`, `server/middleware/rateLimits.ts`,
+`src/experience/LancamentosArea.tsx`, `src/lib/financing.ts`,
+`src/lib/money.ts`, a migração). Antes disso, confirmado que o commit
+`88a143d` (que o Codex criou sozinho ao encontrar a working tree com
+correções minhas não commitadas) tem exatamente os 6 arquivos que eu
+tinha corrigido nesta sessão — nada estranho misturado.
+
+**Qualidade geral: acima do esperado.** Destaques que não eram
+obrigatórios no prompt original e o Codex entregou por conta própria:
+
+- CPF/CNPJ completo do comprador nunca é persistido — passa só pela
+  memória do request pra criar o customer na Asaas; o banco guarda
+  apenas os 4 últimos dígitos. Uma coluna legada `buyer_cpf_cnpj NOT
+  NULL` (de uma migração intermediária já aplicada) foi corrigida
+  para receber um sentinel redigido (`0000000`+últimos 4 dígitos) em
+  vez do documento real — achado e corrigido pelo próprio Codex
+  (commit `e51251e`), não por mim.
+- Checksum real de CPF/CNPJ (algoritmo mod-11 completo, incluindo
+  rejeição de sequências repetidas tipo "111.111.111-11") em
+  `hasValidCpfCnpjChecksum`.
+- Idempotência via `request_key` (UUID por tentativa) + índice único
+  parcial garantindo no máximo 1 reserva financeira ativa por unidade,
+  com recuperação segura de corrida (2 requisições simultâneas com a
+  mesma chave).
+- Rate limit dedicado (`reservationPaymentLimiter`, 12/hora por JWT).
+- Isolamento: só o dono da conta gera PIX; membros recebem
+  `financial_access: false` (nem sabem que existe reserva, não é só
+  o documento que fica oculto).
+- Webhook compartilhado despacha reserva de unidade ANTES de
+  aluguel/assinatura; de brinde, parou de persistir o payload bruto
+  da Asaas em `webhook_logs` (agora só identificadores/status/valor) —
+  reduz retenção acidental de PII em um caminho que nem fazia parte do
+  pedido original.
+- Concorrência: venda bloqueada enquanto o sinal não está pago;
+  cancelar a reserva cancela o PIX na Asaas também; excluir unidade
+  com histórico financeiro é bloqueado (preserva auditoria).
+
+### Testado AO VIVO contra a Asaas sandbox real
+
+Login numa conta Incorporadora de teste (usuário digitou a senha, eu só
+assumi depois — nunca toquei em credencial). Unidade de teste criada
+(R$ 500.000,00, empreendimento "Residencial Sevilha"):
+
+1. **Simulador**: entrada 20% + 36 parcelas → R$ 100.000,00 de entrada,
+   R$ 400.000,00 de saldo, 35 parcelas de R$ 11.111,11 + última de
+   R$ 11.111,15. Matemática conferida manualmente, bate exata (resto de
+   centavos absorvido na última parcela, sem drift de ponto flutuante).
+2. **"Reservar e gerar PIX"**: criou customer + payment PIX reais na
+   Asaas sandbox; QR code e copia-e-cola renderizados corretamente na
+   tela; status "aguardando pagamento"; reserva expirando em 59min
+   (hold_hours=1).
+3. **"Confirmar venda" com sinal não pago**: bloqueado corretamente
+   ("Confirme o pagamento do sinal antes de concluir a venda.").
+4. **"Liberar reserva"**: cancelou o PIX na Asaas e devolveu a unidade
+   pra "disponível".
+5. **"Excluir unidade" depois de ter histórico de reserva**: bloqueado
+   corretamente — a unidade de teste ("101", Residencial Sevilha) ficou
+   permanentemente no banco por causa disso; é o comportamento
+   esperado (preservar auditoria), não um bug, então foi deixada lá.
+
+### Achados (nenhum bloqueante)
+
+- **P2** — `server/routes/lancamentos.ts` / `server/services/unitReservationBilling.ts`:
+  a validação "sinal não pode superar o preço da unidade" existia numa
+  função SQL (RPC) que o próprio Codex removeu no refactor `702172a`
+  (pra tirar a dependência de RPC do runtime). A checagem sobrou só no
+  frontend (`LancamentosArea.tsx`); uma chamada direta à API (sem passar
+  pela UI) hoje consegue criar um sinal maior que o preço da unidade.
+  Não é explorável pra dano real (não é dinheiro do sistema, é o
+  corretor decidindo mal um valor), mas vale reintroduzir como Zod
+  `.refine()` ou `CHECK` numa próxima rodada.
+- **Informativo** — §14.21 (linhas próximas a "a função SQL é SECURITY
+  INVOKER...") descreve a RPC que foi removida no mesmo checkpoint,
+  contradizendo a frase logo acima no mesmo parágrafo ("o runtime não
+  depende de RPC"). Resíduo de texto de uma versão anterior, não afeta
+  o código — vale limpar numa próxima edição do changelog.
+
+### Pendências que dependem de decisão do usuário
+
+- `ASAAS_WEBHOOK_TOKEN` foi criado pelo Codex nas secrets do Fly V2 e um
+  webhook novo foi configurado direto no painel da Asaas SANDBOX pra
+  isso funcionar — infraestrutura/config externa, não só código. Como
+  `ASAAS_ENV` continua sandbox, o efeito prático hoje é só de teste,
+  mas tecnicamente diverge da decisão anterior do usuário de manter o
+  webhook de cobrança real desligado até o projeto estar validado.
+  Perguntado ao usuário; sem resposta definitiva ainda no fim deste
+  expediente.
+- **Fase 3 (backoffice de aprovação de documentos)** não foi iniciada —
+  o Codex seguiu a instrução do prompt de parar caso ficasse
+  desproporcional, em vez de entregar pela metade. Fica pra uma rodada
+  futura, com prompt próprio quando o usuário decidir retomar.
+
+### Estado do git
+
+Nada foi commitado nesta rodada de auditoria (só leitura, testes ao
+vivo e escrita neste changelog). `HEAD` continha `b8c5f7b` no início
+desta auditoria, sincronizado com `origin/v2`.
