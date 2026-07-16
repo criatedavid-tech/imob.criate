@@ -3105,3 +3105,34 @@ mesmo antes do SQL rodar.
 
 `npx tsc --noEmit` e `npm run build` limpos em cada etapa; deploys no Fly V2
 saudáveis.
+
+## Atualização 2026-07-16 (continuação) — Limpeza de dado morto
+
+Varredura de código morto de confiança alta (cada item confirmado com zero
+referências reais antes de remover; build verde depois).
+
+**Removido:**
+- Dependências não usadas em lugar nenhum do código: `recharts` e `date-fns`
+  (só apareciam como texto neste changelog). `npm uninstall`.
+- Exports mortos de `server/config.ts` (definidos, nunca importados): os 4
+  `ZPRO_*` (`ZPRO_ADMIN_URL`, `ZPRO_ADMIN_TOKEN`, `ZPRO_API_SECRET`,
+  `ZPRO_JWT_SECRET`) e `PROVISIONING_WEBHOOK_URL` — resíduo da era Z-PRO, já
+  eliminada. As referências `zpro_*` que sobram no código são campos de banco
+  ainda exibidos no Admin (não são as constantes de config; deixadas).
+- `.env.example` limpo dos mesmos (seção Z-PRO inteira + PROVISIONING_WEBHOOK_URL);
+  comentário do `LLM_PROXY_ENC_KEY` atualizado (agora também cifra a chave
+  Asaas própria da imobiliária, não só a key OpenRouter).
+
+**Verificado e NÃO removido (falsos positivos / decisão do usuário):**
+- `verifyAccessToken` (auth.ts) e `BR_LOCAL_MAX_LEN` (phone.ts): exports sem
+  consumidor externo, mas usados internamente no próprio arquivo — vivos.
+- `dashboard.ts`/`llmProxy.ts`/`maintenance.ts`: pareciam órfãos mas são
+  importados por `server.ts` (raiz) — vivos.
+- **Dashboard 1.0 legado** (`src/pages/Dashboard.tsx` + `AISettings.tsx` +
+  `FollowUpSettings.tsx`): ainda roteado em `/` (e no wildcard `*`), então
+  tecnicamente acessível. Aposentá-lo é decisão de produto — flagado ao
+  usuário, não removido por conta própria.
+- Secrets `ZPRO_*`/`PROVISIONING_WEBHOOK_URL` no Fly: inertes (código não lê
+  mais), mas remover é mudança de config de produção — flagado, não removido.
+
+`npx tsc --noEmit` e `npm run build` limpos.
