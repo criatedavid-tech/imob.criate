@@ -13,7 +13,8 @@ v1 (ainda válidas para conceitos compartilhados — Asaas, billing, modelo de
 dados core) mas ficaram desatualizadas quanto à experiência de produto, ao
 provisionamento de WhatsApp e a boa parte do backend, que mudaram no v2. Os
 checkpoints §14.24–§14.27 registram a auditoria mais recente de integridade,
-performance e remoção de código órfão.
+performance e remoção de código órfão; §14.28 registra esse trabalho
+commitado, pushed e deployado em produção.
 
 ---
 
@@ -2420,3 +2421,59 @@ Bloco 4 codificado, compilado e documentado. Não depende de migration própria
 (usa o índice `idx_webhook_logs_created_at` já incluído em
 `20260716b_performance_indexes.sql`, aplicado — ver §14.26). Commit/push/
 deploy seguem no §14.28.
+
+## 14.28. Atualização 2026-07-16 (continuação) — Blocos 1-4 commitados, pushed e deployados no v2
+
+### O que foi feito
+
+Com as duas migrations (`20260716a_billing_reconciliation.sql`,
+`20260716b_performance_indexes.sql`) já aplicadas manualmente pelo usuário no
+Supabase (ver §14.24/§14.26 acima), o código dos 4 blocos de auditoria de
+gargalos (§14.24-§14.27) foi fechado nesta rodada:
+
+1. `npx tsc --noEmit` — limpo. `npm run build` — limpo, 2.136 módulos, entrada
+   374,65 kB, sem warning de chunk grande (idêntico às validações locais
+   anteriores). `git diff --check` — sem erro de whitespace.
+2. Commit único `dd88f73` (`fix(billing,perf,security): auditoria de gargalos -
+   blocos 1-4`), 24 arquivos (21 modificados + `server/services/maintenance.ts`
+   e as 2 migrations novos + `server/lib/zproAuth.ts` removido), na branch
+   `v2`. Push para `origin/v2` — **branch `main` não foi tocada**.
+3. Deploy: `fly deploy -a imobiflow-v2 --config fly.toml --remote-only`.
+   Imagem `deployment-01KXNNXMQ5T2C72A6KTHR7MHB2`
+   (`sha256:749e3c1a1e7bd828fc3d35b2cf254e44dca8192e82630e6c8dc10fd22d93fcc6`),
+   máquina `d8d1340c77e168` em GRU, versão 72, `started`, health check
+   `1/1 passing`. **App `imobiflow` (v1) e Redis não foram tocados; nenhum
+   secret foi alterado.**
+
+### Smoke test contra produção (`imobiflow-v2.fly.dev`)
+
+- `GET /` → `200`; `GET /app` → `200`.
+- `GET /api/properties/health` → `200`,
+  `{"database":"CONNECTED","supabase_api":"CONNECTED"}`.
+- `GET /api/leads` sem auth → `401` (esperado).
+- `POST /api/webhooks/asaas` sem token → `401` (esperado).
+
+### Logs pós-boot (confirmam que o código novo subiu de verdade)
+
+Além dos schedulers já existentes (`[Follow-up] scheduler ativo (tick 60s)`,
+`[Billing Prep] scheduler ativo (tick 1h)`), o boot passou a logar os **dois
+schedulers novos dos blocos 1 e 2**:
+`[Billing Reconciliation] scheduler ativo (tick 5min)` e
+`[Reserva PIX] scheduler de expiração ativo (tick 60s)`. Nenhum erro depois do
+boot; a única linha subsequente é um `[Webhook] token inválido` (log esperado
+de segurança — alguém sondando o endpoint sem token válido, não é falha do
+deploy).
+
+### Ponto de atenção observado, não bloqueante
+
+Durante o `fly deploy`, a CLI emitiu o aviso padrão *"The app is not listening
+on the expected address... 0.0.0.0:3000"* — é o comportamento normal do
+`fly deploy` checando a porta antes do processo `tsx server.ts` terminar de
+subir (mesmo padrão observado em deploys anteriores registrados neste
+documento). O smoke check subsequente da própria CLI (`Machine ... is now in a
+good state`) e os testes HTTP acima confirmam que não houve impacto real.
+
+### Estado do git após esta rodada
+
+`v2` local e `origin/v2` sincronizados em `dd88f73`. Nada pendente de commit
+relacionado aos blocos 1-4.
