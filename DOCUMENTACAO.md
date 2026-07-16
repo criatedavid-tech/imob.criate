@@ -2628,6 +2628,132 @@ telefone, código com telefone a partir de estado limpo — ambos confirmados
 retornando o dado esperado do endpoint real da UAZAPI. `tsc`/`build`
 limpos, deploy saudável.
 
+## 14.29 Lançamentos — Fase 3: backoffice de documentos (2026-07-16)
+
+### Escopo implementado localmente
+
+A terceira fase de Lançamentos foi implementada sobre as Fases 1 e 2 sem
+alterar o simulador, a geração do PIX, o webhook da Asaas nem as ações de
+liberar/estender a reserva. O fluxo novo permite que o titular da conta:
+
+1. crie uma lista ad-hoc de documentos para cada reserva financeira ativa;
+2. envie PDF ou imagem pelo próprio painel;
+3. visualize o arquivo por link temporário;
+4. aprove ou rejeite o item, registrando o motivo da rejeição;
+5. conclua a venda somente quando todos os documentos solicitados estiverem
+   aprovados.
+
+Não foi criada lista fixa de RG/CPF/comprovantes e não foi criado portal
+externo do comprador. Se uma reserva não tiver nenhum documento solicitado,
+a venda continua compatível com o comportamento anterior e não é bloqueada.
+
+### Banco e Storage
+
+Nova migration: `supabase/migrations/20260716c_reservation_documents.sql`.
+
+- cria `imf_reservation_documents`, com `broker_id`, `reservation_id`, label,
+  estados `pendente|enviado|aprovado|rejeitado`, caminho privado do arquivo,
+  metadados de MIME/tamanho, motivo e trilha de solicitação/revisão;
+- a FK composta `(reservation_id, broker_id)` impede no próprio banco que um
+  documento seja ligado a uma reserva de outro tenant;
+- habilita RLS, revoga todo acesso de `anon`/`authenticated` e concede acesso
+  somente a `service_role`, seguindo o padrão das reservas financeiras;
+- cria/normaliza o bucket exclusivo `imf-reservation-documents` com
+  `public=false`, limite de 6 MB e allowlist de PDF/JPEG/PNG/WebP;
+- não cria policy de leitura/escrita para o navegador. O arquivo passa sempre
+  pelo backend autenticado e a visualização usa signed URL de 300 segundos.
+
+A migration foi apenas criada no repositório; **não foi executada** nesta
+rodada.
+
+### API e regras de segurança
+
+Rotas adicionadas em `server/routes/lancamentos.ts`:
+
+- `GET /api/lancamentos/units/:id/documents`;
+- `POST /api/lancamentos/units/:id/documents`;
+- `POST /api/lancamentos/reservation-documents/:docId/upload`;
+- `PATCH /api/lancamentos/reservation-documents/:docId`;
+- `GET /api/lancamentos/reservation-documents/:docId/signed-url`.
+
+Todas exigem JWT válido, resolvem `broker_id`, verificam o tenant e restringem
+o conteúdo ao titular com `isBrokerOwner`. Membro sem `financial_access`
+recebe lista vazia na consulta e não consegue solicitar, enviar, revisar ou
+abrir arquivo. A escolha de envio pelo próprio titular segue a UI financeira
+já existente e evita introduzir um canal público ou um portal fora de escopo.
+As respostas que listam documentos ou entregam signed URL usam
+`Cache-Control: no-store`.
+
+O upload usa base64 em JSON porque esse é o padrão já suportado pelo Express
+do projeto e evita adicionar uma dependência multipart. O limite efetivo é 6
+MB (o payload base64 permanece abaixo do limite global de 10 MB). O backend
+não confia apenas no MIME declarado: confere assinatura/magic bytes de PDF,
+JPEG, PNG ou WebP, usa extensão gerada pelo tipo detectado, cria caminho com
+UUID e não persiste o nome original do arquivo. Reenvio só é aceito em item
+`pendente`/`rejeitado`; aprovação e rejeição só transitam de `enviado`, com
+UPDATE condicional para evitar revisões concorrentes. O arquivo substituído é
+removido depois que o novo registro foi confirmado.
+
+### Gate de venda
+
+Depois do gate existente de pagamento do sinal, `action === "vender"` agora
+consulta os documentos da mesma `reservation_id` e do mesmo `broker_id`.
+Havendo ao menos um item não aprovado, responde `409` com total e contagens de
+pendentes, enviados e rejeitados. Zero documentos não bloqueia reservas
+antigas. As ações `liberar` e `estender` não foram alteradas.
+
+### Interface
+
+`src/experience/LancamentosArea.tsx` ganhou uma seção dentro da reserva
+financeira, renderizada somente com `financial_access`:
+
+- lista com status colorido, tamanho/tipo e motivo da rejeição;
+- campo livre para pedir novo documento;
+- upload e reenvio com validação client-side de tipo e tamanho;
+- visualização via signed URL;
+- aprovação e rejeição com motivo obrigatório.
+
+A mensagem de sinal pago agora também informa quantos documentos ainda
+impedem a conclusão da venda.
+
+### Validação desta rodada
+
+- `npm run lint` (`tsc --noEmit`): limpo;
+- `git diff --check`: limpo;
+- build Vite de produção: limpo, 2.136 módulos transformados;
+- revisão final do diff: sem alteração fora do escopo da Fase 3;
+- nenhum teste real de Asaas, migration, commit, push ou deploy foi executado.
+
+Nota do ambiente de validação: o loader padrão que empacota `vite.config.ts`
+tentou ler diretórios ancestrais bloqueados pelo sandbox. O build foi repetido
+com `--configLoader runner` e um config temporário equivalente (mesmos plugins
+React/Tailwind e mesmo alias); esse arquivo temporário não faz parte do diff do
+produto. A compilação do frontend terminou normalmente.
+
+### QA manual obrigatório depois de aplicar a migration
+
+1. entrar como titular e abrir uma unidade com reserva financeira ativa;
+2. confirmar que membro sem `financial_access` não vê os documentos;
+3. pedir um item livre, por exemplo "RG do comprador";
+4. com sinal pago, tentar vender e confirmar o `409` com o item pendente;
+5. tentar arquivo acima de 6 MB, SVG/executável renomeado e MIME incompatível
+   (todos devem ser recusados);
+6. enviar PDF ou imagem válida, abrir o link temporário e rejeitar com motivo;
+7. reenviar, aprovar e confirmar que a venda passa;
+8. repetir com reserva sem nenhum documento e confirmar que a venda não fica
+   presa;
+9. testar com duas contas de tenants distintos e confirmar que ID de unidade,
+   documento ou signed URL do outro tenant nunca retorna conteúdo.
+
+### Estado e pendências
+
+Implementação preparada e validada no clone local de trabalho desta rodada e
+incluída no commit local autorizado pelo usuário. A migration
+`20260716c_reservation_documents.sql` ainda precisa ser confirmada no Supabase
+antes de push/deploy: publicar primeiro o backend faria o gate de venda
+consultar uma tabela inexistente. QA autenticado, push e deploy permanecem
+pendentes até essa confirmação.
+
 ### Bug real encontrado pelo usuário testando de verdade: número errado no pareamento
 
 Usuário testou com o próprio celular e o WhatsApp recusou o código pedindo

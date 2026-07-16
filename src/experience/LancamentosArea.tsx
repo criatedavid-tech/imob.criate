@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera, Calculator, Copy, QrCode, Check } from 'lucide-react';
+import { Loader2, Plus, X, Building2, User, Phone, Clock, Pencil, Trash2, Camera, Calculator, Copy, QrCode, Check, FileText, Upload, Eye, CheckCircle2, XCircle } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -79,6 +79,30 @@ interface UnitReservationPayment {
   pix_qr_code: string | null;
   pix_copy_paste: string | null;
   payment_id: string | null;
+}
+
+interface ReservationDocument {
+  id: string;
+  label: string;
+  status: 'pendente' | 'enviado' | 'aprovado' | 'rejeitado';
+  rejection_reason: string | null;
+  requested_at: string;
+  uploaded_at: string | null;
+  reviewed_at: string | null;
+  file_mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp' | null;
+  file_size_bytes: number | null;
+}
+
+const DOCUMENT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const MAX_DOCUMENT_BYTES = 6 * 1024 * 1024;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Arquivo invalido.'));
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 const AMENITY_OPTIONS = [
@@ -463,6 +487,12 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   const [reservation, setReservation] = useState<UnitReservationPayment | null>(null);
   const [copiedPix, setCopiedPix] = useState(false);
   const [financialAccess, setFinancialAccess] = useState(false);
+  const [documents, setDocuments] = useState<ReservationDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentLabel, setDocumentLabel] = useState('');
+  const [documentAction, setDocumentAction] = useState<string | null>(null);
+  const [rejectingDocumentId, setRejectingDocumentId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const isLoteamento = developmentTipo === 'horizontal' && developmentSubtipo !== 'condominio_casas';
   const isVertical = developmentTipo === 'vertical';
@@ -510,6 +540,17 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
         setBuyerName(current.buyer_name || '');
         setBuyerPhone(stripDDI(current.buyer_phone || ''));
         setSignalAmountCents(current.signal_amount_cents || 0);
+        setDocumentsLoading(true);
+        try {
+          const documentsRes = await fetch(`/api/lancamentos/units/${unit.id}/documents`, {
+            headers: authService.getAuthHeaders(),
+          });
+          const documentsBody = await documentsRes.json().catch(() => ({}));
+          if (!documentsRes.ok) throw new Error(documentsBody?.error || 'Falha ao carregar documentos.');
+          if (!cancelled) setDocuments(Array.isArray(documentsBody?.documents) ? documentsBody.documents : []);
+        } finally {
+          if (!cancelled) setDocumentsLoading(false);
+        }
       } catch (loadError: any) {
         if (!cancelled) setError(loadError?.message || 'Falha ao carregar a reserva financeira.');
       }
@@ -517,6 +558,22 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
     loadReservation();
     return () => { cancelled = true; };
   }, [unit.id]);
+
+  async function loadDocuments() {
+    setDocumentsLoading(true);
+    try {
+      const res = await fetch(`/api/lancamentos/units/${unit.id}/documents`, {
+        headers: authService.getAuthHeaders(),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao carregar documentos.');
+      setDocuments(Array.isArray(body?.documents) ? body.documents : []);
+    } catch (documentsError: any) {
+      setError(documentsError?.message || 'Falha ao carregar documentos.');
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
 
   async function reserveWithPix() {
     const documentDigits = buyerDocument.replace(/\D/g, '');
@@ -545,6 +602,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
       if (!body?.reservation) throw new Error('A reserva foi criada sem os dados do PIX.');
       setReservation(body.reservation);
       setBuyerDocument('');
+      await loadDocuments();
       onChanged();
     } catch (reserveError: any) {
       setError(reserveError?.message || 'Falha ao gerar o PIX da reserva.');
@@ -561,6 +619,114 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
       window.setTimeout(() => setCopiedPix(false), 1800);
     } catch {
       setError('Não foi possível copiar o PIX automaticamente.');
+    }
+  }
+
+  async function requestDocument() {
+    if (documentLabel.trim().length < 2) { setError('Informe o nome do documento.'); return; }
+    setDocumentAction('request');
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/units/${unit.id}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ label: documentLabel.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao solicitar documento.');
+      setDocumentLabel('');
+      await loadDocuments();
+    } catch (requestError: any) {
+      setError(requestError?.message || 'Falha ao solicitar documento.');
+    } finally {
+      setDocumentAction(null);
+    }
+  }
+
+  async function uploadDocument(documentId: string, file: File | undefined) {
+    if (!file) return;
+    if (!DOCUMENT_MIME_TYPES.includes(file.type)) {
+      setError('Envie um arquivo PDF, JPEG, PNG ou WebP.');
+      return;
+    }
+    if (!file.size || file.size > MAX_DOCUMENT_BYTES) {
+      setError('O documento deve ter no maximo 6 MB.');
+      return;
+    }
+
+    setDocumentAction(`upload:${documentId}`);
+    setError('');
+    try {
+      const fileData = await readFileAsDataUrl(file);
+      const res = await fetch(`/api/lancamentos/reservation-documents/${documentId}/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ file_data: fileData }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao enviar documento.');
+      await loadDocuments();
+    } catch (uploadError: any) {
+      setError(uploadError?.message || 'Falha ao enviar documento.');
+    } finally {
+      setDocumentAction(null);
+    }
+  }
+
+  async function reviewDocument(documentId: string, status: 'aprovado' | 'rejeitado') {
+    const reason = rejectionReason.trim();
+    if (status === 'rejeitado' && reason.length < 2) {
+      setError('Informe o motivo da rejeicao.');
+      return;
+    }
+
+    setDocumentAction(`${status}:${documentId}`);
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/reservation-documents/${documentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify(status === 'rejeitado'
+          ? { status, rejection_reason: reason }
+          : { status }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao revisar documento.');
+      setRejectingDocumentId(null);
+      setRejectionReason('');
+      await loadDocuments();
+    } catch (reviewError: any) {
+      setError(reviewError?.message || 'Falha ao revisar documento.');
+    } finally {
+      setDocumentAction(null);
+    }
+  }
+
+  async function openDocument(documentId: string) {
+    const previewWindow = window.open('about:blank', '_blank');
+    if (previewWindow) previewWindow.opener = null;
+    setDocumentAction(`view:${documentId}`);
+    setError('');
+    try {
+      const res = await fetch(`/api/lancamentos/reservation-documents/${documentId}/signed-url`, {
+        headers: authService.getAuthHeaders(),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.signed_url) throw new Error(body?.error || 'Falha ao abrir documento.');
+      if (previewWindow) {
+        previewWindow.location.replace(body.signed_url);
+      } else {
+        const link = window.document.createElement('a');
+        link.href = body.signed_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.click();
+      }
+    } catch (viewError: any) {
+      previewWindow?.close();
+      setError(viewError?.message || 'Falha ao abrir documento.');
+    } finally {
+      setDocumentAction(null);
     }
   }
 
@@ -647,6 +813,19 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
     overdue: 'PIX vencido',
     payment_failed: 'falha ao gerar PIX',
   };
+  const documentStatusLabel: Record<ReservationDocument['status'], string> = {
+    pendente: 'pendente',
+    enviado: 'enviado',
+    aprovado: 'aprovado',
+    rejeitado: 'rejeitado',
+  };
+  const documentStatusClass: Record<ReservationDocument['status'], string> = {
+    pendente: 'text-amber-100 bg-amber-500/15 border-amber-300/20',
+    enviado: 'text-blue-100 bg-blue-500/15 border-blue-300/20',
+    aprovado: 'text-emerald-100 bg-emerald-500/15 border-emerald-300/20',
+    rejeitado: 'text-red-100 bg-red-500/15 border-red-300/20',
+  };
+  const unapprovedDocumentCount = documents.filter((item) => item.status !== 'aprovado').length;
   const qrCodeSource = reservation?.pix_qr_code
     ? (reservation.pix_qr_code.startsWith('data:') ? reservation.pix_qr_code : `data:image/png;base64,${reservation.pix_qr_code}`)
     : null;
@@ -850,8 +1029,138 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 </div>
               )}
               {reservation.status === 'paid' && (
-                <p className="text-[11px] text-emerald-100">Pagamento confirmado. A venda definitiva já pode ser concluída.</p>
+                <p className="text-[11px] text-emerald-100">
+                  {documentsLoading
+                    ? 'Pagamento confirmado. Verificando os documentos da reserva...'
+                    : unapprovedDocumentCount > 0
+                    ? `Pagamento confirmado. Aprove os ${unapprovedDocumentCount} documento(s) restante(s) para concluir a venda.`
+                    : 'Pagamento confirmado. A venda definitiva já pode ser concluída.'}
+                </p>
               )}
+            </div>
+          )}
+
+          {financialAccess && reservation && (
+            <div className="space-y-3 rounded-xl bg-blue-500/[0.06] border border-blue-300/15 p-3">
+              <div className="flex items-start gap-2">
+                <FileText size={15} className="text-blue-200 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[12px] font-bold text-white/80">Documentos da reserva</p>
+                  <p className="text-[10px] text-white/35">Arquivos privados; o link de visualização expira em 5 minutos.</p>
+                </div>
+              </div>
+
+              {documentsLoading ? (
+                <div className="flex items-center justify-center py-3"><Loader2 size={16} className="animate-spin text-white/40" /></div>
+              ) : documents.length === 0 ? (
+                <p className="text-[11px] text-white/40 rounded-lg bg-black/10 px-3 py-2">
+                  Nenhum documento solicitado. Sem itens, esta etapa não bloqueia a venda.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {documents.map((item) => {
+                    const busy = documentAction?.endsWith(`:${item.id}`) === true;
+                    const hasFile = !!item.uploaded_at;
+                    return (
+                      <div key={item.id} className="rounded-xl bg-black/10 border border-white/8 p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[12px] font-semibold text-white/75 break-words">{item.label}</p>
+                            {hasFile && (
+                              <p className="text-[9px] text-white/30">
+                                {item.file_mime_type === 'application/pdf' ? 'PDF' : 'Imagem'}
+                                {item.file_size_bytes ? ` · ${(item.file_size_bytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`shrink-0 px-2 py-0.5 rounded-full border text-[9px] font-semibold ${documentStatusClass[item.status]}`}>
+                            {documentStatusLabel[item.status]}
+                          </span>
+                        </div>
+
+                        {item.rejection_reason && (
+                          <p className="text-[10px] text-red-200 bg-red-500/10 border border-red-300/15 rounded-lg px-2.5 py-2">
+                            Motivo: {item.rejection_reason}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {(item.status === 'pendente' || item.status === 'rejeitado') && (
+                            <label htmlFor={`reservation-document-${item.id}`}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-blue-100 bg-blue-500/15 border border-blue-300/20 hover:bg-blue-500/25 cursor-pointer ${documentAction ? 'pointer-events-none opacity-50' : ''}`}>
+                              {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                              {item.status === 'rejeitado' ? 'Reenviar' : 'Enviar'}
+                              <input id={`reservation-document-${item.id}`} type="file" className="hidden"
+                                accept="application/pdf,image/jpeg,image/png,image/webp"
+                                disabled={!!documentAction}
+                                onChange={(event) => {
+                                  const file = event.currentTarget.files?.[0];
+                                  event.currentTarget.value = '';
+                                  void uploadDocument(item.id, file);
+                                }} />
+                            </label>
+                          )}
+
+                          {hasFile && (
+                            <button type="button" onClick={() => openDocument(item.id)} disabled={!!documentAction}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50">
+                              {documentAction === `view:${item.id}` ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />}
+                              Visualizar
+                            </button>
+                          )}
+
+                          {item.status === 'enviado' && (
+                            <>
+                              <button type="button" onClick={() => reviewDocument(item.id, 'aprovado')} disabled={!!documentAction}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-emerald-100 bg-emerald-500/15 border border-emerald-300/20 hover:bg-emerald-500/25 disabled:opacity-50">
+                                {documentAction === `aprovado:${item.id}` ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                                Aprovar
+                              </button>
+                              <button type="button" onClick={() => {
+                                setRejectingDocumentId(item.id);
+                                setRejectionReason('');
+                              }} disabled={!!documentAction}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-red-100 bg-red-500/15 border border-red-300/20 hover:bg-red-500/25 disabled:opacity-50">
+                                <XCircle size={11} /> Rejeitar
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {item.status === 'enviado' && rejectingDocumentId === item.id && (
+                          <div className="space-y-2 pt-1">
+                            <textarea value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value.slice(0, 500))}
+                              placeholder="Motivo da rejeição" rows={2}
+                              className="w-full rounded-lg px-3 py-2 text-[11px] text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-red-300/30 resize-none" />
+                            <div className="flex gap-2">
+                              <button type="button" onClick={() => reviewDocument(item.id, 'rejeitado')} disabled={!!documentAction || rejectionReason.trim().length < 2}
+                                className="flex-1 py-1.5 rounded-lg text-[10px] font-semibold text-red-100 bg-red-500/20 border border-red-300/20 disabled:opacity-40">
+                                Confirmar rejeição
+                              </button>
+                              <button type="button" onClick={() => { setRejectingDocumentId(null); setRejectionReason(''); }} disabled={!!documentAction}
+                                className="px-3 py-1.5 rounded-lg text-[10px] font-semibold text-white/50 bg-white/5 border border-white/10 disabled:opacity-40">
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input value={documentLabel} onChange={(event) => setDocumentLabel(event.target.value.slice(0, 120))}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void requestDocument(); }}
+                  placeholder="Ex.: RG do comprador" disabled={!!documentAction}
+                  className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[11px] text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-blue-300/30 disabled:opacity-50" />
+                <button type="button" onClick={requestDocument} disabled={!!documentAction || documentLabel.trim().length < 2}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-semibold text-blue-100 bg-blue-500/15 border border-blue-300/20 hover:bg-blue-500/25 disabled:opacity-40">
+                  {documentAction === 'request' ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+                  Pedir
+                </button>
+              </div>
             </div>
           )}
 
@@ -936,9 +1245,15 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           )}
           {effectiveStatus === 'reservado' && (
             <>
-              <button onClick={() => act('vender')} disabled={!!saving}
+              <button onClick={() => act('vender')} disabled={!!saving || documentsLoading || unapprovedDocumentCount > 0}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
-                {saving === 'vender' ? 'Vendendo...' : 'Confirmar venda'}
+                {saving === 'vender'
+                  ? 'Vendendo...'
+                  : documentsLoading
+                    ? 'Verificando documentos...'
+                    : unapprovedDocumentCount > 0
+                      ? `Aguardando ${unapprovedDocumentCount} documento(s)`
+                      : 'Confirmar venda'}
               </button>
               <button onClick={() => act('liberar')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white/60 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-50">
@@ -965,7 +1280,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
 // Lançamentos real: núcleo (Etapa 7 do UX_MASTERPLAN.md) — empreendimento +
 // espelho de unidades + reserva com trava por tempo (expira sozinha ao
 // recarregar). A simulação simples de financiamento é local e sem persistência;
-// proposta+PIX e backoffice de aprovação de documentos são fases separadas.
+// o sinal via PIX e o backoffice privado de documentos completam as fases 2 e 3.
 export function LancamentosArea() {
   const [developments, setDevelopments] = useState<Development[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);

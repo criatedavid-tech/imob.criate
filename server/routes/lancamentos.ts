@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
@@ -44,6 +45,64 @@ const financialReservationSchema = z.object({
   hold_hours: z.number().int().min(1).max(168).default(24),
 });
 
+const DOCUMENT_BUCKET = "imf-reservation-documents";
+const MAX_DOCUMENT_BYTES = 6 * 1024 * 1024;
+const MAX_DOCUMENT_DATA_URL_LENGTH = Math.ceil(MAX_DOCUMENT_BYTES * 4 / 3) + 128;
+const RESERVATION_DOCUMENT_PUBLIC_FIELDS =
+  "id, label, status, rejection_reason, requested_at, uploaded_at, reviewed_at, file_mime_type, file_size_bytes";
+
+const reservationDocumentRequestSchema = z.object({
+  label: z.string().trim().min(2, "Informe o nome do documento.").max(120, "O nome do documento e muito longo."),
+});
+
+const reservationDocumentUploadSchema = z.object({
+  file_data: z.string().min(1, "Selecione um arquivo.").max(
+    MAX_DOCUMENT_DATA_URL_LENGTH,
+    "O arquivo supera o limite de 6 MB.",
+  ),
+});
+
+const reservationDocumentReviewSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("aprovado") }),
+  z.object({
+    status: z.literal("rejeitado"),
+    rejection_reason: z.string().trim().min(2, "Informe o motivo da rejeicao.").max(500),
+  }),
+]);
+
+type DecodedDocument = {
+  buffer: Buffer;
+  contentType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+  extension: "pdf" | "jpg" | "png" | "webp";
+};
+
+function decodeReservationDocument(fileData: string): DecodedDocument {
+  const match = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(fileData);
+  if (!match || match[2].length % 4 !== 0) throw new Error("Formato de arquivo invalido.");
+
+  const [, declaredMimeType, encoded] = match;
+  const buffer = Buffer.from(encoded, "base64");
+  if (!buffer.length || buffer.length > MAX_DOCUMENT_BYTES || buffer.toString("base64") !== encoded) {
+    throw new Error(buffer.length > MAX_DOCUMENT_BYTES ? "O arquivo supera o limite de 6 MB." : "Arquivo base64 invalido.");
+  }
+
+  let detected: Omit<DecodedDocument, "buffer"> | null = null;
+  if (buffer.length >= 5 && buffer.toString("ascii", 0, 5) === "%PDF-") {
+    detected = { contentType: "application/pdf", extension: "pdf" };
+  } else if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    detected = { contentType: "image/jpeg", extension: "jpg" };
+  } else if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    detected = { contentType: "image/png", extension: "png" };
+  } else if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+    detected = { contentType: "image/webp", extension: "webp" };
+  }
+
+  if (!detected || declaredMimeType.toLowerCase() !== detected.contentType) {
+    throw new Error("Envie um PDF, JPEG, PNG ou WebP valido.");
+  }
+  return { buffer, ...detected };
+}
+
 const ACTIVE_FINANCIAL_STATUSES = ["creating", "pending", "paid", "overdue", "payment_failed"];
 
 async function ensureUnitReservedForFinancialRecord(unit: any, reservation: any): Promise<boolean> {
@@ -84,6 +143,26 @@ async function ownsDevelopment(brokerId: string, developmentId: string): Promise
     .eq("broker_id", brokerId)
     .maybeSingle();
   return !!data;
+}
+
+async function ownsUnit(brokerId: string, unitId: string): Promise<boolean> {
+  const { data: unit } = await supabase
+    .from("imf_units")
+    .select("development_id")
+    .eq("id", unitId)
+    .maybeSingle();
+  return !!unit && ownsDevelopment(brokerId, unit.development_id);
+}
+
+async function getReservationDocument(brokerId: string, documentId: string) {
+  const { data, error } = await supabase
+    .from("imf_reservation_documents")
+    .select("id, broker_id, reservation_id, status, file_path")
+    .eq("id", documentId)
+    .eq("broker_id", brokerId)
+    .maybeSingle();
+  if (error) throw new Error("Falha ao consultar o documento.");
+  return data;
 }
 
 lancamentosRouter.get("/api/lancamentos/developments", requireUser, async (req, res) => {
@@ -300,6 +379,234 @@ lancamentosRouter.get("/api/lancamentos/units/:id/reservation", requireUser, asy
   }
 });
 
+// Fase 3 - documentos da reserva. O Storage e a tabela sao privados; todas as
+// operacoes passam pelo backend e ficam restritas ao titular da conta.
+lancamentosRouter.get("/api/lancamentos/units/:id/documents", requireUser, async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await ownsUnit(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+    const financialAccess = await isBrokerOwner(userId, brokerId);
+    if (!financialAccess) {
+      return res.json({ documents: [], reservation_id: null, financial_access: false });
+    }
+
+    const reservation = await getActiveUnitReservation(brokerId, req.params.id);
+    if (!reservation) {
+      return res.json({ documents: [], reservation_id: null, financial_access: true });
+    }
+
+    const { data, error } = await supabase
+      .from("imf_reservation_documents")
+      .select(RESERVATION_DOCUMENT_PUBLIC_FIELDS)
+      .eq("broker_id", brokerId)
+      .eq("reservation_id", reservation.id)
+      .order("requested_at", { ascending: true });
+    if (error) throw new Error("Falha ao carregar os documentos.");
+    res.json({ documents: data || [], reservation_id: reservation.id, financial_access: true });
+  } catch (error: any) {
+    console.error("Erro GET documentos da reserva:", error?.message || "erro desconhecido");
+    res.status(500).json({ error: "Nao foi possivel carregar os documentos da reserva." });
+  }
+});
+
+lancamentosRouter.post(
+  "/api/lancamentos/units/:id/documents",
+  requireUser,
+  validateBody(reservationDocumentRequestSchema),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await isBrokerOwner(userId, brokerId))) {
+        return res.status(403).json({ error: "Apenas o titular da conta pode solicitar documentos." });
+      }
+      if (!(await ownsUnit(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+      const reservation = await getActiveUnitReservation(brokerId, req.params.id);
+      if (!reservation) return res.status(409).json({ error: "A unidade nao possui uma reserva financeira ativa." });
+
+      const { data, error } = await supabase
+        .from("imf_reservation_documents")
+        .insert({
+          broker_id: brokerId,
+          reservation_id: reservation.id,
+          label: req.body.label,
+          requested_by_user_id: userId,
+        })
+        .select(RESERVATION_DOCUMENT_PUBLIC_FIELDS)
+        .single();
+      if (error) throw new Error("Falha ao solicitar o documento.");
+      res.status(201).json(data);
+    } catch (error: any) {
+      console.error("Erro POST documento da reserva:", error?.message || "erro desconhecido");
+      res.status(500).json({ error: "Nao foi possivel solicitar o documento." });
+    }
+  },
+);
+
+lancamentosRouter.post(
+  "/api/lancamentos/reservation-documents/:docId/upload",
+  requireUser,
+  validateBody(reservationDocumentUploadSchema),
+  async (req, res) => {
+    let uploadedPath: string | null = null;
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await isBrokerOwner(userId, brokerId))) {
+        return res.status(403).json({ error: "Apenas o titular da conta pode enviar documentos da reserva." });
+      }
+
+      const document = await getReservationDocument(brokerId, req.params.docId);
+      if (!document) return res.status(404).json({ error: "Documento nao encontrado." });
+      if (!["pendente", "rejeitado"].includes(document.status)) {
+        return res.status(409).json({ error: "Este documento nao esta aguardando envio." });
+      }
+
+      const { data: activeReservation, error: reservationError } = await supabase
+        .from("imf_unit_reservations")
+        .select("id")
+        .eq("id", document.reservation_id)
+        .eq("broker_id", brokerId)
+        .in("status", ACTIVE_FINANCIAL_STATUSES)
+        .maybeSingle();
+      if (reservationError) throw new Error("Falha ao validar a reserva.");
+      if (!activeReservation) return res.status(409).json({ error: "A reserva financeira nao esta mais ativa." });
+
+      let decoded: DecodedDocument;
+      try {
+        decoded = decodeReservationDocument(req.body.file_data);
+      } catch (decodeError: any) {
+        return res.status(400).json({ error: decodeError?.message || "Arquivo invalido." });
+      }
+
+      uploadedPath = `${brokerId}/${document.reservation_id}/${document.id}/${randomUUID()}.${decoded.extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from(DOCUMENT_BUCKET)
+        .upload(uploadedPath, decoded.buffer, {
+          contentType: decoded.contentType,
+          upsert: false,
+          cacheControl: "0",
+        });
+      if (uploadError) throw new Error("Falha ao armazenar o documento.");
+
+      const uploadedAt = new Date().toISOString();
+      const { data, error: updateError } = await supabase
+        .from("imf_reservation_documents")
+        .update({
+          file_path: uploadedPath,
+          file_mime_type: decoded.contentType,
+          file_size_bytes: decoded.buffer.length,
+          status: "enviado",
+          rejection_reason: null,
+          reviewed_by_user_id: null,
+          reviewed_at: null,
+          uploaded_at: uploadedAt,
+          updated_at: uploadedAt,
+        })
+        .eq("id", document.id)
+        .eq("broker_id", brokerId)
+        .eq("status", document.status)
+        .select(RESERVATION_DOCUMENT_PUBLIC_FIELDS)
+        .maybeSingle();
+      if (updateError) throw new Error("Falha ao registrar o envio do documento.");
+      if (!data) {
+        await supabase.storage.from(DOCUMENT_BUCKET).remove([uploadedPath]);
+        uploadedPath = null;
+        return res.status(409).json({ error: "O documento foi alterado por outra operacao. Recarregue e tente novamente." });
+      }
+
+      const previousPath = document.file_path;
+      uploadedPath = null;
+      if (previousPath) {
+        const { error: removeError } = await supabase.storage.from(DOCUMENT_BUCKET).remove([previousPath]);
+        if (removeError) console.error("Falha ao remover versao rejeitada do documento:", removeError.message);
+      }
+      res.json(data);
+    } catch (error: any) {
+      if (uploadedPath) await supabase.storage.from(DOCUMENT_BUCKET).remove([uploadedPath]);
+      console.error("Erro POST upload de documento da reserva:", error?.message || "erro desconhecido");
+      res.status(500).json({ error: "Nao foi possivel enviar o documento." });
+    }
+  },
+);
+
+lancamentosRouter.patch(
+  "/api/lancamentos/reservation-documents/:docId",
+  requireUser,
+  validateBody(reservationDocumentReviewSchema),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await isBrokerOwner(userId, brokerId))) {
+        return res.status(403).json({ error: "Apenas o titular da conta pode revisar documentos." });
+      }
+
+      const document = await getReservationDocument(brokerId, req.params.docId);
+      if (!document) return res.status(404).json({ error: "Documento nao encontrado." });
+      if (document.status !== "enviado") {
+        return res.status(409).json({ error: "Apenas documentos enviados podem ser aprovados ou rejeitados." });
+      }
+
+      const reviewedAt = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("imf_reservation_documents")
+        .update({
+          status: req.body.status,
+          rejection_reason: req.body.status === "rejeitado" ? req.body.rejection_reason : null,
+          reviewed_by_user_id: userId,
+          reviewed_at: reviewedAt,
+          updated_at: reviewedAt,
+        })
+        .eq("id", document.id)
+        .eq("broker_id", brokerId)
+        .eq("status", "enviado")
+        .select(RESERVATION_DOCUMENT_PUBLIC_FIELDS)
+        .maybeSingle();
+      if (error) throw new Error("Falha ao revisar o documento.");
+      if (!data) return res.status(409).json({ error: "O documento ja foi revisado por outra operacao." });
+      res.json(data);
+    } catch (error: any) {
+      console.error("Erro PATCH revisao de documento da reserva:", error?.message || "erro desconhecido");
+      res.status(500).json({ error: "Nao foi possivel revisar o documento." });
+    }
+  },
+);
+
+lancamentosRouter.get("/api/lancamentos/reservation-documents/:docId/signed-url", requireUser, async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isBrokerOwner(userId, brokerId))) {
+      return res.status(403).json({ error: "Apenas o titular da conta pode visualizar documentos." });
+    }
+
+    const document = await getReservationDocument(brokerId, req.params.docId);
+    if (!document) return res.status(404).json({ error: "Documento nao encontrado." });
+    if (!document.file_path) return res.status(409).json({ error: "Este documento ainda nao possui arquivo." });
+
+    const expiresIn = 300;
+    const { data, error } = await supabase.storage
+      .from(DOCUMENT_BUCKET)
+      .createSignedUrl(document.file_path, expiresIn);
+    if (error || !data?.signedUrl) throw new Error("Falha ao gerar o link temporario.");
+    res.json({ signed_url: data.signedUrl, expires_in: expiresIn });
+  } catch (error: any) {
+    console.error("Erro GET signed URL de documento da reserva:", error?.message || "erro desconhecido");
+    res.status(500).json({ error: "Nao foi possivel abrir o documento." });
+  }
+});
+
 lancamentosRouter.post(
   "/api/lancamentos/units/:id/reservations",
   requireUser,
@@ -450,6 +757,26 @@ lancamentosRouter.patch("/api/lancamentos/units/:id", requireUser, async (req, r
       const financial = await getActiveUnitReservation(brokerId, unit.id);
       if (financial && financial.status !== "paid") {
         return res.status(409).json({ error: "Confirme o pagamento do sinal antes de concluir a venda." });
+      }
+      if (financial) {
+        const { data: documents, error: documentsError } = await supabase
+          .from("imf_reservation_documents")
+          .select("status")
+          .eq("broker_id", brokerId)
+          .eq("reservation_id", financial.id);
+        if (documentsError) throw new Error("Falha ao validar os documentos da reserva.");
+
+        const statuses = (documents || []).map((document: any) => document.status as string);
+        const notApproved = statuses.filter((status) => status !== "aprovado");
+        if (statuses.length > 0 && notApproved.length > 0) {
+          const pending = statuses.filter((status) => status === "pendente").length;
+          const sent = statuses.filter((status) => status === "enviado").length;
+          const rejected = statuses.filter((status) => status === "rejeitado").length;
+          return res.status(409).json({
+            error: `A venda esta bloqueada: ${notApproved.length} de ${statuses.length} documento(s) ainda nao aprovado(s) (${pending} pendente(s), ${sent} enviado(s), ${rejected} rejeitado(s)).`,
+            documents: { total: statuses.length, approved: statuses.length - notApproved.length, pending, sent, rejected },
+          });
+        }
       }
       completeFinancialReservation = financial?.status === "paid";
       updates.status = "vendido";
