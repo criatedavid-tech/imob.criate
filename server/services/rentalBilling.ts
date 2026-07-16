@@ -1,6 +1,5 @@
 import { supabase } from "../supabase";
-import { ASAAS_BASE_URL } from "../config";
-import { asaasHeaders } from "./billing";
+import { resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
 import { fetchWithTimeout } from "../lib/http";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -28,13 +27,13 @@ interface RentalContract {
   due_day: number;
 }
 
-async function ensureAsaasTenantCustomer(contract: RentalContract): Promise<string> {
+async function ensureAsaasTenantCustomer(contract: RentalContract, creds: AsaasCreds): Promise<string> {
   if (contract.asaas_customer_id) return contract.asaas_customer_id;
   if (!contract.tenant_cpf_cnpj) throw new Error("CPF/CNPJ do inquilino é obrigatório pra gerar cobrança.");
 
-  const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/customers`, {
+  const resp = await fetchWithTimeout(`${creds.baseUrl}/customers`, {
     method: "POST",
-    headers: asaasHeaders(),
+    headers: creds.headers,
     body: JSON.stringify({
       name: contract.tenant_name,
       cpfCnpj: contract.tenant_cpf_cnpj.replace(/\D/g, ""),
@@ -61,6 +60,11 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
     .single();
   if (error || !contract) throw new Error("Contrato não encontrado.");
 
+  // Chave de cobrança: a própria da imobiliária se ela configurou; senão a
+  // conta global da Criate (fallback). O dinheiro do aluguel cai na conta
+  // dona dessa chave.
+  const creds = await resolveAsaasCredentials(contract.broker_id);
+
   const refMonthStart = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), 1);
   const refMonthIso = refMonthStart.toISOString().split("T")[0];
 
@@ -83,7 +87,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
     };
   }
 
-  const customerId = await ensureAsaasTenantCustomer(contract as RentalContract);
+  const customerId = await ensureAsaasTenantCustomer(contract as RentalContract, creds);
 
   // Achado testando ao vivo: se o dia de vencimento do contrato já passou
   // neste mês (ex.: due_day=10 e hoje é dia 14), a Asaas rejeita com "não é
@@ -97,9 +101,9 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   const dueDateIso = rawDueDateIso < todayIso ? todayIso : rawDueDateIso;
   const amount = contract.rent_amount_cents / 100;
 
-  const payResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments`, {
+  const payResp = await fetchWithTimeout(`${creds.baseUrl}/payments`, {
     method: "POST",
-    headers: asaasHeaders(),
+    headers: creds.headers,
     body: JSON.stringify({
       customer: customerId,
       billingType: "BOLETO", // Asaas inclui QR/copia-e-cola PIX automaticamente no boleto
@@ -115,7 +119,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   // PIX copia-e-cola vem num endpoint separado.
   let pixCopyPaste: string | null = null;
   try {
-    const pixResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments/${payment.id}/pixQrCode`, { headers: asaasHeaders() });
+    const pixResp = await fetchWithTimeout(`${creds.baseUrl}/payments/${payment.id}/pixQrCode`, { headers: creds.headers });
     if (pixResp.ok) {
       const pix = await pixResp.json();
       pixCopyPaste = pix.payload || null;

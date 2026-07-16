@@ -1,10 +1,11 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
-import { normalizePhoneBR, normalizePhoneBRFull } from "../lib/crypto";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
 import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance } from "../services/provisioning";
+import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
 
 export const brokersRouter = express.Router();
 
@@ -338,6 +339,114 @@ brokersRouter.post("/api/brokers/whatsapp/disconnect", requireUser, async (req, 
     res.json({ disconnected: true });
   } catch (err: any) {
     console.error("Erro POST /api/brokers/whatsapp/disconnect:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Chave de cobrança Asaas própria da imobiliária/incorporadora ──────────
+// Usada nas cobranças dos clientes DELA (aluguel + sinal PIX de reserva). Sem
+// ela, o backend cai na conta global da Criate. A chave é guardada
+// criptografada (AES-256-GCM) e NUNCA é devolvida ao frontend — só um
+// resumo (configurada?/env/últimos 4 dígitos). Só o TITULAR da conta
+// gerencia (membros de equipe não).
+
+// Valida a chave contra o Asaas (GET /myAccount) antes de aceitar. Retorna a
+// mensagem de erro sanitizada, nunca a chave.
+async function validateAsaasKey(apiKey: string, env: string): Promise<void> {
+  const resp = await fetchWithTimeout(`${asaasBaseUrlForEnv(env)}/myAccount`, {
+    headers: { "Content-Type": "application/json", access_token: apiKey },
+  });
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error("Chave recusada pelo Asaas. Confira se copiou a chave certa e o ambiente (sandbox/produção).");
+  }
+  if (!resp.ok) {
+    throw new Error(`O Asaas respondeu ${resp.status} ao validar a chave. Tente de novo em instantes.`);
+  }
+}
+
+brokersRouter.get("/api/brokers/asaas-key", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+    const { data } = await supabase
+      .from("imf_brokers")
+      .select("asaas_api_key_enc, asaas_env")
+      .eq("id", brokerId)
+      .maybeSingle();
+
+    let keyLast4: string | null = null;
+    if (data?.asaas_api_key_enc) {
+      try { keyLast4 = decryptKey(data.asaas_api_key_enc).slice(-4); } catch { keyLast4 = null; }
+    }
+
+    res.json({
+      configured: !!data?.asaas_api_key_enc,
+      env: data?.asaas_env || null,
+      key_last4: keyLast4,
+      can_manage: await isBrokerOwner(userId, brokerId),
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/brokers/asaas-key:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+brokersRouter.post("/api/brokers/asaas-key", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+    if (!(await isBrokerOwner(userId, brokerId))) {
+      return res.status(403).json({ error: "Apenas o titular da conta gerencia a chave de cobrança." });
+    }
+
+    const apiKey = String(req.body?.api_key || "").trim();
+    const env = String(req.body?.env || "").trim();
+    if (!apiKey) return res.status(400).json({ error: "Informe a chave de API do Asaas." });
+    if (!["sandbox", "production"].includes(env)) {
+      return res.status(400).json({ error: "Ambiente inválido (use sandbox ou produção)." });
+    }
+
+    await validateAsaasKey(apiKey, env);
+
+    const { error } = await supabase.from("imf_brokers").update({
+      asaas_api_key_enc: encryptKey(apiKey),
+      asaas_env: env,
+      updated_at: new Date(),
+    }).eq("id", brokerId);
+    if (error) throw error;
+
+    res.json({ configured: true, env, key_last4: apiKey.slice(-4) });
+  } catch (err: any) {
+    console.error("Erro POST /api/brokers/asaas-key:", err?.message);
+    res.status(400).json({ error: err.message || "Falha ao salvar a chave de cobrança." });
+  }
+});
+
+brokersRouter.delete("/api/brokers/asaas-key", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+    if (!(await isBrokerOwner(userId, brokerId))) {
+      return res.status(403).json({ error: "Apenas o titular da conta gerencia a chave de cobrança." });
+    }
+
+    const { error } = await supabase.from("imf_brokers").update({
+      asaas_api_key_enc: null,
+      asaas_env: null,
+      updated_at: new Date(),
+    }).eq("id", brokerId);
+    if (error) throw error;
+
+    res.json({ configured: false });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/brokers/asaas-key:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,7 +1,6 @@
-import { ASAAS_API_KEY, ASAAS_BASE_URL } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { supabase } from "../supabase";
-import { asaasHeaders } from "./billing";
+import { resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
 
 const ACTIVE_RESERVATION_STATUSES = ["creating", "pending", "paid", "overdue", "payment_failed"];
 
@@ -85,28 +84,28 @@ async function loadReservation(reservationId: string): Promise<UnitReservationRo
   return data as UnitReservationRow;
 }
 
-async function findAsaasCustomerByExternalReference(reservationId: string): Promise<string | null> {
+async function findAsaasCustomerByExternalReference(reservationId: string, creds: AsaasCreds): Promise<string | null> {
   const resp = await fetchWithTimeout(
-    `${ASAAS_BASE_URL}/customers?externalReference=${encodeURIComponent(`unit-reservation:${reservationId}`)}&limit=1`,
-    { headers: asaasHeaders() },
+    `${creds.baseUrl}/customers?externalReference=${encodeURIComponent(`unit-reservation:${reservationId}`)}&limit=1`,
+    { headers: creds.headers },
   );
   const payload = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(safeAsaasMessage(payload, "Falha ao verificar comprador no Asaas."));
   return Array.isArray(payload?.data) && payload.data[0]?.id ? payload.data[0].id : null;
 }
 
-async function ensureAsaasBuyerCustomer(row: UnitReservationRow, buyerDocument?: string): Promise<string> {
+async function ensureAsaasBuyerCustomer(row: UnitReservationRow, creds: AsaasCreds, buyerDocument?: string): Promise<string> {
   if (row.asaas_customer_id) return row.asaas_customer_id;
 
-  let customerId = await findAsaasCustomerByExternalReference(row.id);
+  let customerId = await findAsaasCustomerByExternalReference(row.id, creds);
   if (!customerId) {
     const documentDigits = (buyerDocument || "").replace(/\D/g, "");
     if (![11, 14].includes(documentDigits.length)) {
       throw new Error("CPF/CNPJ precisa ser informado novamente para gerar o PIX.");
     }
-    const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/customers`, {
+    const resp = await fetchWithTimeout(`${creds.baseUrl}/customers`, {
       method: "POST",
-      headers: asaasHeaders(),
+      headers: creds.headers,
       body: JSON.stringify({
         name: row.buyer_name,
         cpfCnpj: documentDigits,
@@ -129,19 +128,19 @@ async function ensureAsaasBuyerCustomer(row: UnitReservationRow, buyerDocument?:
   return customerId;
 }
 
-async function findAsaasPaymentByExternalReference(reservationId: string): Promise<any | null> {
+async function findAsaasPaymentByExternalReference(reservationId: string, creds: AsaasCreds): Promise<any | null> {
   const resp = await fetchWithTimeout(
-    `${ASAAS_BASE_URL}/payments?externalReference=${encodeURIComponent(`unit-reservation:${reservationId}`)}&limit=1`,
-    { headers: asaasHeaders() },
+    `${creds.baseUrl}/payments?externalReference=${encodeURIComponent(`unit-reservation:${reservationId}`)}&limit=1`,
+    { headers: creds.headers },
   );
   const payload = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(safeAsaasMessage(payload, "Falha ao verificar cobrança no Asaas."));
   return Array.isArray(payload?.data) && payload.data[0]?.id ? payload.data[0] : null;
 }
 
-async function loadPixQrCode(paymentId: string): Promise<{ pixQrCode: string | null; pixCopyPaste: string | null }> {
-  const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments/${paymentId}/pixQrCode`, {
-    headers: asaasHeaders(),
+async function loadPixQrCode(paymentId: string, creds: AsaasCreds): Promise<{ pixQrCode: string | null; pixCopyPaste: string | null }> {
+  const resp = await fetchWithTimeout(`${creds.baseUrl}/payments/${paymentId}/pixQrCode`, {
+    headers: creds.headers,
   });
   const payload = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(safeAsaasMessage(payload, "Cobrança criada, mas não foi possível obter o PIX."));
@@ -152,16 +151,20 @@ async function loadPixQrCode(paymentId: string): Promise<{ pixQrCode: string | n
 }
 
 export async function generateUnitReservationPix(reservationId: string, buyerDocument?: string): Promise<UnitReservationPublic> {
-  if (!ASAAS_API_KEY) throw new Error("Asaas não está configurado no servidor.");
   let row = await loadReservation(reservationId);
   if (!["creating", "pending", "payment_failed", "overdue"].includes(row.status)) {
     return toPublicReservation(row);
   }
 
-  const customerId = await ensureAsaasBuyerCustomer(row, buyerDocument);
+  // Chave de cobrança: a própria da incorporadora se configurada; senão a
+  // conta global da Criate (fallback). O sinal cai na conta dona da chave.
+  const creds = await resolveAsaasCredentials(row.broker_id);
+  if (!creds.hasKey) throw new Error("Asaas não está configurado no servidor.");
+
+  const customerId = await ensureAsaasBuyerCustomer(row, creds, buyerDocument);
   let payment = row.asaas_payment_id
     ? { id: row.asaas_payment_id, dueDate: row.due_date }
-    : await findAsaasPaymentByExternalReference(row.id);
+    : await findAsaasPaymentByExternalReference(row.id, creds);
 
   if (!payment) {
     const { data: unit } = await supabase.from("imf_units").select("code, development_id").eq("id", row.unit_id).single();
@@ -171,9 +174,9 @@ export async function generateUnitReservationPix(reservationId: string, buyerDoc
     if (!unit || !development) throw new Error("Unidade da reserva não encontrada.");
 
     const dueDate = new Date().toISOString().split("T")[0];
-    const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments`, {
+    const resp = await fetchWithTimeout(`${creds.baseUrl}/payments`, {
       method: "POST",
-      headers: asaasHeaders(),
+      headers: creds.headers,
       body: JSON.stringify({
         customer: customerId,
         billingType: "PIX",
@@ -203,7 +206,7 @@ export async function generateUnitReservationPix(reservationId: string, buyerDoc
 
   let pix: { pixQrCode: string | null; pixCopyPaste: string | null };
   try {
-    pix = await loadPixQrCode(payment.id);
+    pix = await loadPixQrCode(payment.id, creds);
   } catch (error) {
     await supabase.from("imf_unit_reservations").update({
       status: "payment_failed",
@@ -255,9 +258,11 @@ export async function cancelActiveUnitReservation(
   if (data.status === "paid") throw new Error("O sinal já foi pago; a reserva exige conciliação ou reembolso antes de ser liberada.");
 
   if (data.asaas_payment_id) {
-    const resp = await fetchWithTimeout(`${ASAAS_BASE_URL}/payments/${data.asaas_payment_id}`, {
+    // Mesma chave usada pra criar o pagamento — cancela na conta certa.
+    const creds = await resolveAsaasCredentials(brokerId);
+    const resp = await fetchWithTimeout(`${creds.baseUrl}/payments/${data.asaas_payment_id}`, {
       method: "DELETE",
-      headers: asaasHeaders(),
+      headers: creds.headers,
     });
     if (!resp.ok && resp.status !== 404) {
       const payload = await resp.json().catch(() => ({}));

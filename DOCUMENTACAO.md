@@ -3027,3 +3027,81 @@ Permanece pendente apenas o QA autenticado das alterações: conferir Assistente
 IA separado da Config nas três personas, validar os números de Relatórios com
 dados conhecidos e repetir o teste de isolamento entre titular, membro e outro
 tenant.
+
+## Atualização 2026-07-16 — Aba Assistente IA uniforme, overflow do Financeiro e chave Asaas própria por imobiliária
+
+Três frentes nesta rodada (feita por mim; migration abaixo aplicada pelo
+usuário à mão no Supabase, como de praxe).
+
+### 1. Aba "Assistente IA" agora uniforme
+
+O card de Follow-Up dentro de `src/experience/AssistenteIAArea.tsx` vinha do
+componente legado `src/components/FollowUpSettings.tsx`, que usa o design
+system antigo do Dashboard 1.0 (`rounded-3xl`, largura `max-w-2xl`, foco com
+anel, botão branco, cabeçalho dentro do card). Empilhado sob o card
+"Personalidade da sua IA" (design novo do /app), parecia dois apps
+diferentes. Reescrevi o Follow-Up **dentro** do próprio `AssistenteIAArea`
+(componente `FollowUpCard` no mesmo arquivo), no design system do /app
+(`GlassCard`, `fieldCls` compartilhado, botão azul, cabeçalho com ícone +
+label uppercase). O `FollowUpSettings.tsx` legado foi **deixado intacto** de
+propósito — o Dashboard 1.0 (rota `/`, ainda roteado em `src/App.tsx`) usa o
+estilo antigo de forma consistente; mexer nele quebraria a uniformidade do
+outro lado.
+
+### 2. Overflow do card "Receita de vendas" (Financeiro)
+
+Os quatro cards de valor de `src/experience/FinanceiroArea.tsx` usavam
+`text-3xl font-black` numa grade de 4 colunas — valores grandes (ex.
+R$ 4.510.000,00) ficavam mais largos que o card e vazavam pra fora. Trocado
+por `text-2xl ... leading-tight break-words` nos quatro (mantendo uniforme e
+com rede de segurança pra valores ainda maiores).
+
+### 3. Chave Asaas própria por imobiliária/incorporadora
+
+Até aqui, TODA cobrança (aluguel em Locação, sinal PIX em Lançamentos, e a
+própria assinatura do ImobiFlow) usava a `ASAAS_API_KEY` global — ou seja, o
+dinheiro do inquilino/comprador da imobiliária caía na conta Asaas da Criate.
+Decisão do usuário: cada imobiliária deve poder plugar a **própria** chave
+Asaas, e aí o dinheiro dela cai na conta dela. Modelo escolhido: chave
+própria por conta (não subconta/marketplace nem split).
+
+Implementado:
+
+- **Migration** `supabase/migrations/20260716e_broker_asaas_key.sql`:
+  `imf_brokers.asaas_api_key_enc TEXT` (chave criptografada AES-256-GCM via
+  `server/lib/crypto.ts`, reusando `LLM_PROXY_ENC_KEY`) + `asaas_env`
+  (`sandbox`/`production`, com CHECK). Aplicada manualmente no Supabase.
+- **`server/services/asaasCredentials.ts`** (novo): `resolveAsaasCredentials(
+  brokerId)` devolve `{ baseUrl, headers, ownKey, hasKey }` — a chave própria
+  do broker se configurada (decifrada em runtime), senão a conta global da
+  Criate (fallback). Se a chave estiver corrompida/indecifrável, loga e cai
+  no global em vez de derrubar a cobrança.
+- **Refatorados** `server/services/rentalBilling.ts` e
+  `server/services/unitReservationBilling.ts` pra resolver as credenciais do
+  broker e usar `creds.baseUrl`/`creds.headers` em TODA chamada Asaas
+  (customer, payment, pixQrCode, DELETE). A assinatura do ImobiFlow
+  (`server/services/billing.ts`, broker → Criate) foi deixada **sempre na
+  conta global** — é receita da Criate, não da imobiliária.
+- **Rotas** em `server/routes/brokers.ts` (só o TITULAR gerencia,
+  `isBrokerOwner`): `GET /api/brokers/asaas-key` (status: configurada?/env/
+  últimos 4 dígitos/can_manage — nunca a chave), `POST` (valida contra o
+  Asaas `GET /myAccount` antes de aceitar, guarda criptografada), `DELETE`
+  (remove → volta ao fallback global).
+- **UI**: card "Conta de cobrança (Asaas)" em `src/experience/ConfigArea.tsx`,
+  só renderiza pra `account_type !== 'corretor'`. Colar chave (input
+  password), escolher ambiente, salvar-e-validar, trocar, remover. Membro
+  não-titular vê read-only. Design system novo.
+
+**Testado ao vivo contra o Asaas sandbox real** (conta descartável criada,
+testada, removida): status inicial (não configurada, can_manage true); chave
+inválida recusada pela validação contra o Asaas; chave válida (sandbox)
+validada e salva; confirmado no banco que fica **criptografada** (não texto
+puro); remoção volta ao fallback. Ressalva: observar o dinheiro caindo numa
+conta diferente exigiria uma segunda conta Asaas sandbox (não a da Criate),
+que não temos — o roteamento por chave é garantido por construção (chave
+diferente = conta diferente). Segurança sem migration: `resolveAsaasCredentials`
+cai no fallback global se as colunas não existirem, então o deploy foi seguro
+mesmo antes do SQL rodar.
+
+`npx tsc --noEmit` e `npm run build` limpos em cada etapa; deploys no Fly V2
+saudáveis.

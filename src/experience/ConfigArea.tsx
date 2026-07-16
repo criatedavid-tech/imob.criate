@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw, Landmark, Trash2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -42,6 +42,7 @@ interface Me {
   status: string;
   plan: string;
   valid_until: string | null;
+  account_type: string;
 }
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
@@ -164,6 +165,9 @@ export function ConfigArea() {
 
       {/* WhatsApp */}
       <WhatsAppConnectCard />
+
+      {/* Conta de cobrança (Asaas) — só quem cobra clientes: imobiliária/incorporadora */}
+      {me && me.account_type !== 'corretor' && <AsaasKeyCard fieldCls={fieldCls} />}
 
       {/* Plano */}
       <GlassCard className="!p-6 mb-5">
@@ -495,6 +499,176 @@ function WhatsAppConnectCard() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {error && <p className="text-[12px] text-red-300 mt-3">{error}</p>}
+    </GlassCard>
+  );
+}
+
+// Conta de cobrança própria da imobiliária/incorporadora. Sem chave, as
+// cobranças (aluguel + sinal PIX) usam a conta da Criate; com chave própria,
+// o dinheiro cai na conta dela. A chave nunca é exibida — só últimos 4 dígitos.
+function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
+  const [status, setStatus] = useState<{ configured: boolean; env: string | null; key_last4: string | null; can_manage: boolean } | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [env, setEnv] = useState<'sandbox' | 'production'>('production');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const r = await fetch('/api/brokers/asaas-key', { headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao carregar.');
+      setStatus(data);
+      if (data.env === 'sandbox' || data.env === 'production') setEnv(data.env);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    if (!apiKey.trim()) { setError('Cole a chave de API do Asaas.'); return; }
+    setSaving(true); setSaved(false); setError('');
+    try {
+      const r = await fetch('/api/brokers/asaas-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ api_key: apiKey.trim(), env }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao salvar.');
+      setApiKey(''); setEditing(false); setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm('Remover a chave de cobrança? As cobranças voltam a usar a conta da Criate.')) return;
+    setRemoving(true); setError('');
+    try {
+      const r = await fetch('/api/brokers/asaas-key', { method: 'DELETE', headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao remover.');
+      setEditing(false);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const showForm = status && status.can_manage && (editing || !status.configured);
+
+  return (
+    <GlassCard className="!p-6 mb-5">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Landmark className="w-4 h-4 text-white/40" />
+        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Conta de cobrança (Asaas)</h3>
+      </div>
+      <p className="text-[12px] text-white/40 mb-4">
+        Conecte sua própria conta Asaas para receber aluguéis e sinais direto na sua conta. Sem isso, as cobranças usam a conta da Criate.
+      </p>
+
+      {!status && <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+
+      {status && status.configured && !editing && (
+        <div className="flex flex-wrap items-center gap-3 mb-1">
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300">
+            <Check className="w-4 h-4" /> Chave conectada
+          </span>
+          {status.key_last4 && <span className="text-[12px] text-white/40 font-mono">•••• {status.key_last4}</span>}
+          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+            status.env === 'production'
+              ? 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20'
+              : 'bg-amber-400/15 text-amber-200 border-amber-300/20'
+          }`}>
+            {status.env === 'production' ? 'Produção' : 'Sandbox'}
+          </span>
+        </div>
+      )}
+
+      {status && status.configured && !status.can_manage && (
+        <p className="text-[12px] text-white/35">Gerenciada pelo titular da conta.</p>
+      )}
+      {status && !status.configured && !status.can_manage && (
+        <p className="text-[12px] text-white/35">Nenhuma chave própria — usando a conta da Criate. Só o titular pode configurar.</p>
+      )}
+
+      {showForm && (
+        <div className="space-y-3 mt-2">
+          <div>
+            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Chave de API do Asaas</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="$aact_..."
+              autoComplete="off"
+              className={fieldCls}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Ambiente</label>
+            <div className="flex gap-2">
+              {(['production', 'sandbox'] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setEnv(opt)}
+                  className={`px-4 py-2 rounded-xl text-[13px] font-semibold border transition-colors ${
+                    env === opt ? 'bg-white/15 text-white border-white/25' : 'bg-white/5 text-white/45 border-white/12 hover:text-white/70'
+                  }`}
+                >
+                  {opt === 'production' ? 'Produção' : 'Sandbox (teste)'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
+              {saving ? 'Validando...' : 'Salvar e validar'}
+            </button>
+            {status.configured && (
+              <button onClick={() => { setEditing(false); setApiKey(''); setError(''); }}
+                className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/50 hover:text-white/80 transition-colors">
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status && status.configured && status.can_manage && !editing && (
+        <div className="flex items-center gap-2 mt-4">
+          <button onClick={() => { setEditing(true); setError(''); }}
+            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" /> Trocar chave
+          </button>
+          <span className="text-white/15">·</span>
+          <button onClick={remove} disabled={removing}
+            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-red-300 transition-colors disabled:opacity-50">
+            {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            {removing ? 'Removendo...' : 'Remover'}
+          </button>
         </div>
       )}
 
