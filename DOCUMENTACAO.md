@@ -3001,3 +3001,29 @@ Invoke-WebRequest https://imobiflow-v2.fly.dev/app -UseBasicParsing
 Depois do deploy, registrar nesta seção o identificador da release, imagem,
 máquina e resultado do health check, além de executar o QA autenticado de
 Assistente IA, Config e Relatórios nas contas titular e membro.
+
+### Publicação concluída após liberação de rede
+
+O bloqueio descrito acima foi superado no mesmo dia mediante execução aprovada
+fora do sandbox. A branch `v2` foi enviada ao GitHub até o commit documental
+`9db668027b0a4a8fac966b9ae15ed8b8776d7979`; o código funcional publicado é o
+commit `e61e0e1e8580ebbfcb347f6e53c3aefb8c9e129d`.
+
+- aplicação Fly: `imobiflow-v2`;
+- release: `v81` (`wkDoezBKKpMDgu64BLwylNB2j`), status `complete`;
+- imagem: `registry.fly.io/imobiflow-v2:deployment-01KXPCEHPB9NN3249VDF89FPKW`;
+- manifesto da imagem: `sha256:addb87c964b9884a9d75fd661e4da9ef0501401b7b44cce3b629215df3c72600`;
+- máquina: `08075edf911368`, versão `81`, região `gru`, estado `started`;
+- health check interno: `1/1 passing`;
+- smoke test público: `/` e `/app` responderam `HTTP 200`.
+
+Durante o deploy, o Fly mostrou um aviso transitório de porta enquanto ainda
+inspecionava a imagem. O status autoritativo posterior confirmou a máquina
+iniciada e o health check aprovado; os dois testes HTTP públicos também
+confirmaram que o servidor estava acessível. Nenhuma ação foi executada no app
+V1 `imobiflow`.
+
+Permanece pendente apenas o QA autenticado das alterações: conferir Assistente
+IA separado da Config nas três personas, validar os números de Relatórios com
+dados conhecidos e repetir o teste de isolamento entre titular, membro e outro
+tenant.
