@@ -1815,8 +1815,9 @@ Decisões de segurança e integridade:
   interrupção entre as etapas antes de chamar a Asaas;
 - `(broker_id, request_key)` e o índice parcial por unidade impedem cobranças e
   reservas financeiras ativas duplicadas, inclusive sob concorrência;
-- a função SQL é `SECURITY INVOKER`, tem `search_path` fixo e só pode ser
-  executada por `service_role`; a tabela tem RLS e policy por `broker_id`;
+- não há função SQL/RPC no caminho de escrita (removida no refactor `702172a`);
+  a tabela tem RLS habilitada, policy por `broker_id` e acesso direto revogado
+  de `anon`/`authenticated` — só `service_role` lê/escreve;
 - unidades com histórico financeiro não são apagadas em cascata nem podem ser
   excluídas pela API, preservando a trilha de auditoria;
 - o endpoint de criação valida checksum de CPF/CNPJ, nome, telefone, valor em
@@ -2004,3 +2005,136 @@ assumi depois — nunca toquei em credencial). Unidade de teste criada
 Nada foi commitado nesta rodada de auditoria (só leitura, testes ao
 vivo e escrita neste changelog). `HEAD` continha `b8c5f7b` no início
 desta auditoria, sincronizado com `origin/v2`.
+
+## 14.23. Atualização 2026-07-16 — Correção do P2 + fechamento das 3 personas (código funcional 100%, credenciais à parte)
+
+### P2 corrigido: sinal não pode mais superar o preço via API direta
+
+`server/routes/lancamentos.ts`, rota `POST
+/api/lancamentos/units/:id/reservations`: a checagem que só existia no
+frontend (`LancamentosArea.tsx`) agora também roda no backend —
+`price_cents` da unidade é buscado junto com o restante dos dados e,
+se `signal_amount_cents` do corpo da requisição superar esse valor, a
+API responde `400 { error: "O sinal nao pode superar o preco da
+unidade." }` antes de qualquer escrita. `npx tsc --noEmit` e `npm run
+build` limpos; publicado no Fly V2 `v71`
+(`deployment-01KXNDPJG3HJ38QB6N8W1FK10G`), health check passando.
+
+**Testado ao vivo contra o endpoint real**, sem passar pela UI (fetch
+direto no console do navegador, autenticado com o token da sessão já
+logada): unidade "101" (Residencial Sevilha, R$ 500.000,00),
+`signal_amount_cents: 60000000` (R$ 600.000,00) → `400`, mensagem
+esperada, unidade permaneceu `disponivel` sem nenhum resíduo. Também
+corrigida a linha desatualizada da §14.21 que ainda descrevia a função
+SQL removida no `702172a`.
+
+### Auditoria ao vivo da persona Incorporadora nas telas compartilhadas
+
+Login numa segunda conta de teste Incorporadora (`incorporadora.test`,
+empreendimentos "Residencial Sevilha", "Jardins Madri" e "Residencial
+Criate"). Todas as telas que também servem Corretor/Imobiliária foram
+abertas com essa persona pela primeira vez nesta rodada — teste de
+regressão de isolamento/gating, não de funcionalidade nova:
+
+- **Hoje (cockpit)**: mensagem "Jardins Madri está 100% vendido" bate
+  com o card do empreendimento (3/3 unidades vendidas); o card
+  agregado "VGV vendido 60% (3/5)" soma as 5 unidades dos 3
+  empreendimentos do portfólio — os dois números pareciam
+  inconsistentes à primeira vista mas são coerentes (um é
+  por-empreendimento, o outro é agregado da conta toda). Não é bug.
+- **Conversas, Carteira, Leads, Agenda, Contatos**: carregam e
+  funcionam normalmente sob a persona Incorporadora, sem erro de
+  console em nenhuma tela.
+- **Divulgação**: além da vitrine pública genérica de imóveis (já
+  existente), a Incorporadora tem uma segunda vitrine —
+  `/lancamentos-vitrine/:broker_id` — testada ao vivo. Renderiza os 3
+  empreendimentos com fotos/comodidades/% vendido; consultado
+  diretamente `GET /api/vitrine-lancamentos/:broker_id` (endpoint
+  público, sem autenticação) e confirmado que a resposta **não**
+  inclui `price_cents`, nome/telefone/documento de comprador nem
+  qualquer dado de reserva — só contagens agregadas, exatamente como a
+  UI promete ("sem expor dado de comprador").
+- **Financeiro**: "Receita mensal de locação", "Recebido este mês" e
+  "Inadimplência" aparecem corretamente como `—` (Incorporadora não
+  tem Locação); "Receita de vendas" mostra R$ 4.510.000,00 / 3
+  unidades, batendo com os dados de Lançamentos.
+- **Relatórios**: número de receita (locação + vendas) idêntico ao do
+  Financeiro; funil de leads e leads-por-mês corretos para a conta.
+- **Equipe**: meta do mês, membros e ranking carregam certo. O
+  ranking mostra "0 leads fechados" para os dois membros mesmo com 3
+  vendas no mês — **não é bug**: o rodapé da própria tela já avisa que
+  "vendas somam todo o histórico de Lançamentos; leads fechados são só
+  do mês corrente" — são dois funis distintos por design (negócio via
+  Leads/Kanban vs. venda de unidade via Lançamentos).
+- **Config**: perfil, WhatsApp (não provisionado nesta conta de
+  teste), plano e instruções da IA — sem diferença de comportamento
+  frente às outras personas.
+
+Nenhum erro de console em nenhuma tela visitada nesta rodada.
+
+### Achado real (não é bug de código, é ausência de credencial): recuperação de senha por WhatsApp está muda em produção
+
+`server/routes/auth.ts`, rota `POST /api/auth/forgot-password`: gera
+token de reset e **só** envia o link por WhatsApp via UAZAPI — não
+existe fallback por e-mail. O envio é condicionado a `UAZAPI_HOST &&
+UAZAPI_TOKEN && UAZAPI_PLATFORM_SESSION && phone`; como
+`UAZAPI_PLATFORM_SESSION` não está setada no Fly (confirmado via `fly
+secrets list -a imobiflow-v2`), a condição nunca passa — a rota
+sempre responde a mensagem genérica de sucesso ("Se o e-mail estiver
+cadastrado, você receberá o link...") mas nenhuma mensagem é
+realmente enviada, só um `console.warn` no servidor. **Hoje, nenhum
+corretor de nenhuma das 3 personas consegue recuperar a própria senha
+esquecida em produção.** Não é um bug a corrigir no código — o guard
+já evita crash e falso-positivo de log — é uma feature esperando a
+credencial `UAZAPI_PLATFORM_SESSION` (nome da sessão/instância UAZAPI
+usada para envios da plataforma, distinta das instâncias por
+corretor/membro).
+
+De passagem: `ZPRO_ADMIN_URL`, `ZPRO_ADMIN_TOKEN`, `ZPRO_JWT_SECRET` e
+`PROVISIONING_WEBHOOK_URL` continuam nas secrets/código
+(`server/services/provisioning.ts`), mas **nenhuma rota ativa os
+chama** — o provisionamento real de WhatsApp hoje usa
+`provisionUazapiInstanceNative` (UAZAPI direto, sem Z-PRO), chamado só
+por `server/routes/admin.ts` e `server/services/billing.ts`. São
+funções/segredos órfãos da era pré-eliminação do Z-PRO
+([[project_imobiflow_zpro_elimination]]), não bloqueiam nada, mas são
+candidatos a limpeza numa rodada futura.
+
+### Status honesto por persona (código — sandbox), antes da inserção de credenciais
+
+- **Corretor**: fluxos principais testados ao vivo (§14.18) +
+  Relatórios/Config/Hoje revisados e corrigidos por código
+  (sessão anterior). Nenhum bug aberto conhecido.
+- **Imobiliária**: testado ao vivo ponta a ponta (Locação, Financeiro,
+  Equipe, Relatórios, Config, cockpit) em sessão anterior. Nenhum bug
+  aberto conhecido.
+- **Incorporadora**: Lançamentos (simulador + reserva PIX) testado ao
+  vivo contra a Asaas sandbox real (§14.22) e o P2 corrigido e
+  reconfirmado nesta rodada; demais telas compartilhadas testadas ao
+  vivo nesta rodada, sem bug encontrado.
+
+Nas três personas o código está funcionalmente completo para o que foi
+pedido. O que falta não é código — é decisão + inserção de credencial:
+
+1. **`UAZAPI_PLATFORM_SESSION`** — ausente; sem ela, recuperação de
+   senha não funciona pra ninguém, nas 3 personas. Bloqueia uso real
+   em produção (mesmo sandbox de Asaas não depende disso).
+2. **`ASAAS_WEBHOOK_TOKEN`** — já criada e deployada pelo Codex na
+   Fase 2 de Lançamentos, com webhook novo configurado no painel
+   sandbox da Asaas. Pergunta em aberto desde §14.22, ainda sem
+   resposta: manter (é só sandbox, `ASAAS_ENV` continua sandbox) ou
+   reverter, já que diverge da decisão anterior de manter cobrança
+   real desligada até validação total.
+3. **Asaas em produção** (`ASAAS_ENV=production` + API key de
+   produção) — decisão já tomada e registrada: só volta quando o
+   projeto estiver 100% validado ([[project_imobiflow]]). Não é uma
+   pendência a cobrar, é uma decisão a respeitar.
+4. **Fase 3 de Lançamentos** (backoffice de aprovação de documentos) —
+   não iniciada, deliberadamente fora do escopo pedido nesta rodada.
+
+### Estado do git
+
+Working tree com uma mudança de código (`server/routes/lancamentos.ts`,
+validação server-side do P2) além deste changelog. Commit/push não
+feitos ainda nesta rodada — aguardando instrução explícita, seguindo o
+padrão da conta.

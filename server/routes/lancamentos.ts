@@ -350,11 +350,14 @@ lancamentosRouter.post(
 
       const { data: unit } = await supabase
         .from("imf_units")
-        .select("id, development_id, status, buyer_name, buyer_phone, reserved_until")
+        .select("id, development_id, status, buyer_name, buyer_phone, reserved_until, price_cents")
         .eq("id", req.params.id)
         .maybeSingle();
       if (!unit || !(await ownsDevelopment(brokerId, unit.development_id))) {
         return res.status(403).json({ error: "Acesso negado." });
+      }
+      if (unit.price_cents && req.body.signal_amount_cents > unit.price_cents) {
+        return res.status(400).json({ error: "O sinal nao pode superar o preco da unidade." });
       }
 
       const documentDigits = req.body.buyer_cpf_cnpj.replace(/\D/g, "");
