@@ -114,3 +114,89 @@ export async function provisionUazapiInstanceForMember(member: { id: string; nam
     }).eq('id', member.id);
   }
 }
+
+// ─── Auto-recuperação (self-healing) ──────────────────────────────────────
+// Garante que exista uma instância pronta pra broker/membro, provisionando
+// na hora se ainda não houver (nunca tentado, tentativa anterior falhou, ou
+// ainda no estado inicial 'pending'). Chamado a partir de GET/POST
+// /api/brokers/whatsapp/* (server/routes/brokers.ts) pra que a tela de
+// WhatsApp nunca fique presa em "ainda sendo configurada" esperando um
+// evento externo (pagamento, ação manual do admin).
+//
+// Trava por comparar-e-trocar: lê o status atual e só provisiona se ele NÃO
+// for 'processing'/'completed'; a atualização em si só é aplicada se o valor
+// no banco ainda for exatamente o que acabou de ser lido (.eq/.is pro valor
+// conhecido, nunca .neq/.or). Duas armadilhas descobertas testando ao vivo
+// contra imf_brokers real, nessa ordem:
+//   1. .neq('status','completed').neq('status','processing') encadeado nunca
+//      captura uma linha com status NULL (em SQL, `col <> valor` é NULL, não
+//      true, quando `col` é NULL) — bug que impedia a trava de travar no
+//      primeiro provisionamento de contas mais antigas.
+//   2. A troca por .or('status.is.null,status.eq.pending,...') pra cobrir
+//      esse caso quebra especificamente em UPDATE no PostgREST/supabase-js
+//      ("column ... does not exist", 42703) — .or() funciona em SELECT mas
+//      não nesse combo com .update().eq(). Daí o comparar-e-trocar abaixo,
+//      que evita os dois problemas.
+const PROVISIONING_BLOCKING_STATES = ['processing', 'completed'];
+
+async function ensureInstance<T extends { id: string }>(
+  table: 'imf_brokers' | 'imf_broker_members',
+  row: { id: string; name?: string },
+  provisionFn: (row: any) => Promise<void>,
+): Promise<{ token: string | null; status: string | null; error: string | null }> {
+  const { data: current } = await supabase.from(table)
+    .select('uazapi_instance_token, provisioning_status, provisioning_error')
+    .eq('id', row.id)
+    .single();
+
+  if (current?.uazapi_instance_token) {
+    return { token: current.uazapi_instance_token, status: current.provisioning_status || null, error: current.provisioning_error || null };
+  }
+  if (current?.provisioning_status && PROVISIONING_BLOCKING_STATES.includes(current.provisioning_status)) {
+    return { token: null, status: current.provisioning_status, error: current.provisioning_error || null };
+  }
+
+  let lockQuery = supabase.from(table).update({ provisioning_status: 'processing' }).eq('id', row.id);
+  lockQuery = current?.provisioning_status
+    ? lockQuery.eq('provisioning_status', current.provisioning_status)
+    : lockQuery.is('provisioning_status', null);
+  const { data: locked } = await lockQuery.select('id');
+
+  if (locked?.length) {
+    await provisionFn(row);
+  }
+
+  const { data: fresh } = await supabase.from(table)
+    .select('uazapi_instance_token, provisioning_status, provisioning_error')
+    .eq('id', row.id)
+    .single();
+  return {
+    token: fresh?.uazapi_instance_token || null,
+    status: fresh?.provisioning_status || null,
+    error: fresh?.provisioning_error || null,
+  };
+}
+
+export function ensureBrokerInstance(broker: { id: string; name?: string }) {
+  return ensureInstance('imf_brokers', broker, provisionUazapiInstanceNative);
+}
+
+export function ensureMemberInstance(member: { id: string; name?: string }) {
+  return ensureInstance('imf_broker_members', member, (m) => provisionUazapiInstanceForMember(m as { id: string; name: string }));
+}
+
+// Encerra a sessão do WhatsApp conectada na instância (POST /instance/disconnect
+// da UAZAPI) SEM apagar a instância — ela continua existindo, pronta pra um
+// novo QR code parear outro número (POST /instance/connect logo em seguida).
+// Diferente de /instance/delete (não usado aqui): não perde token/webhook.
+export async function disconnectUazapiInstance(instanceToken: string): Promise<void> {
+  const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/disconnect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token: instanceToken },
+    body: JSON.stringify({}),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`UAZAPI /instance/disconnect respondeu ${r.status}: ${text.slice(0, 200)}`);
+  }
+}

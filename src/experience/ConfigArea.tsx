@@ -311,16 +311,19 @@ export function ConfigArea() {
 }
 
 function WhatsAppConnectCard() {
-  const [status, setStatus] = useState<{ provisioned: boolean; connected: boolean; loggedIn: boolean; profileName?: string | null; owner?: string | null; ownInstance?: boolean } | null>(null);
+  const [status, setStatus] = useState<{ provisioned: boolean; connected: boolean; loggedIn: boolean; profileName?: string | null; owner?: string | null; ownInstance?: boolean; provisioningStatus?: string | null; provisioningError?: string | null } | null>(null);
   const [qrcode, setQrcode] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const provisioningPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (qrRefreshRef.current) { clearInterval(qrRefreshRef.current); qrRefreshRef.current = null; }
+    if (provisioningPollRef.current) { clearInterval(provisioningPollRef.current); provisioningPollRef.current = null; }
   };
 
   const loadStatus = async () => {
@@ -334,10 +337,39 @@ function WhatsAppConnectCard() {
         setConnecting(false);
         stopPolling();
       }
+      // Enquanto a instância está sendo preparada pela primeira vez (ou
+      // recuperando de uma falha), o backend já tentou provisionar na hora
+      // (autocura); só falta a tela ficar checando até virar `provisioned`.
+      if (!data.provisioned && data.provisioningStatus === 'processing' && !provisioningPollRef.current) {
+        provisioningPollRef.current = setInterval(async () => {
+          const fresh = await loadStatus();
+          if (fresh?.provisioned || fresh?.provisioningStatus === 'failed') {
+            if (provisioningPollRef.current) { clearInterval(provisioningPollRef.current); provisioningPollRef.current = null; }
+          }
+        }, 3000);
+      }
+      if (data.provisioned || data.provisioningStatus === 'failed') {
+        if (provisioningPollRef.current) { clearInterval(provisioningPollRef.current); provisioningPollRef.current = null; }
+      }
       return data;
     } catch (e: any) {
       setError(e.message);
       return null;
+    }
+  };
+
+  const disconnectInstance = async () => {
+    setError(null);
+    setDisconnecting(true);
+    try {
+      const r = await fetch('/api/brokers/whatsapp/disconnect', { method: 'POST', headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao desconectar');
+      await loadStatus();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -383,8 +415,24 @@ function WhatsAppConnectCard() {
 
       {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
 
-      {status && !status.provisioned && (
-        <p className="text-[13px] text-white/50">Sua instância de WhatsApp ainda está sendo configurada. Volte aqui em instantes.</p>
+      {status && !status.provisioned && status.provisioningStatus === 'failed' && (
+        <div className="space-y-3">
+          <p className="text-[13px] text-red-300">
+            Não foi possível preparar sua instância de WhatsApp{status.provisioningError ? `: ${status.provisioningError}` : '.'}
+          </p>
+          <button
+            onClick={() => { setError(null); loadStatus(); }}
+            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {status && !status.provisioned && status.provisioningStatus !== 'failed' && (
+        <div className="flex items-center gap-2 text-[13px] text-white/50">
+          <Loader2 className="animate-spin w-4 h-4" /> Preparando sua instância de WhatsApp...
+        </div>
       )}
 
       {status?.provisioned && status.connected && !connecting && (
@@ -397,10 +445,12 @@ function WhatsAppConnectCard() {
             {status.owner && <div>Número: <span className="text-white/70 font-mono">{status.owner}</span></div>}
           </div>
           <button
-            onClick={startConnecting}
-            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors"
+            onClick={disconnectInstance}
+            disabled={disconnecting}
+            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-red-300 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Reconectar / trocar número
+            {disconnecting ? <Loader2 className="animate-spin w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+            {disconnecting ? 'Desconectando...' : 'Desconectar / trocar número'}
           </button>
         </div>
       )}

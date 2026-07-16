@@ -2477,3 +2477,121 @@ good state`) e os testes HTTP acima confirmam que não houve impacto real.
 
 `v2` local e `origin/v2` sincronizados em `dd88f73`. Nada pendente de commit
 relacionado aos blocos 1-4.
+
+## Correção do fluxo de conexão WhatsApp por corretor (2026-07-16)
+
+### Problema relatado
+
+Usuário reportou dois sintomas reais: (1) contas novas, em qualquer persona,
+abrem a tela de WhatsApp e ficam presas em "Sua instância de WhatsApp ainda
+está sendo configurada", sem nunca virar QR code; (2) contas com número já
+conectado não tinham como desconectar nem trocar de número — o único botão
+existente ("Reconectar / trocar número") reenviava o mesmo fluxo de conectar
+sem nunca deslogar a sessão atual primeiro.
+
+### Investigação
+
+Levantamento completo do fluxo (`server/services/provisioning.ts`,
+`server/routes/brokers.ts`, `server/routes/admin.ts`,
+`src/experience/ConfigArea.tsx`, `src/pages/Dashboard.tsx`) confirmou duas
+causas raiz distintas:
+
+**Causa 1** — o provisionamento da instância UAZAPI (`provisionUazapiInstanceNative`)
+só é disparado por um evento externo: pagamento Asaas confirmado
+(`handleAsaasPaymentReceived`) ou ação manual do admin
+(`POST /api/admin/brokers/:id/provision`). Nunca acontece no signup. Contas
+ativadas via `PATCH /api/admin/brokers/:id/status` (comum em sandbox/teste)
+nunca disparavam provisionamento nenhum — ficavam sem instância pra sempre, a
+menos que um admin lembrasse de rodar `/provision` manualmente. A tela via
+só a ausência de `uazapi_instance_token` e mostrava a mesma mensagem estática
+pra "nunca tentado", "em progresso" e "falhou pra sempre" — sem nenhum jeito
+de sair desse estado sozinho.
+
+**Causa 2** — nunca existiu, em nenhuma camada (nem backend, nem UI), uma
+chamada ao endpoint de logout/disconnect da UAZAPI. O botão "Reconectar /
+trocar número" só reenviava `POST /instance/connect` na instância já
+conectada, sem nunca terminar a sessão atual — não era um bug de "chamar o
+endpoint errado", era a funcionalidade nunca ter sido construída.
+
+### Achado extra durante a correção: bug real na trava de idempotência do provisionamento
+
+Ao corrigir a causa 1, dois problemas foram descobertos e confirmados **ao
+vivo contra o Supabase real** (não só por leitura de código):
+
+1. A trava atômica original em `server/services/billing.ts`
+   (`.neq('provisioning_status','completed').neq('provisioning_status','processing')`)
+   nunca captura uma linha cujo `provisioning_status` seja `NULL` — em SQL,
+   `coluna <> valor` avalia pra `NULL` (não `true`) quando `coluna` é `NULL`,
+   então o `WHERE` nunca casa. Isso por si só já explicaria contas novas
+   ficando sem instância mesmo passando pelo pagamento real.
+2. Testando a correção inicial (trocar por `.or('status.is.null,...')`),
+   descobri que a coluna real tem `DEFAULT 'pending'` (não `NULL` — a tabela
+   `imf_brokers` foi criada direto no Supabase antes das migrations
+   versionadas, então esse default nunca apareceu em nenhum `.sql` do repo).
+   E mais: `.or(...)` combinado com `.update().eq(...)` quebra no
+   PostgREST/supabase-js com `42703 column ... does not exist` — funciona em
+   `SELECT`, não nesse combo com `UPDATE`. Confirmado isolando com um script
+   descartável direto contra o Supabase (removido depois).
+
+**Solução final**: trava por comparar-e-trocar — lê o `provisioning_status`
+atual, decide em código se está "livre" (qualquer coisa fora de
+`processing`/`completed`, incluindo `NULL`/`pending`/`failed`), e só aplica o
+`UPDATE` condicionado a `.eq()`/`.is()` pro valor exato que acabou de ler
+(nunca `.neq()`/`.or()` às cegas). Implementado em
+`ensureInstance()` (helper único, reusado por `ensureBrokerInstance` e
+`ensureMemberInstance`), `server/services/provisioning.ts`.
+
+### O que foi corrigido
+
+- **Autocura**: `GET /api/brokers/whatsapp/status` e `POST
+  .../connect` agora chamam `ensureBrokerInstance`/`ensureMemberInstance`
+  sempre que não há token — provisiona na hora, sem esperar pagamento nem
+  admin. `PATCH /api/admin/brokers/:id/status` (ativação manual) também
+  dispara a autocura (fire-and-forget, não atrasa a resposta do admin).
+- **`server/services/billing.ts`**: a trava de idempotência do
+  provisionamento pós-pagamento agora reusa `ensureBrokerInstance` em vez do
+  padrão antigo com o bug de NULL.
+- **Estado exposto pro frontend**: `/status` agora devolve
+  `provisioningStatus`/`provisioningError` quando `provisioned:false`, então
+  a UI diferencia "ainda processando" (spinner, poll a cada 3s) de "falhou
+  de vez" (mensagem de erro real + botão "Tentar novamente"), em vez da
+  mensagem estática única de antes.
+- **Desconectar/trocar número de verdade**: novo endpoint `POST
+  /api/brokers/whatsapp/disconnect`, chama `POST /instance/disconnect` da
+  UAZAPI (confirmado na documentação oficial — mesmo header `token` de
+  `/connect`/`/status`; encerra a sessão sem apagar a instância, deixando
+  pronta pra um QR novo). Botão "Reconectar / trocar número" virou
+  "Desconectar / trocar número", chama o endpoint novo e recarrega o
+  status — o botão "Conectar WhatsApp" que já existia no estado
+  desconectado assume o resto do fluxo sem precisar de código novo ali.
+  Corrigido em `ConfigArea.tsx` e no componente duplicado em `Dashboard.tsx`.
+
+### Testado ao vivo, sem tocar em número real de cliente
+
+Duas contas de teste descartáveis criadas via signup real, testadas contra a
+UAZAPI real e apagadas (banco + usuário auth) ao final:
+
+1. Conta nova, sem pagamento nem ação de admin nenhuma → `GET
+   .../status` já devolveu `provisioned:true` na primeira chamada
+   (instância criada de verdade na UAZAPI, `provisioning_status:
+   'completed'`). Segunda chamada confirmou idempotência — não tentou
+   provisionar de novo.
+2. Segunda conta, instância provisionada mas nunca pareada com celular
+   nenhum → `POST .../disconnect` respondeu `{"disconnected":true}`,
+   status seguinte consistente (`connected:false`, instância preservada).
+
+Pendência menor: `DELETE /instance/delete` respondeu `405` ao tentar apagar
+a instância de teste da primeira conta durante a limpeza — a instância
+ficou órfã do lado da UAZAPI (sem custo/risco, nunca foi pareada com número
+real). Não investigado a fundo — não bloqueia o fix, só uma sobra de teste.
+
+`npx tsc --noEmit`, `npm run build` limpos. Deploy no Fly V2 confirmado
+saudável em cada uma das 3 iterações desta correção (a última venceu por
+ter corrigido os dois bugs de trava descobertos no meio do caminho).
+
+### Estado do git
+
+6 arquivos modificados, ainda não commitados nesta rodada:
+`server/routes/admin.ts`, `server/routes/brokers.ts`,
+`server/services/billing.ts`, `server/services/provisioning.ts`,
+`src/experience/ConfigArea.tsx`, `src/pages/Dashboard.tsx`.

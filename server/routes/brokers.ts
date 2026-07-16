@@ -4,6 +4,7 @@ import { requireUser, getBrokerId } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
 import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
+import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance } from "../services/provisioning";
 
 export const brokersRouter = express.Router();
 
@@ -194,20 +195,44 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
 // ele é membro com WhatsApp próprio (imf_broker_members.whatsapp_mode='own'),
 // é a instância dele; senão (dono da conta, ou membro compartilhado) é a
 // instância da conta — mesmo comportamento de sempre.
-async function resolveManagedInstance(userId: string, brokerId: string): Promise<{ token: string | null; ownInstance: boolean }> {
+// Autocura: se a instância que esse usuário deveria ter ainda não existe
+// (nunca provisionada, ou tentativa anterior falhou), provisiona na hora em
+// vez de devolver "ainda sendo configurada" esperando um evento externo.
+// UAZAPI_HOST vazio = integração desligada no servidor (não tenta provisionar,
+// só reporta o que já tem no banco).
+async function resolveManagedInstance(userId: string, brokerId: string): Promise<{
+  token: string | null; ownInstance: boolean; provisioningStatus: string | null; provisioningError: string | null;
+}> {
   const { data: member } = await supabase
     .from('imf_broker_members')
-    .select('whatsapp_mode, uazapi_instance_token')
+    .select('id, name, whatsapp_mode, uazapi_instance_token, provisioning_status, provisioning_error')
     .eq('broker_id', brokerId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (member?.whatsapp_mode === 'own') {
-    return { token: member.uazapi_instance_token, ownInstance: true };
+    if (!member.uazapi_instance_token && UAZAPI_HOST) {
+      const ensured = await ensureMemberInstance({ id: member.id, name: member.name });
+      return { token: ensured.token, ownInstance: true, provisioningStatus: ensured.status, provisioningError: ensured.error };
+    }
+    return {
+      token: member.uazapi_instance_token || null, ownInstance: true,
+      provisioningStatus: member.provisioning_status || null, provisioningError: member.provisioning_error || null,
+    };
   }
 
-  const { data: broker } = await supabase.from('imf_brokers').select('uazapi_instance_token').eq('id', brokerId).single();
-  return { token: broker?.uazapi_instance_token || null, ownInstance: false };
+  const { data: broker } = await supabase.from('imf_brokers')
+    .select('id, name, uazapi_instance_token, provisioning_status, provisioning_error')
+    .eq('id', brokerId).single();
+
+  if (!broker?.uazapi_instance_token && UAZAPI_HOST) {
+    const ensured = await ensureBrokerInstance({ id: brokerId, name: broker?.name });
+    return { token: ensured.token, ownInstance: false, provisioningStatus: ensured.status, provisioningError: ensured.error };
+  }
+  return {
+    token: broker?.uazapi_instance_token || null, ownInstance: false,
+    provisioningStatus: broker?.provisioning_status || null, provisioningError: broker?.provisioning_error || null,
+  };
 }
 
 brokersRouter.get("/api/brokers/whatsapp/status", requireUser, async (req, res) => {
@@ -218,10 +243,13 @@ brokersRouter.get("/api/brokers/whatsapp/status", requireUser, async (req, res) 
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker not found" });
 
-    const { token, ownInstance } = await resolveManagedInstance(userId, brokerId);
+    const { token, ownInstance, provisioningStatus, provisioningError } = await resolveManagedInstance(userId, brokerId);
 
     if (!token) {
-      return res.json({ provisioned: false, connected: false, loggedIn: false, ownInstance });
+      return res.json({
+        provisioned: false, connected: false, loggedIn: false, ownInstance,
+        provisioningStatus, provisioningError,
+      });
     }
 
     const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/status`, {
@@ -252,10 +280,13 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker not found" });
 
-    const { token } = await resolveManagedInstance(userId, brokerId);
+    const { token, provisioningStatus, provisioningError } = await resolveManagedInstance(userId, brokerId);
 
     if (!token) {
-      return res.status(400).json({ error: "Instância WhatsApp ainda não provisionada pra este corretor." });
+      const error = provisioningStatus === 'failed'
+        ? (provisioningError || "Falha ao provisionar a instância de WhatsApp. Tente novamente.")
+        : "Sua instância de WhatsApp ainda está sendo preparada. Tente de novo em alguns segundos.";
+      return res.status(409).json({ error, provisioningStatus });
     }
 
     const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/connect`, {
@@ -273,6 +304,31 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
     });
   } catch (err: any) {
     console.error("Erro POST /api/brokers/whatsapp/connect:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Encerra a sessão do WhatsApp conectada (não apaga a instância — ela
+// continua pronta pra um QR novo logo em seguida via /connect). É isso que
+// faltava pra "trocar de número": antes, o único botão existente reenviava
+// /instance/connect direto sem nunca deslogar a sessão atual primeiro.
+brokersRouter.post("/api/brokers/whatsapp/disconnect", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+
+    const { token } = await resolveManagedInstance(userId, brokerId);
+    if (!token) {
+      return res.status(400).json({ error: "Nenhuma instância WhatsApp provisionada pra desconectar." });
+    }
+
+    await disconnectUazapiInstance(token);
+    res.json({ disconnected: true });
+  } catch (err: any) {
+    console.error("Erro POST /api/brokers/whatsapp/disconnect:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -5,7 +5,7 @@ import {
   UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE,
 } from "../config";
 import { cancelAsaasSubscription } from "../services/billing";
-import { provisionUazapiInstanceNative } from "../services/provisioning";
+import { provisionUazapiInstanceNative, ensureBrokerInstance } from "../services/provisioning";
 
 export const adminRouter = express.Router();
 
@@ -74,6 +74,16 @@ adminRouter.patch("/api/admin/brokers/:id/status", async (req, res) => {
     const { data, error } = await supabase
       .from('imf_brokers').update({ status }).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    // Ativação manual (sandbox/teste, sem passar pelo checkout real) não
+    // provisionava WhatsApp — a conta ficava com "instância ainda sendo
+    // configurada" pra sempre. Auto-cura na hora, mesmo caminho usado pelo
+    // pagamento real (ensureBrokerInstance, com trava atômica própria).
+    if (status === 'ativo' && UAZAPI_HOST && UAZAPI_TOKEN) {
+      ensureBrokerInstance(data).catch((e: any) =>
+        console.error(`[Admin] falha ao auto-provisionar broker ${data.id} na ativação:`, e?.message));
+    }
+
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

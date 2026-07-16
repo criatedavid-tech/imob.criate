@@ -3,7 +3,7 @@ import {
   ASAAS_API_KEY, ASAAS_BASE_URL, SUBSCRIPTION_VALUE,
   PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, UAZAPI_HOST, UAZAPI_TOKEN,
 } from "../config";
-import { provisionUazapiInstanceNative } from "./provisioning";
+import { ensureBrokerInstance } from "./provisioning";
 import { fetchWithTimeout } from "../lib/http";
 
 export const asaasHeaders = () => ({
@@ -394,19 +394,10 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
     if (!broker) return;
 
     if (UAZAPI_HOST && UAZAPI_TOKEN) {
-      // Trava atômica: só provisiona se status NÃO for 'completed' nem 'processing'.
-      // Evita criação duplicada quando Asaas dispara o mesmo evento 2x.
-      const { data: locked } = await supabase.from('imf_brokers')
-        .update({ provisioning_status: 'processing' })
-        .eq('id', brokerId)
-        .neq('provisioning_status', 'completed')
-        .neq('provisioning_status', 'processing')
-        .select('id');
-      if (!locked?.length) {
-        console.log(`[Provisioning] Provisionamento já em andamento/concluído para ${brokerId} — webhook duplicado ignorado`);
-        return;
-      }
-      await provisionUazapiInstanceNative({ ...broker, provisioning_status: 'processing' });
+      // ensureBrokerInstance já trava atomicamente (is.null OR eq.failed) e
+      // ignora silenciosamente se já estiver 'processing'/'completed' — cobre
+      // tanto o caso normal quanto webhook duplicado do Asaas.
+      await ensureBrokerInstance(broker);
     }
 
     console.log(`✅ Corretor ${brokerId} ativado — Asaas ${id}`);
