@@ -38,3 +38,16 @@ export function normalizePhoneBR(raw: string): string {
   if (num.length === 9 && num.startsWith('9')) num = num.slice(1);
   return `55${ddd}${num}`;
 }
+
+// Mesma normalização de DDI/DDD, mas SEM remover o 9º dígito — usada onde a
+// contraparte (ex.: pareamento de WhatsApp da UAZAPI) precisa do número
+// completo e exato da conta, não do formato "de mensagem" com 8 dígitos.
+// Ex.: "(62)99159-2150" -> "5562991592150"
+export function normalizePhoneBRFull(raw: string): string {
+  let d = (raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+  const ddd = d.slice(0, 2);
+  const num = d.slice(2);
+  return `55${ddd}${num}`;
+}

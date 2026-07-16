@@ -1,7 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
-import { normalizePhoneBR } from "../lib/crypto";
+import { normalizePhoneBR, normalizePhoneBRFull } from "../lib/crypto";
 import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance } from "../services/provisioning";
@@ -291,7 +291,12 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
 
     // phone opcional: se vier, a UAZAPI gera código de pareamento em vez de
     // QR code (POST /instance/connect aceita os dois modos — ver doc oficial).
-    const phone = req.body?.phone ? normalizePhoneBR(String(req.body.phone)) : undefined;
+    // NÃO usar normalizePhoneBR aqui: ela remove o 9º dígito do celular (
+    // convenção usada pra mensagens), mas o exemplo oficial da UAZAPI pro
+    // pareamento é o número completo com o 9 ("5511999999999") — código
+    // gerado pro número errado (sem o 9) nunca bate com o WhatsApp real do
+    // celular, confirmado testando ao vivo.
+    const phone = req.body?.phone ? normalizePhoneBRFull(String(req.body.phone)) : undefined;
 
     const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/connect`, {
       method: "POST",

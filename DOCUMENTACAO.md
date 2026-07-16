@@ -2627,3 +2627,23 @@ Testado ao vivo com conta descartável (criada, testada, removida): QR sem
 telefone, código com telefone a partir de estado limpo — ambos confirmados
 retornando o dado esperado do endpoint real da UAZAPI. `tsc`/`build`
 limpos, deploy saudável.
+
+### Bug real encontrado pelo usuário testando de verdade: número errado no pareamento
+
+Usuário testou com o próprio celular e o WhatsApp recusou o código pedindo
+"usar um número diferente" — sintoma clássico de código gerado pra um número
+que não é o da conta real. Causa: o campo `phone` foi normalizado com
+`normalizePhoneBR` (`server/lib/crypto.ts`), que **remove o 9º dígito** do
+celular — convenção correta pra envio de mensagem, mas errada aqui: o
+exemplo oficial da UAZAPI pro pareamento é o número completo com os 9
+dígitos (`"5511999999999"`). Um código gerado pro número sem o 9 nunca bate
+com o WhatsApp real de ninguém.
+
+**Corrigido**: nova função `normalizePhoneBRFull` (`server/lib/crypto.ts`),
+mesma normalização de DDI/DDD mas sem remover o 9º dígito — usada só nesta
+rota (`server/routes/brokers.ts`); `normalizePhoneBR` continua intacta e em
+uso nos outros lugares (mensagem), nada mais foi tocado. Testado
+diretamente contra o endpoint (`62991592150` → código de pareamento válido
+recebido, sem erro) e depois **confirmado pelo usuário com o celular real**
+— pareamento por código funcionando de ponta a ponta. `tsc`/`build`
+limpos, deploy saudável.
