@@ -2968,3 +2968,36 @@ o build Vite de produção passou com 2.137 módulos transformados. Assim como n
 §14.30, o build usou um config temporário equivalente com `--configLoader
 runner` por causa da restrição de leitura do sandbox; o arquivo temporário foi
 removido e não integra o diff.
+
+### Commit e tentativa de publicação desta rodada
+
+O usuário confirmou manualmente no Supabase os quatro resultados esperados da
+migration: coluna, índice e trigger presentes, e `vendas_sem_data = 0`. Depois
+das validações locais, foi criado o commit funcional
+`e61e0e1e8580ebbfcb347f6e53c3aefb8c9e129d` (`feat: separa assistente IA e
+corrige relatorios`).
+
+A publicação não foi concluída neste ambiente:
+
+- `git push origin v2` não conseguiu abrir conexão com `github.com:443`;
+- o conector GitHub instalado não possui acesso ao repositório privado
+  `criatedavid-tech/imob.criate`;
+- o Fly CLI conseguiu ler a autenticação local por uma configuração temporária
+  segura, mas a conexão com `https://api.fly.io/graphql` foi bloqueada pelo
+  sandbox antes de qualquer alteração remota;
+- portanto nenhuma nova release foi criada e o aplicativo V1 `imobiflow` não
+  foi acessado nem alterado.
+
+Para retomar em um PowerShell com rede liberada, dentro deste clone:
+
+```powershell
+git push origin v2
+fly deploy -a imobiflow-v2 --config fly.toml --remote-only
+fly status -a imobiflow-v2
+Invoke-WebRequest https://imobiflow-v2.fly.dev/ -UseBasicParsing
+Invoke-WebRequest https://imobiflow-v2.fly.dev/app -UseBasicParsing
+```
+
+Depois do deploy, registrar nesta seção o identificador da release, imagem,
+máquina e resultado do health check, além de executar o QA autenticado de
+Assistente IA, Config e Relatórios nas contas titular e membro.
