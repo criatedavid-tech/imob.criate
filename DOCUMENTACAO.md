@@ -2794,3 +2794,31 @@ diretamente contra o endpoint (`62991592150` → código de pareamento válido
 recebido, sem erro) e depois **confirmado pelo usuário com o celular real**
 — pareamento por código funcionando de ponta a ponta. `tsc`/`build`
 limpos, deploy saudável.
+
+### Publicação concluída após a retomada da Fase 3
+
+O estado anterior de bloqueio de rede, registrado acima como histórico da
+primeira tentativa, foi superado em 2026-07-16. O usuário confirmou a execução
+manual da migration `20260716c_reservation_documents.sql` no Supabase antes da
+publicação do backend.
+
+- branch publicada: `v2`;
+- commit funcional: `0c7fb461bc1be8d35631036a2ad3e44c04c78795`;
+- commit remoto usado no deploy: `7bd54225a840c661dba365677990ff553d6ef313`;
+- aplicação Fly: `imobiflow-v2`;
+- release autoritativa: `v80` (`8z4AyglQQDp4BTZKJ1wevPnGK`);
+- imagem: `registry.fly.io/imobiflow-v2:deployment-01KXP6FAD1ZQBBA5W7JPV0E8JR`;
+- máquina: `08075edf911368`, região `gru`, estado `started`;
+- health check HTTP interno: `1/1 passing`;
+- smoke test público: `/` e `/app` responderam `HTTP 200`.
+
+Duas tentativas quase simultâneas geraram as releases v79 e v80. A v80 é a
+release vigente. A máquina ficou inicialmente parada durante a concorrência
+entre as atualizações, foi iniciada de forma explícita e terminou com o health
+check aprovado. Nenhuma ação foi realizada na aplicação V1
+`imobiflow.fly.dev`.
+
+Ainda é obrigatório concluir o QA autenticado do §14.29, principalmente o
+isolamento entre tenants, o bloqueio da venda com documento não aprovado e o
+fluxo completo de rejeição, reenvio e aprovação. Os testes HTTP acima validam
+disponibilidade, não substituem esses testes funcionais.
