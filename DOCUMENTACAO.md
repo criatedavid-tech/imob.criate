@@ -2754,6 +2754,27 @@ antes de push/deploy: publicar primeiro o backend faria o gate de venda
 consultar uma tabela inexistente. QA autenticado, push e deploy permanecem
 pendentes até essa confirmação.
 
+### Retomada para publicação após a migration
+
+O usuário confirmou em 2026-07-16 que executou manualmente o SQL da Fase 3 no
+Supabase. O commit funcional local é
+`0c7fb461bc1be8d35631036a2ad3e44c04c78795` (`feat(lancamentos): adiciona
+aprovacao privada de documentos`).
+
+A tentativa de publicação desta sessão não alterou produção:
+
+- `git push origin v2` não alcançou `github.com:443` por bloqueio de rede do
+  sandbox;
+- `fly auth whoami` e `fly status -a imobiflow-v2` não alcançaram
+  `api.fly.io:443` pelo mesmo bloqueio;
+- o conector GitHub disponível não possui acesso ao repositório privado
+  `criatedavid-tech/imob.criate`.
+
+Portanto, a branch local continua à frente de `origin/v2` e nenhum release Fly
+foi criado nesta retomada. O próximo operador deve fazer push da `v2`, executar
+`fly deploy -a imobiflow-v2 --config fly.toml --remote-only`, validar
+`https://imobiflow-v2.fly.dev/app` e registrar aqui o identificador do release.
+
 ### Bug real encontrado pelo usuário testando de verdade: número errado no pareamento
 
 Usuário testou com o próprio celular e o WhatsApp recusou o código pedindo
