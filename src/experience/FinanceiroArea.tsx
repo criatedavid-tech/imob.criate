@@ -104,17 +104,17 @@ export function FinanceiroArea() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-white/45">Receita mensal de locação</p>
-              <p className="text-3xl font-black text-white mt-2 leading-none">{centsToReais(summary!.rental_monthly_cents)}</p>
+              <p className="text-2xl font-black text-white mt-2 leading-tight break-words">{centsToReais(summary!.rental_monthly_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-white/40">recorrente</p>
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-white/45">Recebido este mês</p>
-              <p className="text-3xl font-black text-white mt-2 leading-none">{centsToReais(summary!.rental_paid_this_month_cents)}</p>
+              <p className="text-2xl font-black text-white mt-2 leading-tight break-words">{centsToReais(summary!.rental_paid_this_month_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-white/40">aluguel pago</p>
             </GlassCard>
             <GlassCard className={`!p-5 ${summary!.rental_overdue_count > 0 ? 'ring-1 ring-red-400/25' : ''}`}>
               <p className="text-[12px] font-medium text-white/45">Inadimplência</p>
-              <p className={`text-3xl font-black mt-2 leading-none ${summary!.rental_overdue_count > 0 ? 'text-red-300' : 'text-white'}`}>
+              <p className={`text-2xl font-black mt-2 leading-tight break-words ${summary!.rental_overdue_count > 0 ? 'text-red-300' : 'text-white'}`}>
                 {centsToReais(summary!.rental_overdue_cents)}
               </p>
               <p className="text-[11px] font-semibold mt-2 text-white/40">
@@ -123,7 +123,7 @@ export function FinanceiroArea() {
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-white/45">Receita de vendas</p>
-              <p className="text-3xl font-black text-white mt-2 leading-none">{centsToReais(summary!.sales_total_cents)}</p>
+              <p className="text-2xl font-black text-white mt-2 leading-tight break-words">{centsToReais(summary!.sales_total_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-white/40">{summary!.sales_count} unidade{summary!.sales_count === 1 ? '' : 's'}</p>
             </GlassCard>
           </div>
