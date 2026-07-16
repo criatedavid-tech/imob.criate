@@ -8,7 +8,6 @@ import { normalizePhoneBR } from "../lib/crypto";
 import {
   cancelActiveUnitReservation,
   completePaidUnitReservation,
-  expireFinancialReservations,
   generateUnitReservationPix,
   getActiveUnitReservation,
 } from "../services/unitReservationBilling";
@@ -85,37 +84,6 @@ async function ownsDevelopment(brokerId: string, developmentId: string): Promise
     .eq("broker_id", brokerId)
     .maybeSingle();
   return !!data;
-}
-
-// Libera sozinha reserva vencida — chamado antes de devolver unidades pro cliente,
-// pra tela nunca mostrar "reservado" com prazo já expirado.
-async function releaseExpiredReservations(developmentId: string) {
-  await expireFinancialReservations(developmentId);
-  const nowIso = new Date().toISOString();
-  const { data: expiredUnits } = await supabase
-    .from("imf_units")
-    .select("id")
-    .eq("development_id", developmentId)
-    .eq("status", "reservado")
-    .lt("reserved_until", nowIso);
-
-  const { data: development } = await supabase
-    .from("imf_developments")
-    .select("broker_id")
-    .eq("id", developmentId)
-    .maybeSingle();
-  if (!development) return;
-
-  for (const unit of expiredUnits || []) {
-    const financial = await getActiveUnitReservation(development.broker_id, unit.id);
-    if (financial) continue;
-    await supabase
-      .from("imf_units")
-      .update({ status: "disponivel", reserved_until: null, buyer_name: null, buyer_phone: null })
-      .eq("id", unit.id)
-      .eq("status", "reservado")
-      .lt("reserved_until", nowIso);
-  }
 }
 
 lancamentosRouter.get("/api/lancamentos/developments", requireUser, async (req, res) => {
@@ -250,8 +218,6 @@ lancamentosRouter.get("/api/lancamentos/developments/:id/units", requireUser, as
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     if (!(await ownsDevelopment(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
-
-    await releaseExpiredReservations(req.params.id);
 
     const { data, error } = await supabase
       .from("imf_units")

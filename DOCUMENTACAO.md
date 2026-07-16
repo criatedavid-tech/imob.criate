@@ -5,13 +5,15 @@
 > **Não contém valores de segredos** — apenas os nomes das variáveis (os
 > valores ficam no `.env` local, nos *secrets* da Fly e nas notas de memória).
 
-Última atualização: 2026-07-13. **Comece pela §14.16** — ela registra a
+Última atualização: 2026-07-16. **Comece pela §14.16** — ela registra a
 virada de arquitetura mais importante do projeto: **o v2 é agora o projeto
 principal; o v1 (`main`/`imobiflow.fly.dev`) fica só como rollback de
 segurança**, sem receber trabalho ativo. §14.1-14.15 descrevem o estado do
 v1 (ainda válidas para conceitos compartilhados — Asaas, billing, modelo de
 dados core) mas ficaram desatualizadas quanto à experiência de produto, ao
-provisionamento de WhatsApp e a boa parte do backend, que mudaram no v2.
+provisionamento de WhatsApp e a boa parte do backend, que mudaram no v2. Os
+checkpoints §14.24–§14.27 registram a auditoria mais recente de integridade,
+performance e remoção de código órfão.
 
 ---
 
@@ -131,6 +133,12 @@ Função SQL `claim_due_followups()`: claim atômico (multi-máquina safe) — s
 ---
 
 ## 5. Fluxo operacional completo
+
+> **Registro histórico:** o fluxo Z-PRO descrito em §5.1–§5.3 documenta a
+> arquitetura anterior. O provisionamento atual usa UAZAPI nativa por
+> `provisionUazapiInstanceNative`/`provisionUazapiInstanceForMember` e recebe
+> mensagens em `/api/wpp-shim/inbound/:instanceId`. Veja o estado vigente em
+> §14.16, §14.20 e §14.27.
 
 ### 5.1 PROVISIONAMENTO (onboarding do corretor)
 1. **Cadastro** — `Signup.tsx` → `POST /api/auth/signup`: cria user no Supabase Auth (já confirmado) + linha em `brokers` (`status: pendente`).
@@ -685,9 +693,11 @@ npm run lint    # tsc --noEmit (typecheck — sempre rode antes de commitar)
 
 ## 14.5. Fluxos implementados
 
-Os fluxos 5.1–5.6 da §5 (provisionamento, ativação, operação, conteúdo,
-ciclo de assinatura, follow-up) continuam **válidos** — apenas troque os nomes
-de tabela para o prefixo `imf_`. Abaixo estão os fluxos **novos ou alterados**.
+Os fluxos de ciclo de assinatura, conteúdo e follow-up da §5 continuam como
+referência, usando as tabelas com prefixo `imf_`. Já o provisionamento,
+ativação e transporte de mensagens Z-PRO de §5.1–§5.3 são **históricos**:
+foram substituídos pela UAZAPI nativa e pelo WPP Shim, conforme §14.16,
+§14.20 e §14.27. Abaixo estão os fluxos **novos ou alterados**.
 
 ### 14.5.1. Billing de excedente (modelo atual — substitui §13)
 
@@ -2091,14 +2101,11 @@ usada para envios da plataforma, distinta das instâncias por
 corretor/membro).
 
 De passagem: `ZPRO_ADMIN_URL`, `ZPRO_ADMIN_TOKEN`, `ZPRO_JWT_SECRET` e
-`PROVISIONING_WEBHOOK_URL` continuam nas secrets/código
-(`server/services/provisioning.ts`), mas **nenhuma rota ativa os
-chama** — o provisionamento real de WhatsApp hoje usa
-`provisionUazapiInstanceNative` (UAZAPI direto, sem Z-PRO), chamado só
-por `server/routes/admin.ts` e `server/services/billing.ts`. São
-funções/segredos órfãos da era pré-eliminação do Z-PRO
-([[project_imobiflow_zpro_elimination]]), não bloqueiam nada, mas são
-candidatos a limpeza numa rodada futura.
+`PROVISIONING_WEBHOOK_URL` continuam declarados/configurados e os secrets não
+foram removidos, por decisão explícita. Já as funções órfãs que consumiam esse
+provisionamento antigo foram removidas em §14.27. O provisionamento real de
+WhatsApp usa `provisionUazapiInstanceNative`/`provisionUazapiInstanceForMember`
+(UAZAPI direta, sem Z-PRO).
 
 ### Status honesto por persona (código — sandbox), antes da inserção de credenciais
 
@@ -2138,3 +2145,278 @@ Working tree com uma mudança de código (`server/routes/lancamentos.ts`,
 validação server-side do P2) além deste changelog. Commit/push não
 feitos ainda nesta rodada — aguardando instrução explícita, seguindo o
 padrão da conta.
+
+## 14.24. Atualização 2026-07-16 — Auditoria de gargalos, Bloco 1: consistência financeira com o Asaas
+
+### Reset do valor da assinatura agora é durável e reconciliável
+
+Em `server/services/billing.ts`, o reset da assinatura depois de uma
+renovação com excedente deixou de ser uma chamada `fetchWithTimeout(...)`
+fire-and-forget. O fluxo agora:
+
+1. persiste a intenção em `imf_billing_reconciliations` **antes** de chamar
+   o Asaas;
+2. aguarda a resposta externa e considera HTTP 4xx/5xx como falha real;
+3. conclui o registro somente quando o Asaas confirma a atualização;
+4. mantém a pendência com erro, contador de tentativas e backoff exponencial
+   quando a chamada falha;
+5. tenta novamente a cada cinco minutos pelo job
+   `reconcilePendingBillingActions`, protegido pelo mesmo lock distribuído
+   em Postgres já usado pelo preparo de billing.
+
+A renovação já paga continua ativando o corretor mesmo se o reset falhar: a
+decisão é deliberada porque desfazer localmente um pagamento confirmado seria
+incorreto. Nesse caso, a fila persistida passa a ser a fonte de verdade para
+restaurar o valor-base. A revisão final também separou falha externa de falha
+de persistência: somente a primeira é absorvida. Se a intenção não puder ser
+gravada, o excedente não é marcado como concluído/reconciliável localmente.
+
+Migration criada: `supabase/migrations/20260716a_billing_reconciliation.sql`.
+Ela cria a fila, índices para pendências, unicidade por assinatura, RLS e
+grants exclusivos para `service_role`. ✅ **Executada manualmente pelo usuário
+no Supabase em 2026-07-16** (SQL Editor) — `imf_billing_reconciliations` já
+existe em produção, deploy do código deste bloco liberado.
+
+### Cancelamento e exclusão administrativa agora falham de forma segura
+
+O apontamento original dizia que as rotas de `server/routes/admin.ts` não
+aguardavam o Asaas. No código encontrado em `51a383a`, elas já tinham `await`,
+mas ainda engoliam exceções com `.catch(...)` e não verificavam `response.ok`;
+portanto HTTP 4xx/5xx ou falha de rede permitiam bloquear/excluir localmente
+com a assinatura externa ativa.
+
+Foi adotada a opção de **bloquear a ação local**. `cancel-plan` e a exclusão
+da conta agora só continuam depois de uma confirmação HTTP 2xx do Asaas. Em
+falha, respondem 502 com mensagem clara e preservam integralmente o corretor e
+seu plano local para nova tentativa. A mesma proteção cobre o caso em que há
+uma assinatura externa, mas `ASAAS_API_KEY` não está configurada.
+
+### Validação do Bloco 1
+
+- `npm run lint` / `tsc --noEmit`: aprovado;
+- falha HTTP 500 do Asaas simulada localmente: a função de cancelamento lançou
+  erro e impediu que o fluxo local prosseguisse;
+- `npm run build`: aprovado, 2.135 módulos;
+- bundle permaneceu em 872,44 kB com o aviso conhecido de chunk acima de 500
+  kB — este é exatamente o item de code-splitting previsto no Bloco 2;
+- nenhuma chamada financeira real, cobrança, cancelamento ou mutação no Asaas
+  foi feita nesta validação.
+
+### Estado desta etapa
+
+Bloco 1 codificado e validado localmente; migration aplicada no Supabase em
+2026-07-16 (ver acima). Commit/push/deploy seguem no §14.28. Redis continua
+deliberadamente fora do escopo: o código já o suporta, mas criar a instância é
+uma decisão de infraestrutura com possível custo.
+
+## 14.25. Atualização 2026-07-16 — Auditoria de gargalos, Bloco 2: paginação, jobs e code-splitting
+
+### Leads paginados sem quebrar o contrato existente
+
+`GET /api/leads` continua respondendo um array, mas agora aceita `limit` (100
+por padrão, máximo 200), `offset`, `created_from` e `created_to`. Os metadados
+ficam nos headers `X-Total-Count`, `X-Pagination-Limit`,
+`X-Pagination-Offset` e `X-Has-More`, evitando uma troca incompatível para os
+consumidores existentes.
+
+`NegociosArea.tsx` carrega os primeiros 100 leads e oferece **Carregar mais
+leads** explicitamente. O contador mostra carregados/total e páginas anexadas
+são deduplicadas por ID. Os cockpits de Incorporadora e Imobiliária deixaram de
+baixar toda a tabela apenas para contar os leads de hoje: consultam uma janela
+de data com `limit=1` e usam `X-Total-Count`.
+
+### Agenda limitada à janela realmente exibida
+
+`GET /api/agenda/visits` já aceitava `start`/`end`, ao contrário do que o
+apontamento sugeria. Foi mantido esse contrato e adicionado limite defensivo de
+500 registros por padrão (máximo 1.000). A chamada antiga de `Dashboard.tsx`,
+que não passava filtro, agora busca somente os últimos 30 e próximos 30 dias.
+O calendário mensal já usava corretamente o primeiro e o último dia do mês e
+foi preservado. A revisão final também passou a rejeitar datas inválidas e
+janelas em que `start` é posterior a `end`.
+
+### Thread de WhatsApp paginada
+
+`GET /api/conversas/:phone/messages` agora entrega as 50 mensagens mais
+recentes em ordem cronológica, aceita cursor `before` e limita páginas a 100.
+Os headers `X-Has-More` e `X-Next-Cursor` controlam o botão **Carregar
+mensagens anteriores**. O polling de três segundos mescla e deduplica as
+mensagens novas sem descartar páginas antigas já abertas, e carregar histórico
+não força mais a rolagem de volta para o fim da conversa.
+
+### Expiração de reserva PIX saiu do caminho síncrono do GET
+
+`GET /api/lancamentos/developments/:id/units` não chama mais o Asaas nem faz
+loops de expiração. O novo `expireDueUnitReservations` roda a cada 60 segundos,
+com lock distribuído em Postgres, lotes de 50 reservas e concorrência máxima de
+três cancelamentos externos. Depois, libera em lote unidades vencidas que não
+tenham uma reserva financeira ainda ativa. Se o cancelamento no Asaas falhar, a
+reserva permanece ativa e a unidade fica protegida para nova tentativa.
+
+### Code-splitting por rota
+
+Todas as páginas de `src/App.tsx` passaram para `React.lazy` + `Suspense`.
+Resultado do build de produção:
+
+- antes: um JS de **872,44 kB** (gzip 224,51 kB), com aviso acima de 500 kB;
+- depois: entrada **374,65 kB**, `Experiencia` **203,35 kB**,
+  `AgendaCalendar` **84,96 kB**, `Dashboard` **49,59 kB**, `Admin` **27,17
+  kB** e páginas públicas em chunks próprios;
+- o aviso de chunk acima de 500 kB desapareceu.
+
+Assim, quem abre uma landing pública não baixa mais antecipadamente Admin,
+Dashboard e a experiência logada.
+
+### Validação do Bloco 2
+
+- `npm run lint` / `tsc --noEmit`: aprovado;
+- `npm run build`: aprovado, 2.136 módulos e sem warning de chunk grande;
+- smoke do build estático local: `/`, `/app`, `/login`, `/admin` e `/p/teste`
+  retornaram HTTP 200 com o root do SPA;
+- servidor temporário da porta 4173 encerrado depois do teste;
+- o recurso de navegador visual anunciado pela sessão não estava instalado no
+  caminho fornecido. Por isso, não foi alegado teste visual autenticado de
+  arrastar Kanban/rolar chat; esses passos continuam sendo QA manual antes de
+  deploy, embora o contrato e os estados tenham sido validados por TypeScript,
+  build e inspeção do código.
+
+### Estado desta etapa
+
+Bloco 2 codificado, compilado e documentado, ainda sem commit, push ou deploy.
+
+## 14.26. Atualização 2026-07-16 — Auditoria de gargalos, Bloco 3: métricas, integridade de status e índices
+
+### "Visitas agendadas" agora usa a tabela correta
+
+`GET /api/dashboard/metrics` deixou de procurar os estados inexistentes
+`visita_agendada`/`agendado` em `leads`. A métrica `scheduledVisits` agora
+conta diretamente `imf_agenda`, no tenant autenticado, considerando apenas
+visitas futuras em `pendente` ou `confirmado`. Para membros, mantém o filtro
+por `owner_user_id`; o dono continua vendo a agenda da conta.
+
+A consulta não depende mais de existir um imóvel: uma visita válida da agenda
+sem `property_id` também é contabilizada, coerente com o schema e com o CRUD da
+Agenda.
+
+### Allowlist única para os estágios de lead
+
+`server/routes/leads.ts` define como válidos apenas `new`, `contato`, `visita`,
+`proposta` e `fechado`. Tanto `POST /api/leads` quanto
+`PATCH /api/leads/:id/status` respondem 400 para qualquer outro valor.
+
+`PropertyLanding.tsx` ainda enviava `visita_agendada` ao registrar uma
+solicitação de visita. Esse consumidor foi ajustado para `visita`, o estágio
+real do Kanban. Agendamentos confirmados continuam pertencendo a `imf_agenda`;
+não foi criado um segundo sistema de status em `leads`.
+
+### N+1 da Auth Admin API: limitação confirmada, sem troca artificial
+
+Foi inspecionada a implementação instalada de `@supabase/auth-js`
+(`GoTrueAdminApi.ts`). `listUsers` aceita somente `page` e `perPage`; não há
+filtro por conjunto de IDs. Substituir algumas chamadas `getUserById` por uma
+varredura paginada de todos os usuários do projeto seria mais caro, ampliaria o
+volume de dados lido e misturaria usuários de outros tenants.
+
+Por isso, `GET /api/equipe/members` e `GET /api/equipe/ranking` permanecem com
+uma consulta por membro. O impacto é limitado por `member_limit`; a decisão foi
+documentar a restrição da API em vez de introduzir uma falsa otimização.
+
+### Índices adicionados
+
+Nova migration `supabase/migrations/20260716b_performance_indexes.sql`:
+
+- `idx_leads_property_id` em `leads(property_id)`;
+- `idx_leads_status` em `leads(status)`;
+- `idx_agenda_broker_scheduled` em `(broker_id, scheduled_at)` para a nova
+  métrica e janelas da Agenda;
+- `idx_unit_reservations_due` parcial para reservas financeiras vencidas;
+- `idx_units_reserved_until` parcial para unidades reservadas vencidas.
+
+Todos usam `CREATE INDEX IF NOT EXISTS`. ✅ **Esta migration, assim como a fila
+de reconciliação do Bloco 1, foi executada manualmente pelo usuário no
+Supabase em 2026-07-16** (SQL Editor) — índices já existem em produção.
+
+### Validação do Bloco 3
+
+- busca global confirmou que `visita_agendada`/`agendado` não permanecem em
+  rotas ou telas de leads;
+- `npm run lint` / `tsc --noEmit`: aprovado;
+- `npm run build`: aprovado, 2.136 módulos, entrada 374,65 kB e sem warning de
+  chunk grande;
+- ✅ migration `20260716b_performance_indexes.sql` executada manualmente pelo
+  usuário no Supabase em 2026-07-16 (ver acima).
+
+### Estado desta etapa
+
+Bloco 3 codificado, compilado e documentado; migration aplicada. Commit/push/
+deploy seguem no §14.28.
+
+## 14.27. Atualização 2026-07-16 — Auditoria de gargalos, Bloco 4: retenção, paginação administrativa e código órfão
+
+### Retenção de `webhook_logs`
+
+Novo serviço `server/services/maintenance.ts`: `purgeExpiredWebhookLogs`
+remove registros com mais de 90 dias. O job roda uma vez ao subir e depois a
+cada 24 horas, protegido por `try_billing_lock` com a chave
+`webhook_logs_purge`, portanto múltiplas máquinas Fly não executam a limpeza ao
+mesmo tempo.
+
+O período de 90 dias está isolado em `WEBHOOK_LOG_RETENTION_DAYS` e pode ser
+ajustado futuramente. A migration de performance do §14.26 também ganhou
+`idx_webhook_logs_created_at`, evitando uma varredura integral durante o purge.
+
+### Admin e Contatos paginados
+
+`GET /api/admin/brokers` e `GET /api/contacts` agora aceitam `limit`/`offset`,
+usam 100 por padrão, limitam cada página a 200 e retornam `X-Total-Count` e
+`X-Has-More`. O formato de resposta continua sendo array. Leads, Admin e
+Contatos também rejeitam offsets acima de 10.000.000, evitando intervalos
+numéricos abusivos ou imprecisos no PostgREST.
+
+`Admin.tsx` e `ContatosArea.tsx` carregam a primeira página e oferecem botões
+explícitos para carregar mais, com deduplicação por ID e indicação de
+carregados/total. Criar ou editar recarrega a primeira página; excluir atualiza
+o total local sem buscar novamente toda a coleção.
+
+### Provisionamento Z-PRO órfão removido, UAZAPI nativa preservada
+
+A busca global confirmou que `createZproTenantAndChannel` não tinha nenhum
+chamador. Todo o subgrafo usado exclusivamente por ela também era órfão:
+`zproPost`, `zproPut`, `zproGet`, `zproDelete`, configuração de bot/canal
+Z-PRO, criação de tenant/canal/API config, webhook de provisionamento antigo e
+os helpers JWT de `server/lib/zproAuth.ts`.
+
+Foram removidas aproximadamente 600 linhas de `server/services/provisioning.ts`
+e o arquivo órfão `server/lib/zproAuth.ts` (102 linhas). O serviço de
+provisionamento agora tem 116 linhas e contém somente os dois caminhos ativos:
+
+- `provisionUazapiInstanceNative` para a conta;
+- `provisionUazapiInstanceForMember` para membro com WhatsApp próprio.
+
+Ambos continuam criando a instância UAZAPI, apontando o webhook para
+`/api/wpp-shim/inbound/:instanceId` e persistindo ID/token no tenant correto.
+
+Esta limpeza **não** removeu `ZPRO_ADMIN_URL`, `ZPRO_ADMIN_TOKEN`,
+`ZPRO_JWT_SECRET`, `PROVISIONING_WEBHOOK_URL` nem qualquer secret do Fly. As
+rotas de compatibilidade que ainda mencionam o protocolo Z-PRO, mas têm
+chamadores ativos, também foram preservadas; a remoção ficou estritamente no
+subgrafo comprovadamente sem uso.
+
+### Validação do Bloco 4
+
+- busca global após a limpeza: nenhum símbolo removido continua importado ou
+  chamado;
+- `server/services/provisioning.ts`: 116 linhas, somente UAZAPI nativa;
+- `npm run lint` / `tsc --noEmit`: aprovado;
+- `git diff --check`: aprovado;
+- `npm run build`: aprovado, 2.136 módulos, entrada 374,65 kB e sem warning de
+  chunk grande;
+- nenhum purge foi executado no banco, nenhum secret foi alterado e nenhuma
+  infraestrutura Redis foi criada durante esta etapa.
+
+### Estado desta etapa
+
+Bloco 4 codificado, compilado e documentado. Não depende de migration própria
+(usa o índice `idx_webhook_logs_created_at` já incluído em
+`20260716b_performance_indexes.sql`, aplicado — ver §14.26). Commit/push/
+deploy seguem no §14.28.

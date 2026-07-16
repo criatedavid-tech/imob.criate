@@ -1,6 +1,17 @@
 import { authService } from '../services/auth';
 import type { LayoutSpec } from './types';
 
+async function fetchTodayLeadCount(headers: Record<string, string>): Promise<number> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const url = `/api/leads?limit=1&created_from=${encodeURIComponent(start.toISOString())}&created_to=${encodeURIComponent(end.toISOString())}`;
+  const response = await fetch(url, { headers }).catch(() => null);
+  if (!response?.ok) return 0;
+  return Number(response.headers.get('X-Total-Count') || 0);
+}
+
 // Busca o cockpit "Hoje" do CORRETOR com dados reais do backend já existente.
 // Nada aqui é inventado — cada número vem de um endpoint que já roda em produção.
 // Se algo falhar ou vier zerado, o cockpit reflete isso honestamente (nunca preenche com mock).
@@ -122,16 +133,14 @@ export async function fetchIncorporadoraLayout(refresh: () => void): Promise<Lay
   const soldUnitsAll = developments.reduce((s: number, d: any) => s + d.vendido, 0);
   const reservedUnitsAll = developments.reduce((s: number, d: any) => s + d.reservado, 0);
 
-  const [unitsRes, leadsRes, finRes, visitsRes] = await Promise.all([
+  const [unitsRes, leadsToday, finRes, visitsRes] = await Promise.all([
     fetch(`/api/lancamentos/developments/${featured.id}/units`, { headers }).then(r => (r.ok ? r.json() : [])).catch(() => []),
-    fetch('/api/leads', { headers }).then(r => (r.ok ? r.json() : [])).catch(() => []),
+    fetchTodayLeadCount(headers),
     fetch('/api/financeiro/summary', { headers }).then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch(`/api/agenda/visits?start=${new Date().toISOString()}`, { headers }).then(r => (r.ok ? r.json() : [])).catch(() => []),
   ]);
 
   const units = Array.isArray(unitsRes) ? unitsRes : [];
-  const todayIso = new Date().toISOString().split('T')[0];
-  const leadsToday = (Array.isArray(leadsRes) ? leadsRes : []).filter((l: any) => (l.created_at || '').startsWith(todayIso)).length;
   const vgvCents = finRes?.sales_total_cents ?? 0;
   const vgvLabel = (vgvCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 1, notation: vgvCents >= 100_000_00 ? 'compact' : 'standard' });
 
@@ -212,10 +221,10 @@ export async function fetchIncorporadoraLayout(refresh: () => void): Promise<Lay
 export async function fetchImobiliariaLayout(refresh: () => void, navigate: (area: string) => void): Promise<LayoutSpec> {
   const headers = authService.getAuthHeaders();
 
-  const [meRes, contractsRes, leadsRes, relatRes] = await Promise.all([
+  const [meRes, contractsRes, leadsToday, relatRes] = await Promise.all([
     fetch('/api/brokers/me', { headers }).then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch('/api/locacao/contracts', { headers }).then(r => (r.ok ? r.json() : [])).catch(() => []),
-    fetch('/api/leads', { headers }).then(r => (r.ok ? r.json() : [])).catch(() => []),
+    fetchTodayLeadCount(headers),
     fetch('/api/relatorios/summary?months=6', { headers }).then(r => (r.ok ? r.json() : null)).catch(() => null),
   ]);
 
@@ -228,8 +237,6 @@ export async function fetchImobiliariaLayout(refresh: () => void, navigate: (are
   const activeContracts = contracts.filter((c: any) => c.status === 'ativo');
   const overdueContracts = activeContracts.filter((c: any) => c.current_month_payment_status === 'overdue');
 
-  const todayIso = new Date().toISOString().split('T')[0];
-  const leadsToday = (Array.isArray(leadsRes) ? leadsRes : []).filter((l: any) => (l.created_at || '').startsWith(todayIso)).length;
   const conversionRate = relatRes?.conversionRate ?? 0;
 
   const isEmpty = activeContracts.length === 0 && leadsToday === 0;

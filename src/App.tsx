@@ -1,23 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
-import PropertyLanding from './pages/PropertyLanding';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import JoinTeam from './pages/JoinTeam';
-import PaymentPending from './pages/PaymentPending';
-import PaymentSuccess from './pages/PaymentSuccess';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Termos from './pages/Termos';
-import Privacidade from './pages/Privacidade';
-import Admin from './pages/Admin';
-import Experiencia from './pages/Experiencia';
-import Vitrine from './pages/Vitrine';
-import VitrineLancamentos from './pages/VitrineLancamentos';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
 import TermsGate from './components/TermsGate';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const PropertyLanding = lazy(() => import('./pages/PropertyLanding'));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const JoinTeam = lazy(() => import('./pages/JoinTeam'));
+const PaymentPending = lazy(() => import('./pages/PaymentPending'));
+const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Termos = lazy(() => import('./pages/Termos'));
+const Privacidade = lazy(() => import('./pages/Privacidade'));
+const Admin = lazy(() => import('./pages/Admin'));
+const Experiencia = lazy(() => import('./pages/Experiencia'));
+const Vitrine = lazy(() => import('./pages/Vitrine'));
+const VitrineLancamentos = lazy(() => import('./pages/VitrineLancamentos'));
+
+function RouteFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 // Rota que verifica login E status da assinatura
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -56,8 +65,9 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <AnimatePresence mode="wait">
-        <Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <AnimatePresence mode="wait">
+          <Routes>
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
@@ -103,8 +113,9 @@ export default function App() {
 
           {/* Rota curinga */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
+          </Routes>
+        </AnimatePresence>
+      </Suspense>
     </BrowserRouter>
   );
 }

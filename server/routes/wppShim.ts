@@ -365,15 +365,32 @@ wppShimRouter.get("/api/conversas/:customerPhone/messages", requireUser, async (
     if (!brokerId) return res.json([]);
     if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
 
-    const { data, error } = await supabase
+    const requestedLimit = req.query.limit === undefined ? 50 : Number(req.query.limit);
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+      return res.status(400).json({ error: "limit deve ser um inteiro entre 1 e 100." });
+    }
+    const before = typeof req.query.before === "string" ? new Date(req.query.before) : null;
+    if (req.query.before !== undefined && (!before || Number.isNaN(before.getTime()))) {
+      return res.status(400).json({ error: "before deve ser uma data ISO válida." });
+    }
+
+    let query = supabase
       .from("imf_conversation_messages")
       .select("id, direction, sender_type, body, media_url, media_type, created_at")
       .eq("broker_id", brokerId)
-      .eq("customer_phone", req.params.customerPhone)
-      .order("created_at", { ascending: true });
+      .eq("customer_phone", req.params.customerPhone);
+    if (before) query = query.lt("created_at", before.toISOString());
+    const { data, error } = await query
+      .order("created_at", { ascending: false })
+      .limit(requestedLimit + 1);
     if (error) throw error;
 
-    res.json(data || []);
+    const rows = data || [];
+    const hasMore = rows.length > requestedLimit;
+    const page = rows.slice(0, requestedLimit).reverse();
+    res.setHeader("X-Has-More", String(hasMore));
+    res.setHeader("X-Next-Cursor", page[0]?.created_at || "");
+    res.json(page);
   } catch (err: any) {
     console.error("Erro GET /api/conversas/:phone/messages:", err.message);
     res.status(500).json({ error: err.message });

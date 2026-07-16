@@ -202,6 +202,8 @@ const STAGES: { key: string; label: string }[] = [
   { key: 'fechado', label: 'Fechado' },
 ];
 
+const LEADS_PAGE_SIZE = 100;
+
 function stageOf(lead: Lead): string {
   return STAGES.some((s) => s.key === lead.status) ? lead.status : 'new';
 }
@@ -228,24 +230,46 @@ export function NegociosArea() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = () => {
-    setLoading(true);
+  const load = (append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError('');
-    fetch('/api/leads', { headers: authService.getAuthHeaders() })
+    const offset = append ? (leads?.length || 0) : 0;
+    fetch(`/api/leads?limit=${LEADS_PAGE_SIZE}&offset=${offset}`, { headers: authService.getAuthHeaders() })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
           throw new Error(body?.error || `Erro ${r.status} ao carregar negócios.`);
         }
-        return r.json();
+        const data = await r.json();
+        return {
+          data: Array.isArray(data) ? data : [],
+          total: Number(r.headers.get('X-Total-Count') || 0),
+          hasMore: r.headers.get('X-Has-More') === 'true',
+        };
       })
-      .then((data) => setLeads(Array.isArray(data) ? data : []))
+      .then((page) => {
+        setTotalLeads(page.total);
+        setHasMore(page.hasMore);
+        setLeads((current) => {
+          if (!append) return page.data;
+          const byId = new Map((current || []).map((lead) => [lead.id, lead]));
+          for (const lead of page.data) byId.set(lead.id, lead);
+          return Array.from(byId.values());
+        });
+      })
       .catch((e) => setError(e.message || 'Erro ao carregar negócios.'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
+      });
   };
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
   useEffect(() => {
     fetch('/api/properties', { headers: authService.getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : []))
@@ -300,7 +324,9 @@ export function NegociosArea() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-white">Leads</h2>
         <div className="flex items-center gap-3">
-          <span className="text-[12px] text-white/40">{(leads || []).length} no funil</span>
+          <span className="text-[12px] text-white/40">
+            {(leads || []).length}{totalLeads > (leads || []).length ? ` de ${totalLeads}` : ''} no funil
+          </span>
           <button
             onClick={() => setShowCreate(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
@@ -421,11 +447,25 @@ export function NegociosArea() {
         </div>
       )}
 
+      {!isEmpty && hasMore && (
+        <div className="flex justify-center mt-5">
+          <button
+            onClick={() => load(true)}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[13px] font-bold text-white/70
+              bg-white/[0.07] border border-white/12 hover:bg-white/[0.12] disabled:opacity-50 transition-colors"
+          >
+            {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+            Carregar mais leads
+          </button>
+        </div>
+      )}
+
       {showCreate && (
         <NewLeadModal
           properties={properties}
           onClose={() => setShowCreate(false)}
-          onCreated={load}
+          onCreated={() => load()}
         />
       )}
       {editingLead && (
@@ -433,7 +473,7 @@ export function NegociosArea() {
           properties={properties}
           initial={editingLead}
           onClose={() => setEditingLead(null)}
-          onCreated={load}
+          onCreated={() => load()}
         />
       )}
     </div>

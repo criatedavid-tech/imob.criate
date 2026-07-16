@@ -11,6 +11,167 @@ export const asaasHeaders = () => ({
   'access_token': ASAAS_API_KEY
 });
 
+const BASE_SUBSCRIPTION_DESCRIPTION = 'Criate — Plano mensal';
+
+async function asaasResponseError(response: Response, fallback: string): Promise<Error> {
+  const payload = await response.json().catch(() => ({} as any));
+  const message = payload?.errors?.[0]?.description || payload?.message || fallback;
+  return new Error(`${message} (HTTP ${response.status})`);
+}
+
+async function updateAsaasSubscriptionValue(
+  subscriptionId: string,
+  value: number,
+  description: string,
+): Promise<void> {
+  if (!ASAAS_API_KEY) throw new Error('ASAAS_API_KEY não configurada.');
+  const response = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}`, {
+    method: 'PUT',
+    headers: asaasHeaders(),
+    body: JSON.stringify({ value, description }),
+  });
+  if (!response.ok) throw await asaasResponseError(response, 'Falha ao atualizar assinatura no Asaas');
+}
+
+export async function cancelAsaasSubscription(subscriptionId: string): Promise<void> {
+  if (!ASAAS_API_KEY) throw new Error('ASAAS_API_KEY não configurada.');
+  const response = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}/cancel`, {
+    method: 'POST',
+    headers: asaasHeaders(),
+  });
+  if (!response.ok) throw await asaasResponseError(response, 'Falha ao cancelar assinatura no Asaas');
+}
+
+async function ensurePendingSubscriptionReset(brokerId: string, subscriptionId: string): Promise<string> {
+  const payload = {
+    broker_id: brokerId,
+    action: 'reset_subscription_value',
+    asaas_subscription_id: subscriptionId,
+    desired_value: SUBSCRIPTION_VALUE,
+    desired_description: BASE_SUBSCRIPTION_DESCRIPTION,
+    status: 'pending',
+    next_attempt_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('imf_billing_reconciliations')
+    .insert(payload)
+    .select('id')
+    .single();
+
+  if (!error && data?.id) return data.id;
+  if (error?.code !== '23505') {
+    throw new Error(`Falha ao persistir reconciliação de billing: ${error?.message || 'registro não criado'}`);
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from('imf_billing_reconciliations')
+    .select('id')
+    .eq('action', 'reset_subscription_value')
+    .eq('asaas_subscription_id', subscriptionId)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (existingError || !existing?.id) {
+    throw new Error(`Falha ao localizar reconciliação já existente: ${existingError?.message || 'registro ausente'}`);
+  }
+  return existing.id;
+}
+
+async function resetSubscriptionToBaseWithReconciliation(
+  brokerId: string,
+  subscriptionId: string,
+): Promise<void> {
+  // Persiste antes da chamada externa: até um crash entre banco e Asaas deixa
+  // uma intenção recuperável para o job periódico.
+  const reconciliationId = await ensurePendingSubscriptionReset(brokerId, subscriptionId);
+  try {
+    await updateAsaasSubscriptionValue(subscriptionId, SUBSCRIPTION_VALUE, BASE_SUBSCRIPTION_DESCRIPTION);
+    const { error } = await supabase.from('imf_billing_reconciliations').update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_error: null,
+    }).eq('id', reconciliationId);
+    if (error) throw new Error(`Asaas atualizado, mas a reconciliação não foi concluída no banco: ${error.message}`);
+  } catch (error: any) {
+    const message = String(error?.message || error).slice(0, 1000);
+    const { error: pendingError } = await supabase.from('imf_billing_reconciliations').update({
+      last_error: message,
+      next_attempt_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', reconciliationId).eq('status', 'pending');
+    if (pendingError) {
+      // A linha já foi inserida como pending antes da chamada externa; mesmo
+      // que os metadados falhem, o job ainda a encontrará pelo next_attempt_at
+      // padrão. Não converta uma falha externa em falso sucesso silencioso.
+      console.error('[Billing] falha ao registrar metadados da reconciliação:', pendingError.message);
+    }
+    console.error('[Billing] reset pendente de reconciliação:', message);
+  }
+}
+
+export async function reconcilePendingBillingActions(): Promise<void> {
+  if (!ASAAS_API_KEY) return;
+
+  const { data: locked, error: lockError } = await supabase.rpc('try_billing_lock', {
+    p_key: 'billing_reconciliation',
+    p_ttl_seconds: 600,
+  });
+  if (lockError) {
+    console.error('[Billing Reconciliation] falha ao adquirir lock:', lockError.message);
+    return;
+  }
+  if (!locked) return;
+
+  try {
+    const { data: pending, error } = await supabase
+      .from('imf_billing_reconciliations')
+      .select('id, action, asaas_subscription_id, desired_value, desired_description, attempts')
+      .eq('status', 'pending')
+      .lte('next_attempt_at', new Date().toISOString())
+      .order('next_attempt_at', { ascending: true })
+      .limit(20);
+    if (error) {
+      console.error('[Billing Reconciliation] falha ao consultar pendências:', error.message);
+      return;
+    }
+
+    for (const row of pending || []) {
+      try {
+        if (row.action !== 'reset_subscription_value') {
+          throw new Error(`Ação de reconciliação desconhecida: ${row.action}`);
+        }
+        await updateAsaasSubscriptionValue(
+          row.asaas_subscription_id,
+          Number(row.desired_value),
+          row.desired_description,
+        );
+        const { error: completeError } = await supabase.from('imf_billing_reconciliations').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          last_error: null,
+        }).eq('id', row.id).eq('status', 'pending');
+        if (completeError) throw completeError;
+        console.log(`[Billing Reconciliation] assinatura ${row.asaas_subscription_id} reconciliada`);
+      } catch (reconcileError: any) {
+        const attempts = Number(row.attempts || 0) + 1;
+        const delayMinutes = Math.min(24 * 60, 5 * (2 ** Math.min(attempts - 1, 8)));
+        const message = String(reconcileError?.message || reconcileError).slice(0, 1000);
+        await supabase.from('imf_billing_reconciliations').update({
+          attempts,
+          last_error: message,
+          next_attempt_at: new Date(Date.now() + delayMinutes * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id).eq('status', 'pending');
+        console.error(`[Billing Reconciliation] tentativa ${attempts} falhou:`, message);
+      }
+    }
+  } finally {
+    const { error } = await supabase.rpc('release_billing_lock', { p_key: 'billing_reconciliation' });
+    if (error) console.warn('[Billing Reconciliation] falha ao liberar lock:', error.message);
+  }
+}
+
 // ─── Cobrança de excedente de atendimentos ────────────────────────────────
 // Chamada na renovação mensal (handleAsaasPaymentReceived com isRenewal=true).
 // Conta os tickets do ciclo encerrado, cobra R$ PLAN_OVERAGE_PRICE por ticket
@@ -195,16 +356,18 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
           .maybeSingle();
 
         if (scheduled) {
-          // Caminho normal: excedente já estava embutido no valor da cobrança — marcar como pago
-          await supabase.from('imf_overage_charges')
+          // Reseta a assinatura para o valor-base. A intenção é persistida
+          // antes da chamada e o job periódico tenta novamente em caso de falha.
+          // Esta função só absorve falhas depois que a pendência já existe. Se
+          // a persistência inicial falhar, a exceção interrompe a conclusão
+          // local e o excedente não é marcado falsamente como reconciliável.
+          await resetSubscriptionToBaseWithReconciliation(brokerId, subscriptionId);
+          // Só muda o estado do ciclo depois que a intenção de reset já está
+          // durável. Assim um crash nunca deixa o valor inflado sem retry.
+          const { error: includedError } = await supabase.from('imf_overage_charges')
             .update({ status: 'included_in_subscription', charged_at: new Date().toISOString() })
             .eq('id', scheduled.id);
-          // Reseta subscription de volta ao valor base para o próximo ciclo
-          fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}`, {
-            method: 'PUT',
-            headers: asaasHeaders(),
-            body: JSON.stringify({ value: SUBSCRIPTION_VALUE, description: 'Criate — Plano mensal' })
-          }).catch(e => console.error('[Billing] falha ao resetar subscription:', e.message));
+          if (includedError) throw includedError;
           console.log(`[Billing] excedente de ${scheduled.tickets_overage} tickets já incluído na renovação — ${brokerId}`);
         } else if (brokerBefore?.asaas_credit_card_token) {
           // Fallback: job de preparo não rodou (ex: servidor estava offline) → cobrança separada

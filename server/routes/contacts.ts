@@ -5,18 +5,30 @@ import { normalizePhoneBR } from "../lib/crypto";
 
 export const contactsRouter = express.Router();
 
+const MAX_PAGINATION_OFFSET = 10_000_000;
+
 contactsRouter.get("/api/contacts", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
 
-    const { data, error } = await supabase
+    const limit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+    const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isInteger(offset) || offset < 0 || offset > MAX_PAGINATION_OFFSET) {
+      return res.status(400).json({ error: `limit deve estar entre 1 e 200; offset deve ser um inteiro entre 0 e ${MAX_PAGINATION_OFFSET}.` });
+    }
+
+    const { data, error, count } = await supabase
       .from("imf_contacts")
-      .select("id, name, phone, notes, created_at")
+      .select("id, name, phone, notes, created_at", { count: "exact" })
       .eq("broker_id", brokerId)
-      .order("name", { ascending: true });
+      .order("name", { ascending: true })
+      .range(offset, offset + limit - 1);
     if (error) throw error;
+    const total = count || 0;
+    res.setHeader("X-Total-Count", String(total));
+    res.setHeader("X-Has-More", String(offset + (data?.length || 0) < total));
     res.json(data || []);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

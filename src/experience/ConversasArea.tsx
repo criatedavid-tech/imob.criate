@@ -74,6 +74,9 @@ export function ConversasArea() {
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [messageCursor, setMessageCursor] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>('aguardando');
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -94,6 +97,7 @@ export function ConversasArea() {
   const [newMessage, setNewMessage] = useState('');
   const [creatingConvo, setCreatingConvo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const shouldScrollToEndRef = useRef(false);
 
   const loadConversations = () => {
     fetch('/api/conversas', { headers: authService.getAuthHeaders() })
@@ -123,13 +127,41 @@ export function ConversasArea() {
     return () => clearInterval(id);
   }, []);
 
-  const loadMessages = (phone: string, silent = false) => {
-    if (!silent) setLoadingMessages(true);
-    fetch(`/api/conversas/${phone}/messages`, { headers: authService.getAuthHeaders() })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setMessages(Array.isArray(data) ? data : []))
-      .catch(() => { if (!silent) setMessages([]); })
-      .finally(() => { if (!silent) setLoadingMessages(false); });
+  const loadMessages = async (phone: string, mode: 'replace' | 'poll' | 'older' = 'replace') => {
+    if (mode === 'replace') setLoadingMessages(true);
+    if (mode === 'older') setLoadingOlderMessages(true);
+    try {
+      const before = mode === 'older' && messageCursor
+        ? `&before=${encodeURIComponent(messageCursor)}`
+        : '';
+      const response = await fetch(
+        `/api/conversas/${encodeURIComponent(phone)}/messages?limit=50${before}`,
+        { headers: authService.getAuthHeaders() },
+      );
+      if (!response.ok) throw new Error(`Erro ${response.status}`);
+      const payload = await response.json();
+      const page = Array.isArray(payload) ? payload : [];
+
+      if (mode !== 'poll') {
+        setHasOlderMessages(response.headers.get('X-Has-More') === 'true');
+        setMessageCursor(response.headers.get('X-Next-Cursor') || null);
+      }
+      shouldScrollToEndRef.current = mode === 'replace';
+      setMessages((current) => {
+        if (mode === 'replace') return page;
+        const byId = new Map<string, Message>();
+        for (const message of [...(current || []), ...page]) byId.set(message.id, message);
+        return Array.from(byId.values()).sort((a, b) => {
+          const byDate = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return byDate || a.id.localeCompare(b.id);
+        });
+      });
+    } catch {
+      if (mode === 'replace') setMessages([]);
+    } finally {
+      if (mode === 'replace') setLoadingMessages(false);
+      if (mode === 'older') setLoadingOlderMessages(false);
+    }
   };
 
   const loadNotes = (phone: string) => {
@@ -149,12 +181,15 @@ export function ConversasArea() {
 
   useEffect(() => {
     if (!selected) return;
-    const id = setInterval(() => loadMessages(selected, true), 3000);
+    const id = setInterval(() => loadMessages(selected, 'poll'), 3000);
     return () => clearInterval(id);
   }, [selected]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    if (shouldScrollToEndRef.current) {
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      shouldScrollToEndRef.current = false;
+    }
   }, [messages]);
 
   const filtered = useMemo(
@@ -529,6 +564,19 @@ export function ConversasArea() {
                       <p className="text-white/40 text-[14px] text-center pt-16">Sem mensagens registradas.</p>
                     ) : (
                       <div className="space-y-3">
+                        {hasOlderMessages && (
+                          <div className="flex justify-center pb-2">
+                            <button
+                              onClick={() => selected && loadMessages(selected, 'older')}
+                              disabled={loadingOlderMessages}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold
+                                text-white/55 bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] disabled:opacity-50"
+                            >
+                              {loadingOlderMessages && <Loader2 className="w-3 h-3 animate-spin" />}
+                              Carregar mensagens anteriores
+                            </button>
+                          </div>
+                        )}
                         {messages.map((m) => (
                           <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[13px] ${

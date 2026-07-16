@@ -6,8 +6,10 @@ import helmet from "helmet";
 
 import { SUPABASE_URL } from "./server/config";
 import "./server/lib/infra"; // side-effect: inicializa Sentry/Redis se configurados
-import { prepareOverageBilling } from "./server/services/billing";
+import { prepareOverageBilling, reconcilePendingBillingActions } from "./server/services/billing";
 import { runFollowupTick } from "./server/services/followup";
+import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
+import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
@@ -151,6 +153,23 @@ async function startServer() {
   setInterval(prepareOverageBilling, 60 * 60 * 1000);
   prepareOverageBilling(); // executa uma vez ao subir (cobre restarts próximos ao billing)
   console.log('[Billing Prep] scheduler ativo (tick 1h)');
+
+  // Corrige operações monetárias que o Asaas não confirmou na primeira
+  // tentativa (por exemplo, restaurar o valor-base após cobrar excedentes).
+  setInterval(reconcilePendingBillingActions, 5 * 60 * 1000);
+  reconcilePendingBillingActions();
+  console.log('[Billing Reconciliation] scheduler ativo (tick 5min)');
+
+  // Expiração de reservas PIX roda fora do GET de unidades. Assim a listagem
+  // não espera uma sequência de chamadas de cancelamento ao Asaas.
+  setInterval(expireDueUnitReservations, 60 * 1000);
+  expireDueUnitReservations();
+  console.log('[Reserva PIX] scheduler de expiração ativo (tick 60s)');
+
+  // Retenção de auditoria operacional: mantém 90 dias de webhook_logs.
+  setInterval(purgeExpiredWebhookLogs, 24 * 60 * 60 * 1000);
+  purgeExpiredWebhookLogs();
+  console.log('[Maintenance] purge de webhook_logs ativo (tick 24h, retenção 90d)');
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

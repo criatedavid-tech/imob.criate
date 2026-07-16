@@ -5,6 +5,30 @@ import { fetchWithTimeout } from "../lib/http";
 
 export const leadsRouter = express.Router();
 
+const DEFAULT_LEADS_PAGE_SIZE = 100;
+const MAX_LEADS_PAGE_SIZE = 200;
+const MAX_PAGINATION_OFFSET = 10_000_000;
+const LEAD_STATUSES = ['new', 'contato', 'visita', 'proposta', 'fechado'] as const;
+
+function isLeadStatus(value: unknown): value is typeof LEAD_STATUSES[number] {
+  return typeof value === 'string' && LEAD_STATUSES.includes(value as typeof LEAD_STATUSES[number]);
+}
+
+function parsePagination(value: unknown, fallback: number, min: number, max: number): number | null {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return null;
+  return parsed;
+}
+
+function parseOptionalDate(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -59,6 +83,10 @@ leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
     if (!name || !phone || !property_id) {
       return res.status(400).json({ error: "Nome, telefone e ID do imóvel são obrigatórios." });
     }
+    const leadStatus = status === undefined || status === null || status === '' ? 'new' : status;
+    if (!isLeadStatus(leadStatus)) {
+      return res.status(400).json({ error: `Status inválido. Use: ${LEAD_STATUSES.join(', ')}.` });
+    }
 
     // Dono do lead: se foi um membro logado que cadastrou manualmente, o
     // lead é dele. Se veio da landing pública (cliente se cadastrando
@@ -77,7 +105,7 @@ leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
         name,
         phone,
         email: email || '',
-        status: status || 'new',
+        status: leadStatus,
         notes: notes || 'Lead via Landing Page',
         owner_user_id: ownerUserId,
         created_at: new Date()
@@ -124,8 +152,23 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
     const userId = (req as any).userId as string;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+    const limit = parsePagination(req.query.limit, DEFAULT_LEADS_PAGE_SIZE, 1, MAX_LEADS_PAGE_SIZE);
+    const offset = parsePagination(req.query.offset, 0, 0, MAX_PAGINATION_OFFSET);
+    const createdFrom = parseOptionalDate(req.query.created_from);
+    const createdTo = parseOptionalDate(req.query.created_to);
+    if (limit === null || offset === null) {
+      return res.status(400).json({ error: `limit deve estar entre 1 e ${MAX_LEADS_PAGE_SIZE}; offset deve ser um inteiro entre 0 e ${MAX_PAGINATION_OFFSET}.` });
+    }
+    if (createdFrom === null || createdTo === null) {
+      return res.status(400).json({ error: 'created_from/created_to devem ser datas ISO válidas.' });
+    }
+
     const brokerId = await getBrokerId(userId);
-    if (!brokerId) return res.json([]);
+    if (!brokerId) {
+      res.setHeader('X-Total-Count', '0');
+      res.setHeader('X-Has-More', 'false');
+      return res.json([]);
+    }
 
     const { data: propIds, error: idsError } = await supabase
       .from('imf_properties')
@@ -138,13 +181,24 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
     const ids = Array.from(propertiesMap.keys());
 
     let leads: any[] = [];
+    let total = 0;
     if (ids.length > 0) {
-      let query = supabase.from('leads').select('*').in('property_id', ids);
+      let query = supabase.from('leads').select('*', { count: 'exact' }).in('property_id', ids);
       if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-      const { data, error } = await query.order('created_at', { ascending: false });
+      if (createdFrom) query = query.gte('created_at', createdFrom);
+      if (createdTo) query = query.lt('created_at', createdTo);
+      const { data, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
       if (error) throw error;
       leads = data || [];
+      total = count || 0;
     }
+
+    res.setHeader('X-Total-Count', String(total));
+    res.setHeader('X-Pagination-Limit', String(limit));
+    res.setHeader('X-Pagination-Offset', String(offset));
+    res.setHeader('X-Has-More', String(offset + leads.length < total));
 
     res.json(leads.map((l: any) => ({
       ...l,
@@ -169,6 +223,9 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
 
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: "Status é obrigatório." });
+    if (!isLeadStatus(status)) {
+      return res.status(400).json({ error: `Status inválido. Use: ${LEAD_STATUSES.join(', ')}.` });
+    }
 
     // Escopo multi-tenant: só atualiza lead cujo imóvel pertence ao corretor autenticado
     const { data: propIds } = await supabase

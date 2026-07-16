@@ -299,21 +299,91 @@ export async function completePaidUnitReservation(brokerId: string, unitId: stri
   if (error) throw new Error("Não foi possível concluir o histórico da reserva.");
 }
 
-export async function expireFinancialReservations(developmentId: string): Promise<void> {
-  const nowIso = new Date().toISOString();
-  const { data: development } = await supabase.from("imf_developments").select("broker_id").eq("id", developmentId).maybeSingle();
-  if (!development) return;
-  const { data: expired } = await supabase
-    .from("imf_unit_reservations")
-    .select("unit_id")
-    .eq("broker_id", development.broker_id)
-    .in("status", ["creating", "pending", "overdue", "payment_failed"])
-    .lt("reserved_until", nowIso);
+async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await worker(item);
+    }
+  });
+  await Promise.all(workers);
+}
 
-  for (const row of expired || []) {
-    await cancelActiveUnitReservation(development.broker_id, row.unit_id, "expired").catch((error) => {
-      console.error(`[Reserva PIX] falha ao expirar reserva da unidade ${row.unit_id}:`, safeAsaasMessage(null, error?.message || "falha desconhecida"));
+export async function expireDueUnitReservations(): Promise<void> {
+  const { data: locked, error: lockError } = await supabase.rpc("try_billing_lock", {
+    p_key: "unit_reservation_expiry",
+    p_ttl_seconds: 600,
+  });
+  if (lockError) {
+    console.error("[Reserva PIX] falha ao adquirir lock de expiração:", lockError.message);
+    return;
+  }
+  if (!locked) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const { data: expired, error: expiredError } = await supabase
+      .from("imf_unit_reservations")
+      .select("id, broker_id, unit_id")
+      .in("status", ["creating", "pending", "overdue", "payment_failed"])
+      .lt("reserved_until", nowIso)
+      .order("reserved_until", { ascending: true })
+      .limit(50);
+    if (expiredError) throw expiredError;
+
+    // Fora da requisição HTTP e com concorrência baixa para não saturar o Asaas.
+    await runWithConcurrency(expired || [], 3, async (row: any) => {
+      try {
+        await cancelActiveUnitReservation(row.broker_id, row.unit_id, "expired");
+      } catch (error: any) {
+        console.error(
+          `[Reserva PIX] falha ao expirar reserva da unidade ${row.unit_id}:`,
+          safeAsaasMessage(null, error?.message || "falha desconhecida"),
+        );
+      }
     });
+
+    // Também cobre reservas manuais sem PIX. Reservas financeiras cuja baixa
+    // falhou continuam ativas e, por isso, não entram em releasableIds.
+    const { data: expiredUnits, error: unitsError } = await supabase
+      .from("imf_units")
+      .select("id")
+      .eq("status", "reservado")
+      .lt("reserved_until", nowIso)
+      .limit(200);
+    if (unitsError) throw unitsError;
+
+    const unitIds = (expiredUnits || []).map((unit: any) => unit.id);
+    if (!unitIds.length) return;
+    const { data: activeFinancial, error: activeError } = await supabase
+      .from("imf_unit_reservations")
+      .select("unit_id")
+      .in("unit_id", unitIds)
+      .in("status", ACTIVE_RESERVATION_STATUSES);
+    if (activeError) throw activeError;
+    const protectedIds = new Set((activeFinancial || []).map((row: any) => row.unit_id));
+    const releasableIds = unitIds.filter((id: string) => !protectedIds.has(id));
+    if (!releasableIds.length) return;
+
+    const { error: releaseError } = await supabase
+      .from("imf_units")
+      .update({
+        status: "disponivel",
+        reserved_until: null,
+        buyer_name: null,
+        buyer_phone: null,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", releasableIds)
+      .eq("status", "reservado")
+      .lt("reserved_until", nowIso);
+    if (releaseError) throw releaseError;
+  } catch (error: any) {
+    console.error("[Reserva PIX] job de expiração falhou:", error?.message || error);
+  } finally {
+    const { error } = await supabase.rpc("release_billing_lock", { p_key: "unit_reservation_expiry" });
+    if (error) console.warn("[Reserva PIX] falha ao liberar lock de expiração:", error.message);
   }
 }
 

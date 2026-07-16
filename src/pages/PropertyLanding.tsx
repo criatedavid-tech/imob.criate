@@ -69,7 +69,9 @@ export default function PropertyLanding() {
         body: JSON.stringify({
           property_id: property.id,
           name: scheduleData.name, phone: scheduleData.phone, email: scheduleData.email,
-          status: 'visita_agendada',
+          // "visita" é o estágio real do Kanban; agendamento confirmado vive
+          // em imf_agenda, não em um status paralelo de lead.
+          status: 'visita',
           notes: scheduleData.preferredTime
             ? `Visita solicitada — horário de preferência: ${scheduleData.preferredTime}`
             : 'Visita solicitada via landing page'

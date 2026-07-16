@@ -17,7 +17,25 @@ agendaRouter.get("/api/agenda/visits", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
 
-    const { start, end } = req.query as { start?: string; end?: string };
+    const startRaw = req.query.start;
+    const endRaw = req.query.end;
+    const startDate = typeof startRaw === 'string' ? new Date(startRaw) : null;
+    const endDate = typeof endRaw === 'string' ? new Date(endRaw) : null;
+    if (
+      (startRaw !== undefined && (!startDate || Number.isNaN(startDate.getTime())))
+      || (endRaw !== undefined && (!endDate || Number.isNaN(endDate.getTime())))
+    ) {
+      return res.status(400).json({ error: 'start/end devem ser datas ISO válidas.' });
+    }
+    if (startDate && endDate && startDate > endDate) {
+      return res.status(400).json({ error: 'start não pode ser posterior a end.' });
+    }
+    const start = startDate?.toISOString();
+    const end = endDate?.toISOString();
+    const requestedLimit = req.query.limit === undefined ? 500 : Number(req.query.limit);
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 1000) {
+      return res.status(400).json({ error: 'limit deve ser um inteiro entre 1 e 1000.' });
+    }
 
     let query = supabase
       .from('imf_agenda')
@@ -27,7 +45,7 @@ agendaRouter.get("/api/agenda/visits", requireUser, async (req, res) => {
     if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
     if (start) query = query.gte('scheduled_at', start);
     if (end)   query = query.lte('scheduled_at', end);
-    query = query.order('scheduled_at', { ascending: true });
+    query = query.order('scheduled_at', { ascending: true }).limit(requestedLimit);
 
     const { data: agendaVisits, error: agendaError } = await query;
     if (agendaError) throw agendaError;

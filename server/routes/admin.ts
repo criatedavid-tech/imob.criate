@@ -2,14 +2,14 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireAdmin } from "../middleware/auth";
 import {
-  ASAAS_API_KEY, ASAAS_BASE_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE,
 } from "../config";
-import { asaasHeaders } from "../services/billing";
+import { cancelAsaasSubscription } from "../services/billing";
 import { provisionUazapiInstanceNative } from "../services/provisioning";
-import { fetchWithTimeout } from "../lib/http";
 
 export const adminRouter = express.Router();
+
+const MAX_PAGINATION_OFFSET = 10_000_000;
 
 // ─────────────────────────────────────────────────────────────────────────
 // PAINEL ADMIN
@@ -19,12 +19,21 @@ export const adminRouter = express.Router();
 adminRouter.get("/api/admin/brokers", async (req, res) => {
   if (!await requireAdmin(req, res)) return;
   try {
-    const { data, error } = await supabase
+    const limit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+    const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isInteger(offset) || offset < 0 || offset > MAX_PAGINATION_OFFSET) {
+      return res.status(400).json({ error: `limit deve estar entre 1 e 200; offset deve ser um inteiro entre 0 e ${MAX_PAGINATION_OFFSET}.` });
+    }
+    const { data, error, count } = await supabase
       .from('imf_brokers')
-      .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, zpro_tenant_id')
-      .order('created_at', { ascending: false });
+      .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, zpro_tenant_id', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     if (error) throw error;
-    res.json(data);
+    const total = count || 0;
+    res.setHeader('X-Total-Count', String(total));
+    res.setHeader('X-Has-More', String(offset + (data?.length || 0) < total));
+    res.json(data || []);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -164,11 +173,15 @@ adminRouter.post("/api/admin/brokers/:id/cancel-plan", async (req, res) => {
     if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
     // Cancela assinatura no Asaas se existir
-    if (broker.asaas_subscription_id && ASAAS_API_KEY) {
-      await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
-        method: 'POST',
-        headers: asaasHeaders()
-      }).catch(e => console.warn('[Asaas] cancel sub falhou:', e?.message));
+    if (broker.asaas_subscription_id) {
+      try {
+        await cancelAsaasSubscription(broker.asaas_subscription_id);
+      } catch (error: any) {
+        console.error('[Asaas] cancelamento administrativo falhou:', error?.message);
+        return res.status(502).json({
+          error: 'Não foi possível confirmar o cancelamento no Asaas. O plano local não foi alterado; tente novamente.',
+        });
+      }
     }
 
     // Marca corretor como cancelado — acesso mantido até valid_until (cronjob/webhook vai expirar)
@@ -193,10 +206,15 @@ adminRouter.delete("/api/admin/brokers/:id", async (req, res) => {
     if (!broker) return res.status(404).json({ error: 'Corretor não encontrado' });
 
     // 1. Cancela assinatura no Asaas
-    if (broker.asaas_subscription_id && ASAAS_API_KEY) {
-      await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}/cancel`, {
-        method: 'POST', headers: asaasHeaders()
-      }).catch(() => {});
+    if (broker.asaas_subscription_id) {
+      try {
+        await cancelAsaasSubscription(broker.asaas_subscription_id);
+      } catch (error: any) {
+        console.error('[Asaas] cancelamento antes da exclusão falhou:', error?.message);
+        return res.status(502).json({
+          error: 'Não foi possível confirmar o cancelamento no Asaas. A conta não foi excluída; tente novamente.',
+        });
+      }
     }
 
     // 2. Remove dados do corretor (cascade deve limpar propriedades/leads via FK)
@@ -327,4 +345,3 @@ adminRouter.post("/api/admin/brokers/:id/ticket-adjustment", async (req, res) =>
     res.status(500).json({ error: err.message });
   }
 });
-

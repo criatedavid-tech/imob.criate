@@ -35,19 +35,26 @@ dashboardRouter.get("/api/dashboard/metrics", requireUser, async (req, res) => {
     const ids = (propIds || []).map(p => p.id);
 
     let activeLeads = 0;
-    let scheduledVisits = 0;
 
     if (ids.length > 0) {
       const leadsQuery = supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', ids).neq('status', 'archived');
       if (!owner) leadsQuery.eq('owner_user_id', userId);
       const { count: leadsCount } = await leadsQuery;
       activeLeads = leadsCount || 0;
-
-      const visitsQuery = supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', ids).in('status', ['visita_agendada', 'agendado']);
-      if (!owner) visitsQuery.eq('owner_user_id', userId);
-      const { count: visitsCount } = await visitsQuery;
-      scheduledVisits = visitsCount || 0;
     }
+
+    // A agenda é a fonte de verdade de visitas. Leads usam estágios do funil
+    // (new/contato/visita/proposta/fechado), não estados de agendamento.
+    const visitsQuery = supabase
+      .from('imf_agenda')
+      .select('id', { count: 'exact', head: true })
+      .eq('broker_id', brokerId)
+      .in('status', ['pendente', 'confirmado'])
+      .gte('scheduled_at', new Date().toISOString());
+    if (!owner) visitsQuery.eq('owner_user_id', userId);
+    const { count: visitsCount, error: visitsError } = await visitsQuery;
+    if (visitsError) throw visitsError;
+    const scheduledVisits = visitsCount || 0;
 
     res.json({
       totalProperties: propertyCount || 0,

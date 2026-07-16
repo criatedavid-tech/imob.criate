@@ -12,6 +12,8 @@ interface Contact {
   created_at: string;
 }
 
+const CONTACTS_PAGE_SIZE = 100;
+
 function ContactModal({
   initial,
   onClose,
@@ -159,24 +161,46 @@ export function ContatosArea() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [hasMoreContacts, setHasMoreContacts] = useState(false);
+  const [loadingMoreContacts, setLoadingMoreContacts] = useState(false);
 
-  const load = () => {
-    setLoading(true);
+  const load = (append = false) => {
+    if (append) setLoadingMoreContacts(true);
+    else setLoading(true);
     setError('');
-    fetch('/api/contacts', { headers: authService.getAuthHeaders() })
+    const offset = append ? (contacts?.length || 0) : 0;
+    fetch(`/api/contacts?limit=${CONTACTS_PAGE_SIZE}&offset=${offset}`, { headers: authService.getAuthHeaders() })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
           throw new Error(body?.error || `Erro ${r.status} ao carregar contatos.`);
         }
-        return r.json();
+        const data = await r.json();
+        return {
+          data: Array.isArray(data) ? data : [],
+          total: Number(r.headers.get('X-Total-Count') || 0),
+          hasMore: r.headers.get('X-Has-More') === 'true',
+        };
       })
-      .then((data) => setContacts(Array.isArray(data) ? data : []))
+      .then((page) => {
+        setTotalContacts(page.total);
+        setHasMoreContacts(page.hasMore);
+        setContacts((current) => {
+          if (!append) return page.data;
+          const byId = new Map((current || []).map((contact) => [contact.id, contact]));
+          for (const contact of page.data) byId.set(contact.id, contact);
+          return Array.from(byId.values());
+        });
+      })
       .catch((e) => setError(e.message || 'Erro ao carregar contatos.'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setLoadingMoreContacts(false);
+      });
   };
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   async function handleDelete(id: string) {
     setDeletingId(id);
@@ -184,6 +208,7 @@ export function ContatosArea() {
       const res = await fetch(`/api/contacts/${id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
       if (!res.ok) throw new Error();
       setContacts((cur) => (cur || []).filter((c) => c.id !== id));
+      setTotalContacts((current) => Math.max(0, current - 1));
     } catch {
       setError('Não consegui excluir esse contato.');
     } finally {
@@ -296,11 +321,31 @@ export function ContatosArea() {
         </div>
       )}
 
+      {(contacts || []).length > 0 && (
+        <p className="text-[11px] text-white/30 mt-4 text-center">
+          {(contacts || []).length}{totalContacts > (contacts || []).length ? ` de ${totalContacts}` : ''} contato(s) carregado(s)
+        </p>
+      )}
+
+      {hasMoreContacts && (
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={() => load(true)}
+            disabled={loadingMoreContacts}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold text-white/60
+              bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] disabled:opacity-50"
+          >
+            {loadingMoreContacts && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Carregar mais contatos
+          </button>
+        </div>
+      )}
+
       {showCreate && (
-        <ContactModal onClose={() => setShowCreate(false)} onSaved={load} />
+        <ContactModal onClose={() => setShowCreate(false)} onSaved={() => load()} />
       )}
       {editing && (
-        <ContactModal initial={editing} onClose={() => setEditing(null)} onSaved={load} />
+        <ContactModal initial={editing} onClose={() => setEditing(null)} onSaved={() => load()} />
       )}
     </div>
   );

@@ -178,7 +178,11 @@ export default function Dashboard() {
   const fetchScheduledVisits = async () => {
     setLoadingVisits(true);
     try {
-      const response = await fetch('/api/agenda/visits', {
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const end = new Date();
+      end.setDate(end.getDate() + 30);
+      const response = await fetch(`/api/agenda/visits?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`, {
         headers: authService.getAuthHeaders()
       });
       if (!response.ok) throw new Error('Falha');

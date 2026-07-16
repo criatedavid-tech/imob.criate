@@ -66,6 +66,7 @@ function fmtDate(iso: string | null) {
 }
 
 const glassCard = 'rounded-2xl backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_4px_16px_rgba(0,0,0,0.2)]';
+const BROKERS_PAGE_SIZE = 100;
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -85,25 +86,39 @@ export default function Admin() {
   const [applyingAdj, setApplyingAdj] = useState(false);
   const [memberLimitInput, setMemberLimitInput] = useState('');
   const [savingMemberLimit, setSavingMemberLimit] = useState(false);
+  const [totalBrokers, setTotalBrokers] = useState(0);
+  const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
+  const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
 
   const headers = authService.getAuthHeaders();
 
-  async function load() {
-    setLoading(true);
+  async function load(append = false) {
+    if (append) setLoadingMoreBrokers(true);
+    else setLoading(true);
     setError('');
     try {
+      const offset = append ? brokers.length : 0;
       const [bRes, mRes] = await Promise.all([
-        fetch('/api/admin/brokers', { headers }),
+        fetch(`/api/admin/brokers?limit=${BROKERS_PAGE_SIZE}&offset=${offset}`, { headers }),
         fetch('/api/admin/metrics', { headers })
       ]);
       if (bRes.status === 403) { setError('Acesso negado. Você não é administrador.'); return; }
       if (!bRes.ok || !mRes.ok) throw new Error('Erro ao carregar dados');
-      setBrokers(await bRes.json());
+      const page = await bRes.json();
+      setTotalBrokers(Number(bRes.headers.get('X-Total-Count') || 0));
+      setHasMoreBrokers(bRes.headers.get('X-Has-More') === 'true');
+      setBrokers((current) => {
+        if (!append) return Array.isArray(page) ? page : [];
+        const byId = new Map(current.map((broker) => [broker.id, broker]));
+        for (const broker of Array.isArray(page) ? page : []) byId.set(broker.id, broker);
+        return Array.from(byId.values());
+      });
       setMetrics(await mRes.json());
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setLoadingMoreBrokers(false);
     }
   }
 
@@ -256,6 +271,7 @@ export default function Admin() {
       if (!res.ok) throw new Error(data.error || 'Erro ao excluir conta');
       setActionMsg({ type: 'success', text: 'Conta excluída com sucesso.' });
       setBrokers(prev => prev.filter(b => b.id !== id));
+      setTotalBrokers((current) => Math.max(0, current - 1));
       setDetail(null);
     } catch (err: any) {
       setActionMsg({ type: 'error', text: err.message });
@@ -301,7 +317,7 @@ export default function Admin() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
+          <button onClick={() => load()} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </button>
           <button onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/10">
@@ -356,7 +372,9 @@ export default function Admin() {
             {/* Tabela */}
             <div className={`${glassCard} overflow-hidden`}>
               <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                <h2 className="text-sm font-bold text-white">Corretores <span className="text-white/40 font-normal">({filtered.length})</span></h2>
+                <h2 className="text-sm font-bold text-white">
+                  Corretores <span className="text-white/40 font-normal">({filtered.length}{totalBrokers > brokers.length ? ` de ${totalBrokers}` : ''})</span>
+                </h2>
               </div>
 
               {filtered.length === 0 ? (
@@ -423,6 +441,19 @@ export default function Admin() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {hasMoreBrokers && (
+                <div className="px-6 py-4 border-t border-white/10 flex justify-center">
+                  <button
+                    onClick={() => load(true)}
+                    disabled={loadingMoreBrokers}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white/60
+                      bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] disabled:opacity-50"
+                  >
+                    {loadingMoreBrokers && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Carregar mais corretores
+                  </button>
                 </div>
               )}
             </div>
