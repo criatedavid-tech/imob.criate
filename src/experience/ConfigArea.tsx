@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Bot, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
-import FollowUpSettings from '../components/FollowUpSettings';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsToReais } from '../lib/money';
 
@@ -39,7 +38,6 @@ interface Me {
   name: string;
   email: string;
   phone: string;
-  ai_name: string;
   broker_address: string;
   status: string;
   plan: string;
@@ -53,9 +51,8 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   cancelado: { label: 'Cancelado', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
 };
 
-// Etapa 14 (Conta/Config) — reaproveita os endpoints que já existem:
-// GET /api/brokers/me, POST /api/brokers/settings (perfil),
-// GET/POST /api/brokers/my-agent (agente). Perfil + plano + agente numa tela só.
+// Etapa 14 (Conta/Config) — concentra somente conta, conexão, plano e termos.
+// Nome, instruções e follow-up da IA vivem na área manual `assistente-ia`.
 export function ConfigArea() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,17 +60,10 @@ export function ConfigArea() {
 
   // perfil
   const [name, setName] = useState('');
-  const [aiName, setAiName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
-
-  // agente
-  const [agentPrompt, setAgentPrompt] = useState('');
-  const [agentName, setAgentName] = useState('');
-  const [savingAgent, setSavingAgent] = useState(false);
-  const [agentSaved, setAgentSaved] = useState(false);
 
   // faturas + termos (reaproveita /api/billing/usage e /api/terms/status, já existiam)
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -82,24 +72,21 @@ export function ConfigArea() {
   useEffect(() => {
     Promise.all([
       fetch('/api/brokers/me', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/brokers/my-agent', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : null)),
       fetch('/api/billing/usage', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : null)),
       fetch('/api/terms/status', { headers: authService.getAuthHeaders() }).then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([meData, agent, usageData, termsData]) => {
+      .then(([meData, usageData, termsData]) => {
         if (!meData?.id) throw new Error('Não consegui carregar seu perfil.');
         setMe(meData);
         setUsage(usageData);
         setTerms(termsData);
         setName(meData.name || '');
-        setAiName(meData.ai_name || '');
         setPhone(meData.phone ? stripDDI(meData.phone) : '');
         // broker_address às vezes guarda lixo de outra origem (visto ao vivo:
         // um JSON de perfil de corretora em vez de endereço) — não exibir cru,
         // senão a pessoa pode salvar de volta sem perceber.
         const rawAddress = (meData.broker_address || '').trim();
         setAddress(rawAddress.startsWith('{') ? '' : rawAddress);
-        if (agent) { setAgentName(agent.agent_name || 'Agente Principal'); setAgentPrompt(agent.system_prompt || ''); }
       })
       .catch((e) => setError(e.message || 'Erro ao carregar.'))
       .finally(() => setLoading(false));
@@ -112,7 +99,7 @@ export function ConfigArea() {
       const res = await fetch('/api/brokers/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ name, ai_name: aiName, phone: phone ? normalizePhoneBR(phone) : '', broker_address: address }),
+        body: JSON.stringify({ name, phone: phone ? normalizePhoneBR(phone) : '', broker_address: address }),
       });
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Falha ao salvar.'); }
       setProfileSaved(true);
@@ -121,25 +108,6 @@ export function ConfigArea() {
       setError(e.message);
     } finally {
       setSavingProfile(false);
-    }
-  }
-
-  async function saveAgent() {
-    setSavingAgent(true);
-    setAgentSaved(false);
-    try {
-      const res = await fetch('/api/brokers/my-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ agent_name: agentName || 'Agente Principal', system_prompt: agentPrompt }),
-      });
-      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Falha ao salvar.'); }
-      setAgentSaved(true);
-      setTimeout(() => setAgentSaved(false), 1800);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSavingAgent(false);
     }
   }
 
@@ -169,10 +137,6 @@ export function ConfigArea() {
           <div>
             <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><User size={11} /> Nome</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={fieldCls} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Bot size={11} /> Nome da sua IA</label>
-            <input value={aiName} onChange={(e) => setAiName(e.target.value)} placeholder="Ex.: Sofia" className={fieldCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -279,25 +243,6 @@ export function ConfigArea() {
           </div>
         </GlassCard>
       )}
-
-      {/* Agente */}
-      <GlassCard className="!p-6">
-        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase mb-4">Instruções da sua IA</h3>
-        <p className="text-[12px] text-white/40 mb-3">Como a IA deve atender seus clientes — tom, informações, regras.</p>
-        <textarea value={agentPrompt} onChange={(e) => setAgentPrompt(e.target.value)} rows={6}
-          placeholder="Ex.: Você é a Sofia, atende com simpatia, sempre oferece agendar uma visita..."
-          className={`${fieldCls} resize-none`} />
-        <div className="flex justify-end mt-4">
-          <button onClick={saveAgent} disabled={savingAgent}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
-            {savingAgent ? <Loader2 size={15} className="animate-spin" /> : agentSaved ? <Check size={15} /> : null}
-            {agentSaved ? 'Salvo' : 'Salvar instruções'}
-          </button>
-        </div>
-      </GlassCard>
-
-      {/* Follow-up automático — mesma feature do dashboard clássico, reaproveitada aqui */}
-      <FollowUpSettings />
 
       {/* Sessão — sem isso não havia como sair do app pra logar com outra conta */}
       <GlassCard className="!p-6 mt-5">

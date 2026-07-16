@@ -6,16 +6,23 @@ import { centsToReais } from '../lib/money';
 
 interface Summary {
   months: number;
+  periodStart: string;
+  periodEnd: string;
+  scope: 'account' | 'personal';
   totalLeads: number;
   closedLeads: number;
+  convertedLeads: number;
   conversionRate: number;
   byStage: Record<string, number>;
   byMonth: { label: string; count: number }[];
-  revenueCents: number;
+  rentalPaidCents: number;
+  rentalPaymentsCount: number;
   rentalMonthlyCents: number;
   salesTotalCents: number;
+  salesCount: number;
   visitsDone: number;
-  visitsTotal: number;
+  visitsScheduled: number;
+  visitsCancelled: number;
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -23,18 +30,24 @@ const STAGE_LABEL: Record<string, string> = {
 };
 const STAGE_ORDER = ['new', 'contato', 'visita', 'proposta', 'fechado'];
 
-// Resumo em linguagem natural montado a partir dos números reais (determinístico,
-// não inventa). A versão "a IA escreve o relatório" pluga no agente Gemini
-// (server/services/agent.ts) quando a chave de IA tiver cota.
+// Resumo em linguagem natural montado a partir dos números reais. Não passa
+// por LLM: os valores e a frase permanecem determinísticos e auditáveis.
 function buildSummaryText(s: Summary): string {
-  if (s.totalLeads === 0) {
-    return `Nos últimos ${s.months} meses ainda não entraram leads. Assim que os primeiros contatos chegarem, o relatório ganha vida aqui.`;
-  }
-  const conv = `${s.conversionRate}%`;
-  const visitasFrase = s.visitsTotal > 0
-    ? ` Você teve ${s.visitsTotal} visita${s.visitsTotal === 1 ? '' : 's'} agendada${s.visitsTotal === 1 ? '' : 's'}, ${s.visitsDone} realizada${s.visitsDone === 1 ? '' : 's'}.`
+  const leads = s.totalLeads === 0
+    ? `Nos últimos ${s.months} meses não entraram leads.`
+    : `Nos últimos ${s.months} meses entraram ${s.totalLeads} lead${s.totalLeads === 1 ? '' : 's'}.`;
+  const closed = ` ${s.closedLeads} negócio${s.closedLeads === 1 ? '' : 's'} ${s.closedLeads === 1 ? 'foi fechado' : 'foram fechados'} no período.`;
+  const conversion = s.totalLeads > 0
+    ? ` A coorte captada converteu ${s.convertedLeads} lead${s.convertedLeads === 1 ? '' : 's'} (${s.conversionRate}%).`
     : '';
-  return `Nos últimos ${s.months} meses entraram ${s.totalLeads} lead${s.totalLeads === 1 ? '' : 's'}, e ${s.closedLeads} fechou${s.closedLeads === 1 ? '' : 'ram'} (conversão de ${conv}).${visitasFrase}`;
+  const visits = s.visitsScheduled + s.visitsCancelled > 0
+    ? ` Houve ${s.visitsScheduled} visita${s.visitsScheduled === 1 ? '' : 's'} válida${s.visitsScheduled === 1 ? '' : 's'}, ${s.visitsDone} realizada${s.visitsDone === 1 ? '' : 's'} e ${s.visitsCancelled} cancelada${s.visitsCancelled === 1 ? '' : 's'}.`
+    : '';
+  return `${leads}${closed}${conversion}${visits}`;
+}
+
+function formatPeriodDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
 export function RelatoriosArea() {
@@ -75,12 +88,23 @@ export function RelatoriosArea() {
   const s = summary!;
   const maxMonth = Math.max(1, ...s.byMonth.map((m) => m.count));
   const maxStage = Math.max(1, ...STAGE_ORDER.map((k) => s.byStage[k] || 0));
-  const isEmpty = s.totalLeads === 0 && s.revenueCents === 0 && s.visitsTotal === 0;
+  const isEmpty = s.totalLeads === 0
+    && s.closedLeads === 0
+    && s.salesTotalCents === 0
+    && s.rentalPaidCents === 0
+    && s.rentalMonthlyCents === 0
+    && s.visitsScheduled === 0
+    && s.visitsCancelled === 0;
 
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h2 className="text-2xl font-black text-white">Relatórios</h2>
+        <div>
+          <h2 className="text-2xl font-black text-white">Relatórios</h2>
+          <p className="text-[11px] text-white/35 mt-1">
+            {formatPeriodDate(s.periodStart)} a {formatPeriodDate(s.periodEnd)} · {s.scope === 'account' ? 'visão consolidada da conta' : 'visão pessoal'}
+          </p>
+        </div>
         <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
           {[3, 6, 12].map((m) => (
             <button key={m} onClick={() => setMonths(m)}
@@ -103,7 +127,7 @@ export function RelatoriosArea() {
           <div>
             <p className="text-[15px] text-white/80 leading-relaxed">{buildSummaryText(s)}</p>
             <p className="text-[11px] text-white/30 mt-2">
-              Resumo gerado a partir dos seus números reais. A versão escrita pela IA chega quando a assistente estiver ativa.
+              Resumo automático e determinístico, gerado somente a partir dos números reais do período.
             </p>
           </div>
         </div>
@@ -118,28 +142,61 @@ export function RelatoriosArea() {
         </GlassCard>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <GlassCard className="!p-5">
-              <p className="text-[12px] font-medium text-white/45">Leads no período</p>
+              <p className="text-[12px] font-medium text-white/45">Leads captados</p>
               <p className="text-3xl font-black text-white mt-2 leading-none">{s.totalLeads}</p>
-              <p className="text-[11px] font-semibold mt-2 text-white/40">últimos {s.months} meses</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">criados no período</p>
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-white/45">Negócios fechados</p>
               <p className="text-3xl font-black text-white mt-2 leading-none">{s.closedLeads}</p>
-              <p className="text-[11px] font-semibold mt-2 text-white/40">no período</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">por data de fechamento</p>
             </GlassCard>
             <GlassCard className="!p-5">
-              <p className="text-[12px] font-medium text-white/45">Conversão</p>
+              <p className="text-[12px] font-medium text-white/45">Conversão da coorte</p>
               <p className="text-3xl font-black text-white mt-2 leading-none">{s.conversionRate}%</p>
-              <p className="text-[11px] font-semibold mt-2 text-white/40">lead → fechado</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">{s.convertedLeads} dos captados fecharam</p>
             </GlassCard>
             <GlassCard className="!p-5">
-              <p className="text-[12px] font-medium text-white/45">Receita</p>
-              <p className="text-2xl font-black text-white mt-2 leading-none">{centsToReais(s.revenueCents)}</p>
-              <p className="text-[11px] font-semibold mt-2 text-white/40">locação + vendas</p>
+              <p className="text-[12px] font-medium text-white/45">VGV vendido</p>
+              <p className="text-2xl font-black text-white mt-2 leading-none">{centsToReais(s.salesTotalCents)}</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">{s.salesCount} unidade(s) no período</p>
+            </GlassCard>
+            {s.scope === 'account' && (
+              <>
+                <GlassCard className="!p-5">
+                  <p className="text-[12px] font-medium text-white/45">Aluguéis recebidos</p>
+                  <p className="text-2xl font-black text-white mt-2 leading-none">{centsToReais(s.rentalPaidCents)}</p>
+                  <p className="text-[11px] font-semibold mt-2 text-white/40">{s.rentalPaymentsCount} pagamento(s) no período</p>
+                </GlassCard>
+                <GlassCard className="!p-5">
+                  <p className="text-[12px] font-medium text-white/45">Carteira mensal ativa</p>
+                  <p className="text-2xl font-black text-white mt-2 leading-none">{centsToReais(s.rentalMonthlyCents)}</p>
+                  <p className="text-[11px] font-semibold mt-2 text-white/40">posição atual · não acumulada</p>
+                </GlassCard>
+              </>
+            )}
+            <GlassCard className="!p-5">
+              <p className="text-[12px] font-medium text-white/45">Visitas válidas</p>
+              <p className="text-3xl font-black text-white mt-2 leading-none">{s.visitsScheduled}</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">sem canceladas e sem datas futuras</p>
+            </GlassCard>
+            <GlassCard className="!p-5">
+              <p className="text-[12px] font-medium text-white/45">Visitas realizadas</p>
+              <p className="text-3xl font-black text-white mt-2 leading-none">{s.visitsDone}</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">status realizado</p>
+            </GlassCard>
+            <GlassCard className="!p-5">
+              <p className="text-[12px] font-medium text-white/45">Visitas canceladas</p>
+              <p className="text-3xl font-black text-white mt-2 leading-none">{s.visitsCancelled}</p>
+              <p className="text-[11px] font-semibold mt-2 text-white/40">separadas das visitas válidas</p>
             </GlassCard>
           </div>
+
+          <p className="text-[11px] text-white/30 -mt-2 mb-6">
+            VGV é a soma do preço cadastrado das unidades vendidas; não representa comissão nem valor líquido recebido.
+          </p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Leads por mês */}
@@ -164,7 +221,8 @@ export function RelatoriosArea() {
 
             {/* Funil por estágio */}
             <GlassCard>
-              <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase mb-5">Distribuição no funil</h3>
+              <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase mb-1">Distribuição atual da coorte</h3>
+              <p className="text-[11px] text-white/30 mb-5">Estágio atual dos leads captados dentro do período.</p>
               <div className="space-y-3">
                 {STAGE_ORDER.map((k) => {
                   const count = s.byStage[k] || 0;

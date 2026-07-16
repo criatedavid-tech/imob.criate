@@ -4,104 +4,265 @@ import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 
 export const relatoriosRouter = express.Router();
 
-// Etapa 11 do UX_MASTERPLAN.md — a parte que é dado real e determinístico:
-// métricas de conversão, leads ao longo do tempo, receita do período. A camada
-// "a IA escreve o relatório em linguagem natural" pluga no mesmo agente
-// (server/services/agent.ts) quando a chave de IA tiver cota — por ora o resumo
-// é montado a partir dos números reais, sem inventar nada.
+const BR_TIME_ZONE = "America/Sao_Paulo";
+const PAGE_SIZE = 500;
+const ID_CHUNK_SIZE = 100;
+const REPORT_STAGES = new Set(["new", "contato", "visita", "proposta", "fechado"]);
+
+type PageResult = { data: any[] | null; error: any };
+
+async function collectPages(
+  fetchPage: (from: number, to: number) => PromiseLike<PageResult>,
+  context: string,
+): Promise<any[]> {
+  const rows: any[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await fetchPage(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(`${context}: ${error.message || "falha na consulta"}`);
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
+async function collectForIds(
+  ids: string[],
+  fetchChunk: (idsChunk: string[], from: number, to: number) => PromiseLike<PageResult>,
+  context: string,
+): Promise<any[]> {
+  const rows: any[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + ID_CHUNK_SIZE);
+    rows.push(...await collectPages((from, to) => fetchChunk(chunk, from, to), context));
+  }
+  return rows;
+}
+
+function brYearMonth(date: Date): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BR_TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { year: Number(values.year), month: Number(values.month) };
+}
+
+function reportPeriod(months: number, now = new Date()) {
+  const current = brYearMonth(now);
+  // São Paulo está em UTC-3. O início fica em 00:00 BRT do primeiro mês
+  // incluído; o fim é o instante atual, portanto visitas futuras não entram.
+  const start = new Date(Date.UTC(current.year, current.month - months, 1, 3, 0, 0, 0));
+  return { start, end: now };
+}
+
+function monthKey(date: Date): string {
+  const parts = brYearMonth(date);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}`;
+}
+
+function makeMonthBuckets(start: Date, months: number) {
+  const buckets: { key: string; label: string; count: number }[] = [];
+  for (let i = 0; i < months; i++) {
+    const date = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 15, 12));
+    buckets.push({
+      key: monthKey(date),
+      label: date.toLocaleDateString("pt-BR", { month: "short", timeZone: BR_TIME_ZONE }),
+      count: 0,
+    });
+  }
+  return buckets;
+}
+
+function emptySummary(months: number, start: Date, end: Date) {
+  return {
+    months,
+    periodStart: start.toISOString(),
+    periodEnd: end.toISOString(),
+    scope: "personal",
+    totalLeads: 0,
+    closedLeads: 0,
+    convertedLeads: 0,
+    conversionRate: 0,
+    byStage: {},
+    byMonth: makeMonthBuckets(start, months).map(({ label, count }) => ({ label, count })),
+    revenueCents: 0,
+    rentalPaidCents: 0,
+    rentalPaymentsCount: 0,
+    rentalMonthlyCents: 0,
+    salesTotalCents: 0,
+    salesCount: 0,
+    visitsDone: 0,
+    visitsScheduled: 0,
+    visitsCancelled: 0,
+    visitsTotal: 0,
+  };
+}
+
+// Relatório determinístico: cada número vem do Supabase e usa a mesma janela
+// de calendário (3/6/12 meses) quando representa fluxo. Carteira mensal ativa
+// é explicitamente um snapshot atual, não uma receita acumulada do período.
 relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
-    const months = Math.min(12, Math.max(3, Number(req.query.months) || 6));
+    const requestedMonths = Number(req.query.months);
+    const months = [3, 6, 12].includes(requestedMonths) ? requestedMonths : 6;
+    const { start, end } = reportPeriod(months);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
     const brokerId = await getBrokerId(userId);
-    if (!brokerId) {
-      return res.json({ months, totalLeads: 0, closedLeads: 0, conversionRate: 0, byStage: {}, byMonth: [], revenueCents: 0, rentalMonthlyCents: 0, salesTotalCents: 0, visitsDone: 0, visitsTotal: 0 });
-    }
+    if (!brokerId) return res.json(emptySummary(months, start, end));
     const owner = await isBrokerOwner(userId, brokerId);
 
-    const since = new Date();
-    since.setMonth(since.getMonth() - (months - 1), 1);
-    since.setHours(0, 0, 0, 0);
+    const properties = await collectPages(
+      (from, to) => supabase.from("imf_properties").select("id").eq("broker_id", brokerId).order("id").range(from, to),
+      "Falha ao consultar os imóveis do relatório",
+    );
+    const propertyIds = properties.map((property: any) => property.id as string);
 
-    const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
-    const ids = (propIds || []).map((p: any) => p.id);
+    // Coorte captada no período: alimenta total, gráfico mensal, funil atual e
+    // conversão. Fechamentos do período são consultados separadamente por
+    // closed_at, incluindo leads captados antes da janela.
+    const leads = await collectForIds(propertyIds, (ids, from, to) => {
+      let query = supabase.from("leads")
+        .select("id, status, created_at, closed_at")
+        .in("property_id", ids)
+        .gte("created_at", startIso)
+        .lte("created_at", endIso);
+      if (!owner) query = query.eq("owner_user_id", userId);
+      return query.order("created_at").order("id").range(from, to);
+    }, "Falha ao consultar os leads captados");
 
-    let leads: any[] = [];
-    if (ids.length > 0) {
-      let leadsQuery = supabase.from("leads").select("status, created_at, closed_at").in("property_id", ids).gte("created_at", since.toISOString());
-      if (!owner) leadsQuery = leadsQuery.eq("owner_user_id", userId);
-      const { data } = await leadsQuery;
-      leads = data || [];
-    }
+    const closedDeals = await collectForIds(propertyIds, (ids, from, to) => {
+      let query = supabase.from("leads")
+        .select("id, closed_at")
+        .in("property_id", ids)
+        .not("closed_at", "is", null)
+        .gte("closed_at", startIso)
+        .lte("closed_at", endIso);
+      if (!owner) query = query.eq("owner_user_id", userId);
+      return query.order("closed_at").order("id").range(from, to);
+    }, "Falha ao consultar os negócios fechados");
 
     const byStage: Record<string, number> = {};
-    let closedLeads = 0;
-    for (const l of leads) {
-      const s = l.status || "new";
-      byStage[s] = (byStage[s] || 0) + 1;
-      if (l.closed_at) closedLeads++;
+    for (const lead of leads) {
+      const rawStatus = lead.status || "new";
+      const status = REPORT_STAGES.has(rawStatus) ? rawStatus : "new";
+      byStage[status] = (byStage[status] || 0) + 1;
     }
+
     const totalLeads = leads.length;
-    const conversionRate = totalLeads > 0 ? Math.round((closedLeads / totalLeads) * 100) : 0;
+    const convertedLeads = leads.filter((lead: any) => {
+      if (!lead.closed_at) return false;
+      const closedAt = new Date(lead.closed_at).getTime();
+      return closedAt >= start.getTime() && closedAt <= end.getTime();
+    }).length;
+    const conversionRate = totalLeads > 0 ? Math.round((convertedLeads / totalLeads) * 100) : 0;
 
-    // leads por mês (buckets dos últimos N meses, na ordem cronológica)
-    const buckets: { key: string; label: string; count: number }[] = [];
-    const base = new Date(since);
-    for (let i = 0; i < months; i++) {
-      const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
-      buckets.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-        label: d.toLocaleDateString("pt-BR", { month: "short" }),
-        count: 0,
-      });
-    }
-    for (const l of leads) {
-      const d = new Date(l.created_at);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const b = buckets.find((x) => x.key === key);
-      if (b) b.count++;
+    const buckets = makeMonthBuckets(start, months);
+    const bucketByKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    for (const lead of leads) {
+      const bucket = bucketByKey.get(monthKey(new Date(lead.created_at)));
+      if (bucket) bucket.count++;
     }
 
-    // receita do período: locação ativa (mensal) + unidades vendidas (total)
-    const { data: rentals } = await supabase
-      .from("imf_rental_contracts")
-      .select("rent_amount_cents")
-      .eq("broker_id", brokerId)
-      .eq("status", "ativo");
-    const rentalMonthly = (rentals || []).reduce((s: number, c: any) => s + (c.rent_amount_cents || 0), 0);
+    const developments = await collectPages(
+      (from, to) => supabase.from("imf_developments").select("id").eq("broker_id", brokerId).order("id").range(from, to),
+      "Falha ao consultar os empreendimentos do relatório",
+    );
+    const developmentIds = developments.map((development: any) => development.id as string);
 
-    const { data: devs } = await supabase.from("imf_developments").select("id").eq("broker_id", brokerId);
-    const devIds = (devs || []).map((d: any) => d.id);
-    let salesTotal = 0;
-    if (devIds.length > 0) {
-      let soldQuery = supabase.from("imf_units").select("price_cents").in("development_id", devIds).eq("status", "vendido");
-      if (!owner) soldQuery = soldQuery.eq("sold_by_user_id", userId);
-      const { data: sold } = await soldQuery;
-      salesTotal = (sold || []).reduce((s: number, u: any) => s + (u.price_cents || 0), 0);
+    const soldUnits = await collectForIds(developmentIds, (ids, from, to) => {
+      let query = supabase.from("imf_units")
+        .select("id, price_cents, sold_at")
+        .in("development_id", ids)
+        .eq("status", "vendido")
+        .not("sold_at", "is", null)
+        .gte("sold_at", startIso)
+        .lte("sold_at", endIso);
+      if (!owner) query = query.eq("sold_by_user_id", userId);
+      return query.order("sold_at").order("id").range(from, to);
+    }, "Falha ao consultar as unidades vendidas");
+    const salesTotalCents = soldUnits.reduce((sum: number, unit: any) => sum + Number(unit.price_cents || 0), 0);
+
+    // Locação é financeira e hoje não possui autoria por membro. Para não
+    // vazar o consolidado da empresa, somente o titular recebe esses valores.
+    let rentalMonthlyCents = 0;
+    let rentalPaidCents = 0;
+    let rentalPaymentsCount = 0;
+    if (owner) {
+      const contracts = await collectPages(
+        (from, to) => supabase.from("imf_rental_contracts")
+          .select("id, status, rent_amount_cents")
+          .eq("broker_id", brokerId)
+          .order("id")
+          .range(from, to),
+        "Falha ao consultar os contratos de locação",
+      );
+      rentalMonthlyCents = contracts
+        .filter((contract: any) => contract.status === "ativo")
+        .reduce((sum: number, contract: any) => sum + Number(contract.rent_amount_cents || 0), 0);
+
+      const contractIds = contracts.map((contract: any) => contract.id as string);
+      const paidRentals = await collectForIds(contractIds, (ids, from, to) => supabase
+        .from("imf_rental_payments")
+        .select("id, amount_cents, paid_at")
+        .in("contract_id", ids)
+        .eq("status", "paid")
+        .not("paid_at", "is", null)
+        .gte("paid_at", startIso)
+        .lte("paid_at", endIso)
+        .order("paid_at")
+        .order("id")
+        .range(from, to), "Falha ao consultar os aluguéis recebidos");
+      rentalPaidCents = paidRentals.reduce((sum: number, payment: any) => sum + Number(payment.amount_cents || 0), 0);
+      rentalPaymentsCount = paidRentals.length;
     }
 
-    // visitas do período (realizadas vs total)
-    let visitsQuery = supabase.from("imf_agenda").select("status").eq("broker_id", brokerId).gte("scheduled_at", since.toISOString());
-    if (!owner) visitsQuery = visitsQuery.eq("owner_user_id", userId);
-    const { data: visits } = await visitsQuery;
-    const visitsTotal = (visits || []).length;
-    const visitsDone = (visits || []).filter((v: any) => v.status === "realizado").length;
+    const visitsQueryFactory = (from: number, to: number) => {
+      let query = supabase.from("imf_agenda")
+        .select("id, status, scheduled_at")
+        .eq("broker_id", brokerId)
+        .gte("scheduled_at", startIso)
+        .lte("scheduled_at", endIso);
+      if (!owner) query = query.eq("owner_user_id", userId);
+      return query.order("scheduled_at").order("id").range(from, to);
+    };
+    const visits = await collectPages(visitsQueryFactory, "Falha ao consultar as visitas");
+    const visitsCancelled = visits.filter((visit: any) => visit.status === "cancelado").length;
+    const visitsDone = visits.filter((visit: any) => visit.status === "realizado").length;
+    const visitsScheduled = visits.length - visitsCancelled;
 
     res.json({
       months,
+      periodStart: startIso,
+      periodEnd: endIso,
+      scope: owner ? "account" : "personal",
       totalLeads,
-      closedLeads,
+      closedLeads: closedDeals.length,
+      convertedLeads,
       conversionRate,
       byStage,
-      byMonth: buckets.map((b) => ({ label: b.label, count: b.count })),
-      revenueCents: rentalMonthly + salesTotal,
-      rentalMonthlyCents: rentalMonthly,
-      salesTotalCents: salesTotal,
+      byMonth: buckets.map(({ label, count }) => ({ label, count })),
+      // Compatibilidade: revenueCents agora significa valor efetivamente
+      // recebido de locação. VGV permanece separado em salesTotalCents.
+      revenueCents: rentalPaidCents,
+      rentalPaidCents,
+      rentalPaymentsCount,
+      rentalMonthlyCents,
+      salesTotalCents,
+      salesCount: soldUnits.length,
       visitsDone,
-      visitsTotal,
+      visitsScheduled,
+      visitsCancelled,
+      visitsTotal: visitsScheduled,
     });
   } catch (err: any) {
     console.error("Erro GET /api/relatorios/summary:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Não foi possível carregar o relatório agora." });
   }
 });

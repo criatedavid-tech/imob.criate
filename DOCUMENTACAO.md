@@ -2822,3 +2822,149 @@ Ainda é obrigatório concluir o QA autenticado do §14.29, principalmente o
 isolamento entre tenants, o bloqueio da venda com documento não aprovado e o
 fluxo completo de rejeição, reenvio e aprovação. Os testes HTTP acima validam
 disponibilidade, não substituem esses testes funcionais.
+
+## 14.30. Atualização 2026-07-16 — Assistente IA separado da Config no V2
+
+O cockpit V2 ganhou a área manual `assistente-ia`, visível no rail desktop e
+no drawer mobile para corretor, imobiliária e incorporadora. A reorganização
+usa os mesmos dados e endpoints que já existiam; nenhuma migration ou alteração
+de backend foi necessária.
+
+### Conteúdo da nova área Assistente IA
+
+- nome usado pela assistente ao conversar com leads (`imf_brokers.ai_name`);
+- instruções personalizadas do agente (`broker_agents.system_prompt`);
+- Follow-Up Inteligente completo, com toggle, três intervalos e três mensagens.
+
+O nome e as instruções são carregados por `GET /api/brokers/me` e
+`GET /api/brokers/my-agent`. O salvamento envia somente `ai_name` para
+`POST /api/brokers/settings` e mantém `agent_name` ao atualizar
+`POST /api/brokers/my-agent`, evitando sobrescrever nome, telefone ou endereço
+do perfil. O componente de Follow-Up continua usando
+`GET/POST /api/followup/config` sem mudança de comportamento.
+
+### Conteúdo preservado na Config
+
+- nome, telefone, cidade/endereço e e-mail do perfil;
+- conexão e status do WhatsApp;
+- plano, consumo e histórico de excedentes;
+- termos de uso e privacidade;
+- encerramento da sessão.
+
+`ConfigArea` não busca mais `my-agent`, não renderiza campos de IA e não envia
+mais `ai_name` ao salvar o perfil. Assim, editar o perfil não apaga nem altera
+silenciosamente a configuração da assistente.
+
+### Arquivos e validação local
+
+- novo: `src/experience/AssistenteIAArea.tsx`;
+- alterados: `src/experience/ConfigArea.tsx`, `ExperienceShell.tsx`,
+  `ManualRail.tsx` e `engine.ts`;
+- `npm run lint` (`tsc --noEmit`): passou;
+- build Vite de produção: passou, com 2.137 módulos transformados;
+- `git diff --check`: passou;
+- QA visual com APIs locais simuladas: a área Assistente IA carregou nome,
+  instruções e os três Follow-Ups, e confirmou o salvamento simulado;
+- QA visual da Config: perfil, WhatsApp, plano, termos e saída permaneceram
+  presentes, sem nome, instruções ou Follow-Up da IA; console sem erros;
+- nenhuma alteração na V1, no banco de dados ou em credenciais.
+
+O build usou um config temporário equivalente com `--configLoader runner`
+porque o empacotador padrão do Vite não consegue ler um diretório ancestral
+restrito pelo sandbox. O arquivo temporário foi removido e não integra o diff.
+Esta alteração permanece local até autorização explícita para commit, push e
+deploy.
+
+## 14.31. Atualização 2026-07-16 — métricas auditáveis em Relatórios
+
+A área de Relatórios foi corrigida para separar aquisição, conversão, receita
+de locação e VGV. Antes desta rodada, os filtros de 3, 6 e 12 meses eram
+aplicados de maneiras diferentes: fechamentos dependiam da data de criação do
+lead, vendas não possuíam data própria, receita somava conceitos incompatíveis
+e visitas futuras ou canceladas podiam entrar no total.
+
+### Janela e escopo
+
+- os seletores de 3, 6 e 12 meses agora representam meses-calendário no fuso
+  `America/Sao_Paulo`, do primeiro dia do primeiro mês incluído até o instante
+  atual;
+- o titular recebe a visão consolidada da conta;
+- membros recebem somente leads, fechamentos, vendas e visitas atribuídos ao
+  próprio `user_id`;
+- valores de locação aparecem somente para o titular. Os contratos atuais não
+  registram autoria por membro, portanto mostrar o consolidado a um membro
+  produziria vazamento financeiro interno.
+
+### Definição das métricas
+
+- **Leads captados:** leads cujo `created_at` está dentro da janela.
+- **Leads por mês:** a mesma coorte, agrupada pelo mês de `created_at`.
+- **Distribuição atual da coorte:** estágio atual dos leads captados na janela;
+  não é histórico de transições do funil.
+- **Negócios fechados:** leads cujo `closed_at` está dentro da janela, mesmo
+  quando foram captados antes dela.
+- **Conversão da coorte:** leads captados na janela que também fecharam dentro
+  da janela, divididos por todos os leads captados na janela. Essa taxa é
+  diferente da contagem independente de negócios fechados.
+- **VGV vendido:** soma de `price_cents` das unidades com `sold_at` dentro da
+  janela. VGV é valor cadastrado dos imóveis, não comissão nem caixa líquido.
+- **Aluguéis recebidos:** soma dos pagamentos com status `paid` e `paid_at`
+  dentro da janela; somente o titular visualiza.
+- **Carteira mensal ativa:** soma atual dos aluguéis dos contratos ativos. É um
+  snapshot mensal, não receita acumulada no período.
+- **Visitas válidas:** agenda dentro da janela, sem canceladas e sem eventos
+  futuros; realizadas e canceladas são exibidas separadamente.
+
+O texto de resumo continua determinístico e é montado diretamente desses
+números. O ícone visual de brilho não significa que uma LLM calcula ou reescreve
+as métricas.
+
+### Data real de venda e migration pendente
+
+A migration `supabase/migrations/20260716d_report_period_metrics.sql` adiciona
+`imf_units.sold_at`, cria índice parcial e instala um trigger de consistência.
+Marcar uma unidade como vendida passa a registrar a data; liberar a unidade
+limpa `sold_at` e `sold_by_user_id`. Os caminhos da interface e do agente também
+enviam esses campos explicitamente.
+
+Como o schema antigo não guardava a data histórica da venda, o backfill usa
+`updated_at`, com fallback para `created_at`, nas unidades que já estão como
+`vendido`. Esse valor histórico é uma estimativa e pode deslocar vendas antigas
+entre os filtros. Vendas realizadas depois da migration terão data real.
+
+**Ordem obrigatória de publicação:** executar e confirmar a migration no
+Supabase antes de publicar o backend. Sem a coluna `sold_at`, a nova consulta
+de Relatórios e as atualizações de unidade falham. O SQL não foi executado pelo
+Codex; em 2026-07-16, o usuário confirmou que o executou manualmente no
+Supabase. A consulta posterior, também executada manualmente, confirmou
+`coluna_existe = true`, `indice_existe = true`, `trigger_existe = true` e
+`vendas_sem_data = 0`.
+
+### Arquivos desta correção
+
+- `server/routes/relatorios.ts`: consultas paginadas, mesma janela temporal,
+  separação das métricas e isolamento titular/membro;
+- `src/experience/RelatoriosArea.tsx`: nomes, explicações e cards coerentes com
+  as novas definições;
+- `server/routes/lancamentos.ts` e `server/services/agent.ts`: gravação e
+  limpeza de `sold_at`;
+- `supabase/migrations/20260716d_report_period_metrics.sql`: coluna, backfill,
+  índice e trigger;
+- `server/services/agent.ts`: inclui ainda `assistente-ia` na lista de áreas
+  navegáveis pelo agente para as três personas, mantendo o backend sincronizado
+  com a reorganização descrita no §14.30.
+
+### Estado desta rodada
+
+As alterações de código permanecem somente no clone local de trabalho. A
+migration foi executada e verificada manualmente pelo usuário: coluna, índice,
+trigger e backfill estão presentes, sem unidades vendidas com `sold_at` nulo.
+Não houve commit, push ou deploy até este registro. Após a publicação ainda são
+obrigatórios: validar os valores com dados conhecidos nas contas de QA titular
+e membro e confirmar novamente o isolamento entre tenants.
+
+Validação local desta rodada: `npm run lint` passou, `git diff --check` passou e
+o build Vite de produção passou com 2.137 módulos transformados. Assim como no
+§14.30, o build usou um config temporário equivalente com `--configLoader
+runner` por causa da restrição de leitura do sandbox; o arquivo temporário foi
+removido e não integra o diff.

@@ -8,6 +8,7 @@ import type { Persona, AreaItem } from './types';
 export const AREAS: AreaItem[] = [
   { key: 'hoje',        label: 'Hoje',        personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'conversas',   label: 'Conversas',   personas: ['corretor', 'imobiliaria', 'incorporadora'] },
+  { key: 'assistente-ia', label: 'Assistente IA', personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'carteira',    label: 'Carteira',    personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'negocios',    label: 'Leads',       personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'agenda',      label: 'Agenda',      personas: ['corretor', 'imobiliaria', 'incorporadora'] },

@@ -100,9 +100,9 @@ export interface AgentResult {
 
 // Áreas navegáveis por persona (espelha engine.ts no front — mantém as duas em sincronia).
 const AREAS_BY_PERSONA: Record<string, string[]> = {
-  corretor:      ["hoje", "conversas", "carteira", "negocios", "agenda", "contatos", "divulgacao", "relatorios", "config"],
-  imobiliaria:   ["hoje", "conversas", "carteira", "negocios", "agenda", "contatos", "locacao", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
-  incorporadora: ["hoje", "conversas", "carteira", "negocios", "agenda", "contatos", "lancamentos", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
+  corretor:      ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "divulgacao", "relatorios", "config"],
+  imobiliaria:   ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "locacao", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
+  incorporadora: ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lancamentos", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
 };
 
 interface Snapshot {
@@ -733,6 +733,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       if (action.buyer_phone) updates.buyer_phone = normalizePhoneBR(action.buyer_phone);
       updates.reserved_until = null;
       updates.sold_by_user_id = userId;
+      updates.sold_at = updates.updated_at;
       actionLabel = "vendida";
     } else {
       updates.status = "disponivel";
@@ -740,6 +741,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       updates.buyer_phone = null;
       updates.reserved_until = null;
       updates.sold_by_user_id = null;
+      updates.sold_at = null;
       actionLabel = "liberada";
     }
 

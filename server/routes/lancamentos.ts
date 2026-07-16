@@ -786,6 +786,7 @@ lancamentosRouter.patch("/api/lancamentos/units/:id", requireUser, async (req, r
       // Quem fecha a venda — usado por Financeiro/Relatórios pra não
       // misturar a receita de um corretor com a de outro na mesma conta.
       updates.sold_by_user_id = userId;
+      updates.sold_at = updates.updated_at;
     } else if (action === "liberar") {
       try {
         await cancelActiveUnitReservation(brokerId, unit.id, "cancelled");
@@ -797,6 +798,7 @@ lancamentosRouter.patch("/api/lancamentos/units/:id", requireUser, async (req, r
       updates.buyer_phone = null;
       updates.reserved_until = null;
       updates.sold_by_user_id = null;
+      updates.sold_at = null;
     } else if (action === "estender") {
       // Estende a partir de AGORA (não da data original) — reflete o pedido
       // real do cockpit ("estendo mais 30min?"), não soma em cima do prazo vencido.

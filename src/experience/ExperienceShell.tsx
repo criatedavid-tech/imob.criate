@@ -19,6 +19,7 @@ import { EquipeArea } from './EquipeArea';
 import { RelatoriosArea } from './RelatoriosArea';
 import { DivulgacaoArea } from './DivulgacaoArea';
 import { ConfigArea } from './ConfigArea';
+import { AssistenteIAArea } from './AssistenteIAArea';
 import type { Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
@@ -265,6 +266,8 @@ export function ExperienceShell() {
             <RelatoriosArea />
           ) : area === 'divulgacao' ? (
             <DivulgacaoArea />
+          ) : area === 'assistente-ia' ? (
+            <AssistenteIAArea />
           ) : area === 'config' ? (
             <ConfigArea />
           ) : area !== 'hoje' ? (
