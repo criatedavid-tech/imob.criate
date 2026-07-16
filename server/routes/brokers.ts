@@ -289,10 +289,14 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
       return res.status(409).json({ error, provisioningStatus });
     }
 
+    // phone opcional: se vier, a UAZAPI gera código de pareamento em vez de
+    // QR code (POST /instance/connect aceita os dois modos — ver doc oficial).
+    const phone = req.body?.phone ? normalizePhoneBR(String(req.body.phone)) : undefined;
+
     const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/connect`, {
       method: "POST",
       headers: { "Content-Type": "application/json", token },
-      body: JSON.stringify({}),
+      body: JSON.stringify(phone ? { phone } : {}),
     });
     if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
     const data = await r.json();

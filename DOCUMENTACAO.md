@@ -2591,7 +2591,39 @@ ter corrigido os dois bugs de trava descobertos no meio do caminho).
 
 ### Estado do git
 
-6 arquivos modificados, ainda não commitados nesta rodada:
-`server/routes/admin.ts`, `server/routes/brokers.ts`,
-`server/services/billing.ts`, `server/services/provisioning.ts`,
-`src/experience/ConfigArea.tsx`, `src/pages/Dashboard.tsx`.
+Commitado e sincronizado com `origin/v2` (commit `fix(whatsapp): autocura de
+provisionamento + endpoint real de desconectar`).
+
+## Complemento — código de pareamento como alternativa ao QR (2026-07-16)
+
+Usuário testou a correção acima ao vivo (funcionou) e perguntou se dava pra
+oferecer só o código, sem depender de escanear QR. Achado: `POST
+/instance/connect` da UAZAPI já aceita um campo `phone` opcional no corpo —
+se informado, gera código de pareamento em vez de QR (confirmado na doc
+oficial); o backend (`server/routes/brokers.ts`) já buscava
+`data?.instance?.paircode` na resposta desde a correção anterior, só que a
+tela nunca renderizava.
+
+**Implementado**: `POST /api/brokers/whatsapp/connect` agora aceita
+`{ phone }` opcional no corpo (normalizado com `normalizePhoneBR`, mesma
+função já usada no resto do projeto) e repassa pra UAZAPI. Na UI
+(`ConfigArea.tsx` + `Dashboard.tsx`), um link discreto abaixo do QR
+("Não consegue escanear? Usar código em vez do QR") revela um campo de
+telefone; ao confirmar, mostra o código em vez da imagem, com instrução de
+onde digitar no WhatsApp (Aparelhos conectados → Conectar com número de
+telefone). Link simétrico pra voltar ao QR.
+
+**Achado ao testar ao vivo** (não estava na documentação da Meta/UAZAPI de
+forma explícita): trocar de modo no meio de uma tentativa em andamento não
+funciona — chamar `/instance/connect` de novo com `phone` enquanto a
+instância ainda está `connecting` a partir de uma tentativa por QR só
+devolve o QR de novo, não gera um código novo. Confirmado testando ao vivo:
+1a chamada sem telefone → QR; 2a chamada imediata com telefone → QR de novo
+(não paircode); só depois de um `POST .../disconnect` explícito entre as
+duas chamadas é que o código de pareamento saiu certo. Por isso o toggle na
+UI sempre desconecta primeiro (silenciosamente) antes de pedir o outro modo.
+
+Testado ao vivo com conta descartável (criada, testada, removida): QR sem
+telefone, código com telefone a partir de estado limpo — ambos confirmados
+retornando o dado esperado do endpoint real da UAZAPI. `tsc`/`build`
+limpos, deploy saudável.

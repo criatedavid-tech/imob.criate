@@ -313,12 +313,16 @@ export function ConfigArea() {
 function WhatsAppConnectCard() {
   const [status, setStatus] = useState<{ provisioned: boolean; connected: boolean; loggedIn: boolean; profileName?: string | null; owner?: string | null; ownInstance?: boolean; provisioningStatus?: string | null; provisioningError?: string | null } | null>(null);
   const [qrcode, setQrcode] = useState<string | null>(null);
+  const [paircode, setPaircode] = useState<string | null>(null);
+  const [pairPhone, setPairPhone] = useState('');
+  const [showPairInput, setShowPairInput] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const provisioningPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activePhoneRef = useRef<string>('');
 
   const stopPolling = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -375,10 +379,16 @@ function WhatsAppConnectCard() {
 
   const requestQrcode = async () => {
     try {
-      const r = await fetch('/api/brokers/whatsapp/connect', { method: 'POST', headers: authService.getAuthHeaders() });
+      const phone = activePhoneRef.current;
+      const r = await fetch('/api/brokers/whatsapp/connect', {
+        method: 'POST',
+        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(phone ? { phone } : {}),
+      });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Falha ao gerar QR code');
-      if (data.qrcode) setQrcode(data.qrcode);
+      if (data.paircode) { setPaircode(data.paircode); setQrcode(null); }
+      else if (data.qrcode) { setQrcode(data.qrcode); setPaircode(null); }
       if (data.connected) { setConnecting(false); stopPolling(); loadStatus(); }
     } catch (e: any) {
       setError(e.message);
@@ -387,13 +397,38 @@ function WhatsAppConnectCard() {
     }
   };
 
-  const startConnecting = async () => {
+  const startConnecting = async (phone?: string) => {
     setError(null);
     setConnecting(true);
+    setQrcode(null);
+    setPaircode(null);
+    activePhoneRef.current = phone || '';
     await requestQrcode();
     stopPolling();
     pollRef.current = setInterval(loadStatus, 3000);
     qrRefreshRef.current = setInterval(requestQrcode, 20000);
+  };
+
+  // Trocar de modo (QR ↔ código) no meio de uma tentativa em andamento não
+  // gera um pedido novo — a UAZAPI só entrega o QR/código da tentativa que já
+  // estava em curso. É preciso desconectar antes de pedir o outro modo.
+  const disconnectSilently = async () => {
+    try {
+      await fetch('/api/brokers/whatsapp/disconnect', { method: 'POST', headers: authService.getAuthHeaders() });
+    } catch { /* segue o fluxo mesmo se falhar — o connect seguinte revela o erro real, se houver */ }
+  };
+
+  const requestPaircode = async () => {
+    const digits = pairPhone.replace(/\D/g, '');
+    if (!digits) { setError('Informe o número com DDD.'); return; }
+    setShowPairInput(false);
+    await disconnectSilently();
+    await startConnecting(digits);
+  };
+
+  const switchToQrcode = async () => {
+    await disconnectSilently();
+    await startConnecting();
   };
 
   useEffect(() => {
@@ -461,7 +496,7 @@ function WhatsAppConnectCard() {
             <WifiOff className="w-4 h-4" /> Desconectado
           </div>
           <button
-            onClick={startConnecting}
+            onClick={() => startConnecting()}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors"
           >
             Conectar WhatsApp
@@ -471,7 +506,14 @@ function WhatsAppConnectCard() {
 
       {connecting && (
         <div className="space-y-3">
-          {qrcode ? (
+          {paircode ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="text-3xl font-mono font-bold tracking-[0.2em] text-white bg-white/10 border border-white/15 rounded-xl px-6 py-4">
+                {paircode}
+              </div>
+              <p className="text-[12px] text-white/40 text-center">No WhatsApp: Aparelhos conectados → Conectar com número de telefone → digite o código acima. Válido por 5 minutos.</p>
+            </div>
+          ) : qrcode ? (
             <div className="flex flex-col items-center gap-3 py-2">
               <div className="bg-white p-3 rounded-2xl">
                 <img src={qrcode} alt="QR code do WhatsApp" className="w-48 h-48" />
@@ -480,6 +522,33 @@ function WhatsAppConnectCard() {
             </div>
           ) : (
             <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+          )}
+
+          {!showPairInput && (qrcode || paircode) && (
+            <button
+              onClick={() => qrcode ? setShowPairInput(true) : switchToQrcode()}
+              className="text-[11px] text-white/30 hover:text-white/60 transition-colors mx-auto block"
+            >
+              {qrcode ? 'Não consegue escanear? Usar código em vez do QR' : 'Usar QR code em vez do código'}
+            </button>
+          )}
+
+          {showPairInput && (
+            <div className="flex items-center gap-2">
+              <input
+                type="tel"
+                value={pairPhone}
+                onChange={(e) => setPairPhone(e.target.value)}
+                placeholder="DDD + número"
+                className="flex-1 bg-white/5 border border-white/15 rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-white/30"
+              />
+              <button
+                onClick={requestPaircode}
+                className="px-3 py-2 rounded-lg text-[12px] font-semibold text-white bg-white/10 border border-white/15 hover:bg-white/20 transition-colors"
+              >
+                Gerar código
+              </button>
+            </div>
           )}
         </div>
       )}
