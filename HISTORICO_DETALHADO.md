@@ -3275,10 +3275,27 @@ consistente e reduz risco durante a janela entre SQL manual e deploy.
 
 A migration foi aplicada e verificada manualmente no Supabase em 17/07/2026.
 O resultado confirmou tabela, colunas e índice presentes (`true`) e zero
-conversas, mensagens, tags ou notas sem `ticket_id`. O código ainda aguarda
-commit, push e deploy da V2. Depois da publicação, permanece obrigatório o QA
-autenticado com o mesmo telefone antes e depois do encerramento. A V1 não foi
-alterada.
+conversas, mensagens, tags ou notas sem `ticket_id`.
+
+Publicação concluída exclusivamente na V2:
+
+- commit funcional/documental: `d50e938` (`feat: adiciona ciclos nativos de
+  tickets`);
+- branch `v2` enviada para `origin/v2`;
+- app Fly: `imobiflow-v2`; a V1 `imobiflow` não foi alterada;
+- release Fly **v88**, ID `51azqDBYY72aRcQPVya5RR68`, status `complete`;
+- imagem:
+  `registry.fly.io/imobiflow-v2:deployment-01KXR8YX3TNXM1H87M1DHSH41X`;
+- manifesto:
+  `sha256:70f75818859b87132cd8659a91f9503cb171b9717c2a22e93c1eb47d4341814a`;
+- máquina `08075edf911368`, região `gru`, estado `started`, host `ok`;
+- health check `servicecheck-00-http-3000`: `passing`;
+- smoke tests em `/`, `/login` e `/app`: HTTP 200.
+
+O aviso transitório de porta exibido durante o rolling update não persistiu:
+a máquina alcançou estado saudável e os endpoints responderam normalmente.
+Permanece obrigatório o QA autenticado com o mesmo telefone antes e depois do
+encerramento para comprovar a separação dos dois UUIDs na interface.
 
 Validação local concluída: `npx tsc --noEmit`, `npx knip`,
 `npm run build` (2.138 módulos) e `git diff --check`, todos sem erro.

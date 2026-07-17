@@ -31,12 +31,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é a release Fly **v87**, que publica o commit
-funcional `e63ce86`. A documentação da release está no commit `bb0f66c`. A
-máquina `08075edf911368`, versão 87, está iniciada em `gru`, com
+O deploy vigente confirmado é a release Fly **v88**, que publica o commit
+funcional `d50e938`. A máquina `08075edf911368`, versão 88, está iniciada em
+`gru`, com
 health check `1/1`. A imagem é
-`registry.fly.io/imobiflow-v2:deployment-01KXR5C1SYXWKKWDFH6ZW8RYZ8`, manifesto
-`sha256:e731425d992d2ba1bc0ddc26c6ae2eea2804d1fd07f09485be8a7c5201688e4c`.
+`registry.fly.io/imobiflow-v2:deployment-01KXR8YX3TNXM1H87M1DHSH41X`, manifesto
+`sha256:70f75818859b87132cd8659a91f9503cb171b9717c2a22e93c1eb47d4341814a`.
 Os smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-17.
 
 O produto está funcional e sem usuários ativos registrados, mas **não deve ser
@@ -238,9 +238,10 @@ exata por ciclo passa a valer a partir da publicação desta implementação.
 
 **Estado:** migration aplicada e verificada manualmente no Supabase em
 17/07/2026. Tabela, colunas e índice retornaram `true`; conversas, mensagens,
-tags e notas sem `ticket_id` retornaram zero. O código dependente continua
-local até a publicação registrada no histórico. Validação local concluída com
-`npx tsc --noEmit`, `npx knip`, `npm run build` e `git diff --check`.
+tags e notas sem `ticket_id` retornaram zero. O código dependente foi publicado
+no commit `d50e938` e na release Fly v88. Validação concluída com
+`npx tsc --noEmit`, `npx knip`, `npm run build`, `git diff --check`, health
+check e smoke HTTP 200 em `/`, `/login` e `/app`.
 
 `UAZAPI_PLATFORM_SESSION` não é a instância individual do corretor. Ela é a
 sessão da plataforma usada para mensagens como recuperação de senha por
