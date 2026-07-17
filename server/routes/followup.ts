@@ -4,6 +4,7 @@ import { requireUser, getBrokerId } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
 import { INTERNAL_PROXY_TOKEN } from "../config";
 import { pauseAiForHumanTakeover } from "../services/followup";
+import { ensureConversationTicket } from "../services/conversationTickets";
 
 export const followupRouter = express.Router();
 
@@ -87,6 +88,7 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
     const broker = { id: _brokerId };
 
     const incomingTicketId = String(req.body?.ticket_id || '').trim() || null;
+    const activityAt = new Date().toISOString();
 
     const { data: conv } = await supabase.from('followup_conversations')
       .select('ai_active, human_takeover_at, zpro_ticket_id')
@@ -94,6 +96,7 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
 
     // Reativação automática opcional após handover (config.reactivate_after_minutes; null = nunca)
     let aiActive = conv?.ai_active ?? true;
+    let reactivated = false;
     if (conv && aiActive === false) {
       const { data: cfg } = await supabase.from('followup_config')
         .select('reactivate_after_minutes').eq('broker_id', broker.id).maybeSingle();
@@ -101,6 +104,7 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
       if (mins && conv.human_takeover_at &&
           (Date.now() - new Date(conv.human_takeover_at).getTime()) >= mins * 60000) {
         aiActive = true;
+        reactivated = true;
       }
     }
 
@@ -111,15 +115,35 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
     const isNewTicket = incomingTicketId && conv?.zpro_ticket_id &&
                         incomingTicketId !== conv.zpro_ticket_id;
 
+    // O identificador recebido pode ser o ID legado do provedor. O ticket
+    // nativo do ImobiFlow sempre usa UUID próprio: ele permanece enquanto o
+    // atendimento está pending/open e muda depois que o anterior é encerrado.
+    const nativeTicket = await ensureConversationTicket({
+      brokerId: broker.id,
+      customerPhone,
+      initialStatus: 'pending',
+      aiActive,
+      lastActivityAt: activityAt,
+    });
+
+    if (reactivated) {
+      await supabase.from('imf_conversation_tickets').update({
+        ai_active: true,
+        human_takeover_at: null,
+        updated_at: activityAt,
+      }).eq('id', nativeTicket.id).eq('broker_id', broker.id);
+    }
+
     await supabase.from('followup_conversations').upsert({
       broker_id: broker.id,
       customer_phone: customerPhone,
-      last_customer_message_at: new Date().toISOString(),
+      ticket_id: nativeTicket.id,
+      last_customer_message_at: activityAt,
       follow_sent: false, // re-arma o timer (permite próximo follow disparar)
       ai_active: aiActive,
       ...(incomingTicketId ? { zpro_ticket_id: incomingTicketId } : {}),
       ...(isNewTicket ? { follow_message_index: 0, human_takeover_at: null } : {}),
-      updated_at: new Date().toISOString()
+      updated_at: activityAt
     }, { onConflict: 'broker_id,customer_phone' });
 
     // Contabiliza atendimento: cada ticket_id único = 1 atendimento no ciclo de billing.

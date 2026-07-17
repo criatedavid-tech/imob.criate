@@ -5,6 +5,7 @@ import { pauseAiForHumanTakeover } from "./followup";
 import { isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
 import { APP_URL } from "../config";
+import { recordConversationMessage } from "./conversationTickets";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -481,12 +482,13 @@ async function sendNotification(brokerId: string, phone: string, message: string
     if (!instanceToken) return false;
     const sent = await sendUazapiText(instanceToken, customerPhone, message);
     if (!sent.ok) return false;
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: customerPhone,
+    await recordConversationMessage({
+      brokerId,
+      customerPhone,
       direction: "out",
-      sender_type: "broker_manual",
+      senderType: "broker_manual",
       body: message,
+      initialStatus: "open",
     });
     await pauseAiForHumanTakeover(brokerId, customerPhone).catch(() => {});
     return true;
@@ -564,12 +566,13 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     const sent = await sendUazapiText(instanceToken, customerPhone, action.message);
     if (!sent.ok) throw new Error("Falha ao enviar via WhatsApp (UAZAPI). Nada foi entregue.");
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: customerPhone,
+    await recordConversationMessage({
+      brokerId,
+      customerPhone,
       direction: "out",
-      sender_type: "broker_manual", // é o corretor mandando, só que ditado pra IA — não é a IA de atendimento respondendo sozinha
+      senderType: "broker_manual", // é o corretor mandando, só que ditado pra IA — não é a IA de atendimento respondendo sozinha
       body: action.message,
+      initialStatus: "open",
     });
     // Mesmo efeito de handover de uma resposta manual em Conversas — evita o
     // atendimento automático (Z-PRO/N8N) responder em cima dessa mensagem.

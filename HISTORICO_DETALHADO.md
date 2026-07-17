@@ -3222,3 +3222,63 @@ Publicação:
 - manifesto:
   `sha256:e731425d992d2ba1bc0ddc26c6ae2eea2804d1fd07f09485be8a7c5201688e4c`;
 - smoke tests em `/`, `/login` e `/app`: HTTP 200.
+
+## Atualização 2026-07-17 — UUID nativo por ticket de conversa (local, não publicado)
+
+Foi implementado localmente o ciclo nativo de tickets da caixa Conversas. A
+motivação foi tornar explícita a regra de produto: encerrar não apaga o
+histórico; se o mesmo cliente voltar depois, nasce outro atendimento com outro
+ID, sem misturar mensagens, tags ou notas com o ticket anterior.
+
+### Contrato funcional
+
+- cada ticket recebe UUID próprio em `imf_conversation_tickets.id`;
+- apenas um ticket `pending`/`open` pode existir por conta + telefone;
+- mensagens do mesmo atendimento reutilizam o UUID ativo;
+- `closed` é terminal e imutável;
+- novo inbound após `closed` cria novo UUID em `pending`;
+- mensagens, tags e notas são consultadas e gravadas por `ticket_id`;
+- a UI exibe `Ticket #XXXXXXXX`, mantendo o UUID completo na API/banco;
+- resposta humana, IA, agente e follow-up persistem no ticket correspondente;
+- resposta atrasada da IA é bloqueada para ticket encerrado ou assumido por
+  humano;
+- `followup_conversations` foi preservada como estado operacional corrente por
+  telefone, evitando quebrar o scheduler existente.
+
+### Banco e compatibilidade histórica
+
+Nova migration local:
+`supabase/migrations/20260717_conversation_ticket_cycles.sql`.
+
+Ela cria `imf_conversation_tickets`, adiciona/backfill de `ticket_id` em
+`followup_conversations`, `imf_conversation_messages`,
+`imf_conversation_tag_links` e `imf_conversation_notes`, além dos índices e da
+policy RLS. Conteúdo legado de um telefone é consolidado em um ticket inicial,
+porque o banco anterior não guardava marcadores confiáveis para reconstruir os
+limites de tickets antigos.
+
+O campo da ponte `followup_conversations.ticket_id` não recebe default aleatório:
+o UUID deve nascer primeiro na tabela nativa. Isso mantém a ordem de criação
+consistente e reduz risco durante a janela entre SQL manual e deploy.
+
+### Arquivos principais
+
+- `server/services/conversationTickets.ts`;
+- `server/routes/wppShim.ts`;
+- `server/routes/followup.ts`;
+- `server/services/followup.ts`;
+- `server/services/agent.ts`;
+- `src/experience/ConversasArea.tsx`;
+- `supabase/migrations/20260717_conversation_ticket_cycles.sql`.
+
+### Estado de publicação
+
+A migration foi aplicada e verificada manualmente no Supabase em 17/07/2026.
+O resultado confirmou tabela, colunas e índice presentes (`true`) e zero
+conversas, mensagens, tags ou notas sem `ticket_id`. O código ainda aguarda
+commit, push e deploy da V2. Depois da publicação, permanece obrigatório o QA
+autenticado com o mesmo telefone antes e depois do encerramento. A V1 não foi
+alterada.
+
+Validação local concluída: `npx tsc --noEmit`, `npx knip`,
+`npm run build` (2.138 módulos) e `git diff --check`, todos sem erro.

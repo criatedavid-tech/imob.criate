@@ -31,11 +31,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é a release Fly **v86**, que publica o commit
-`6e6f5a9`. A máquina `08075edf911368`, versão 86, está iniciada em `gru`, com
+O deploy vigente confirmado é a release Fly **v87**, que publica o commit
+funcional `e63ce86`. A documentação da release está no commit `bb0f66c`. A
+máquina `08075edf911368`, versão 87, está iniciada em `gru`, com
 health check `1/1`. A imagem é
-`registry.fly.io/imobiflow-v2:deployment-01KXR0YXTPN2C0YKZ4GMF2R801`, manifesto
-`sha256:23158ddd0da0504a53addb84a1e2d81714e6c278a5d38c273e695dbb890ade05`.
+`registry.fly.io/imobiflow-v2:deployment-01KXR5C1SYXWKKWDFH6ZW8RYZ8`, manifesto
+`sha256:e731425d992d2ba1bc0ddc26c6ae2eea2804d1fd07f09485be8a7c5201688e4c`.
 Os smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-17.
 
 O produto está funcional e sem usuários ativos registrados, mas **não deve ser
@@ -212,6 +213,35 @@ de reconciliação para operações externas que não concluíram de forma atôm
 - Falhas de provisionamento são expostas à UI com retry, em vez de deixar o
   usuário indefinidamente no estado “configurando”.
 
+### Ciclos de ticket e histórico de conversas
+
+O trabalho local posterior à release v87 introduz um ID nativo por atendimento:
+
+- `imf_conversation_tickets.id` é um UUID único por ticket;
+- mensagens, tags e notas apontam para `ticket_id`, evitando misturar ciclos
+  diferentes do mesmo telefone;
+- enquanto o ticket estiver `pending` ou `open`, novas mensagens reutilizam o
+  mesmo UUID;
+- depois de `closed`, o ticket fica imutável e a próxima mensagem do cliente
+  abre outro UUID em `pending`;
+- `followup_conversations` continua como ponte operacional do ticket atual por
+  telefone, para preservar o scheduler de follow-up;
+- a tela Conversas lista tickets ativos e históricos e mostra um código curto
+  derivado do UUID; o UUID completo permanece no banco/API;
+- respostas atrasadas da IA são recusadas se o ticket estiver encerrado ou em
+  atendimento humano.
+
+A migration `20260717_conversation_ticket_cycles.sql` faz o backfill. Como não
+é possível inferir com segurança os limites de ciclos históricos antigos, todo
+o conteúdo legado de um telefone é associado a um ticket inicial. A separação
+exata por ciclo passa a valer a partir da publicação desta implementação.
+
+**Estado:** migration aplicada e verificada manualmente no Supabase em
+17/07/2026. Tabela, colunas e índice retornaram `true`; conversas, mensagens,
+tags e notas sem `ticket_id` retornaram zero. O código dependente continua
+local até a publicação registrada no histórico. Validação local concluída com
+`npx tsc --noEmit`, `npx knip`, `npm run build` e `git diff --check`.
+
 `UAZAPI_PLATFORM_SESSION` não é a instância individual do corretor. Ela é a
 sessão da plataforma usada para mensagens como recuperação de senha por
 WhatsApp e continua sendo uma credencial operacional pendente de confirmação
@@ -322,7 +352,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | Conta/equipe | `imf_brokers`, `imf_broker_members`, `imf_broker_invites` |
 | Imóveis/leads | `imf_properties`, `leads`, `imf_contacts` |
 | Agenda | `imf_agenda` |
-| Conversas | `followup_conversations`, `imf_conversation_messages` |
+| Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
 | Lançamentos | `imf_developments`, `imf_units`, `imf_unit_reservations`, `imf_reservation_documents` |
 | Billing SaaS | assinaturas, uso/excedentes, `imf_billing_lock`, `imf_billing_reconciliations` |
@@ -435,6 +465,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260716c_reservation_documents.sql` | aplicada | Fase 3 e bucket privado |
 | `20260716d_report_period_metrics.sql` | aplicada e verificada | `sold_at`, índice, trigger e Relatórios |
 | `20260716e_broker_asaas_key.sql` | aplicada | chave Asaas por conta |
+| `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -460,16 +491,19 @@ checagem do ambiente antes de um novo deploy.
 4. Validar WhatsApp: autocura, QR, código, disconnect, troca de número,
    compartilhado e instância própria de membro.
 5. Validar Assistente IA separado da Config e os três Follow-Ups.
-6. Validar Asaas próprio em sandbox: salvar, mascarar, trocar, remover e
+6. Em Conversas, encerrar um ticket e enviar nova mensagem pelo mesmo número;
+   confirmar UUID novo, histórico separado e impossibilidade de reabrir ou
+   responder no ticket encerrado.
+7. Validar Asaas próprio em sandbox: salvar, mascarar, trocar, remover e
    confirmar que aluguel/reserva usam a conta certa; assinatura deve continuar
    na conta global.
-7. Validar Lançamentos Fase 3: upload, autorização, URL assinada, rejeição,
+8. Validar Lançamentos Fase 3: upload, autorização, URL assinada, rejeição,
    reenvio, aprovação e bloqueio/liberação da venda.
-8. Conferir manualmente cada métrica de 3/6/12 meses com dados conhecidos para
+9. Conferir manualmente cada métrica de 3/6/12 meses com dados conhecidos para
    titular e membro.
-9. Fazer smoke de `/`, `/app`, login, pagamento, admin, páginas públicas e
+10. Fazer smoke de `/`, `/app`, login, pagamento, admin, páginas públicas e
    responsividade desktop/mobile.
-10. Inspecionar logs, CSP reports, Sentry, jobs e webhooks sem erro.
+11. Inspecionar logs, CSP reports, Sentry, jobs e webhooks sem erro.
 
 ### Checklist técnico por alteração
 

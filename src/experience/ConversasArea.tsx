@@ -11,6 +11,8 @@ interface Note { id: string; body: string; user_id: string; created_at: string; 
 type TicketStatus = 'pending' | 'open' | 'closed';
 
 interface ConversationSummary {
+  id: string;
+  ticket_id: string;
   customer_phone: string;
   ai_active: boolean;
   conversation_status: TicketStatus;
@@ -20,6 +22,8 @@ interface ConversationSummary {
   last_message: string | null;
   last_message_from: 'customer' | 'ai' | 'broker_manual' | null;
   last_activity: string | null;
+  opened_at: string;
+  closed_at: string | null;
 }
 
 interface Message {
@@ -127,7 +131,7 @@ export function ConversasArea() {
     return () => clearInterval(id);
   }, []);
 
-  const loadMessages = async (phone: string, mode: 'replace' | 'poll' | 'older' = 'replace') => {
+  const loadMessages = async (ticketId: string, mode: 'replace' | 'poll' | 'older' = 'replace') => {
     if (mode === 'replace') setLoadingMessages(true);
     if (mode === 'older') setLoadingOlderMessages(true);
     try {
@@ -135,7 +139,7 @@ export function ConversasArea() {
         ? `&before=${encodeURIComponent(messageCursor)}`
         : '';
       const response = await fetch(
-        `/api/conversas/${encodeURIComponent(phone)}/messages?limit=50${before}`,
+        `/api/conversas/${encodeURIComponent(ticketId)}/messages?limit=50${before}`,
         { headers: authService.getAuthHeaders() },
       );
       if (!response.ok) throw new Error(`Erro ${response.status}`);
@@ -164,8 +168,8 @@ export function ConversasArea() {
     }
   };
 
-  const loadNotes = (phone: string) => {
-    api(`/api/conversas/${phone}/notes`).then(setNotes).catch(() => setNotes([]));
+  const loadNotes = (ticketId: string) => {
+    api(`/api/conversas/${encodeURIComponent(ticketId)}/notes`).then(setNotes).catch(() => setNotes([]));
   };
 
   useEffect(() => {
@@ -202,14 +206,14 @@ export function ConversasArea() {
     return c;
   }, [conversations]);
 
-  const selectedConv = conversations?.find((c) => c.customer_phone === selected) || null;
+  const selectedConv = conversations?.find((c) => c.id === selected) || null;
 
   const handleSend = async () => {
     if (!selected || !draft.trim()) return;
     setSending(true);
     setActionError(null);
     try {
-      await api(`/api/conversas/${selected}/reply`, { method: 'POST', body: JSON.stringify({ message: draft.trim() }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/reply`, { method: 'POST', body: JSON.stringify({ message: draft.trim() }) });
       setDraft('');
       loadMessages(selected);
       loadConversations();
@@ -221,10 +225,10 @@ export function ConversasArea() {
   };
 
   const toggleAi = async () => {
-    if (!selected || !selectedConv) return;
+    if (!selected || !selectedConv || selectedConv.conversation_status === 'closed') return;
     setActionError(null);
     try {
-      await api(`/api/conversas/${selected}/ai-toggle`, { method: 'PATCH', body: JSON.stringify({ ai_active: !selectedConv.ai_active }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/ai-toggle`, { method: 'PATCH', body: JSON.stringify({ ai_active: !selectedConv.ai_active }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar a IA.');
@@ -232,10 +236,10 @@ export function ConversasArea() {
   };
 
   const setStatus = async (next: TicketStatus) => {
-    if (!selected) return;
+    if (!selected || selectedConv?.conversation_status === 'closed') return;
     setActionError(null);
     try {
-      await api(`/api/conversas/${selected}/status`, { method: 'PATCH', body: JSON.stringify({ conversation_status: next }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/status`, { method: 'PATCH', body: JSON.stringify({ conversation_status: next }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar o status.');
@@ -246,7 +250,7 @@ export function ConversasArea() {
     if (!selected) return;
     setActionError(null);
     try {
-      await api(`/api/conversas/${selected}/assign`, { method: 'PATCH', body: JSON.stringify({ user_id: userId || null }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/assign`, { method: 'PATCH', body: JSON.stringify({ user_id: userId || null }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao atribuir.');
@@ -257,7 +261,7 @@ export function ConversasArea() {
     if (!selected) return;
     setActionError(null);
     try {
-      await api(`/api/conversas/${selected}/queue`, { method: 'PATCH', body: JSON.stringify({ queue_id: queueId || null }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/queue`, { method: 'PATCH', body: JSON.stringify({ queue_id: queueId || null }) });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar a fila.');
@@ -267,7 +271,7 @@ export function ConversasArea() {
   const addTagToConvo = async (tagId: string) => {
     if (!selected) return;
     try {
-      await api(`/api/conversas/${selected}/tags`, { method: 'POST', body: JSON.stringify({ tag_id: tagId }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/tags`, { method: 'POST', body: JSON.stringify({ tag_id: tagId }) });
       loadConversations();
       setTagPickerOpen(false);
     } catch (e: any) {
@@ -278,7 +282,7 @@ export function ConversasArea() {
   const removeTagFromConvo = async (tagId: string) => {
     if (!selected) return;
     try {
-      await api(`/api/conversas/${selected}/tags/${tagId}`, { method: 'DELETE' });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/tags/${encodeURIComponent(tagId)}`, { method: 'DELETE' });
       loadConversations();
     } catch (e: any) {
       setActionError(e.message || 'Falha ao remover tag.');
@@ -301,7 +305,7 @@ export function ConversasArea() {
   const addNote = async () => {
     if (!selected || !noteDraft.trim()) return;
     try {
-      await api(`/api/conversas/${selected}/notes`, { method: 'POST', body: JSON.stringify({ body: noteDraft.trim() }) });
+      await api(`/api/conversas/${encodeURIComponent(selected)}/notes`, { method: 'POST', body: JSON.stringify({ body: noteDraft.trim() }) });
       setNoteDraft('');
       loadNotes(selected);
     } catch (e: any) {
@@ -315,12 +319,12 @@ export function ConversasArea() {
     setActionError(null);
     try {
       const digits = newPhone.replace(/\D/g, '');
-      await api('/api/conversas/create', { method: 'POST', body: JSON.stringify({ phone: digits, message: newMessage.trim() }) });
+      const created = await api('/api/conversas/create', { method: 'POST', body: JSON.stringify({ phone: digits, message: newMessage.trim() }) });
       setShowNewConvo(false);
       setNewPhone('');
       setNewMessage('');
       loadConversations();
-      setSelected(digits);
+      setSelected(created.ticket_id || null);
     } catch (e: any) {
       setActionError(e.message || 'Falha ao criar conversa.');
     } finally {
@@ -387,10 +391,10 @@ export function ConversasArea() {
                 <div className="space-y-1">
                   {filtered.map((c) => (
                     <button
-                      key={c.customer_phone}
-                      onClick={() => setSelected(c.customer_phone)}
+                      key={c.id}
+                      onClick={() => setSelected(c.id)}
                       className={`w-full flex items-center gap-3 rounded-2xl p-3 text-left transition-colors ${
-                        selected === c.customer_phone ? 'bg-white/[0.1]' : 'hover:bg-white/[0.05]'
+                        selected === c.id ? 'bg-white/[0.1]' : 'hover:bg-white/[0.05]'
                       }`}
                     >
                       <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0
@@ -399,6 +403,7 @@ export function ConversasArea() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-[14px] font-semibold text-white truncate block">{c.customer_phone}</span>
+                        <span className="text-[9px] font-mono text-white/30 truncate block">Ticket #{c.id.slice(0, 8).toUpperCase()}</span>
                         <p className="text-[12px] text-white/45 truncate">{c.last_message || 'sem mensagens'}</p>
                         {c.tags.length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
@@ -426,23 +431,26 @@ export function ConversasArea() {
                 <>
                   <div className="px-5 py-3.5 border-b border-white/8 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[14px] font-semibold text-white">{selected}</span>
-                      <button onClick={toggleAi}
+                      <div>
+                        <span className="text-[14px] font-semibold text-white block">{selectedConv.customer_phone}</span>
+                        <span className="text-[10px] font-mono text-white/35" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
+                      </div>
+                      <button onClick={toggleAi} disabled={selectedConv.conversation_status === 'closed'}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
                           selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
-                        }`}>
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}>
                         <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
                       </button>
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {(['pending', 'open', 'closed'] as TicketStatus[]).map((s) => (
-                        <button key={s} onClick={() => setStatus(s)}
+                        <button key={s} onClick={() => setStatus(s)} disabled={selectedConv.conversation_status === 'closed'}
                           className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
                             selectedConv.conversation_status === s
                               ? 'bg-white/[0.16] text-white'
                               : 'text-white/40 hover:text-white/70 bg-white/[0.04]'
-                          }`}>
+                          } disabled:cursor-not-allowed`}>
                           {STATUS_LABEL[s]}
                         </button>
                       ))}
@@ -604,11 +612,12 @@ export function ConversasArea() {
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                      placeholder="Responder como você…"
+                      placeholder={selectedConv.conversation_status === 'closed' ? 'Ticket encerrado' : 'Responder como você…'}
+                      disabled={selectedConv.conversation_status === 'closed'}
                       className="flex-1 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30
                         bg-white/[0.06] border border-white/12 outline-none focus:border-white/25"
                     />
-                    <button onClick={handleSend} disabled={sending || !draft.trim()}
+                    <button onClick={handleSend} disabled={sending || !draft.trim() || selectedConv.conversation_status === 'closed'}
                       className="w-10 h-10 flex items-center justify-center rounded-2xl bg-violet-500/25 text-white
                         hover:bg-violet-500/35 disabled:opacity-40 transition-colors">
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
