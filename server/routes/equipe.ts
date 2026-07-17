@@ -2,7 +2,8 @@ import express from "express";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
-import { APP_URL } from "../config";
+import { APP_URL, MEMBER_WHATSAPP_SLOT_MAX } from "../config";
+import { subscriptionValueForMemberLimit } from "../services/billing";
 
 export const equipeRouter = express.Router();
 
@@ -125,6 +126,87 @@ equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
   }
 });
 
+// Estado atual da cota de WhatsApp próprio de equipe (self-service desde
+// 17/07 — antes só o admin ajustava member_limit manualmente por conta).
+// Só faz sentido para imobiliária/incorporadora (corretor não tem Equipe).
+equipeRouter.get("/api/equipe/whatsapp-slots", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { data: broker } = await supabase.from("imf_brokers").select("account_type, member_limit").eq("id", brokerId).maybeSingle();
+    if (!broker) return res.status(404).json({ error: "Broker not found" });
+
+    const { count: inUse } = await supabase
+      .from("imf_broker_members")
+      .select("id", { count: "exact", head: true })
+      .eq("broker_id", brokerId)
+      .eq("whatsapp_mode", "own");
+
+    const memberLimit = broker.member_limit || 0;
+    res.json({
+      applicable: broker.account_type !== "corretor",
+      is_owner: await isOwner(userId, brokerId),
+      member_limit: memberLimit,
+      in_use: inUse || 0,
+      max_slots: MEMBER_WHATSAPP_SLOT_MAX,
+      monthly_value: subscriptionValueForMemberLimit(memberLimit),
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/whatsapp-slots:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Muda a quantidade contratada de WhatsApp próprio de equipe. Efeito de
+// acesso é imediato (o dono já pode convidar com o novo limite na hora);
+// a cobrança em si só entra no valor da assinatura no PRÓXIMO ciclo — o job
+// horário de excedente (prepareOverageBilling) resincroniza o valor da
+// assinatura no Asaas antes de cada renovação, então não precisa mexer no
+// Asaas aqui pra isso funcionar.
+equipeRouter.patch("/api/equipe/whatsapp-slots", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode alterar isso." });
+
+    const { data: broker } = await supabase.from("imf_brokers").select("account_type").eq("id", brokerId).maybeSingle();
+    if (!broker) return res.status(404).json({ error: "Broker not found" });
+    if (broker.account_type === "corretor") {
+      return res.status(400).json({ error: "Corretor não tem Equipe — WhatsApp próprio por membro não se aplica." });
+    }
+
+    const desired = Number(req.body?.member_limit);
+    if (!Number.isInteger(desired) || desired < 0 || desired > MEMBER_WHATSAPP_SLOT_MAX) {
+      return res.status(400).json({ error: `Informe um número inteiro entre 0 e ${MEMBER_WHATSAPP_SLOT_MAX}.` });
+    }
+
+    const { count: inUse } = await supabase
+      .from("imf_broker_members")
+      .select("id", { count: "exact", head: true })
+      .eq("broker_id", brokerId)
+      .eq("whatsapp_mode", "own");
+    if (desired < (inUse || 0)) {
+      return res.status(400).json({
+        error: `Você tem ${inUse} membro(s) usando WhatsApp próprio hoje. Troque-os para compartilhado (ou remova-os da equipe) antes de reduzir abaixo disso.`,
+      });
+    }
+
+    const { data, error } = await supabase.from("imf_brokers").update({ member_limit: desired }).eq("id", brokerId).select("member_limit").single();
+    if (error) throw error;
+
+    res.json({
+      member_limit: data.member_limit,
+      monthly_value: subscriptionValueForMemberLimit(data.member_limit),
+    });
+  } catch (err: any) {
+    console.error("Erro PATCH /api/equipe/whatsapp-slots:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -134,9 +216,10 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
 
     // Dono escolhe, PARA ESSE convite específico, se o corretor vai ter
     // WhatsApp próprio ou compartilhar o da conta — "própria" só até o
-    // limite do plano (member_limit, ainda sem tiers formais, ajustável
-    // pelo admin). Provisionamento de verdade só acontece no aceite
-    // (POST /api/auth/join), com o valor gravado aqui.
+    // limite contratado (member_limit, self-service em Config → Equipe
+    // desde 17/07, ou ainda ajustável manualmente pelo admin). Provisionamento
+    // de verdade só acontece no aceite (POST /api/auth/join), com o valor
+    // gravado aqui.
     const whatsappMode = req.body?.whatsapp_mode === "own" ? "own" : "shared";
 
     if (whatsappMode === "own") {

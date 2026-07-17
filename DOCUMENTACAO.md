@@ -182,9 +182,14 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   removidas em cascata junto (documentos no Storage e no banco inclusos).
 - **Financeiro:** consolidação de locação e vendas; valores grandes possuem
   quebra de linha para não vazar do card.
-- **Equipe:** convites, membros, limite, metas, ranking, permissões, opção de
+- **Equipe:** convites, membros, metas, ranking, permissões, opção de
   WhatsApp compartilhado ou próprio e revogação de convite pendente ainda não
-  aceito (`GET`/`DELETE /api/equipe/invites/:id`, só o titular).
+  aceito (`GET`/`DELETE /api/equipe/invites/:id`, só o titular). O limite de
+  WhatsApp próprio (`member_limit`) é self-service desde 17/07 —
+  `GET`/`PATCH /api/equipe/whatsapp-slots`, só o titular altera, cobrado como
+  add-on por slot (`MEMBER_WHATSAPP_SLOT_PRICE`, valor ainda fictício) — não
+  se aplica a corretor (não tem Equipe). Selecionável já no checkout
+  (`PaymentPending.tsx`) ou depois em Config.
 - **Divulgação:** links e vitrines públicas.
 - **Relatórios:** métricas determinísticas de 3, 6 ou 12 meses.
 - **Config:** perfil, WhatsApp, plano, uso/excedentes, termos, chave Asaas para
@@ -274,6 +279,11 @@ no Fly.
 O produto separa dois fluxos financeiros:
 
 1. **Assinatura do ImobiFlow:** sempre usa `ASAAS_API_KEY` global da Criate.
+   O valor não é mais fixo: `SUBSCRIPTION_VALUE` + `member_limit × MEMBER_WHATSAPP_SLOT_PRICE`
+   (WhatsApp próprio de equipe, self-service — ver seção 5/Equipe). O job
+   horário de excedente (`prepareOverageBilling`) resincroniza esse valor no
+   Asaas antes de cada renovação, então mudar `member_limit` não precisa
+   chamar o Asaas na hora — a cobrança nova entra sozinha no próximo ciclo.
 2. **Dinheiro do cliente da imobiliária/incorporadora:** a implementação
    histórica de aluguel e sinal PIX permanece preservada, mas bloqueada no
    backend e escondida no frontend por padrão.

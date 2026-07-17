@@ -22,7 +22,7 @@ brokersRouter.get("/api/brokers/me", requireUser, async (req, res) => {
     // asaas_credit_card_token (cobra cartão), zpro_password, reset_token, reset_token_expires_at
     const { data, error } = await supabase.from('imf_brokers').select(
       'id, user_id, name, email, phone, ai_name, broker_address, status, plan, account_type, ' +
-      'valid_until, grace_until, is_admin, corretora_id, ' +
+      'valid_until, grace_until, is_admin, corretora_id, member_limit, ' +
       'zpro_tenant_id, zpro_channel_id, zpro_channel_name, zpro_user_email, zpro_username, zpro_qr_code, ' +
       'zpro_api_url, zpro_api_key, ' +
       'asaas_customer_id, asaas_subscription_id, ' +

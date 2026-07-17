@@ -7,8 +7,12 @@ import { validateBody } from "../middleware/validate";
 import {
   SUBSCRIPTION_VALUE, ASAAS_API_KEY, ASAAS_BASE_URL, TERMS_VERSION,
   PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, ASAAS_WEBHOOK_TOKEN,
+  MEMBER_WHATSAPP_SLOT_PRICE, MEMBER_WHATSAPP_SLOT_MAX,
 } from "../config";
-import { asaasHeaders, handleAsaasPaymentReceived } from "../services/billing";
+import {
+  asaasHeaders, handleAsaasPaymentReceived,
+  subscriptionValueForMemberLimit, subscriptionDescriptionForMemberLimit,
+} from "../services/billing";
 import { handleRentalPaymentWebhook } from "../services/rentalBilling";
 import { handleUnitReservationPaymentWebhook } from "../services/unitReservationBilling";
 import { fetchWithTimeout } from "../lib/http";
@@ -38,7 +42,12 @@ function webhookAuditPayload(event: any) {
 billingRouter.get("/api/config/plan", (_req, res) => {
   const price = SUBSCRIPTION_VALUE;
   const priceDisplay = price.toFixed(2).replace('.', ',');
-  res.json({ price, priceDisplay });
+  res.json({
+    price, priceDisplay,
+    memberWhatsappSlotPrice: MEMBER_WHATSAPP_SLOT_PRICE,
+    memberWhatsappSlotPriceDisplay: MEMBER_WHATSAPP_SLOT_PRICE.toFixed(2).replace('.', ','),
+    memberWhatsappSlotMax: MEMBER_WHATSAPP_SLOT_MAX,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -55,6 +64,7 @@ const checkoutSchema = z.object({
   expiryMonth: z.string().trim().regex(/^(0?[1-9]|1[0-2])$/, "Mês de expiração inválido."),
   expiryYear: z.string().trim().regex(/^\d{2}(\d{2})?$/, "Ano de expiração inválido."),
   cvv: z.string().trim().regex(/^\d{3,4}$/, "CVV inválido."),
+  memberWhatsappSlots: z.number().int().min(0).max(MEMBER_WHATSAPP_SLOT_MAX).optional().default(0),
 });
 
 // Cria cobrança no Asaas (cartão de crédito) e ativa o corretor imediatamente
@@ -66,7 +76,7 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(c
     return res.status(503).json({ error: "Pagamento ainda não configurado. Aguarde." });
   }
 
-  const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv } = req.body;
+  const { cpfCnpj, cardHolder, cardNumber, expiryMonth, expiryYear, cvv, memberWhatsappSlots } = req.body;
 
   try {
     const brokerId = await getBrokerId(userId);
@@ -74,6 +84,12 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(c
 
     const { data: broker } = await supabase.from('imf_brokers').select('*').eq('id', brokerId).single();
     if (!broker) return res.status(404).json({ error: "Corretor não encontrado." });
+
+    // Corretor não tem Equipe — nunca contrata WhatsApp próprio de membro,
+    // mesmo que o valor venha no body (nunca confiar só na validação do cliente).
+    const memberLimit = broker.account_type === 'corretor' ? 0 : memberWhatsappSlots;
+    const subscriptionValue = subscriptionValueForMemberLimit(memberLimit);
+    const subscriptionDescription = subscriptionDescriptionForMemberLimit(memberLimit);
 
     // 1. Cria cliente no Asaas
     const customerResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/customers`, {
@@ -101,10 +117,10 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(c
       body: JSON.stringify({
         customer: customerId,
         billingType: 'CREDIT_CARD',
-        value: SUBSCRIPTION_VALUE,
+        value: subscriptionValue,
         nextDueDate,
         cycle: 'MONTHLY',
-        description: 'ImobiFlow - Assinatura Mensal',
+        description: subscriptionDescription,
         creditCard: {
           holderName: cardHolder,
           number: cardNumber.replace(/\s/g, ''),
@@ -149,6 +165,7 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(c
     await supabase.from('imf_brokers')
       .update({
         asaas_subscription_id: subscription.id,
+        member_limit: memberLimit,
         ...(creditCardToken ? { asaas_credit_card_token: creditCardToken } : {})
       })
       .eq('id', brokerId);

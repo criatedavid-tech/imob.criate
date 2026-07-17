@@ -2,6 +2,7 @@ import { supabase } from "../supabase";
 import {
   ASAAS_API_KEY, ASAAS_BASE_URL, SUBSCRIPTION_VALUE,
   PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, UAZAPI_HOST, UAZAPI_TOKEN,
+  MEMBER_WHATSAPP_SLOT_PRICE,
 } from "../config";
 import { ensureBrokerInstance } from "./provisioning";
 import { fetchWithTimeout } from "../lib/http";
@@ -12,6 +13,21 @@ export const asaasHeaders = () => ({
 });
 
 const BASE_SUBSCRIPTION_DESCRIPTION = 'Criate — Plano mensal';
+
+// Valor "base" de um broker NÃO é sempre SUBSCRIPTION_VALUE fixo — soma o
+// WhatsApp próprio por membro contratado (member_limit). Usado tanto no
+// checkout inicial quanto sempre que a assinatura precisa voltar a refletir
+// o que o broker contratou (job de excedente, reconciliação pós-renovação).
+export function subscriptionValueForMemberLimit(memberLimit: number | null | undefined): number {
+  const slots = Math.max(0, Math.floor(memberLimit || 0));
+  return Number((SUBSCRIPTION_VALUE + slots * MEMBER_WHATSAPP_SLOT_PRICE).toFixed(2));
+}
+
+export function subscriptionDescriptionForMemberLimit(memberLimit: number | null | undefined): string {
+  const slots = Math.max(0, Math.floor(memberLimit || 0));
+  if (slots <= 0) return BASE_SUBSCRIPTION_DESCRIPTION;
+  return `${BASE_SUBSCRIPTION_DESCRIPTION} + ${slots} WhatsApp próprio${slots > 1 ? 's' : ''} de equipe`;
+}
 
 async function asaasResponseError(response: Response, fallback: string): Promise<Error> {
   const payload = await response.json().catch(() => ({} as any));
@@ -42,13 +58,18 @@ export async function cancelAsaasSubscription(subscriptionId: string): Promise<v
   if (!response.ok) throw await asaasResponseError(response, 'Falha ao cancelar assinatura no Asaas');
 }
 
-async function ensurePendingSubscriptionReset(brokerId: string, subscriptionId: string): Promise<string> {
+async function ensurePendingSubscriptionReset(
+  brokerId: string,
+  subscriptionId: string,
+  desiredValue: number,
+  desiredDescription: string,
+): Promise<string> {
   const payload = {
     broker_id: brokerId,
     action: 'reset_subscription_value',
     asaas_subscription_id: subscriptionId,
-    desired_value: SUBSCRIPTION_VALUE,
-    desired_description: BASE_SUBSCRIPTION_DESCRIPTION,
+    desired_value: desiredValue,
+    desired_description: desiredDescription,
     status: 'pending',
     next_attempt_at: new Date().toISOString(),
   };
@@ -79,12 +100,14 @@ async function ensurePendingSubscriptionReset(brokerId: string, subscriptionId: 
 async function resetSubscriptionToBaseWithReconciliation(
   brokerId: string,
   subscriptionId: string,
+  desiredValue: number,
+  desiredDescription: string,
 ): Promise<void> {
   // Persiste antes da chamada externa: até um crash entre banco e Asaas deixa
   // uma intenção recuperável para o job periódico.
-  const reconciliationId = await ensurePendingSubscriptionReset(brokerId, subscriptionId);
+  const reconciliationId = await ensurePendingSubscriptionReset(brokerId, subscriptionId, desiredValue, desiredDescription);
   try {
-    await updateAsaasSubscriptionValue(subscriptionId, SUBSCRIPTION_VALUE, BASE_SUBSCRIPTION_DESCRIPTION);
+    await updateAsaasSubscriptionValue(subscriptionId, desiredValue, desiredDescription);
     const { error } = await supabase.from('imf_billing_reconciliations').update({
       status: 'completed',
       completed_at: new Date().toISOString(),
@@ -293,7 +316,7 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
   try {
     // Captura valid_until ANTES de atualizar — necessário para delimitar o ciclo encerrado
     const { data: brokerBefore } = await supabase.from('imf_brokers')
-      .select('valid_until, asaas_credit_card_token, provisioning_status').eq('id', brokerId).single();
+      .select('valid_until, asaas_credit_card_token, provisioning_status, member_limit').eq('id', brokerId).single();
 
     // Cobrança órfã de assinatura cancelada: SUBSCRIPTION_DELETED seta
     // provisioning_status='disabled', mas o Asaas ainda pode cobrar uma
@@ -361,7 +384,12 @@ export async function handleAsaasPaymentReceived({ id, customerId, value, broker
           // Esta função só absorve falhas depois que a pendência já existe. Se
           // a persistência inicial falhar, a exceção interrompe a conclusão
           // local e o excedente não é marcado falsamente como reconciliável.
-          await resetSubscriptionToBaseWithReconciliation(brokerId, subscriptionId);
+          await resetSubscriptionToBaseWithReconciliation(
+            brokerId,
+            subscriptionId,
+            subscriptionValueForMemberLimit(brokerBefore?.member_limit),
+            subscriptionDescriptionForMemberLimit(brokerBefore?.member_limit),
+          );
           // Só muda o estado do ciclo depois que a intenção de reset já está
           // durável. Assim um crash nunca deixa o valor inflado sem retry.
           const { error: includedError } = await supabase.from('imf_overage_charges')
@@ -430,7 +458,7 @@ export async function prepareOverageBilling(): Promise<void> {
   const windowEnd   = new Date(now.getTime() + 28 * 60 * 60 * 1000);
 
   const { data: brokers } = await supabase.from('imf_brokers')
-    .select('id, asaas_subscription_id, valid_until')
+    .select('id, asaas_subscription_id, valid_until, member_limit')
     .eq('status', 'ativo')
     .gte('valid_until', windowStart.toISOString())
     .lte('valid_until', windowEnd.toISOString())
@@ -475,11 +503,15 @@ export async function prepareOverageBilling(): Promise<void> {
       const regularOver   = Math.max(0, totalTickets - effectiveLim);
       const overage       = regularOver + Math.max(0, chargeAdj);
       const overageAmount = overage * PLAN_OVERAGE_PRICE;
-      const totalValue    = SUBSCRIPTION_VALUE + overageAmount;
+      // Base já soma o WhatsApp próprio de equipe contratado (member_limit) —
+      // sem isso, todo ciclo (com ou sem excedente) esse valor extra some,
+      // porque essa rota SEMPRE reescreve o value da assinatura no Asaas.
+      const baseValue     = subscriptionValueForMemberLimit(broker.member_limit);
+      const totalValue    = Number((baseValue + overageAmount).toFixed(2));
 
       const description = overage > 0
-        ? `Criate — Plano mensal + ${overage} atendimento${overage > 1 ? 's' : ''} excedente${overage > 1 ? 's' : ''} × R$ ${PLAN_OVERAGE_PRICE.toFixed(2)}`
-        : 'Criate — Plano mensal';
+        ? `${subscriptionDescriptionForMemberLimit(broker.member_limit)} + ${overage} atendimento${overage > 1 ? 's' : ''} excedente${overage > 1 ? 's' : ''} × R$ ${PLAN_OVERAGE_PRICE.toFixed(2)}`
+        : subscriptionDescriptionForMemberLimit(broker.member_limit);
 
       // Atualiza valor da assinatura no Asaas para o próximo ciclo
       const upResp = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${broker.asaas_subscription_id}`, {

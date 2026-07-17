@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, CreditCard, Lock, Loader2, CheckCircle2, XCircle, User, Hash, Eye, EyeOff } from 'lucide-react';
+import { Home, CreditCard, Lock, Loader2, CheckCircle2, XCircle, User, Hash, Eye, EyeOff, Users, Minus, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { authService } from '../services/auth';
 import Copyright from '../components/Copyright';
@@ -115,7 +115,12 @@ export default function PaymentPending() {
   const [acceptedRecurring, setAcceptedRecurring] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showCvv, setShowCvv] = useState(false);
-  const [planPrice, setPlanPrice] = useState<string>('687');
+  const [basePriceNum, setBasePriceNum] = useState<number>(49.9);
+  const [slotPriceNum, setSlotPriceNum] = useState<number>(0);
+  const [slotPriceDisplay, setSlotPriceDisplay] = useState<string>('0,00');
+  const [slotMax, setSlotMax] = useState<number>(0);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [memberSlots, setMemberSlots] = useState(0);
   const [form, setForm] = useState<CardForm>({
     cpfCnpj: '', cardHolder: '', cardNumber: '',
     expiryMonth: '', expiryYear: '', cvv: ''
@@ -124,9 +129,22 @@ export default function PaymentPending() {
   useEffect(() => {
     fetch('/api/config/plan', { headers: authService.getAuthHeaders() })
       .then(r => r.json())
-      .then(d => { if (d?.priceDisplay) setPlanPrice(d.priceDisplay); })
+      .then(d => {
+        if (typeof d?.price === 'number') setBasePriceNum(d.price);
+        if (typeof d?.memberWhatsappSlotPrice === 'number') setSlotPriceNum(d.memberWhatsappSlotPrice);
+        if (d?.memberWhatsappSlotPriceDisplay) setSlotPriceDisplay(d.memberWhatsappSlotPriceDisplay);
+        if (typeof d?.memberWhatsappSlotMax === 'number') setSlotMax(d.memberWhatsappSlotMax);
+      })
+      .catch(() => {});
+    fetch('/api/brokers/me', { headers: authService.getAuthHeaders() })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.account_type) setAccountType(d.account_type); })
       .catch(() => {});
   }, []);
+
+  const showTeamSlots = accountType !== null && accountType !== 'corretor' && slotMax > 0;
+  const totalPriceNum = basePriceNum + memberSlots * slotPriceNum;
+  const totalPriceDisplay = totalPriceNum.toFixed(2).replace('.', ',');
 
   const touch = (field: keyof CardForm) => () =>
     setTouched(t => ({ ...t, [field]: true }));
@@ -190,7 +208,8 @@ export default function PaymentPending() {
           cardNumber: form.cardNumber.replace(/\s/g, ''),
           expiryMonth: form.expiryMonth,
           expiryYear: form.expiryYear,
-          cvv: form.cvv
+          cvv: form.cvv,
+          memberWhatsappSlots: showTeamSlots ? memberSlots : 0,
         })
       });
       const data = await resp.json();
@@ -210,8 +229,6 @@ export default function PaymentPending() {
       setLoading(false);
     }
   };
-
-  const priceNum = planPrice.replace('.', ',');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col items-center justify-start py-10 px-4 font-sans relative overflow-hidden">
@@ -240,7 +257,7 @@ export default function PaymentPending() {
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <span className="text-3xl font-black text-white">R$ {priceNum}</span>
+              <span className="text-3xl font-black text-white">R$ {totalPriceDisplay}</span>
               <span className="text-white/50 text-sm">/mês</span>
             </div>
             <span className="text-xs text-white/50 bg-white/10 border border-white/15 px-3 py-1.5 rounded-full">
@@ -260,6 +277,37 @@ export default function PaymentPending() {
             <strong className="text-white/60">R$ 3,00</strong>. Você acompanha o uso em tempo real no seu painel para manter o controle total.
           </p>
         </div>
+
+        {/* WhatsApp próprio de equipe — só imobiliária/incorporadora */}
+        {showTeamSlots && (
+          <div className="rounded-3xl p-6 mb-5
+            backdrop-blur-xl bg-white/10 border border-white/15
+            shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="w-4 h-4 text-white/40" />
+              <span className="text-sm font-bold text-white">WhatsApp próprio para a equipe</span>
+            </div>
+            <p className="text-[12px] text-white/40 mb-4">
+              Cada corretor com número próprio custa <strong className="text-white/60">R$ {slotPriceDisplay}/mês</strong>. Por padrão todos compartilham o número da conta — sem custo extra. Dá pra ajustar depois em Config.
+            </p>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] text-white/50">Quantos corretores vão ter número próprio?</span>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setMemberSlots(v => Math.max(0, v - 1))}
+                  disabled={memberSlots <= 0}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-6 text-center text-white font-bold">{memberSlots}</span>
+                <button type="button" onClick={() => setMemberSlots(v => Math.min(slotMax, v + 1))}
+                  disabled={memberSlots >= slotMax}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Formulário */}
         <form onSubmit={handleSubmit} noValidate className="rounded-3xl p-6 space-y-4
@@ -379,7 +427,8 @@ export default function PaymentPending() {
               <input type="checkbox" checked={acceptedRecurring} onChange={e => setAcceptedRecurring(e.target.checked)}
                 className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]" />
               <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
-                Autorizo a cobrança recorrente de <strong className="text-white/70">R$ {priceNum}/mês</strong> e o valor de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> (acima de 100/mês), se houver. Posso cancelar a qualquer momento.
+                Autorizo a cobrança recorrente de <strong className="text-white/70">R$ {totalPriceDisplay}/mês</strong>
+                {memberSlots > 0 && <> (inclui {memberSlots} WhatsApp próprio{memberSlots > 1 ? 's' : ''} de equipe)</>} e o valor de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> (acima de 100/mês), se houver. Posso cancelar a qualquer momento.
               </span>
             </label>
             <label className="flex items-start gap-3 cursor-pointer group">
@@ -406,7 +455,7 @@ export default function PaymentPending() {
           >
             {loading
               ? <Loader2 className="animate-spin w-5 h-5" />
-              : <><CreditCard className="w-5 h-5" /> Pagar R$ {priceNum}/mês</>
+              : <><CreditCard className="w-5 h-5" /> Pagar R$ {totalPriceDisplay}/mês</>
             }
           </button>
         </form>

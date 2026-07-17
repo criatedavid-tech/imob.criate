@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw, Landmark, Trash2 } from 'lucide-react';
+import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw, Landmark, Trash2, Users, Minus, Plus } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -201,6 +201,9 @@ export function ConfigArea() {
           </div>
         )}
       </GlassCard>
+
+      {/* WhatsApp próprio da equipe — só imobiliária/incorporadora (corretor não tem Equipe) */}
+      {me && me.account_type !== 'corretor' && <TeamWhatsappSlotsCard />}
 
       {/* Faturas — histórico de cobrança de excedente */}
       {usage && usage.history.length > 0 && (
@@ -511,6 +514,157 @@ function WhatsAppConnectCard() {
 // Conta de cobrança própria da imobiliária/incorporadora. Sem chave, as
 // cobranças (aluguel + sinal PIX) usam a conta da Criate; com chave própria,
 // o dinheiro cai na conta dela. A chave nunca é exibida — só últimos 4 dígitos.
+interface WhatsappSlotsStatus {
+  applicable: boolean;
+  is_owner: boolean;
+  member_limit: number;
+  in_use: number;
+  max_slots: number;
+  monthly_value: number;
+}
+
+// Self-service desde 17/07 — antes só o admin ajustava member_limit
+// manualmente por conta. Efeito de acesso é imediato (o titular já pode
+// convidar com o novo limite); a cobrança em si só entra no valor da
+// assinatura no PRÓXIMO ciclo (mesmo padrão do excedente de atendimentos).
+function TeamWhatsappSlotsCard() {
+  const [status, setStatus] = useState<WhatsappSlotsStatus | null>(null);
+  const [basePriceNum, setBasePriceNum] = useState(0);
+  const [slotPriceNum, setSlotPriceNum] = useState(0);
+  const [slotPriceDisplay, setSlotPriceDisplay] = useState('0,00');
+  const [draft, setDraft] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const r = await fetch('/api/equipe/whatsapp-slots', { headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao carregar.');
+      setStatus(data);
+      setDraft(data.member_limit);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    fetch('/api/config/plan', { headers: authService.getAuthHeaders() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d?.price === 'number') setBasePriceNum(d.price);
+        if (typeof d?.memberWhatsappSlotPrice === 'number') setSlotPriceNum(d.memberWhatsappSlotPrice);
+        if (d?.memberWhatsappSlotPriceDisplay) setSlotPriceDisplay(d.memberWhatsappSlotPriceDisplay);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setSaved(false); setError('');
+    try {
+      const r = await fetch('/api/equipe/whatsapp-slots', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ member_limit: draft }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao salvar.');
+      setEditing(false); setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!status) {
+    return (
+      <GlassCard className="!p-6 mb-5">
+        <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+      </GlassCard>
+    );
+  }
+
+  const previewTotal = (basePriceNum + draft * slotPriceNum).toFixed(2).replace('.', ',');
+
+  return (
+    <GlassCard className="!p-6 mb-5">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Users className="w-4 h-4 text-white/40" />
+        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">WhatsApp próprio da equipe</h3>
+      </div>
+      <p className="text-[12px] text-white/40 mb-4">
+        Por padrão os corretores compartilham o número da conta. Cada um com número próprio custa R$ {slotPriceDisplay}/mês
+        {status.in_use > 0 && <> — {status.in_use} membro{status.in_use > 1 ? 's usam' : ' usa'} isso hoje</>}.
+      </p>
+
+      {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
+
+      {!status.is_owner ? (
+        <p className="text-[12px] text-white/35">
+          {status.member_limit} slot{status.member_limit === 1 ? '' : 's'} contratado{status.member_limit === 1 ? '' : 's'} — só o titular da conta pode alterar.
+        </p>
+      ) : !editing ? (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <p className="text-[15px] font-bold text-white">
+              {status.member_limit} slot{status.member_limit === 1 ? '' : 's'} contratado{status.member_limit === 1 ? '' : 's'}
+            </p>
+            <p className="text-[12px] text-white/40 mt-0.5">R$ {status.monthly_value.toFixed(2).replace('.', ',')}/mês no total do plano</p>
+          </div>
+          <button onClick={() => setEditing(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+            Alterar
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-white/50">Quantidade de slots</span>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => setDraft((v) => Math.max(status.in_use, v - 1))}
+                disabled={draft <= status.in_use}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="w-6 text-center text-white font-bold">{draft}</span>
+              <button type="button" onClick={() => setDraft((v) => Math.min(status.max_slots, v + 1))}
+                disabled={draft >= status.max_slots}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {draft < status.member_limit && draft === status.in_use && status.in_use > 0 && (
+            <p className="text-[11px] text-amber-300/80">
+              Esse é o mínimo — você tem {status.in_use} membro{status.in_use > 1 ? 's' : ''} usando WhatsApp próprio hoje.
+            </p>
+          )}
+          <p className="text-[11px] text-white/35">
+            Novo valor mensal: <strong className="text-white/60">R$ {previewTotal}</strong> — a mudança de acesso vale já, mas a cobrança só entra no seu próximo ciclo.
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={() => { setEditing(false); setDraft(status.member_limit); setError(''); }}
+              className="px-4 py-2 rounded-xl text-[13px] font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              Cancelar
+            </button>
+            <button onClick={save} disabled={saving || draft === status.member_limit}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
+              {saved ? 'Salvo' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
   const [status, setStatus] = useState<{ configured: boolean; env: string | null; key_last4: string | null; can_manage: boolean } | null>(null);
   const [apiKey, setApiKey] = useState('');

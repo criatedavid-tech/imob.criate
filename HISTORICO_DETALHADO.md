@@ -3460,3 +3460,110 @@ passaram.
 
 `npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v91**,
 máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.
+
+## Atualização 2026-07-17 (continuação) — Self-service de WhatsApp próprio por membro (add-on cobrado)
+
+Usuário reportou que, ao convidar alguém pra equipe escolhendo "WhatsApp
+próprio", o convite falhava com "Seu plano não inclui WhatsApp próprio para
+membros da equipe" — e não existia NENHUMA forma de resolver isso sozinho.
+Causa: `imf_brokers.member_limit` sempre foi um campo 100% manual, só o
+admin da Criate ajustava (decisão deliberada de 13/07, "sem sistema formal
+de tiers de plano ainda" — ver seção "WhatsApp por membro" acima). Pedido:
+dar ao cliente (imobiliária/incorporadora) uma forma de escolher isso
+sozinho, tanto no cadastro/assinatura quanto depois, mudando de plano.
+
+### Decisão de produto (via AskUserQuestion)
+
+Antes de codar, perguntei e o usuário decidiu:
+- **Precificação**: cobrança extra por WhatsApp próprio — cada slot além do
+  incluso (0 inclusos) soma no valor mensal. Valor ainda não definido
+  comercialmente — usei um **valor fictício** (`MEMBER_WHATSAPP_SLOT_PRICE`,
+  padrão R$ 29,90/mês/slot via env, ajustável sem redeploy).
+- **Onde aparece**: tanto no cadastro/assinatura quanto depois em
+  Config → Plano (self-service).
+- **Timing da cobrança extra**: no próximo ciclo — mesmo padrão já usado
+  pelo excedente de atendimentos, não cobrança avulsa imediata.
+
+Antes de implementar, chequei se algum broker real já tinha `member_limit >
+0` setado manualmente pelo admin (isso viraria cobrança nova surpresa no
+próximo ciclo de alguém já pagante) — **nenhum tinha**, zero risco de
+aumentar a conta de cliente existente.
+
+### Arquitetura (reaproveitando 100% a infraestrutura de excedente)
+
+Descoberta importante: o job horário `prepareOverageBilling`
+(`server/services/billing.ts`) **sempre** reescreve o `value` da assinatura
+no Asaas antes de cada renovação — `totalValue = SUBSCRIPTION_VALUE +
+overageAmount`, incondicionalmente, mesmo sem excedente (nesse caso reseta
+pro valor base). Isso significa: se eu só corrigisse esse hardcode pra virar
+`subscriptionValueForMemberLimit(member_limit) + overageAmount`, o job já
+resincroniza sozinho o valor certo antes de toda renovação — **sem precisar
+tocar no Asaas na hora que o cliente muda a quantidade**. Mudar
+`member_limit` no banco já é suficiente; o próximo ciclo se corrige sozinho.
+Isso bate exatamente com a decisão "no próximo ciclo" sem nenhuma
+infraestrutura nova.
+
+O mesmo hardcode existia em `resetSubscriptionToBaseWithReconciliation`
+(chamado depois de uma renovação que já tinha excedente embutido, pra voltar
+o valor da assinatura ao "base") — também corrigido pra receber o valor/
+descrição desejados como parâmetro em vez de assumir `SUBSCRIPTION_VALUE`
+fixo, senão essa função apagaria o add-on de WhatsApp toda vez que
+processasse um excedente.
+
+**Implementado:**
+
+- `server/config.ts`: `MEMBER_WHATSAPP_SLOT_PRICE` (fictício, R$ 29,90) e
+  `MEMBER_WHATSAPP_SLOT_MAX` (teto de input, 20).
+- `server/services/billing.ts`: `subscriptionValueForMemberLimit(memberLimit)`
+  e `subscriptionDescriptionForMemberLimit(memberLimit)` — únicas fontes de
+  verdade do valor "base" de um broker (nunca mais `SUBSCRIPTION_VALUE`
+  sozinho). Usadas em `prepareOverageBilling` (bump pré-renovação) e no
+  reset pós-renovação (agora parametrizado).
+- `POST /api/checkout` (`server/routes/billing.ts`): aceita
+  `memberWhatsappSlots` opcional no body (zod, 0..MAX). Força 0 se
+  `account_type === 'corretor'` no servidor, **nunca confia só no valor que
+  o cliente mandou** — mesmo que o front não mostre o seletor pra corretor,
+  a rota reforça. Usa o helper pro `value`/`description` da assinatura
+  Asaas; persiste `member_limit` no broker após o checkout.
+- `GET/PATCH /api/equipe/whatsapp-slots` (`server/routes/equipe.ts`): GET
+  devolve estado atual (`member_limit`, `in_use` — quantos membros já usam
+  own hoje —, `max_slots`, `monthly_value`, `is_owner`, `applicable`). PATCH
+  só o titular, valida teto (0..MAX) e que a nova quantidade não fica abaixo
+  de quantos membros já estão usando WhatsApp próprio agora (senão ficaria
+  inconsistente sem desconectar ninguém). Efeito de ACESSO é imediato — o
+  titular já pode convidar com o limite novo na hora, só a cobrança que
+  espera o próximo ciclo.
+- `GET /api/config/plan`: estendida com `memberWhatsappSlotPrice(Display)`
+  e `memberWhatsappSlotMax`, pra checkout e Config reaproveitarem sem
+  duplicar a constante.
+- `GET /api/brokers/me`: passou a expor `member_limit`.
+- **UI checkout** (`src/pages/PaymentPending.tsx`): stepper "Quantos
+  corretores da equipe vão ter WhatsApp próprio?", só aparece pra
+  `account_type !== 'corretor'` (busca via `/api/brokers/me`), preço total
+  recalculado ao vivo, mandado em `memberWhatsappSlots` no `POST /api/checkout`.
+- **UI self-service** (`src/experience/ConfigArea.tsx`): novo card "WhatsApp
+  próprio da equipe" (só não-corretor), mostra quantidade contratada +
+  valor mensal, dono pode editar com stepper (mínimo = quantos já estão em
+  uso), avisa explicitamente que o valor novo só entra no próximo ciclo.
+  Membro não-titular vê só leitura.
+
+### Teste ao vivo
+
+Duas contas descartáveis criadas contra `imobiflow-v2.fly.dev`, cartão de
+teste Luhn-válido no Asaas sandbox real (pagamento de verdade aprovado, não
+simulado): imobiliária fazendo checkout com 2 slots (assinatura criada com
+valor `base + 2×slot` confirmado — R$ 64,80 no ambiente de teste atual, base
+R$ 5 + 2×R$ 29,90), `GET /api/equipe/whatsapp-slots` batendo com o
+esperado, `PATCH` subindo pra 5, tentando subir acima do teto (rejeitado
+400), descendo pra 0 (permitido, ninguém em uso). Corretor fazendo checkout
+mandando `memberWhatsappSlots: 5` no body — confirmado que o servidor
+ignorou e gravou `member_limit: 0`, `GET` retorna `applicable: false`,
+`PATCH` bloqueado (400). 13 checks, todos passando.
+
+**Não testado ao vivo** (não dá pra forçar sem manipular billing real): o
+job `prepareOverageBilling` resincronizando o valor no Asaas 20-28h antes de
+uma renovação de verdade — revisado no código, mas só se confirma
+observando um ciclo real passar.
+
+`npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v92**,
+máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.

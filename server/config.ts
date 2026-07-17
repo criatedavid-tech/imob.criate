@@ -47,6 +47,12 @@ export const ASAAS_WEBHOOK_TOKEN     = process.env.ASAAS_WEBHOOK_TOKEN          
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=3.00
 export const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
 export const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "3.00");
+// WhatsApp próprio por membro da equipe (imobiliária/incorporadora only —
+// corretor não tem Equipe): 0 inclusos, cada slot além disso soma no valor
+// mensal da assinatura. VALOR FICTÍCIO — ainda não definido comercialmente,
+// ajustar via env antes de cobrar de verdade. Teto evita input absurdo.
+export const MEMBER_WHATSAPP_SLOT_PRICE = Number(process.env.MEMBER_WHATSAPP_SLOT_PRICE || "29.90");
+export const MEMBER_WHATSAPP_SLOT_MAX   = Number(process.env.MEMBER_WHATSAPP_SLOT_MAX   || "20");
 // Operações financeiras dos CLIENTES (aluguel e sinal de reserva) ficam
 // desligadas por padrão. A assinatura do próprio ImobiFlow não usa esta flag.
 export const CLIENT_FINANCIAL_OPERATIONS_ENABLED =
