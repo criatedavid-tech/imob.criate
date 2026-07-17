@@ -177,6 +177,9 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   está desativada por padrão.
 - **Lançamentos:** empreendimentos, unidades, simulador, reserva operacional,
   documentos privados e venda. O PIX de sinal está desativado por padrão.
+  Exclusão de unidade/empreendimento só é bloqueada quando existe reserva
+  com pagamento confirmado (`paid_at`); reservas sem pagamento real são
+  removidas em cascata junto (documentos no Storage e no banco inclusos).
 - **Financeiro:** consolidação de locação e vendas; valores grandes possuem
   quebra de linha para não vazar do card.
 - **Equipe:** convites, membros, limite, metas, ranking, permissões, opção de

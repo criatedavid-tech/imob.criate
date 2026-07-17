@@ -166,6 +166,41 @@ async function getReservationDocument(brokerId: string, documentId: string) {
   return data;
 }
 
+// Apaga unidade/empreendimento exige lidar com reservas primeiro: unit_id em
+// imf_unit_reservations não é ON DELETE CASCADE (de propósito, é histórico
+// financeiro), então excluir a unidade sem isso quebra com FK violation.
+// Só bloqueia de verdade quando existe reserva com pagamento confirmado
+// (paid_at setado) — as demais (creating/pending/cancelled/expired/
+// payment_failed) nunca tiveram dinheiro de verdade e podem ser limpas.
+async function purgeUnpaidReservations(unitIds: string[]): Promise<{ blockedUnitId: string | null }> {
+  if (!unitIds.length) return { blockedUnitId: null };
+
+  const { data: reservations, error } = await supabase
+    .from("imf_unit_reservations")
+    .select("id, unit_id, paid_at")
+    .in("unit_id", unitIds);
+  if (error) throw error;
+
+  const paid = (reservations || []).find((r: any) => r.paid_at);
+  if (paid) return { blockedUnitId: paid.unit_id };
+
+  const reservationIds = (reservations || []).map((r: any) => r.id);
+  if (reservationIds.length) {
+    const { data: documents } = await supabase
+      .from("imf_reservation_documents")
+      .select("file_path")
+      .in("reservation_id", reservationIds);
+    const paths = (documents || []).map((d: any) => d.file_path).filter(Boolean) as string[];
+    if (paths.length) await supabase.storage.from(DOCUMENT_BUCKET).remove(paths);
+
+    await supabase.from("imf_reservation_documents").delete().in("reservation_id", reservationIds);
+    const { error: reservationsError } = await supabase.from("imf_unit_reservations").delete().in("id", reservationIds);
+    if (reservationsError) throw reservationsError;
+  }
+
+  return { blockedUnitId: null };
+}
+
 lancamentosRouter.get("/api/lancamentos/developments", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -281,6 +316,14 @@ lancamentosRouter.delete("/api/lancamentos/developments/:id", requireUser, async
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     if (!(await ownsDevelopment(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+    const { data: units } = await supabase.from("imf_units").select("id").eq("development_id", req.params.id);
+    const unitIds = (units || []).map((u: any) => u.id);
+
+    const { blockedUnitId } = await purgeUnpaidReservations(unitIds);
+    if (blockedUnitId) {
+      return res.status(409).json({ error: "Uma unidade deste empreendimento possui reserva com pagamento confirmado e não pode ser excluída. Resolva essa unidade primeiro." });
+    }
 
     // Unidades somem juntas — FK imf_units.development_id é ON DELETE CASCADE.
     const { error } = await supabase.from("imf_developments").delete().eq("id", req.params.id);
@@ -852,12 +895,9 @@ lancamentosRouter.delete("/api/lancamentos/units/:id", requireUser, async (req, 
       return res.status(403).json({ error: "Acesso negado." });
     }
 
-    const { count: reservationHistory } = await supabase
-      .from("imf_unit_reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("unit_id", unit.id);
-    if ((reservationHistory || 0) > 0) {
-      return res.status(409).json({ error: "A unidade possui historico financeiro e nao pode ser excluida." });
+    const { blockedUnitId } = await purgeUnpaidReservations([unit.id]);
+    if (blockedUnitId) {
+      return res.status(409).json({ error: "A unidade possui reserva com pagamento confirmado e não pode ser excluída." });
     }
 
     const { error } = await supabase.from("imf_units").delete().eq("id", req.params.id);

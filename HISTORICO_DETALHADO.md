@@ -3391,3 +3391,72 @@ conversa (mensagens + tags + notas + ponte `followup_conversations` +
 ticket em cascata) e as três rotas já testadas antes do merge (contrato de
 locação + cobrança, lead, convite de equipe) — todos os 14 checks passaram
 contra o deploy final.
+
+## Atualização 2026-07-17 (continuação) — Exclusão de unidade/empreendimento em Lançamentos
+
+Usuário reportou, com 3 prints, que não conseguia apagar uma unidade de teste
+em Lançamentos: (1) o modal da unidade mostrava o aviso "A unidade possui
+histórico financeiro e não pode ser excluída"; (2) ao tentar apagar o
+empreendimento inteiro pela tela de board, apareceu um `alert()` do
+navegador com o erro cru do Postgres: `update or delete on table "imf_units"
+violates foreign key constraint "imf_unit_reservations_unit_id_fkey" on
+table "imf_unit_reservations"`.
+
+### Causa raiz (duas, relacionadas)
+
+1. `DELETE /api/lancamentos/units/:id` (`server/routes/lancamentos.ts`)
+   bloqueava a exclusão sempre que existisse **qualquer** linha em
+   `imf_unit_reservations` pra aquela unidade — mesmo reserva cancelada,
+   expirada ou que nunca teve PIX pago. Isso tratava toda reserva como
+   "histórico financeiro", quando na prática a maioria das tentativas de
+   reserva em teste nunca chega a ter dinheiro de verdade.
+2. `DELETE /api/lancamentos/developments/:id` não tinha proteção nenhuma —
+   só apagava `imf_developments` e contava com
+   `imf_units.development_id ON DELETE CASCADE` pra levar as unidades
+   junto. Só que `imf_unit_reservations.unit_id` (e
+   `imf_reservation_documents.reservation_id`) **não** são `ON DELETE
+   CASCADE` — de propósito, é a tabela de histórico financeiro/auditoria
+   (tem `asaas_payment_id`, `paid_at`, sinal em centavos). Isso faz o
+   Postgres abortar a cascata inteira com uma FK violation crua, que a
+   rota não tratava e o `catch` repassava direto pro `alert()` do
+   frontend — daí o erro técnico aparecendo pro usuário final.
+
+### Correção
+
+Novo helper `purgeUnpaidReservations(unitIds)` em `lancamentos.ts`: busca as
+reservas das unidades informadas e olha o campo `paid_at` — que só é setado
+quando o Asaas confirma o pagamento de verdade (ver
+`server/services/unitReservationBilling.ts`). Se **alguma** reserva tiver
+`paid_at` preenchido, bloqueia com 409 (dinheiro real, não apaga nunca). Se
+nenhuma tiver, apaga em cascata manual antes da unidade/empreendimento:
+documentos da reserva no Storage (`imf-reservation-documents`) e no banco
+(`imf_reservation_documents`), depois as próprias reservas
+(`imf_unit_reservations`).
+
+Usado nas duas rotas:
+- `DELETE /api/lancamentos/units/:id`: mensagem nova, mais precisa —
+  "A unidade possui reserva com pagamento confirmado e não pode ser
+  excluída" (só quando é verdade).
+- `DELETE /api/lancamentos/developments/:id`: checa TODAS as unidades do
+  empreendimento de uma vez; se qualquer uma tiver reserva paga, bloqueia
+  o empreendimento inteiro com mensagem pedindo pra resolver aquela
+  unidade primeiro, em vez de deixar o Postgres estourar um erro cru.
+
+Nenhuma mudança no frontend foi necessária — `LancamentosArea.tsx` já
+repassa `body.error` do servidor tanto no banner do modal da unidade quanto
+no `alert()` do empreendimento, então a mensagem nova aparece automaticamente
+no lugar do erro técnico.
+
+### Teste ao vivo
+
+Conta descartável (persona incorporadora) criada contra
+`imobiflow-v2.fly.dev`, 9 cenários cobertos direto pela API real: unidade
+sem reserva (apaga), unidade com reserva cancelada sem pagamento (apaga a
+unidade E a reserva E o documento, incluindo o arquivo no Storage), unidade
+com reserva paga (bloqueia 409, unidade continua no banco), empreendimento
+com uma unidade paga dentro (bloqueia 409, nada é apagado), e o mesmo
+empreendimento depois de resolver a pendência (apaga tudo). Todos os 9
+passaram.
+
+`npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v91**,
+máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.
