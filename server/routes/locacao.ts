@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { generateRentCharge } from "../services/rentalBilling";
 
 export const locacaoRouter = express.Router();
@@ -158,7 +159,11 @@ locacaoRouter.get("/api/locacao/contracts/:id/payments", requireUser, async (req
 // Gera boleto/PIX do mês atual pra esse contrato — chama a Asaas de verdade
 // (ver server/services/rentalBilling.ts). Idempotente: se já existe cobrança
 // pro mês, devolve a mesma em vez de duplicar.
-locacaoRouter.post("/api/locacao/contracts/:id/charge", requireUser, async (req, res) => {
+locacaoRouter.post(
+  "/api/locacao/contracts/:id/charge",
+  requireUser,
+  requireClientFinancialOperations,
+  async (req, res) => {
   try {
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
@@ -170,4 +175,5 @@ locacaoRouter.post("/api/locacao/contracts/:id/charge", requireUser, async (req,
     console.error("Erro POST /api/locacao/contracts/:id/charge:", err);
     res.status(400).json({ error: err.message });
   }
-});
+  },
+);

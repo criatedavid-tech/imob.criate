@@ -3180,3 +3180,32 @@ inclusive em dependências diretas (`express`, `react-router-dom`, `vite`) e
 transitivas. Todas indicam correção disponível. Não foi executado `npm audit
 fix` nesta publicação para evitar upgrades automáticos sem QA; a remediação
 fica registrada como próxima rodada técnica prioritária.
+
+## Atualização 2026-07-17 — desativação leve das operações financeiras de clientes
+
+Por decisão de posicionamento, o ImobiFlow permanece focado em CRM, atendimento
+e operação comercial, sem assumir como núcleo a geração de cobranças dos
+clientes da imobiliária/incorporadora. Foi implementada uma trava reversível,
+local e ainda não publicada nesta etapa.
+
+- novas cobranças de aluguel, PIX de sinal de reserva e mutações da chave Asaas
+  do cliente passam pelo middleware `requireClientFinancialOperations`;
+- o padrão seguro é desligado por
+  `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` no backend;
+- os controles correspondentes ficam escondidos por
+  `VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` no frontend;
+- Locação continua com contratos, valores e vencimentos, informando que o
+  pagamento ocorre fora do ImobiFlow;
+- Lançamentos continua permitindo reserva operacional sem cobrança, documentos
+  e venda;
+- histórico financeiro, webhooks de registros antigos e serviços existentes
+  foram preservados nesta primeira etapa para não apagar dados nem criar uma
+  migration destrutiva;
+- a assinatura do próprio ImobiFlow pelo Asaas não foi alterada.
+
+Arquivos principais: `server/config.ts`,
+`server/middleware/clientFinancialOperations.ts`, rotas de brokers/locação/
+lançamentos, `src/lib/features.ts` e áreas Config/Locação/Lançamentos.
+`npx tsc --noEmit`, `npx knip`, `npm run build` e `git diff --check` passaram.
+O QA autenticado dos bloqueios continua pendente antes de uma eventual
+publicação. Nenhum commit, push ou deploy foi realizado neste registro.

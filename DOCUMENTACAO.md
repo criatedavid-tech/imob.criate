@@ -168,9 +168,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 - **Leads:** criação, edição e funil de `new` até `fechado`.
 - **Agenda:** visitas e calendário com criação, alteração e cancelamento.
 - **Contatos:** CRUD e salvamento automático a partir de conversas.
-- **Locação:** contratos, cobranças, PIX/boleto e acompanhamento financeiro.
-- **Lançamentos:** empreendimentos, unidades, simulador, reserva PIX,
-  documentos privados e venda.
+- **Locação:** contratos, vencimentos e valores para acompanhamento. A criação
+  de boleto/PIX do cliente está desativada por padrão.
+- **Lançamentos:** empreendimentos, unidades, simulador, reserva operacional,
+  documentos privados e venda. O PIX de sinal está desativado por padrão.
 - **Financeiro:** consolidação de locação e vendas; valores grandes possuem
   quebra de linha para não vazar do card.
 - **Equipe:** convites, membros, limite, metas, ranking, permissões e opção de
@@ -229,19 +230,29 @@ no Fly.
   global da Criate. Segredos por tenant são criptografados com
   `LLM_PROXY_ENC_KEY`.
 
-### Asaas: conta global e conta própria
+### Asaas e limite do escopo financeiro
 
-Há dois fluxos financeiros diferentes:
+O produto separa dois fluxos financeiros:
 
 1. **Assinatura do ImobiFlow:** sempre usa `ASAAS_API_KEY` global da Criate.
-2. **Dinheiro do cliente da imobiliária/incorporadora:** aluguel e sinal PIX de
-   reserva usam a chave Asaas própria do broker quando configurada; sem ela,
-   usam o fallback global atual.
+2. **Dinheiro do cliente da imobiliária/incorporadora:** a implementação
+   histórica de aluguel e sinal PIX permanece preservada, mas bloqueada no
+   backend e escondida no frontend por padrão.
 
-A chave própria é validada contra `/myAccount`, criptografada em
-`imf_brokers.asaas_api_key_enc` e nunca devolvida pela API. Apenas o titular
-gerencia; membro recebe visão somente leitura. O card existe apenas para
-imobiliária/incorporadora. `asaas_env` escolhe sandbox ou produção.
+`CLIENT_FINANCIAL_OPERATIONS_ENABLED` e
+`VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED` precisam ser explicitamente `true`
+para reativar os dois lados. No estado normal, novas cobranças de aluguel,
+reservas PIX e alterações da chave Asaas do cliente recebem bloqueio de
+produto. Leitura histórica, contratos, reservas sem cobrança, documentos e
+billing da assinatura continuam funcionando.
+
+Em 17/07/2026, esta desativação está somente no working tree local. A produção
+V2, release v86, ainda não contém essas flags até que haja autorização para uma
+nova publicação.
+
+A estrutura de chave própria continua criptografada no banco apenas para
+compatibilidade/reversibilidade; ela não aparece na Config enquanto a flag do
+frontend estiver desligada.
 
 ## 7. Lançamentos — fases entregues
 
@@ -251,13 +262,17 @@ imobiliária/incorporadora. `asaas_env` escolhe sandbox ou produção.
 - simulação de entrada, prazo e parcelas;
 - estados de disponibilidade da unidade.
 
-### Fase 2 — reserva financeira
+### Fase 2 — reserva financeira (implementada, atualmente desativada)
 
 - reserva de unidade com sinal PIX no Asaas;
 - unicidade de reserva ativa por unidade;
 - idempotência e expiração automática;
 - webhook confirma pagamento;
 - cobrança usa a credencial Asaas resolvida para o broker.
+
+O fluxo acima foi preservado para histórico, mas novas chamadas são bloqueadas
+pela flag de operações financeiras de clientes. O caminho vigente é **Reservar
+unidade**, sem criação de cobrança.
 
 ### Fase 3 — documentos e gate de venda
 
@@ -397,6 +412,8 @@ máquinas, revisar garantias de idempotência e concorrência de todos eles.
 
 - Asaas: `ASAAS_API_KEY`, `ASAAS_ENV`, `ASAAS_WEBHOOK_TOKEN`,
   `SUBSCRIPTION_VALUE`, `PLAN_INCLUDED_TICKETS`, `PLAN_OVERAGE_PRICE`;
+- limite de produto: `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e
+  `VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false`;
 - UAZAPI: `UAZAPI_HOST`, `UAZAPI_TOKEN`, `UAZAPI_PLATFORM_SESSION`;
 - N8N/IA: `N8N_WEBHOOK_URL`, `INTERNAL_PROXY_TOKEN`,
   `LLM_PROXY_ENC_KEY`, `OPENROUTER_API_KEY`;

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { reservationPaymentLimiter } from "../middleware/rateLimits";
 import { normalizePhoneBR } from "../lib/crypto";
@@ -610,6 +611,7 @@ lancamentosRouter.get("/api/lancamentos/reservation-documents/:docId/signed-url"
 lancamentosRouter.post(
   "/api/lancamentos/units/:id/reservations",
   requireUser,
+  requireClientFinancialOperations,
   reservationPaymentLimiter,
   validateBody(financialReservationSchema),
   async (req, res) => {

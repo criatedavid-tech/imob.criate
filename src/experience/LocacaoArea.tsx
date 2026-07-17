@@ -4,6 +4,7 @@ import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
 import { maskCpfCnpj } from '../lib/document';
 
 // Dark-mode do <select> nativo é inconsistente entre navegadores — Chrome no
@@ -418,7 +419,7 @@ export function LocacaoArea() {
 
                 {c.status === 'ativo' && (
                   <>
-                    <div className="mt-3 pt-3 border-t border-white/8">
+                    {CLIENT_FINANCIAL_OPERATIONS_ENABLED ? <div className="mt-3 pt-3 border-t border-white/8">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[11px] text-white/40">Cobrança do mês</span>
                         {c.current_month_payment_status ? (
@@ -453,7 +454,11 @@ export function LocacaoArea() {
                         </button>
                       )}
                       {chargeError[c.id] && <p className="text-[11px] text-red-300 mt-1.5">{chargeError[c.id]}</p>}
-                    </div>
+                    </div> : (
+                      <p className="mt-3 pt-3 border-t border-white/8 text-[11px] text-white/35">
+                        Pagamentos e cobranças são realizados fora do ImobiFlow.
+                      </p>
+                    )}
 
                     <button onClick={() => endContract(c.id)} disabled={endingId === c.id}
                       className="w-full mt-3 py-2 rounded-xl text-[11px] font-semibold text-white/40 hover:text-red-300 transition-colors disabled:opacity-40">

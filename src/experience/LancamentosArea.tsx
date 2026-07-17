@@ -6,6 +6,7 @@ import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais, formatCentsBR } from '../lib/money';
 import { simulateFinancing } from '../lib/financing';
 import { maskCpfCnpj } from '../lib/document';
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
 
 interface Development {
   id: string;
@@ -997,7 +998,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </p>
           )}
 
-          {reservation && (
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && reservation && (
             <div className="space-y-3 rounded-xl bg-emerald-500/[0.07] border border-emerald-300/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
@@ -1197,7 +1198,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </div>
           )}
 
-          {financialAccess && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
             <div className="space-y-3 p-3 rounded-xl bg-emerald-500/[0.05] border border-emerald-300/15">
               <div>
                 <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
@@ -1219,7 +1220,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
         <div className="flex flex-col gap-2 px-6 py-4 border-t border-white/10">
           {unit.status === 'disponivel' && !reservation && (
             <>
-              {financialAccess && (
+              {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && (
                 <button onClick={reserveWithPix} disabled={!!saving}
                   className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}
@@ -1228,7 +1229,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               )}
               <button onClick={() => act('reservar')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-amber-200 bg-amber-500/15 border border-amber-400/25 hover:bg-amber-500/25 transition-colors disabled:opacity-50">
-                {saving === 'reservar' ? 'Reservando...' : 'Reservar sem cobrança'}
+                {saving === 'reservar' ? 'Reservando...' : CLIENT_FINANCIAL_OPERATIONS_ENABLED ? 'Reservar sem cobrança' : 'Reservar unidade'}
               </button>
               <button onClick={() => act('vender')} disabled={!!saving}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
@@ -1236,7 +1237,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               </button>
             </>
           )}
-          {financialAccess && canRetryPix && (
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && canRetryPix && (
             <button onClick={reserveWithPix} disabled={!!saving}
               className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
               {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}

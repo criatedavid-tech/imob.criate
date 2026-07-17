@@ -47,6 +47,10 @@ export const ASAAS_WEBHOOK_TOKEN     = process.env.ASAAS_WEBHOOK_TOKEN          
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=3.00
 export const PLAN_INCLUDED_TICKETS   = Number(process.env.PLAN_INCLUDED_TICKETS   || "100");
 export const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE      || "3.00");
+// Operações financeiras dos CLIENTES (aluguel e sinal de reserva) ficam
+// desligadas por padrão. A assinatura do próprio ImobiFlow não usa esta flag.
+export const CLIENT_FINANCIAL_OPERATIONS_ENABLED =
+  process.env.CLIENT_FINANCIAL_OPERATIONS_ENABLED === "true";
 // ─── PROXY LLM ────────────────────────────────────────────────────────────────
 // Token interno: N8N → servidor (substitui "credential" estática no N8N).
 // Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
