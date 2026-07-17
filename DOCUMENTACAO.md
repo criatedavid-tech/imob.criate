@@ -31,15 +31,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O último deploy com identificadores completos preservados no histórico é a
-release Fly **v81**, máquina `08075edf911368` em `gru`, com health check `1/1`
-e respostas HTTP 200 em `/` e `/app`. Ele publicou o código funcional
-`e61e0e1` e a documentação até `9db6680`.
-
-A branch `v2` atual contém trabalhos posteriores — uniformização do Assistente
-IA, chave Asaas por conta e nova limpeza de código morto. Como o histórico não
-registra um identificador de release posterior a v81, confirme `fly status` e
-`fly releases` antes de afirmar que todo o HEAD atual está em produção.
+O deploy vigente confirmado é a release Fly **v86**, que publica o commit
+`6e6f5a9`. A máquina `08075edf911368`, versão 86, está iniciada em `gru`, com
+health check `1/1`. A imagem é
+`registry.fly.io/imobiflow-v2:deployment-01KXR0YXTPN2C0YKZ4GMF2R801`, manifesto
+`sha256:23158ddd0da0504a53addb84a1e2d81714e6c278a5d38c273e695dbb890ade05`.
+Os smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-17.
 
 O produto está funcional e sem usuários ativos registrados, mas **não deve ser
 declarado 100% pronto para lançamento** enquanto os QAs autenticados e as
@@ -361,6 +358,11 @@ Controles existentes:
 
 Pendências de segurança/infraestrutura:
 
+- corrigir os **11 advisories confirmados pelo `npm audit` online** após a
+  release v86: 2 baixos, 5 moderados e 4 altos, sem críticos. Os diretos são
+  `express`, `react-router-dom` e `vite`; os demais são transitivos. Todos
+  indicam correção disponível, mas os upgrades exigem rodada própria de
+  compatibilidade e regressão;
 - observar relatórios reais da CSP e, após QA, decidir a passagem de
   `reportOnly: true` para bloqueio;
 - configurar Redis antes de escalar para várias máquinas, ou aceitar

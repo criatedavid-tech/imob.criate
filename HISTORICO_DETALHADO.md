@@ -3136,3 +3136,47 @@ referências reais antes de remover; build verde depois).
   mais), mas remover é mudança de config de produção — flagado, não removido.
 
 `npx tsc --noEmit` e `npm run build` limpos.
+
+## Atualização 2026-07-17 — Knip, documentação consolidada e release v86
+
+Foi concluída uma varredura de código morto com Knip, sempre com conferência
+manual antes de remover qualquer item. Saíram o cliente legado
+`src/lib/supabase.ts`, as dependências sem uso `@anthropic-ai/sdk` e
+`autoprefixer`, a declaração duplicada de `vite` em `devDependencies`, exports
+públicos desnecessários e a interface órfã `BrokerSettings`. Rotas Express,
+páginas lazy, strings dinâmicas, migrations, Tailwind e o Dashboard 1.0 foram
+preservados. `npx knip`, `npx tsc --noEmit` e o build Vite passaram.
+
+O antigo `DOCUMENTACAO.md`, com 3.138 linhas, foi preservado integralmente
+neste arquivo antes desta nova seção. Um novo `DOCUMENTACAO.md` passou a ser a
+referência não cronológica do estado vigente: arquitetura, multi-tenant,
+personas, módulos, WhatsApp, Asaas, Lançamentos, Relatórios, segurança,
+migrations, credenciais e checklist de lançamento.
+
+Publicação:
+
+- commit funcional/documental: `6e6f5a9` (`chore: configura knip e reorganiza
+  documentacao`);
+- branch enviada: `v2`, remoto `origin/v2`;
+- app: `imobiflow-v2`; a V1 `imobiflow` não foi alterada;
+- primeira tentativa: imagem construída, porém a API Fly respondeu 503 ao criar
+  a release; nenhuma máquina foi atualizada nessa tentativa;
+- retry concluído: release **v86**, status `complete`;
+- imagem:
+  `registry.fly.io/imobiflow-v2:deployment-01KXR0YXTPN2C0YKZ4GMF2R801`;
+- manifesto:
+  `sha256:23158ddd0da0504a53addb84a1e2d81714e6c278a5d38c273e695dbb890ade05`;
+- máquina `08075edf911368`, versão 86, região `gru`, estado `started`;
+- health check `1/1 passing`;
+- smoke tests em `/`, `/app` e `/login`: HTTP 200.
+
+O aviso transitório de porta exibido durante o rolling update não persistiu: o
+status posterior confirmou a máquina iniciada, o processo saudável e os três
+endpoints públicos acessíveis.
+
+O build remoto informou 11 vulnerabilidades. A checagem posterior com
+`npm audit` online confirmou 2 baixas, 5 moderadas, 4 altas e zero críticas,
+inclusive em dependências diretas (`express`, `react-router-dom`, `vite`) e
+transitivas. Todas indicam correção disponível. Não foi executado `npm audit
+fix` nesta publicação para evitar upgrades automáticos sem QA; a remediação
+fica registrada como próxima rodada técnica prioritária.
