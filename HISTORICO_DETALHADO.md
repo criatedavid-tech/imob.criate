@@ -3381,5 +3381,13 @@ lote — a mesma reorganização que eu tinha pedido num prompt anterior desta
 sessão) e adicionando só o resumo de "verdade vigente" nas linhas de
 Conversas/Locação/Leads/Equipe da seção 5, mais este registro aqui.
 
-`npx tsc --noEmit` e `npm run build` limpos depois da reconciliação; deploy
-Fly V2 seguinte cobre este merge.
+`npx tsc --noEmit` e `npm run build` limpos depois da reconciliação.
+
+Publicado: merge commit `a5e01a2` enviado para `origin/v2`; `fly deploy`
+gerou a release Fly **v90**, máquina `08075edf911368`, região `gru`, health
+check `1/1`, `/` e `/app` respondendo HTTP 200. Reteste completo em produção
+com conta descartável, cobrindo os dois modelos: exclusão de ticket de
+conversa (mensagens + tags + notas + ponte `followup_conversations` +
+ticket em cascata) e as três rotas já testadas antes do merge (contrato de
+locação + cobrança, lead, convite de equipe) — todos os 14 checks passaram
+contra o deploy final.
