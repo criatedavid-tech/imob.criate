@@ -3207,5 +3207,18 @@ Arquivos principais: `server/config.ts`,
 `server/middleware/clientFinancialOperations.ts`, rotas de brokers/locação/
 lançamentos, `src/lib/features.ts` e áreas Config/Locação/Lançamentos.
 `npx tsc --noEmit`, `npx knip`, `npm run build` e `git diff --check` passaram.
-O QA autenticado dos bloqueios continua pendente antes de uma eventual
-publicação. Nenhum commit, push ou deploy foi realizado neste registro.
+O QA autenticado dos bloqueios continua recomendado após a publicação.
+
+Publicação:
+
+- commit funcional/documental: `e63ce86` (`feat: desativa cobrancas de
+  clientes por padrao`);
+- branch enviada: `v2`, remoto `origin/v2`;
+- app: `imobiflow-v2`; a V1 `imobiflow` não foi alterada;
+- release Fly: **v87**, máquina `08075edf911368`, região `gru`, estado
+  `started`, health check `1/1 passing`;
+- imagem:
+  `registry.fly.io/imobiflow-v2:deployment-01KXR5C1SYXWKKWDFH6ZW8RYZ8`;
+- manifesto:
+  `sha256:e731425d992d2ba1bc0ddc26c6ae2eea2804d1fd07f09485be8a7c5201688e4c`;
+- smoke tests em `/`, `/login` e `/app`: HTTP 200.

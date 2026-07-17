@@ -246,9 +246,10 @@ reservas PIX e alterações da chave Asaas do cliente recebem bloqueio de
 produto. Leitura histórica, contratos, reservas sem cobrança, documentos e
 billing da assinatura continuam funcionando.
 
-Em 17/07/2026, esta desativação está somente no working tree local. A produção
-V2, release v86, ainda não contém essas flags até que haja autorização para uma
-nova publicação.
+Em 17/07/2026, esta desativação foi publicada na produção V2 pelo commit
+`e63ce86` e pela release Fly **v87**. A imagem ativa é
+`registry.fly.io/imobiflow-v2:deployment-01KXR5C1SYXWKKWDFH6ZW8RYZ8`, com
+manifesto `sha256:e731425d992d2ba1bc0ddc26c6ae2eea2804d1fd07f09485be8a7c5201688e4c`.
 
 A estrutura de chave própria continua criptografada no banco apenas para
 compatibilidade/reversibilidade; ela não aparece na Config enquanto a flag do
