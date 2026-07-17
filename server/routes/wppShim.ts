@@ -6,6 +6,11 @@ import { normalizePhoneBR } from "../lib/crypto";
 import { N8N_WEBHOOK_URL, INTERNAL_PROXY_TOKEN } from "../config";
 import { pauseAiForHumanTakeover } from "../services/followup";
 import { fetchWithTimeout } from "../lib/http";
+import {
+  ensureConversationTicket,
+  getConversationTicket,
+  recordConversationMessage,
+} from "../services/conversationTickets";
 
 export const wppShimRouter = express.Router();
 
@@ -26,20 +31,13 @@ async function memberPhoneOwnership(brokerId: string): Promise<Map<string, strin
   return map;
 }
 
-async function canAccessConversation(userId: string, brokerId: string, customerPhone: string): Promise<boolean> {
+async function canAccessTicket(userId: string, brokerId: string, ticketId: string): Promise<boolean> {
+  const ticket = await getConversationTicket(brokerId, ticketId);
+  if (!ticket) return false;
   if (await isBrokerOwner(userId, brokerId)) return true;
-  const map = await memberPhoneOwnership(brokerId);
-  if (map.get(normalizePhoneBR(customerPhone)) === userId) return true;
-
-  // Atendimento atribuído explicitamente (ver PATCH /:phone/assign) também dá acesso,
-  // independente de lead casando — é assim que um ticket "pending" sem lead vira do membro.
-  const { data } = await supabase
-    .from("followup_conversations")
-    .select("assigned_user_id")
-    .eq("broker_id", brokerId)
-    .eq("customer_phone", customerPhone)
-    .maybeSingle();
-  return data?.assigned_user_id === userId;
+  const ownership = await memberPhoneOwnership(brokerId);
+  return ownership.get(normalizePhoneBR(ticket.customer_phone)) === userId
+    || ticket.assigned_user_id === userId;
 }
 
 // ─── Disfarce do Z-PRO (Fase 2 do plano "Eliminar o Z-PRO") ────────────────
@@ -79,18 +77,19 @@ wppShimRouter.post("/api/wpp-shim/external/:brokerKey", async (req, res) => {
 
     const sent = await sendUazapiText(broker.uazapi_instance_token, number, cleanText);
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: broker.id,
-      customer_phone: number,
-      direction: "out",
-      sender_type: "ai",
-      body: cleanText,
-    });
-
     if (!sent.ok) {
       console.warn(`[WppShim] envio falhou pra broker ${broker.id}: status=${sent.status}`);
       return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
     }
+
+    await recordConversationMessage({
+      brokerId: broker.id,
+      customerPhone: normalizePhoneBR(number),
+      direction: "out",
+      senderType: "ai",
+      body: cleanText,
+      initialStatus: "open",
+    });
 
     res.json({ ok: true });
   } catch (err: any) {
@@ -106,7 +105,8 @@ wppShimRouter.post("/api/wpp-shim/external/:brokerKey", async (req, res) => {
 // /api/wpp-shim/external/:brokerKey fazia pro Z-PRO (enviar + persistir) —
 // aquela rota exige zpro_api_key, que corretores provisionados nativamente
 // nunca têm. Mesmo padrão de auth de /api/followup/inbound.
-// Auth: Bearer INTERNAL_PROXY_TOKEN. Body: { broker_id, customer_phone, text }.
+// Auth: Bearer INTERNAL_PROXY_TOKEN.
+// Body: { broker_id, customer_phone, text, ticket_id? }.
 wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
   const auth = (req.headers["authorization"] || "").replace("Bearer ", "").trim();
   if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
@@ -116,8 +116,23 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
     const brokerId = String(req.body?.broker_id || "").trim();
     const text = String(req.body?.text || "").trim();
     const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || ""));
+    const ticketId = String(req.body?.ticket_id || "").trim() || undefined;
     if (!brokerId || !text || !customerPhone) {
       return res.status(400).json({ error: "broker_id, customer_phone e text são obrigatórios." });
+    }
+
+    const ticket = ticketId
+      ? await getConversationTicket(brokerId, ticketId)
+      : await ensureConversationTicket({
+          brokerId,
+          customerPhone,
+          initialStatus: "open",
+        });
+    if (!ticket || ticket.customer_phone !== customerPhone) {
+      return res.status(400).json({ error: "Ticket de conversa inválido." });
+    }
+    if (ticket.conversation_status === "closed" || !ticket.ai_active) {
+      return res.status(409).json({ error: "Ticket encerrado ou com atendimento humano ativo." });
     }
 
     const instanceToken = await resolveOutboundInstanceToken(brokerId, customerPhone);
@@ -127,18 +142,20 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 
     const sent = await sendUazapiText(instanceToken, customerPhone, text);
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: customerPhone,
-      direction: "out",
-      sender_type: "ai",
-      body: text,
-    });
-
     if (!sent.ok) {
       console.warn(`[WppShim] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
       return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
     }
+
+    await recordConversationMessage({
+      brokerId,
+      customerPhone,
+      ticketId: ticket.id,
+      direction: "out",
+      senderType: "ai",
+      body: text,
+      initialStatus: "open",
+    });
 
     res.json({ ok: true });
   } catch (err: any) {
@@ -222,13 +239,24 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
     const customerPhone = normalizePhoneBR(rawPhone);
     if (!customerPhone) return;
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: customerPhone,
+    const activityAt = new Date().toISOString();
+    const ticket = await ensureConversationTicket({
+      brokerId,
+      customerPhone,
+      initialStatus: "pending",
+      aiActive: true,
+      instanceOwnerUserId,
+      lastActivityAt: activityAt,
+    });
+
+    await recordConversationMessage({
+      brokerId,
+      customerPhone,
+      ticketId: ticket.id,
       direction: "in",
-      sender_type: "customer",
+      senderType: "customer",
       body: text,
-      provider_message_id: messageId || null,
+      providerMessageId: messageId || null,
     });
 
     // Contato automático: primeira mensagem real de um número novo já cria
@@ -245,32 +273,15 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
       { onConflict: "broker_id,phone", ignoreDuplicates: true }
     );
 
-    // Novo ticket nasce "pending" (aguardando alguém puxar), igual ao Z-PRO.
-    // Reabre pra "pending" se estava fechado; se já tá pending/open, não mexe
-    // no status (senão toda mensagem nova reabriria um atendimento em curso).
-    const { data: existing } = await supabase
-      .from("followup_conversations")
-      .select("conversation_status")
-      .eq("broker_id", brokerId)
-      .eq("customer_phone", customerPhone)
-      .maybeSingle();
-    const nextStatus = !existing || existing.conversation_status === "closed" ? "pending" : existing.conversation_status;
-
-    await supabase.from("followup_conversations").upsert(
-      {
-        broker_id: brokerId,
-        customer_phone: customerPhone,
-        last_customer_message_at: new Date().toISOString(),
-        follow_sent: false,
-        conversation_status: nextStatus,
-        // Reflete sempre a instância do ÚLTIMO inbound: null = compartilhada
-        // da conta, setado = própria de um membro. É o que
-        // resolveOutboundInstanceToken usa pra decidir por onde a resposta sai.
-        instance_owner_user_id: instanceOwnerUserId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "broker_id,customer_phone" }
-    );
+    // followup_conversations permanece como ponte operacional do ticket ATIVO.
+    // Se o anterior estava encerrado, ensureConversationTicket criou outro UUID.
+    await supabase.from("followup_conversations").update({
+      ticket_id: ticket.id,
+      last_customer_message_at: activityAt,
+      follow_sent: false,
+      instance_owner_user_id: instanceOwnerUserId,
+      updated_at: activityAt,
+    }).eq("broker_id", brokerId).eq("customer_phone", customerPhone);
 
     // Repasse pro N8N — formato próprio (não emula o do Z-PRO), consumido
     // pelo workflow de teste "Teste-v2 imob" (Fase 5).
@@ -283,6 +294,7 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
           broker_id: brokerId,
           customer_phone: customerPhone,
           message_id: messageId || null,
+          ticket_id: ticket.id,
           text,
         }),
       }).catch((e) => console.warn("[WppShim] repasse pro N8N falhou:", e.message));
@@ -300,10 +312,11 @@ wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
     if (!brokerId) return res.json([]);
 
     const { data: conversations, error: convError } = await supabase
-      .from("followup_conversations")
-      .select("customer_phone, ai_active, human_takeover_at, conversation_status, queue_id, assigned_user_id, last_customer_message_at")
+      .from("imf_conversation_tickets")
+      .select("id, customer_phone, ai_active, human_takeover_at, conversation_status, queue_id, assigned_user_id, opened_at, closed_at, last_activity_at")
       .eq("broker_id", brokerId)
-      .order("last_customer_message_at", { ascending: false });
+      .order("last_activity_at", { ascending: false })
+      .limit(500);
     if (convError) throw convError;
 
     // Isolamento por membro: dono vê todas as conversas; membro vê as que
@@ -316,41 +329,52 @@ wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
       );
     }
 
-    const { data: recentMessages } = await supabase
-      .from("imf_conversation_messages")
-      .select("customer_phone, body, sender_type, created_at")
-      .eq("broker_id", brokerId)
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const visibleTicketIds = visibleConversations.map((c: any) => c.id);
+    const { data: recentMessages } = visibleTicketIds.length
+      ? await supabase
+          .from("imf_conversation_messages")
+          .select("ticket_id, body, sender_type, created_at")
+          .eq("broker_id", brokerId)
+          .in("ticket_id", visibleTicketIds)
+          .order("created_at", { ascending: false })
+          .limit(1000)
+      : { data: [] as any[] };
 
-    const lastByPhone = new Map<string, { body: string | null; sender_type: string; created_at: string }>();
+    const lastByTicket = new Map<string, { body: string | null; sender_type: string; created_at: string }>();
     for (const m of recentMessages || []) {
-      if (!lastByPhone.has(m.customer_phone)) lastByPhone.set(m.customer_phone, m);
+      if (m.ticket_id && !lastByTicket.has(m.ticket_id)) lastByTicket.set(m.ticket_id, m);
     }
 
-    const { data: tagLinks } = await supabase
-      .from("imf_conversation_tag_links")
-      .select("customer_phone, imf_conversation_tags(id, name, color)")
-      .eq("broker_id", brokerId);
-    const tagsByPhone = new Map<string, { id: string; name: string; color: string | null }[]>();
+    const { data: tagLinks } = visibleTicketIds.length
+      ? await supabase
+          .from("imf_conversation_tag_links")
+          .select("ticket_id, imf_conversation_tags(id, name, color)")
+          .eq("broker_id", brokerId)
+          .in("ticket_id", visibleTicketIds)
+      : { data: [] as any[] };
+    const tagsByTicket = new Map<string, { id: string; name: string; color: string | null }[]>();
     for (const t of tagLinks || []) {
       const tag = (t as any).imf_conversation_tags;
       if (!tag) continue;
-      const list = tagsByPhone.get((t as any).customer_phone) || [];
+      const list = tagsByTicket.get((t as any).ticket_id) || [];
       list.push(tag);
-      tagsByPhone.set((t as any).customer_phone, list);
+      tagsByTicket.set((t as any).ticket_id, list);
     }
 
     res.json(visibleConversations.map((c: any) => ({
+      id: c.id,
+      ticket_id: c.id,
       customer_phone: c.customer_phone,
       ai_active: c.ai_active,
       conversation_status: c.conversation_status,
       queue_id: c.queue_id,
       assigned_user_id: c.assigned_user_id,
-      tags: tagsByPhone.get(c.customer_phone) || [],
-      last_message: lastByPhone.get(c.customer_phone)?.body || null,
-      last_message_from: lastByPhone.get(c.customer_phone)?.sender_type || null,
-      last_activity: c.last_customer_message_at,
+      tags: tagsByTicket.get(c.id) || [],
+      last_message: lastByTicket.get(c.id)?.body || null,
+      last_message_from: lastByTicket.get(c.id)?.sender_type || null,
+      last_activity: c.last_activity_at,
+      opened_at: c.opened_at,
+      closed_at: c.closed_at,
     })));
   } catch (err: any) {
     console.error("Erro GET /api/conversas:", err.message);
@@ -358,12 +382,12 @@ wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.get("/api/conversas/:customerPhone/messages", requireUser, async (req, res) => {
+wppShimRouter.get("/api/conversas/:ticketId/messages", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    if (!(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const requestedLimit = req.query.limit === undefined ? 50 : Number(req.query.limit);
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
@@ -378,7 +402,7 @@ wppShimRouter.get("/api/conversas/:customerPhone/messages", requireUser, async (
       .from("imf_conversation_messages")
       .select("id, direction, sender_type, body, media_url, media_type, created_at")
       .eq("broker_id", brokerId)
-      .eq("customer_phone", req.params.customerPhone);
+      .eq("ticket_id", req.params.ticketId);
     if (before) query = query.lt("created_at", before.toISOString());
     const { data, error } = await query
       .order("created_at", { ascending: false })
@@ -392,7 +416,7 @@ wppShimRouter.get("/api/conversas/:customerPhone/messages", requireUser, async (
     res.setHeader("X-Next-Cursor", page[0]?.created_at || "");
     res.json(page);
   } catch (err: any) {
-    console.error("Erro GET /api/conversas/:phone/messages:", err.message);
+    console.error("Erro GET /api/conversas/:ticketId/messages:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -401,106 +425,165 @@ wppShimRouter.get("/api/conversas/:customerPhone/messages", requireUser, async (
 // Corretor responde direto pela tela nova. Isso É o handover humano — não
 // precisa mais do truque do ZWSP pra adivinhar quem mandou, porque o
 // ImobiFlow sabe com certeza: quem chama esta rota é o corretor autenticado.
-wppShimRouter.post("/api/conversas/:customerPhone/reply", requireUser, async (req, res) => {
+wppShimRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
+    if (ticket.conversation_status === "closed") {
+      return res.status(409).json({ error: "Este ticket está encerrado. Uma nova mensagem do cliente abrirá outro ticket." });
+    }
 
     const { message } = req.body || {};
     if (!message?.trim()) return res.status(400).json({ error: "message é obrigatório." });
 
     // Resolve pela instância própria do membro se a conversa entrou por ela
     // (ver resolveOutboundInstanceToken), senão cai pra instância da conta.
-    const instanceToken = await resolveOutboundInstanceToken(brokerId, req.params.customerPhone);
+    const instanceToken = await resolveOutboundInstanceToken(brokerId, ticket.customer_phone);
     if (!instanceToken) {
       return res.status(503).json({ error: "Instância UAZAPI não configurada para este corretor ainda." });
     }
 
-    const sent = await sendUazapiText(instanceToken, req.params.customerPhone, message);
+    const sent = await sendUazapiText(instanceToken, ticket.customer_phone, message);
     if (!sent.ok) return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: req.params.customerPhone,
+    await recordConversationMessage({
+      brokerId,
+      customerPhone: ticket.customer_phone,
+      ticketId: ticket.id,
       direction: "out",
-      sender_type: "broker_manual",
+      senderType: "broker_manual",
       body: message,
     });
 
-    await pauseAiForHumanTakeover(brokerId, req.params.customerPhone);
+    await pauseAiForHumanTakeover(brokerId, ticket.customer_phone);
+    await supabase.from("imf_conversation_tickets").update({
+      ai_active: false,
+      human_takeover_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
 
     res.json({ ok: true });
   } catch (err: any) {
-    console.error("Erro POST /api/conversas/:phone/reply:", err.message);
+    console.error("Erro POST /api/conversas/:ticketId/reply:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // Liga/desliga a IA manualmente pra uma conversa (independe de ter respondido ou não).
-wppShimRouter.patch("/api/conversas/:customerPhone/ai-toggle", requireUser, async (req, res) => {
+wppShimRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
+    if (ticket.conversation_status === "closed") return res.status(409).json({ error: "Ticket encerrado é imutável." });
 
     const { ai_active } = req.body || {};
     if (typeof ai_active !== "boolean") return res.status(400).json({ error: "ai_active (boolean) é obrigatório." });
 
-    await supabase.from("followup_conversations").upsert({
-      broker_id: brokerId,
-      customer_phone: req.params.customerPhone,
+    const updatedAt = new Date().toISOString();
+    await supabase.from("imf_conversation_tickets").update({
       ai_active,
-      human_takeover_at: ai_active ? null : new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "broker_id,customer_phone" });
+      human_takeover_at: ai_active ? null : updatedAt,
+      updated_at: updatedAt,
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
+    await supabase.from("followup_conversations").update({
+      ai_active,
+      human_takeover_at: ai_active ? null : updatedAt,
+      updated_at: updatedAt,
+    }).eq("broker_id", brokerId).eq("ticket_id", ticket.id);
 
     res.json({ ok: true, ai_active });
   } catch (err: any) {
-    console.error("Erro PATCH /api/conversas/:phone/ai-toggle:", err.message);
+    console.error("Erro PATCH /api/conversas/:ticketId/ai-toggle:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // Marca conversa como encerrada/reaberta — substitui a checagem "ticket aberto" do Z-PRO.
-wppShimRouter.patch("/api/conversas/:customerPhone/status", requireUser, async (req, res) => {
+wppShimRouter.patch("/api/conversas/:ticketId/status", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { conversation_status } = req.body || {};
     if (!["pending", "open", "closed"].includes(conversation_status)) {
       return res.status(400).json({ error: "conversation_status deve ser 'pending', 'open' ou 'closed'." });
     }
 
-    await supabase.from("followup_conversations").upsert({
-      broker_id: brokerId,
-      customer_phone: req.params.customerPhone,
+    if (ticket.conversation_status === "closed" && conversation_status !== "closed") {
+      return res.status(409).json({ error: "Ticket encerrado é imutável. Uma nova interação deve abrir outro ticket." });
+    }
+
+    if (conversation_status !== "closed") {
+      const { data: anotherActive } = await supabase
+        .from("imf_conversation_tickets")
+        .select("id")
+        .eq("broker_id", brokerId)
+        .eq("customer_phone", ticket.customer_phone)
+        .in("conversation_status", ["pending", "open"])
+        .neq("id", ticket.id)
+        .limit(1)
+        .maybeSingle();
+      if (anotherActive) {
+        return res.status(409).json({ error: "Já existe outro ticket ativo para este telefone." });
+      }
+    }
+
+    const updatedAt = new Date().toISOString();
+    const { error: ticketError } = await supabase.from("imf_conversation_tickets").update({
       conversation_status,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "broker_id,customer_phone" });
+      closed_at: conversation_status === "closed" ? updatedAt : null,
+      updated_at: updatedAt,
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
+    if (ticketError) throw ticketError;
+
+    if (conversation_status === "closed") {
+      await supabase.from("followup_conversations").update({
+        conversation_status: "closed",
+        follow_sent: true,
+        updated_at: updatedAt,
+      }).eq("broker_id", brokerId).eq("ticket_id", ticket.id);
+    } else {
+      await supabase.from("followup_conversations").upsert({
+        broker_id: brokerId,
+        customer_phone: ticket.customer_phone,
+        ticket_id: ticket.id,
+        conversation_status,
+        ai_active: ticket.ai_active,
+        assigned_user_id: ticket.assigned_user_id,
+        queue_id: ticket.queue_id,
+        instance_owner_user_id: ticket.instance_owner_user_id,
+        updated_at: updatedAt,
+      }, { onConflict: "broker_id,customer_phone" });
+    }
 
     res.json({ ok: true, conversation_status });
   } catch (err: any) {
-    console.error("Erro PATCH /api/conversas/:phone/status:", err.message);
+    console.error("Erro PATCH /api/conversas/:ticketId/status:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // Atribui (ou remove, com user_id: null) o atendimento a um membro específico —
 // inspirado no "userId" do SetTicketInfo do Z-PRO. Dá acesso à conversa mesmo
-// sem lead casando (ver canAccessConversation), então só o dono ou quem já
+// sem lead casando (ver canAccessTicket), então só o dono ou quem já
 // acessa a conversa pode atribuir — evita um membro "roubar" ticket alheio às cegas.
-wppShimRouter.patch("/api/conversas/:customerPhone/assign", requireUser, async (req, res) => {
+wppShimRouter.patch("/api/conversas/:ticketId/assign", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { user_id } = req.body || {};
     if (user_id !== null && typeof user_id !== "string") {
@@ -517,27 +600,31 @@ wppShimRouter.patch("/api/conversas/:customerPhone/assign", requireUser, async (
       if (!member) return res.status(400).json({ error: "Usuário não é membro desta conta." });
     }
 
-    await supabase.from("followup_conversations").upsert({
-      broker_id: brokerId,
-      customer_phone: req.params.customerPhone,
+    const updatedAt = new Date().toISOString();
+    await supabase.from("imf_conversation_tickets").update({
       assigned_user_id: user_id,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "broker_id,customer_phone" });
+      updated_at: updatedAt,
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
+    await supabase.from("followup_conversations").update({
+      assigned_user_id: user_id,
+      updated_at: updatedAt,
+    }).eq("broker_id", brokerId).eq("ticket_id", ticket.id);
 
     res.json({ ok: true, assigned_user_id: user_id });
   } catch (err: any) {
-    console.error("Erro PATCH /api/conversas/:phone/assign:", err.message);
+    console.error("Erro PATCH /api/conversas/:ticketId/assign:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // Move a conversa pra uma fila (ou tira, com queue_id: null) — inspirado no queueId do Z-PRO.
-wppShimRouter.patch("/api/conversas/:customerPhone/queue", requireUser, async (req, res) => {
+wppShimRouter.patch("/api/conversas/:ticketId/queue", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { queue_id } = req.body || {};
     if (queue_id !== null && typeof queue_id !== "string") {
@@ -549,39 +636,45 @@ wppShimRouter.patch("/api/conversas/:customerPhone/queue", requireUser, async (r
       if (!queue) return res.status(400).json({ error: "Fila não encontrada." });
     }
 
-    await supabase.from("followup_conversations").upsert({
-      broker_id: brokerId,
-      customer_phone: req.params.customerPhone,
+    const updatedAt = new Date().toISOString();
+    await supabase.from("imf_conversation_tickets").update({
       queue_id,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "broker_id,customer_phone" });
+      updated_at: updatedAt,
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
+    await supabase.from("followup_conversations").update({
+      queue_id,
+      updated_at: updatedAt,
+    }).eq("broker_id", brokerId).eq("ticket_id", ticket.id);
 
     res.json({ ok: true, queue_id });
   } catch (err: any) {
-    console.error("Erro PATCH /api/conversas/:phone/queue:", err.message);
+    console.error("Erro PATCH /api/conversas/:ticketId/queue:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Apaga a conversa inteira (mensagens, tags, notas e o estado do ticket) —
-// exclusão de verdade, não é o mesmo que marcar "encerrado" em /status.
-wppShimRouter.delete("/api/conversas/:customerPhone", requireUser, async (req, res) => {
+// Apaga o ticket inteiro (mensagens, tags, notas e o próprio ticket) —
+// exclusão de verdade de UM ciclo de atendimento, não é o mesmo que encerrar
+// em /status. Se for o ticket ativo (ponte em followup_conversations), a
+// ponte some junto; a próxima mensagem do cliente cria um ciclo novo normalmente.
+wppShimRouter.delete("/api/conversas/:ticketId", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
-    const phone = req.params.customerPhone;
-    await supabase.from("imf_conversation_messages").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
-    await supabase.from("imf_conversation_tag_links").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
-    await supabase.from("imf_conversation_notes").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
-    const { error } = await supabase.from("followup_conversations").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
+    await supabase.from("imf_conversation_messages").delete().eq("broker_id", brokerId).eq("ticket_id", ticket.id);
+    await supabase.from("imf_conversation_tag_links").delete().eq("broker_id", brokerId).eq("ticket_id", ticket.id);
+    await supabase.from("imf_conversation_notes").delete().eq("broker_id", brokerId).eq("ticket_id", ticket.id);
+    await supabase.from("followup_conversations").delete().eq("broker_id", brokerId).eq("ticket_id", ticket.id);
+    const { error } = await supabase.from("imf_conversation_tickets").delete().eq("id", ticket.id).eq("broker_id", brokerId);
     if (error) throw error;
 
     res.json({ ok: true });
   } catch (err: any) {
-    console.error("Erro DELETE /api/conversas/:phone:", err.message);
+    console.error("Erro DELETE /api/conversas/:ticketId:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -663,19 +756,28 @@ wppShimRouter.post("/api/conversas/tags", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.post("/api/conversas/:customerPhone/tags", requireUser, async (req, res) => {
+wppShimRouter.post("/api/conversas/:ticketId/tags", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { tag_id } = req.body || {};
     if (!tag_id) return res.status(400).json({ error: "tag_id é obrigatório." });
 
+    const { data: tag } = await supabase
+      .from("imf_conversation_tags")
+      .select("id")
+      .eq("id", tag_id)
+      .eq("broker_id", brokerId)
+      .maybeSingle();
+    if (!tag) return res.status(400).json({ error: "Tag não encontrada nesta conta." });
+
     const { error } = await supabase
       .from("imf_conversation_tag_links")
-      .upsert({ broker_id: brokerId, customer_phone: req.params.customerPhone, tag_id }, { onConflict: "broker_id,customer_phone,tag_id" });
+      .upsert({ broker_id: brokerId, customer_phone: ticket.customer_phone, ticket_id: ticket.id, tag_id }, { onConflict: "ticket_id,tag_id" });
     if (error) throw error;
     res.status(201).json({ ok: true });
   } catch (err: any) {
@@ -683,18 +785,18 @@ wppShimRouter.post("/api/conversas/:customerPhone/tags", requireUser, async (req
   }
 });
 
-wppShimRouter.delete("/api/conversas/:customerPhone/tags/:tagId", requireUser, async (req, res) => {
+wppShimRouter.delete("/api/conversas/:ticketId/tags/:tagId", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    if (!(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { error } = await supabase
       .from("imf_conversation_tag_links")
       .delete()
       .eq("broker_id", brokerId)
-      .eq("customer_phone", req.params.customerPhone)
+      .eq("ticket_id", req.params.ticketId)
       .eq("tag_id", req.params.tagId);
     if (error) throw error;
     res.json({ ok: true });
@@ -704,18 +806,18 @@ wppShimRouter.delete("/api/conversas/:customerPhone/tags/:tagId", requireUser, a
 });
 
 // ─── Notas internas ─────────────────────────────────────────────────────────
-wppShimRouter.get("/api/conversas/:customerPhone/notes", requireUser, async (req, res) => {
+wppShimRouter.get("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    if (!(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { data, error } = await supabase
       .from("imf_conversation_notes")
       .select("id, body, user_id, created_at")
       .eq("broker_id", brokerId)
-      .eq("customer_phone", req.params.customerPhone)
+      .eq("ticket_id", req.params.ticketId)
       .order("created_at", { ascending: true });
     if (error) throw error;
     res.json(data || []);
@@ -724,19 +826,20 @@ wppShimRouter.get("/api/conversas/:customerPhone/notes", requireUser, async (req
   }
 });
 
-wppShimRouter.post("/api/conversas/:customerPhone/notes", requireUser, async (req, res) => {
+wppShimRouter.post("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
-    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
 
     const { body } = req.body || {};
     if (!body?.trim()) return res.status(400).json({ error: "body é obrigatório." });
 
     const { data, error } = await supabase
       .from("imf_conversation_notes")
-      .insert({ broker_id: brokerId, customer_phone: req.params.customerPhone, user_id: userId, body: body.trim() })
+      .insert({ broker_id: brokerId, customer_phone: ticket.customer_phone, ticket_id: ticket.id, user_id: userId, body: body.trim() })
       .select()
       .single();
     if (error) throw error;
@@ -767,26 +870,44 @@ wppShimRouter.post("/api/conversas/create", requireUser, async (req, res) => {
     const sent = await sendUazapiText(instanceToken, cleanPhone, message);
     if (!sent.ok) return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
 
-    await supabase.from("imf_conversation_messages").insert({
-      broker_id: brokerId,
-      customer_phone: cleanPhone,
+    const ticket = await ensureConversationTicket({
+      brokerId,
+      customerPhone: cleanPhone,
+      initialStatus: "open",
+      aiActive: false,
+      assignedUserId: userId,
+    });
+
+    await recordConversationMessage({
+      brokerId,
+      customerPhone: cleanPhone,
+      ticketId: ticket.id,
       direction: "out",
-      sender_type: "broker_manual",
+      senderType: "broker_manual",
       body: message,
     });
 
-    await supabase.from("followup_conversations").upsert({
-      broker_id: brokerId,
-      customer_phone: cleanPhone,
-      conversation_status: "open",
-      ai_active: false,
-      assigned_user_id: userId,
-      human_takeover_at: new Date().toISOString(),
-      last_customer_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "broker_id,customer_phone" });
+    const updatedAt = new Date().toISOString();
+    await Promise.all([
+      supabase.from("imf_conversation_tickets").update({
+        ai_active: false,
+        assigned_user_id: userId,
+        human_takeover_at: updatedAt,
+        last_activity_at: updatedAt,
+        updated_at: updatedAt,
+      }).eq("id", ticket.id).eq("broker_id", brokerId),
+      supabase.from("followup_conversations").update({
+        ticket_id: ticket.id,
+        conversation_status: "open",
+        ai_active: false,
+        assigned_user_id: userId,
+        human_takeover_at: updatedAt,
+        last_customer_message_at: updatedAt,
+        updated_at: updatedAt,
+      }).eq("broker_id", brokerId).eq("customer_phone", cleanPhone),
+    ]);
 
-    res.status(201).json({ ok: true, customer_phone: cleanPhone });
+    res.status(201).json({ ok: true, customer_phone: cleanPhone, ticket_id: ticket.id });
   } catch (err: any) {
     console.error("Erro POST /api/conversas/create:", err.message);
     res.status(500).json({ error: err.message });

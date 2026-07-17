@@ -4,6 +4,7 @@ import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsToReais } from '../lib/money';
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
 
 interface UsageHistory {
   billing_period_start: string;
@@ -166,8 +167,8 @@ export function ConfigArea() {
       {/* WhatsApp */}
       <WhatsAppConnectCard />
 
-      {/* Conta de cobrança (Asaas) — só quem cobra clientes: imobiliária/incorporadora */}
-      {me && me.account_type !== 'corretor' && <AsaasKeyCard fieldCls={fieldCls} />}
+      {/* Integração de cobrança dos clientes fica fora do núcleo operacional. */}
+      {CLIENT_FINANCIAL_OPERATIONS_ENABLED && me && me.account_type !== 'corretor' && <AsaasKeyCard fieldCls={fieldCls} />}
 
       {/* Plano */}
       <GlassCard className="!p-6 mb-5">

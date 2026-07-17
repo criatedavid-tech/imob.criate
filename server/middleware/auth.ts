@@ -7,7 +7,7 @@ import { supabase } from '../supabase';
 // Cache de 60s evita uma chamada ao Auth por request.
 const tokenCache = new Map<string, { userId: string; expires: number }>();
 
-export async function verifyAccessToken(req: Request): Promise<string | null> {
+async function verifyAccessToken(req: Request): Promise<string | null> {
   const token = (req.headers.authorization || '').toString().replace(/^Bearer\s+/i, '').trim();
   if (!token || token === 'dummy_token' || token === 'null' || token === 'undefined') return null;
 

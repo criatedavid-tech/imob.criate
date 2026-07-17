@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
 import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
@@ -394,7 +395,11 @@ brokersRouter.get("/api/brokers/asaas-key", requireUser, async (req, res) => {
   }
 });
 
-brokersRouter.post("/api/brokers/asaas-key", requireUser, async (req, res) => {
+brokersRouter.post(
+  "/api/brokers/asaas-key",
+  requireUser,
+  requireClientFinancialOperations,
+  async (req, res) => {
   const userId = (req as any).userId as string;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -425,9 +430,14 @@ brokersRouter.post("/api/brokers/asaas-key", requireUser, async (req, res) => {
     console.error("Erro POST /api/brokers/asaas-key:", err?.message);
     res.status(400).json({ error: err.message || "Falha ao salvar a chave de cobrança." });
   }
-});
+  },
+);
 
-brokersRouter.delete("/api/brokers/asaas-key", requireUser, async (req, res) => {
+brokersRouter.delete(
+  "/api/brokers/asaas-key",
+  requireUser,
+  requireClientFinancialOperations,
+  async (req, res) => {
   const userId = (req as any).userId as string;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -449,7 +459,8 @@ brokersRouter.delete("/api/brokers/asaas-key", requireUser, async (req, res) => 
     console.error("Erro DELETE /api/brokers/asaas-key:", err);
     res.status(500).json({ error: err.message });
   }
-});
+  },
+);
 
 // --- UPLOAD DE FOTO DO CORRETOR ---
 brokersRouter.post("/api/brokers/upload-photo", requireUser, async (req, res) => {

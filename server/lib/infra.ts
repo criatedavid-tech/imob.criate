@@ -12,7 +12,7 @@ if (SENTRY_DSN) {
 // ─── REDIS (opcional — rate limiting distribuído multi-máquina) ───────────────
 // Sem REDIS_URL, os limiters caem para store em memória por VM (comportamento atual).
 // Para ativar: fly redis create --app imobiflow && fly secrets set REDIS_URL=...
-export let redisClient: Redis | null = null;
+let redisClient: Redis | null = null;
 if (REDIS_URL) {
   redisClient = new Redis(REDIS_URL);
   redisClient.on('connect', () => console.log('[Redis] conectado'));

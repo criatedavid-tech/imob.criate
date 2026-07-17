@@ -1,15 +1,7 @@
-export interface User {
+interface User {
   id: string;
   email?: string;
   name?: string;
-}
-
-export interface BrokerSettings {
-  id: string;
-  name: string;
-  phone: string;
-  ai_name: string;
-  broker_address: string;
 }
 
 class AuthService {

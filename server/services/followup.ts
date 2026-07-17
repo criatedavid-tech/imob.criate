@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { resolveOutboundInstanceToken, sendUazapiText } from "./wppShim";
+import { ensureConversationTicket, recordConversationMessage } from "./conversationTickets";
 
 // ─── Motor do Follow-Up (tick 60s) ──────────────────────────────────────────
 // claim_due_followups() faz o claim ATÔMICO (seleciona+marca+avança numa só
@@ -33,14 +34,31 @@ async function wasRepliedManually(brokerId: string, customerPhone: string): Prom
 // detecta o corretor digitando manual no Z-PRO) quanto pela resposta manual
 // direto na tela Conversas — mesma ação, mesmo efeito, um só lugar de verdade.
 export async function pauseAiForHumanTakeover(brokerId: string, customerPhone: string) {
-  await supabase.from('followup_conversations').upsert({
+  const updatedAt = new Date().toISOString();
+  const ticket = await ensureConversationTicket({
+    brokerId,
+    customerPhone,
+    initialStatus: 'open',
+    aiActive: false,
+    lastActivityAt: updatedAt,
+  });
+  const { data: current } = await supabase.from('followup_conversations').upsert({
     broker_id: brokerId,
     customer_phone: customerPhone,
+    ticket_id: ticket.id,
     ai_active: false,
-    human_takeover_at: new Date().toISOString(),
+    human_takeover_at: updatedAt,
     follow_sent: true, // pausa follow-ups enquanto o humano atende
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'broker_id,customer_phone' });
+    updated_at: updatedAt
+  }, { onConflict: 'broker_id,customer_phone' }).select('ticket_id').maybeSingle();
+
+  if (current?.ticket_id) {
+    await supabase.from('imf_conversation_tickets').update({
+      ai_active: false,
+      human_takeover_at: updatedAt,
+      updated_at: updatedAt,
+    }).eq('id', current.ticket_id).eq('broker_id', brokerId);
+  }
 }
 
 export async function runFollowupTick() {
@@ -71,6 +89,20 @@ export async function runFollowupTick() {
       const ok = !!sent?.ok;
       if (ok) {
         console.log(`[Follow-up] follow #${row.message_index} → ${row.customer_phone} (broker ${row.broker_id})`);
+        try {
+          await recordConversationMessage({
+            brokerId: row.broker_id,
+            customerPhone: row.customer_phone,
+            direction: "out",
+            senderType: "ai",
+            body: row.message,
+            initialStatus: "open",
+          });
+        } catch (err: any) {
+          // A mensagem já foi entregue. Falha de persistência não pode causar
+          // reenvio e duplicidade no WhatsApp; fica registrada no log operacional.
+          console.error(`[Follow-up] enviado, mas não persistido no ticket: ${err.message}`);
+        }
         // Após Follow 1 ou 2, reseta follow_sent para que o próximo dispare automaticamente
         // após o delay correspondente (contado a partir de follow_sent_at, gravado pela RPC).
         // Follow 3 (index=3) mantém follow_sent=true — sequência encerrada.
