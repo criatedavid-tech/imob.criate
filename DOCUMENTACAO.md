@@ -174,11 +174,15 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 - **Assistente IA:** nome, instruções e Follow-Up Inteligente em área própria.
   Config não contém mais campos de IA na V2.
 - **Carteira:** imóveis, estados, imagens, landing pública e vitrine.
-- **Leads:** criação, edição, funil de `new` até `fechado` e exclusão
-  definitiva (`DELETE /api/leads/:id`). Lead nem sempre tem imóvel — os
-  criados a partir de uma conversa ficam escopados direto por `broker_id`
-  (`property_id` null); os do fluxo tradicional (landing/cadastro manual)
-  continuam escopados via o imóvel.
+- **CRM (antiga "Leads", tela em `NegociosArea.tsx`, chave interna
+  `negocios` inalterada):** duas abas, Kanban e Pipelines — ver detalhamento
+  na seção 6 ("CRM: pipelines e etapas"). Criação, edição e exclusão
+  definitiva de lead (`DELETE /api/leads/:id`) continuam como antes. Lead
+  nem sempre tem imóvel — os criados a partir de uma conversa ficam
+  escopados direto por `broker_id` (`property_id` null); os do fluxo
+  tradicional (landing/cadastro manual) continuam escopados via o imóvel.
+  **Pendente de execução manual:** `supabase/migrations/20260717b_crm_pipelines.sql`
+  (não aplicada ainda — ver seção 14).
 - **Agenda:** visitas e calendário com criação, alteração e cancelamento.
 - **Contatos:** CRUD e salvamento automático a partir de conversas.
 - **Locação:** contratos, vencimentos, valores para acompanhamento e exclusão
@@ -270,6 +274,109 @@ check e smoke HTTP 200 em `/`, `/login` e `/app`.
 sessão da plataforma usada para mensagens como recuperação de senha por
 WhatsApp e continua sendo uma credencial operacional pendente de confirmação
 no Fly.
+
+### CRM: pipelines e etapas (fase 1)
+
+Trabalho local (não deployado, não commitado) que transforma a área
+visualmente chamada "Leads" em "CRM". A chave interna `negocios`, o
+componente `NegociosArea.tsx`, a tabela `leads` e os endpoints `/api/leads`
+continuam existindo — a mudança é de apresentação e de modelo de estágios,
+não uma reescrita.
+
+**O que existe agora:**
+
+- `NegociosArea.tsx` ganhou duas abas: **Kanban** (o funil, agora com
+  colunas dinâmicas) e **Pipelines** (`PipelinesManager.tsx` — CRUD de
+  pipelines e etapas).
+- As colunas do Kanban deixam de ser o array fixo `new/contato/visita/
+  proposta/fechado` e passam a vir das etapas do pipeline selecionado
+  (seletor no topo, pipeline padrão pré-selecionado). Drag-and-drop e
+  botões de avançar/voltar continuam, agora sobre a lista dinâmica.
+- Cada broker pode ter vários pipelines; exatamente um é o padrão
+  (`is_default`). Cada pipeline tem etapas ordenadas (`position`), cada
+  etapa tem um `stage_type` semântico: `open` (em andamento), `won`
+  (ganho) ou `lost` (perdido).
+- Todo lead novo — interface, landing pública, agente de IA, "Criar lead"
+  a partir de conversa — recebe automaticamente o pipeline padrão do
+  broker e a primeira etapa ativa dele (`resolveNewLeadStage`/
+  `ensureDefaultPipeline` em `server/services/crmPipelines.ts`). Contas
+  criadas depois da migration (que não passaram pelo backfill) recebem o
+  pipeline padrão na primeira chamada, por autocura — mesmo princípio do
+  `getBrokerId`.
+
+**Modelo de dados novo** (`supabase/migrations/20260717b_crm_pipelines.sql`,
+detalhada na seção 14): tabelas `imf_crm_pipelines` e
+`imf_crm_pipeline_stages`; colunas `leads.pipeline_id` e
+`leads.pipeline_stage_id`. Sem `ON DELETE CASCADE` em nenhuma FK que chegue
+em `leads` — apagar pipeline/etapa com lead associado é sempre bloqueado
+(409) tanto na API quanto, como reforço estrutural, pelo próprio Postgres
+(RESTRICT).
+
+**Endpoints novos** (`server/routes/crmPipelines.ts`, montado em
+`server.ts`; todos atrás de `requireUser`, mutações exigem titular via
+`isBrokerOwner`):
+
+| Endpoint | Quem pode |
+| --- | --- |
+| `GET /api/crm/pipelines` | qualquer membro do broker (autocura o pipeline padrão antes de listar) |
+| `POST /api/crm/pipelines` | só titular |
+| `PATCH /api/crm/pipelines/:id` | só titular |
+| `DELETE /api/crm/pipelines/:id` | só titular — 409 se for o padrão ou se tiver leads |
+| `POST /api/crm/pipelines/:id/stages` | só titular |
+| `PATCH /api/crm/stages/:id` | só titular — `active:false` com leads exige `reassign_to_stage_id` ou retorna 409 |
+| `DELETE /api/crm/stages/:id` | só titular — mesma regra de 409, via `?reassign_to_stage_id=` |
+| `PATCH /api/crm/pipelines/:id/stages/reorder` | só titular — RPC `imf_crm_reorder_stages`, reatribui posição de forma atômica |
+| `PATCH /api/leads/:id/stage` (em `leads.ts`) | titular ou membro dono do lead — mesma regra de posse do `/status` |
+
+`broker_id` nunca é aceito do corpo da requisição em nenhum destes — sempre
+resolvido via `getBrokerId(userId)`. `pipeline_id` de um lead nunca é
+aceito solto: é sempre derivado do `stage_id` pelo trigger no banco.
+
+**Compatibilidade com `leads.status`/`closed_at`:** um trigger
+(`trg_imf_sync_lead_pipeline_stage`, dispara em INSERT e em UPDATE que
+toque `pipeline_stage_id`) mantém os dois campos legados em sincronia a
+partir do `stage_type` da etapa atual:
+
+- `won` → `status='fechado'`, `closed_at` preenchido só se ainda nulo;
+- `lost` → `status='perdido'` (valor novo — nenhuma métrica existente lê
+  `status==='fechado'` diretamente, todas usam `closed_at IS NOT NULL`,
+  então isso não quebra relatórios/metas/ranking; o único efeito colateral
+  conhecido é que o gráfico de distribuição por etapa de Relatórios, que
+  não conhece `'perdido'`, bucketiza esses leads em "new" — cosmético,
+  não afeta contagem de fechados);
+- `open` → `closed_at` limpo ao trocar de etapa; `status` normalizado pra
+  `new` se não for um dos 4 valores legados de "em andamento".
+
+O endpoint legado `PATCH /api/leads/:id/status` continua existindo,
+intocado, para qualquer chamador externo que ainda dependa só dele — ele
+não toca `pipeline_stage_id`, então não conflita com o trigger. Nenhum
+chamador desse endpoint foi encontrado além do Kanban antigo (substituído
+por `/stage` nesta mudança), mas ele não foi removido por precaução.
+
+Consumidores revisados e confirmados sem regressão: `server/routes/
+relatorios.ts` (funil, negócios fechados, conversão — tudo via `closed_at`
+ou com fallback gracioso pra valor desconhecido), `server/routes/
+equipe.ts` (meta do mês e ranking, 100% via `closed_at`), `server/
+services/agent.ts` (snapshot da IA lê `status` cru, sem hardcode dos 5
+valores), `server/routes/dashboard.ts` (Dashboard 1.0 legado, não tocado).
+
+**Limitações da fase 1:** sem Dashboard/Calendário/Ações do CRM (fica pra
+depois, conforme pedido); reorder de etapa é por botões ↑/↓ na aba
+Pipelines, não drag-and-drop; mover lead entre pipelines diferentes é
+permitido tecnicamente (mesmo broker, sem risco de isolamento) mas não tem
+UI dedicada; o gráfico de distribuição por etapa em Relatórios não
+distingue "perdido" de "novo" (ver acima).
+
+**Risco a confirmar com o usuário antes de aplicar a migration:** o
+backfill (seção 7.3 do SQL) associa cada lead existente à etapa
+correspondente ao `status` atual. Para qualquer lead com `status='fechado'`
+mas `closed_at` historicamente nulo (inconsistência pré-existente, se
+houver), o trigger preenche `closed_at = now()` no momento da migration —
+mesma estratégia de estimativa já usada em `imf_units.sold_at`
+(migration `20260716d`). Isso pode fazer relatórios de períodos passados
+passarem a contar esse negócio como fechado "hoje" em vez de silenciosamente
+ignorado como antes. Não é possível recuperar a data real retroativamente;
+sinalizando aqui em vez de decidir sozinho, conforme pedido.
 
 ### Assistente IA e Follow-Up
 
@@ -380,6 +487,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | --- | --- |
 | Conta/equipe | `imf_brokers`, `imf_broker_members`, `imf_broker_invites` |
 | Imóveis/leads | `imf_properties`, `leads`, `imf_contacts` |
+| CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — pendente de migration, ver seção 14 |
 | Agenda | `imf_agenda` |
 | Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
@@ -399,6 +507,7 @@ Os routers são montados diretamente em `server.ts`. Grupos principais:
 - `/api/auth/*`: cadastro, login, refresh, reset e entrada em equipe;
 - `/api/brokers/*`: perfil, agente, termos, WhatsApp, Asaas e foto;
 - `/api/properties/*`, `/api/leads/*`, `/api/agenda/*`, `/api/contacts/*`;
+- `/api/crm/*`: pipelines e etapas do CRM (pendente de migration, ver seção 6/14);
 - `/api/conversas/*` e `/api/wpp-shim/*`;
 - `/api/followup/*`, `/api/ai/*`, `/api/agent/*`, `/api/proxy/llm`;
 - `/api/locacao/*`, `/api/lancamentos/*`, `/api/financeiro/*`;
@@ -495,10 +604,16 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260716d_report_period_metrics.sql` | aplicada e verificada | `sold_at`, índice, trigger e Relatórios |
 | `20260716e_broker_asaas_key.sql` | aplicada | chave Asaas por conta |
 | `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
+| `20260717b_crm_pipelines.sql` | **NÃO aplicada** — escrita, não executada | pipelines/etapas do CRM; código que depende dela (`/api/crm/*`, `PATCH /api/leads/:id/stage`) está implementado mas não deployado |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
 checagem do ambiente antes de um novo deploy.
+
+`20260717b_crm_pipelines.sql` precisa ser aplicada manualmente no Supabase
+da branch `v2` antes de qualquer deploy do código que a acompanha. Depois de
+aplicar, validar (ver seção 6 "CRM: pipelines e etapas" para o passo a passo
+de teste) e só então marcar esta linha como aplicada.
 
 ## 15. Pendências e critérios de lançamento
 

@@ -18,6 +18,7 @@ import { corretoraRouter } from "./server/routes/corretora";
 import { aiRouter } from "./server/routes/ai";
 import { dashboardRouter } from "./server/routes/dashboard";
 import { leadsRouter } from "./server/routes/leads";
+import { crmPipelinesRouter } from "./server/routes/crmPipelines";
 import { agendaRouter } from "./server/routes/agenda";
 import { billingRouter } from "./server/routes/billing";
 import { whatsappRouter } from "./server/routes/whatsapp";
@@ -128,6 +129,7 @@ async function startServer() {
   app.use(aiRouter);
   app.use(dashboardRouter);
   app.use(leadsRouter);
+  app.use(crmPipelinesRouter);
   app.use(agendaRouter);
   app.use(billingRouter);
   app.use(whatsappRouter);

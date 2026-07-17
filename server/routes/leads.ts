@@ -2,6 +2,7 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
+import { resolveNewLeadStage } from "../services/crmPipelines";
 
 export const leadsRouter = express.Router();
 
@@ -102,7 +103,7 @@ leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
  */
 leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
   try {
-    const { property_id, name, phone, email, status, notes } = req.body;
+    const { property_id, name, phone, email, status, notes, pipeline_id: pipelineIdHint } = req.body;
 
     // 1. Validação básica
     if (!name || !phone || !property_id) {
@@ -113,15 +114,23 @@ leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
       return res.status(400).json({ error: `Status inválido. Use: ${LEAD_STATUSES.join(', ')}.` });
     }
 
+    const { data: prop } = await supabase.from('imf_properties').select('owner_user_id, broker_id').eq('id', property_id).maybeSingle();
+    if (!prop) return res.status(400).json({ error: "Imóvel não encontrado." });
+
     // Dono do lead: se foi um membro logado que cadastrou manualmente, o
     // lead é dele. Se veio da landing pública (cliente se cadastrando
     // sozinho, sem sessão), o lead herda o dono do imóvel anunciado.
     const userId = (req as any).userId as string | null;
-    let ownerUserId = userId || null;
-    if (!ownerUserId) {
-      const { data: prop } = await supabase.from('imf_properties').select('owner_user_id').eq('id', property_id).maybeSingle();
-      ownerUserId = prop?.owner_user_id || null;
-    }
+    const ownerUserId = userId || prop.owner_user_id || null;
+
+    // Todo lead novo entra no pipeline padrão do broker (ou no pipeline
+    // indicado pelo body, se pertencer a ele — ex.: corretor criando direto
+    // de dentro de um pipeline específico no Kanban) já na primeira etapa
+    // ativa. Nunca confia cegamente num pipeline_id solto vindo do cliente.
+    const { pipeline_id, pipeline_stage_id } = await resolveNewLeadStage(
+      prop.broker_id,
+      typeof pipelineIdHint === 'string' ? pipelineIdHint : null,
+    );
 
     // 2. Inserir na tabela leads
     const { data: lead, error: insertError } = await supabase.from('leads').insert([
@@ -133,6 +142,8 @@ leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
         status: leadStatus,
         notes: notes || 'Lead via Landing Page',
         owner_user_id: ownerUserId,
+        pipeline_id,
+        pipeline_stage_id,
         created_at: new Date()
       }
     ]).select().single();
@@ -214,6 +225,11 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
     if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
     if (createdFrom) query = query.gte('created_at', createdFrom);
     if (createdTo) query = query.lt('created_at', createdTo);
+    // Filtro do Kanban do CRM — leads já são escopados ao broker acima, então
+    // um pipeline_id de outro broker só resulta em lista vazia, nunca em vazamento.
+    if (typeof req.query.pipeline_id === 'string' && req.query.pipeline_id) {
+      query = query.eq('pipeline_id', req.query.pipeline_id);
+    }
     const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -270,6 +286,43 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("Erro PATCH /api/leads/:id/status:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Move o lead pra uma etapa de um pipeline do CRM — substitui /status como
+// caminho principal do Kanban novo (pipelines/etapas configuráveis), mas
+// /status continua intocado ao lado (compat com qualquer chamador externo
+// que ainda dependa só do status legado de 5 valores fixos). pipeline_id
+// nunca é recebido do cliente: é sempre derivado do stage_id pelo trigger
+// trg_imf_sync_lead_pipeline_stage no banco, junto com status/closed_at
+// (ver supabase/migrations/20260717b_crm_pipelines.sql).
+leadsRouter.patch("/api/leads/:id/stage", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { stage_id } = req.body;
+    if (!stage_id || typeof stage_id !== 'string') return res.status(400).json({ error: "stage_id é obrigatório." });
+
+    const { data: stage } = await supabase.from('imf_crm_pipeline_stages').select('id, pipeline_id').eq('id', stage_id).maybeSingle();
+    if (!stage) return res.status(404).json({ error: "Etapa não encontrada." });
+    const { data: pipeline } = await supabase.from('imf_crm_pipelines').select('id').eq('id', stage.pipeline_id).eq('broker_id', brokerId).maybeSingle();
+    if (!pipeline) return res.status(403).json({ error: "Etapa não pertence a este broker." });
+
+    const isOwner = await isBrokerOwner(userId, brokerId);
+    const lead = await leadBrokerAccess(brokerId, userId, isOwner, req.params.id);
+    if (!lead) return res.status(403).json({ error: 'Acesso negado.' });
+
+    const { data, error } = await supabase.from('leads').update({ pipeline_stage_id: stage_id }).eq('id', req.params.id).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(403).json({ error: 'Acesso negado.' });
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/leads/:id/stage:", err);
     res.status(500).json({ error: err.message });
   }
 });

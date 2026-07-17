@@ -11,6 +11,7 @@ import {
   getConversationTicket,
   recordConversationMessage,
 } from "../services/conversationTickets";
+import { resolveNewLeadStage } from "../services/crmPipelines";
 
 export const wppShimRouter = express.Router();
 
@@ -719,6 +720,7 @@ wppShimRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (r
     const { data: contact } = await supabase.from("imf_contacts").select("name").eq("broker_id", brokerId).eq("phone", phone).maybeSingle();
     const name = contact?.name || phone;
 
+    const { pipeline_id, pipeline_stage_id } = await resolveNewLeadStage(brokerId);
     const { data: lead, error } = await supabase.from("leads").insert({
       broker_id: brokerId,
       property_id: null,
@@ -727,6 +729,8 @@ wppShimRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (r
       status: "new",
       owner_user_id: userId,
       notes: "Lead criado a partir de uma conversa",
+      pipeline_id,
+      pipeline_stage_id,
     }).select().single();
     if (error) throw error;
 

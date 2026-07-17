@@ -3,6 +3,8 @@ import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase,
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
+import { cn } from '../lib/utils';
+import { PipelinesManager, type CrmPipeline, type CrmStage } from './PipelinesManager';
 
 interface Lead {
   id: string;
@@ -13,6 +15,8 @@ interface Lead {
   notes?: string;
   status: string;
   created_at: string;
+  pipeline_id?: string | null;
+  pipeline_stage_id?: string | null;
 }
 
 interface PropertyOption {
@@ -26,11 +30,13 @@ interface PropertyOption {
 function NewLeadModal({
   properties,
   initial,
+  defaultPipelineId,
   onClose,
   onCreated,
 }: {
   properties: PropertyOption[];
   initial?: Lead | null;
+  defaultPipelineId?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -56,6 +62,7 @@ function NewLeadModal({
         body: JSON.stringify({
           property_id: propertyId, name, phone: normalizePhoneBR(phone),
           notes: notes || (isEdit ? undefined : 'Cadastro manual'),
+          ...(isEdit ? {} : { pipeline_id: defaultPipelineId }),
         }),
       });
       if (!res.ok) {
@@ -192,21 +199,7 @@ function NewLeadModal({
   );
 }
 
-// Estágios do funil real, mesma nomenclatura do widget mock do cockpit
-// (engine.ts) — mantém a linguagem consistente entre prévia e dado real.
-const STAGES: { key: string; label: string }[] = [
-  { key: 'new', label: 'Novo' },
-  { key: 'contato', label: 'Em contato' },
-  { key: 'visita', label: 'Visita' },
-  { key: 'proposta', label: 'Proposta' },
-  { key: 'fechado', label: 'Fechado' },
-];
-
 const LEADS_PAGE_SIZE = 100;
-
-function stageOf(lead: Lead): string {
-  return STAGES.some((s) => s.key === lead.status) ? lead.status : 'new';
-}
 
 function timeAgo(iso: string): string {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -217,10 +210,17 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-// Negócios real: funil sobre os leads já capturados (GET /api/leads, mesma
-// fonte do widget "leads recentes" do cockpit) — sem tabela nova. Mover de
-// estágio reaproveita PATCH /api/leads/:id/status, que já existia.
-export function NegociosArea() {
+// Kanban real sobre os leads já capturados (GET /api/leads?pipeline_id=,
+// mesma fonte do widget "leads recentes" do cockpit) — colunas vêm do
+// pipeline selecionado (GET /api/crm/pipelines), não mais de um array fixo.
+// Mover de etapa usa PATCH /api/leads/:id/stage (novo — substitui o antigo
+// PATCH /:id/status pra este fluxo; /status continua existindo intacto
+// pra qualquer chamador externo que ainda dependa só dele).
+function KanbanBoard() {
+  const [pipelines, setPipelines] = useState<CrmPipeline[] | null>(null);
+  const [pipelineError, setPipelineError] = useState('');
+  const [selectedPipelineId, setSelectedPipelineId] = useState('');
+
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -235,12 +235,34 @@ export function NegociosArea() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const loadPipelines = () => {
+    fetch('/api/crm/pipelines', { headers: authService.getAuthHeaders() })
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Erro ao carregar pipelines.');
+        return r.json();
+      })
+      .then((data: CrmPipeline[]) => {
+        setPipelines(data);
+        setSelectedPipelineId((cur) => {
+          if (cur && data.some((p) => p.id === cur)) return cur;
+          const def = data.find((p) => p.is_default) || data[0];
+          return def?.id || '';
+        });
+      })
+      .catch((e) => setPipelineError(e.message || 'Erro ao carregar pipelines.'));
+  };
+  useEffect(loadPipelines, []);
+
+  const selectedPipeline = (pipelines || []).find((p) => p.id === selectedPipelineId) || null;
+  const stages = (selectedPipeline?.stages || []).filter((s) => s.active).sort((a, b) => a.position - b.position);
+
   const load = (append = false) => {
+    if (!selectedPipelineId) return;
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError('');
     const offset = append ? (leads?.length || 0) : 0;
-    fetch(`/api/leads?limit=${LEADS_PAGE_SIZE}&offset=${offset}`, { headers: authService.getAuthHeaders() })
+    fetch(`/api/leads?pipeline_id=${encodeURIComponent(selectedPipelineId)}&limit=${LEADS_PAGE_SIZE}&offset=${offset}`, { headers: authService.getAuthHeaders() })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
@@ -270,7 +292,7 @@ export function NegociosArea() {
       });
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (selectedPipelineId) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedPipelineId]);
   useEffect(() => {
     fetch('/api/properties', { headers: authService.getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : []))
@@ -278,19 +300,19 @@ export function NegociosArea() {
       .catch(() => setProperties([]));
   }, []);
 
-  const moveTo = async (lead: Lead, newStatus: string) => {
-    const prevStatus = lead.status;
+  const moveTo = async (lead: Lead, stage: CrmStage) => {
+    const prevStageId = lead.pipeline_stage_id;
     setMovingId(lead.id);
-    setLeads((cur) => (cur || []).map((l) => (l.id === lead.id ? { ...l, status: newStatus } : l)));
+    setLeads((cur) => (cur || []).map((l) => (l.id === lead.id ? { ...l, pipeline_stage_id: stage.id } : l)));
     try {
-      const res = await fetch(`/api/leads/${lead.id}/status`, {
+      const res = await fetch(`/api/leads/${lead.id}/stage`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ stage_id: stage.id }),
       });
       if (!res.ok) throw new Error();
     } catch {
-      setLeads((cur) => (cur || []).map((l) => (l.id === lead.id ? { ...l, status: prevStatus } : l)));
+      setLeads((cur) => (cur || []).map((l) => (l.id === lead.id ? { ...l, pipeline_stage_id: prevStageId } : l)));
     } finally {
       setMovingId(null);
     }
@@ -314,56 +336,76 @@ export function NegociosArea() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center pt-20">
-        <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Leads</h2>
-        <GlassCard className="!py-10 text-center">
-          <p className="text-[14px] text-red-300">{error}</p>
-        </GlassCard>
-      </div>
-    );
-  }
-
   const byStage = new Map<string, Lead[]>();
-  for (const s of STAGES) byStage.set(s.key, []);
-  for (const l of leads || []) byStage.get(stageOf(l))!.push(l);
+  for (const s of stages) byStage.set(s.id, []);
+  const unassigned: Lead[] = [];
+  for (const l of leads || []) {
+    if (l.pipeline_stage_id && byStage.has(l.pipeline_stage_id)) byStage.get(l.pipeline_stage_id)!.push(l);
+    else if (leads) unassigned.push(l);
+  }
   const isEmpty = (leads || []).length === 0;
 
   return (
-    <div className="max-w-6xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-black text-white">Leads</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-[12px] text-white/40">
-            {(leads || []).length}{totalLeads > (leads || []).length ? ` de ${totalLeads}` : ''} no funil
-          </span>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
-              bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Novo lead
-          </button>
+    <div>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {pipelines && pipelines.length > 0 && (
+            <select
+              value={selectedPipelineId}
+              onChange={(e) => { setSelectedPipelineId(e.target.value); setLeads(null); }}
+              className="rounded-xl px-3 py-2 text-[13px] font-semibold bg-white/[0.06] text-white border border-white/12 [color-scheme:dark]"
+            >
+              {pipelines.filter((p) => p.active || p.id === selectedPipelineId).map((p) => (
+                <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b' }}>
+                  {p.name}{p.is_default ? ' (padrão)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {leads && (
+            <span className="text-[12px] text-white/40">
+              {leads.length}{totalLeads > leads.length ? ` de ${totalLeads}` : ''} no funil
+            </span>
+          )}
         </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          disabled={!selectedPipelineId}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
+            bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] disabled:opacity-40 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Novo lead
+        </button>
       </div>
 
-      {isEmpty ? (
+      {pipelineError && (
+        <GlassCard className="!py-6 text-center mb-4"><p className="text-[13px] text-red-300">{pipelineError}</p></GlassCard>
+      )}
+
+      {!selectedPipelineId ? (
+        pipelines === null ? (
+          <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>
+        ) : (
+          <GlassCard className="!py-14 text-center">
+            <p className="text-[15px] text-white/60">Nenhum pipeline ativo. Crie um na aba Pipelines.</p>
+          </GlassCard>
+        )
+      ) : loading ? (
+        <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>
+      ) : error ? (
+        <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
+      ) : stages.length === 0 ? (
+        <GlassCard className="!py-14 text-center">
+          <p className="text-[15px] text-white/60">Este pipeline ainda não tem etapas. Crie a primeira na aba Pipelines.</p>
+        </GlassCard>
+      ) : isEmpty ? (
         <GlassCard className="!py-14 text-center">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
             bg-white/[0.06] border border-white/12">
             <Briefcase className="w-5 h-5 text-violet-200" />
           </div>
           <p className="text-[15px] text-white/60 mb-6">
-            Nenhum lead ainda. Assim que alguém entrar em contato pela landing page de um imóvel, aparece aqui.
+            Nenhum lead ainda neste pipeline. Assim que alguém entrar em contato pela landing page de um imóvel, aparece aqui.
           </p>
           <button
             onClick={() => setShowCreate(true)}
@@ -375,27 +417,30 @@ export function NegociosArea() {
         </GlassCard>
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4">
-          {STAGES.map((stage, idx) => {
-            const stageLeads = byStage.get(stage.key) || [];
-            const prev = STAGES[idx - 1];
-            const next = STAGES[idx + 1];
+          {stages.map((stage, idx) => {
+            const stageLeads = byStage.get(stage.id) || [];
+            const prev = stages[idx - 1];
+            const next = stages[idx + 1];
             return (
-              <div key={stage.key} className="w-72 shrink-0">
+              <div key={stage.id} className="w-72 shrink-0">
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h3 className="text-[12px] font-bold text-white/60 uppercase tracking-wide">{stage.label}</h3>
+                  <h3 className="text-[12px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || '#888' }} />
+                    {stage.name}
+                  </h3>
                   <span className="text-[11px] text-white/30">{stageLeads.length}</span>
                 </div>
                 <div
                   className={`space-y-3 rounded-2xl transition-colors min-h-[64px] ${
-                    dragOverStage === stage.key ? 'bg-white/[0.05] ring-2 ring-violet-400/40' : ''
+                    dragOverStage === stage.id ? 'bg-white/[0.05] ring-2 ring-violet-400/40' : ''
                   }`}
-                  onDragOver={(e) => { e.preventDefault(); if (draggingId) setDragOverStage(stage.key); }}
-                  onDragLeave={() => setDragOverStage((cur) => (cur === stage.key ? null : cur))}
+                  onDragOver={(e) => { e.preventDefault(); if (draggingId) setDragOverStage(stage.id); }}
+                  onDragLeave={() => setDragOverStage((cur) => (cur === stage.id ? null : cur))}
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragOverStage(null);
                     const lead = (leads || []).find((l) => l.id === draggingId);
-                    if (lead && lead.status !== stage.key) moveTo(lead, stage.key);
+                    if (lead && lead.pipeline_stage_id !== stage.id) moveTo(lead, stage);
                     setDraggingId(null);
                   }}
                 >
@@ -441,7 +486,7 @@ export function NegociosArea() {
                         <div className="flex items-center gap-1.5 mt-3">
                           {prev && (
                             <button
-                              onClick={() => moveTo(lead, prev.key)}
+                              onClick={() => moveTo(lead, prev)}
                               disabled={movingId === lead.id}
                               className="w-8 h-8 flex items-center justify-center rounded-xl text-white/30
                                 hover:bg-white/[0.08] hover:text-white/60 transition-colors disabled:opacity-40"
@@ -451,13 +496,13 @@ export function NegociosArea() {
                           )}
                           {next && (
                             <button
-                              onClick={() => moveTo(lead, next.key)}
+                              onClick={() => moveTo(lead, next)}
                               disabled={movingId === lead.id}
                               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[11px] font-semibold text-white/60
                                 bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40"
                             >
                               {movingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
-                              {next.label}
+                              {next.name}
                             </button>
                           )}
                         </div>
@@ -469,6 +514,32 @@ export function NegociosArea() {
               </div>
             );
           })}
+          {unassigned.length > 0 && (
+            <div className="w-72 shrink-0">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <h3 className="text-[12px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
+                <span className="text-[11px] text-white/30">{unassigned.length}</span>
+              </div>
+              <div className="space-y-3">
+                {unassigned.map((lead) => (
+                  <React.Fragment key={lead.id}>
+                    <GlassCard className="!p-4">
+                      <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
+                      <p className="text-[11px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline.</p>
+                      {stages[0] && (
+                        <button
+                          onClick={() => moveTo(lead, stages[0])}
+                          className="mt-2 w-full py-1.5 rounded-xl text-[11px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
+                        >
+                          Mover pra {stages[0].name}
+                        </button>
+                      )}
+                    </GlassCard>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -489,6 +560,7 @@ export function NegociosArea() {
       {showCreate && (
         <NewLeadModal
           properties={properties}
+          defaultPipelineId={selectedPipelineId}
           onClose={() => setShowCreate(false)}
           onCreated={() => load()}
         />
@@ -501,6 +573,44 @@ export function NegociosArea() {
           onCreated={() => load()}
         />
       )}
+    </div>
+  );
+}
+
+// CRM — nome visível de "Leads" (a área/chave interna 'negocios' e a tabela
+// 'leads' continuam as mesmas; só a apresentação virou CRM). Duas abas:
+// Kanban (funil sobre o pipeline selecionado) e Pipelines (criação/edição
+// dos próprios pipelines e etapas — ver PipelinesManager.tsx).
+export function NegociosArea() {
+  const [tab, setTab] = useState<'kanban' | 'pipelines'>('kanban');
+
+  return (
+    <div className="max-w-6xl mx-auto w-full">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <h2 className="text-2xl font-black text-white">CRM</h2>
+        <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
+          <button
+            onClick={() => setTab('kanban')}
+            className={cn(
+              'px-4 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
+              tab === 'kanban' ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+            )}
+          >
+            Kanban
+          </button>
+          <button
+            onClick={() => setTab('pipelines')}
+            className={cn(
+              'px-4 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
+              tab === 'pipelines' ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+            )}
+          >
+            Pipelines
+          </button>
+        </div>
+      </div>
+
+      {tab === 'kanban' ? <KanbanBoard /> : <PipelinesManager />}
     </div>
   );
 }

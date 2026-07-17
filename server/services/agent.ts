@@ -6,6 +6,7 @@ import { isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
 import { APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
+import { resolveNewLeadStage } from "./crmPipelines";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -510,6 +511,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     if (!owner) propQuery.eq("owner_user_id", userId);
     const { data: prop } = await propQuery.maybeSingle();
     if (!prop) throw new Error("Imóvel não encontrado na sua carteira.");
+    const { pipeline_id, pipeline_stage_id } = await resolveNewLeadStage(brokerId);
     const { error } = await supabase.from("leads").insert({
       property_id: action.property_id,
       name: action.name,
@@ -517,6 +519,8 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       status: "new",
       notes: "Criado pela assistente de IA",
       owner_user_id: userId,
+      pipeline_id,
+      pipeline_stage_id,
       created_at: new Date(),
     });
     if (error) throw error;
