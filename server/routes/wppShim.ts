@@ -361,10 +361,21 @@ wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
       tagsByTicket.set((t as any).ticket_id, list);
     }
 
+    // Nome salvo em Contatos (auto-criado no primeiro inbound com o pushName
+    // do WhatsApp, ou editado manualmente) — sem isso a lista só mostra o
+    // telefone cru.
+    const phones = Array.from(new Set(visibleConversations.map((c: any) => c.customer_phone)));
+    const { data: contactRows } = phones.length
+      ? await supabase.from("imf_contacts").select("phone, name").eq("broker_id", brokerId).in("phone", phones)
+      : { data: [] as any[] };
+    const nameByPhone = new Map<string, string>();
+    for (const c of contactRows || []) if (c.name) nameByPhone.set(c.phone, c.name);
+
     res.json(visibleConversations.map((c: any) => ({
       id: c.id,
       ticket_id: c.id,
       customer_phone: c.customer_phone,
+      contact_name: nameByPhone.get(c.customer_phone) || null,
       ai_active: c.ai_active,
       conversation_status: c.conversation_status,
       queue_id: c.queue_id,
@@ -679,6 +690,53 @@ wppShimRouter.delete("/api/conversas/:ticketId", requireUser, async (req, res) =
   }
 });
 
+// Cria um lead a partir do contato da conversa, reaproveitando nome (Contatos,
+// auto-salvo no primeiro inbound) e telefone — sem imóvel de interesse ainda
+// (property_id null, escopado direto por broker_id). Idempotente: se já
+// existir um lead com esse telefone nesta conta (desse fluxo ou do
+// tradicional preso a um imóvel), devolve o existente em vez de duplicar.
+wppShimRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
+
+    const phone = ticket.customer_phone;
+
+    const { data: propRows } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+    const propIds = (propRows || []).map((p: any) => p.id);
+    let dedupeQuery = supabase.from("leads").select("*").eq("phone", phone);
+    dedupeQuery = propIds.length > 0
+      ? dedupeQuery.or(`broker_id.eq.${brokerId},property_id.in.(${propIds.join(",")})`)
+      : dedupeQuery.eq("broker_id", brokerId);
+    const { data: existingRows } = await dedupeQuery.limit(1);
+    if (existingRows && existingRows.length > 0) {
+      return res.json({ lead: existingRows[0], already_existed: true });
+    }
+
+    const { data: contact } = await supabase.from("imf_contacts").select("name").eq("broker_id", brokerId).eq("phone", phone).maybeSingle();
+    const name = contact?.name || phone;
+
+    const { data: lead, error } = await supabase.from("leads").insert({
+      broker_id: brokerId,
+      property_id: null,
+      name,
+      phone,
+      status: "new",
+      owner_user_id: userId,
+      notes: "Lead criado a partir de uma conversa",
+    }).select().single();
+    if (error) throw error;
+
+    res.status(201).json({ lead, already_existed: false });
+  } catch (err: any) {
+    console.error("Erro POST /api/conversas/:ticketId/create-lead:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Filas ──────────────────────────────────────────────────────────────────
 wppShimRouter.get("/api/conversas/queues", requireUser, async (req, res) => {
   try {
@@ -752,6 +810,63 @@ wppShimRouter.post("/api/conversas/tags", requireUser, async (req, res) => {
     if (error) throw error;
     res.status(201).json(data);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+wppShimRouter.patch("/api/conversas/tags/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+    const updates: Record<string, any> = {};
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: "name não pode ser vazio." });
+      updates.name = name;
+    }
+    if (req.body?.color !== undefined) updates.color = req.body.color || null;
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nada para atualizar." });
+
+    const { data, error } = await supabase
+      .from("imf_conversation_tags")
+      .update(updates)
+      .eq("id", req.params.id)
+      .eq("broker_id", brokerId)
+      .select()
+      .maybeSingle();
+    if (error) {
+      if ((error as any).code === "23505") return res.status(400).json({ error: "Já existe uma tag com esse nome." });
+      throw error;
+    }
+    if (!data) return res.status(404).json({ error: "Tag não encontrada." });
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/conversas/tags/:id:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Apaga a tag pra conta inteira — os vínculos em imf_conversation_tag_links
+// somem em cascata (FK ON DELETE CASCADE), não precisa limpar manualmente.
+wppShimRouter.delete("/api/conversas/tags/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+    const { data, error } = await supabase
+      .from("imf_conversation_tags")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("broker_id", brokerId)
+      .select("id");
+    if (error) throw error;
+    if (!data || data.length === 0) return res.status(404).json({ error: "Tag não encontrada." });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/conversas/tags/:id:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

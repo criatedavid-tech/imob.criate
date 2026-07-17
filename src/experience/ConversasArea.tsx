@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2 } from 'lucide-react';
+import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2, Tags as TagsIcon, UserPlus, Check, Pencil } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -14,6 +14,7 @@ interface ConversationSummary {
   id: string;
   ticket_id: string;
   customer_phone: string;
+  contact_name: string | null;
   ai_active: boolean;
   conversation_status: TicketStatus;
   queue_id: string | null;
@@ -66,6 +67,157 @@ async function api(url: string, opts: RequestInit = {}) {
   return data;
 }
 
+// Cadastro/edição/exclusão de tags — antes só dava pra criar uma tag nova
+// de dentro do picker de uma conversa (sem nenhum lugar pra renomear,
+// trocar cor ou apagar). Autocontido: recarrega a própria lista e avisa o
+// pai via onChanged pra manter o picker da conversa sincronizado.
+function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [tags, setTags] = useState<Tag[] | null>(null);
+  const [error, setError] = useState('');
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = () => {
+    api('/api/conversas/tags').then(setTags).catch((e) => setError(e.message || 'Falha ao carregar tags.'));
+  };
+  useEffect(load, []);
+
+  const create = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    setError('');
+    try {
+      const color = TAG_COLORS[(tags?.length || 0) % TAG_COLORS.length];
+      await api('/api/conversas/tags', { method: 'POST', body: JSON.stringify({ name: newName.trim(), color }) });
+      setNewName('');
+      load();
+      onChanged();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao criar tag.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const startEdit = (tag: Tag) => { setEditingId(tag.id); setEditName(tag.name); };
+
+  const saveEdit = async (tag: Tag) => {
+    if (!editName.trim()) return;
+    setSavingId(tag.id);
+    setError('');
+    try {
+      await api(`/api/conversas/tags/${tag.id}`, { method: 'PATCH', body: JSON.stringify({ name: editName.trim() }) });
+      setEditingId(null);
+      load();
+      onChanged();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao salvar tag.');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const setColor = async (tag: Tag, color: string) => {
+    try {
+      await api(`/api/conversas/tags/${tag.id}`, { method: 'PATCH', body: JSON.stringify({ color }) });
+      load();
+      onChanged();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao trocar a cor.');
+    }
+  };
+
+  const remove = async (tag: Tag) => {
+    if (!confirm(`Apagar a tag "${tag.name}"? Ela some de todas as conversas que a usam.`)) return;
+    setDeletingId(tag.id);
+    setError('');
+    try {
+      await api(`/api/conversas/tags/${tag.id}`, { method: 'DELETE' });
+      load();
+      onChanged();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao apagar tag.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[16px] font-bold text-white flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Gerenciar tags</h3>
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+
+        {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
+
+        <div className="flex-1 overflow-y-auto space-y-1.5 mb-4">
+          {tags === null ? (
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+          ) : tags.length === 0 ? (
+            <p className="text-[12px] text-white/35 text-center py-4">Nenhuma tag criada ainda.</p>
+          ) : (
+            tags.map((tag) => (
+              <div key={tag.id} className="flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/10 px-3 py-2">
+                <div className="relative group shrink-0">
+                  <span className="w-4 h-4 rounded-full block border border-white/20" style={{ backgroundColor: tag.color || '#888' }} />
+                  <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-white/15 shadow-xl">
+                    {TAG_COLORS.map((c) => (
+                      <button key={c} onClick={() => setColor(tag, c)}
+                        className="w-4 h-4 rounded-full border border-white/20 hover:scale-110 transition-transform"
+                        style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                </div>
+                {editingId === tag.id ? (
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEdit(tag)}
+                    autoFocus
+                    className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[13px] bg-white/[0.06] text-white outline-none border border-white/15" />
+                ) : (
+                  <span className="flex-1 min-w-0 text-[13px] text-white truncate">{tag.name}</span>
+                )}
+                <div className="flex items-center gap-1 shrink-0">
+                  {editingId === tag.id ? (
+                    <button onClick={() => saveEdit(tag)} disabled={savingId === tag.id}
+                      className="p-1.5 rounded-lg text-emerald-300 hover:bg-emerald-500/15 transition-colors disabled:opacity-40">
+                      {savingId === tag.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ) : (
+                    <button onClick={() => startEdit(tag)} className="p-1.5 rounded-lg text-white/40 hover:bg-white/[0.08] hover:text-white/70 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button onClick={() => remove(tag)} disabled={deletingId === tag.id}
+                    className="p-1.5 rounded-lg text-white/40 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                    {deletingId === tag.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-3 border-t border-white/10">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && create()}
+            placeholder="Nova tag…"
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+          <button onClick={create} disabled={creating || !newName.trim()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors">
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Criar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Conversas real — lista quem está falando com a IA agora, a thread de cada
 // conversa, e permite responder manualmente / ligar-desligar a IA / gerenciar
 // o ticket (status, fila, atribuição, tags, notas — inspirado na API de
@@ -101,6 +253,9 @@ export function ConversasArea() {
   const [newMessage, setNewMessage] = useState('');
   const [creatingConvo, setCreatingConvo] = useState(false);
   const [deletingConvo, setDeletingConvo] = useState(false);
+  const [showTagsManager, setShowTagsManager] = useState(false);
+  const [creatingLead, setCreatingLead] = useState(false);
+  const [leadStatusByTicket, setLeadStatusByTicket] = useState<Record<string, 'created' | 'existing'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldScrollToEndRef = useRef(false);
 
@@ -350,6 +505,20 @@ export function ConversasArea() {
     }
   };
 
+  const createLead = async () => {
+    if (!selected) return;
+    setCreatingLead(true);
+    setActionError(null);
+    try {
+      const result = await api(`/api/conversas/${selected}/create-lead`, { method: 'POST' });
+      setLeadStatusByTicket((cur) => ({ ...cur, [selected]: result.already_existed ? 'existing' : 'created' }));
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao criar lead.');
+    } finally {
+      setCreatingLead(false);
+    }
+  };
+
   const memberName = (userId: string | null) => {
     if (!userId) return null;
     return members.find((m) => m.user_id === userId)?.name || 'Membro';
@@ -359,13 +528,22 @@ export function ConversasArea() {
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-black text-white">Conversas</h2>
-        <button
-          onClick={() => setShowNewConvo(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
-            bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Nova conversa
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTagsManager(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white/70
+              bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] hover:text-white transition-colors"
+          >
+            <TagsIcon className="w-4 h-4" /> Gerenciar tags
+          </button>
+          <button
+            onClick={() => setShowNewConvo(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
+              bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Nova conversa
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -420,8 +598,8 @@ export function ConversasArea() {
                         <User className="w-4 h-4 text-white/70" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[14px] font-semibold text-white truncate block">{c.customer_phone}</span>
-                        <span className="text-[9px] font-mono text-white/30 truncate block">Ticket #{c.id.slice(0, 8).toUpperCase()}</span>
+                        <span className="text-[14px] font-semibold text-white truncate block">{c.contact_name || c.customer_phone}</span>
+                        {c.contact_name && <span className="text-[11px] text-white/40 truncate block">{c.customer_phone}</span>}
                         <p className="text-[12px] text-white/45 truncate">{c.last_message || 'sem mensagens'}</p>
                         {c.tags.length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
@@ -449,11 +627,26 @@ export function ConversasArea() {
                 <>
                   <div className="px-5 py-3.5 border-b border-white/8 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-[14px] font-semibold text-white block">{selectedConv.customer_phone}</span>
-                        <span className="text-[10px] font-mono text-white/35" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
+                      <div className="min-w-0">
+                        <span className="text-[14px] font-semibold text-white block truncate">{selectedConv.contact_name || selectedConv.customer_phone}</span>
+                        <span className="text-[11px] text-white/40 truncate block">
+                          {selectedConv.contact_name ? selectedConv.customer_phone + ' · ' : ''}
+                          <span className="font-mono text-white/30" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {leadStatusByTicket[selectedConv.id] ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15">
+                            <Check className="w-3.5 h-3.5" /> Já é lead
+                          </span>
+                        ) : (
+                          <button onClick={createLead} disabled={creatingLead}
+                            title="Cadastrar este contato como lead"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white/70
+                              bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] hover:text-white transition-colors disabled:opacity-40">
+                            {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar lead
+                          </button>
+                        )}
                         <button onClick={toggleAi} disabled={selectedConv.conversation_status === 'closed'}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
                             selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
@@ -678,6 +871,13 @@ export function ConversasArea() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTagsManager && (
+        <TagsManagerModal
+          onClose={() => setShowTagsManager(false)}
+          onChanged={() => { api('/api/conversas/tags').then(setTags).catch(() => {}); loadConversations(); }}
+        />
       )}
     </div>
   );

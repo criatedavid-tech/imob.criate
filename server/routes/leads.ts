@@ -29,6 +29,29 @@ function parseOptionalDate(value: unknown): string | null | undefined {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+// Um lead pertence ao broker de duas formas: preso a um imóvel do broker
+// (fluxo tradicional, landing page/cadastro manual com property_id), ou com
+// property_id nulo e broker_id preenchido direto (fluxo novo — criado a
+// partir de uma conversa, sem imóvel de interesse ainda). Centraliza a
+// checagem pra PATCH/DELETE não precisarem embutir OR em query de update
+// (supabase-js quebra .or() combinado com .update().eq(), já visto nesta
+// base — ver provisioning.ts). Lê, valida posse, e só então muta pelo id.
+async function leadBrokerAccess(brokerId: string, userId: string, isOwner: boolean, leadId: string): Promise<any | null> {
+  const { data: lead } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+  if (!lead) return null;
+
+  let inScope = false;
+  if (lead.property_id) {
+    const { data: prop } = await supabase.from('imf_properties').select('id').eq('id', lead.property_id).eq('broker_id', brokerId).maybeSingle();
+    inScope = !!prop;
+  } else {
+    inScope = lead.broker_id === brokerId;
+  }
+  if (!inScope) return null;
+  if (!isOwner && lead.owner_user_id !== userId) return null;
+  return lead;
+}
+
 leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -47,19 +70,21 @@ leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
     const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
     const ids = Array.from(propertiesMap.keys());
 
-    let leads: any[] = [];
-    if (ids.length > 0) {
-      let query = supabase.from('leads').select('*').in('property_id', ids);
-      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-      const { data, error } = await query.order('created_at', { ascending: false }).limit(5);
-      if (error) throw error;
-      leads = data || [];
-    }
+    // Lead pode estar preso a um imóvel do broker OU (sem imóvel ainda,
+    // ex.: criado a partir de uma conversa) escopado direto por broker_id.
+    let query = supabase.from('leads').select('*');
+    query = ids.length > 0
+      ? query.or(`property_id.in.(${ids.join(',')}),and(property_id.is.null,broker_id.eq.${brokerId})`)
+      : query.eq('broker_id', brokerId).is('property_id', null);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(5);
+    if (error) throw error;
+    const leads = data || [];
 
     const formattedLeads = leads.map((l: any) => ({
       id: l.id,
       name: l.name || l.client_name || 'Sem nome',
-      property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido',
+      property: l.property_id ? (propertiesMap.get(l.property_id) || 'Imóvel desconhecido') : null,
       time: l.created_at,
       status: l.status
     }));
@@ -180,20 +205,21 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
     const propertiesMap = new Map((propIds || []).map((p: any) => [p.id, p.title]));
     const ids = Array.from(propertiesMap.keys());
 
-    let leads: any[] = [];
-    let total = 0;
-    if (ids.length > 0) {
-      let query = supabase.from('leads').select('*', { count: 'exact' }).in('property_id', ids);
-      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-      if (createdFrom) query = query.gte('created_at', createdFrom);
-      if (createdTo) query = query.lt('created_at', createdTo);
-      const { data, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
-      if (error) throw error;
-      leads = data || [];
-      total = count || 0;
-    }
+    // Lead pode estar preso a um imóvel do broker OU (sem imóvel ainda,
+    // ex.: criado a partir de uma conversa) escopado direto por broker_id.
+    let query = supabase.from('leads').select('*', { count: 'exact' });
+    query = ids.length > 0
+      ? query.or(`property_id.in.(${ids.join(',')}),and(property_id.is.null,broker_id.eq.${brokerId})`)
+      : query.eq('broker_id', brokerId).is('property_id', null);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+    if (createdFrom) query = query.gte('created_at', createdFrom);
+    if (createdTo) query = query.lt('created_at', createdTo);
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+    const leads = data || [];
+    const total = count || 0;
 
     res.setHeader('X-Total-Count', String(total));
     res.setHeader('X-Pagination-Limit', String(limit));
@@ -204,7 +230,7 @@ leadsRouter.get("/api/leads", requireUser, async (req, res) => {
       ...l,
       name: l.name || l.client_name || 'Sem nome',
       phone: l.phone || l.client_phone || '',
-      property: propertiesMap.get(l.property_id) || 'Imóvel desconhecido'
+      property: l.property_id ? (propertiesMap.get(l.property_id) || 'Imóvel desconhecido') : null
     })));
   } catch (err: any) {
     console.error("Erro GET /api/leads:", err);
@@ -227,13 +253,9 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
       return res.status(400).json({ error: `Status inválido. Use: ${LEAD_STATUSES.join(', ')}.` });
     }
 
-    // Escopo multi-tenant: só atualiza lead cujo imóvel pertence ao corretor autenticado
-    const { data: propIds } = await supabase
-      .from('imf_properties')
-      .select('id')
-      .eq('broker_id', brokerId);
-    const ids = (propIds || []).map((p: any) => p.id);
-    if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
+    const isOwner = await isBrokerOwner(userId, brokerId);
+    const lead = await leadBrokerAccess(brokerId, userId, isOwner, req.params.id);
+    if (!lead) return res.status(403).json({ error: 'Acesso negado.' });
 
     // closed_at marca quando o negócio foi de fato fechado (usado pela meta
     // do mês em /api/equipe/goal) — seta ao entrar em "fechado", limpa se
@@ -241,9 +263,7 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     const updates: Record<string, any> = { status };
     updates.closed_at = status === 'fechado' ? new Date().toISOString() : null;
 
-    let query = supabase.from('leads').update(updates).eq('id', req.params.id).in('property_id', ids);
-    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-    const { data, error } = await query.select().maybeSingle();
+    const { data, error } = await supabase.from('leads').update(updates).eq('id', req.params.id).select().maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });
@@ -264,12 +284,9 @@ leadsRouter.patch("/api/leads/:id", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
-    const { data: propIds } = await supabase
-      .from('imf_properties')
-      .select('id')
-      .eq('broker_id', brokerId);
-    const ids = (propIds || []).map((p: any) => p.id);
-    if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
+    const isOwner = await isBrokerOwner(userId, brokerId);
+    const lead = await leadBrokerAccess(brokerId, userId, isOwner, req.params.id);
+    if (!lead) return res.status(403).json({ error: 'Acesso negado.' });
 
     const allowed = ['name', 'phone', 'email', 'notes', 'property_id'];
     const updates: Record<string, any> = {};
@@ -277,13 +294,14 @@ leadsRouter.patch("/api/leads/:id", requireUser, async (req, res) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nada para atualizar.' });
-    if (updates.property_id && !ids.includes(updates.property_id)) {
-      return res.status(403).json({ error: 'Imóvel não pertence a este corretor.' });
+    if (updates.property_id) {
+      const { data: prop } = await supabase.from('imf_properties').select('id').eq('id', updates.property_id).eq('broker_id', brokerId).maybeSingle();
+      if (!prop) return res.status(403).json({ error: 'Imóvel não pertence a este corretor.' });
     }
+    // broker_id fica sempre presente pra escopar o lead mesmo se property_id virar null depois.
+    if (!lead.broker_id) updates.broker_id = brokerId;
 
-    let query = supabase.from('leads').update(updates).eq('id', req.params.id).in('property_id', ids);
-    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-    const { data, error } = await query.select().maybeSingle();
+    const { data, error } = await supabase.from('leads').update(updates).eq('id', req.params.id).select().maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });
@@ -302,19 +320,12 @@ leadsRouter.delete("/api/leads/:id", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
-    const { data: propIds } = await supabase
-      .from('imf_properties')
-      .select('id')
-      .eq('broker_id', brokerId);
-    const ids = (propIds || []).map((p: any) => p.id);
-    if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
+    const isOwner = await isBrokerOwner(userId, brokerId);
+    const lead = await leadBrokerAccess(brokerId, userId, isOwner, req.params.id);
+    if (!lead) return res.status(403).json({ error: 'Acesso negado.' });
 
-    let query = supabase.from('leads').delete().eq('id', req.params.id).in('property_id', ids);
-    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
-    const { data, error } = await query.select().maybeSingle();
-
+    const { error } = await supabase.from('leads').delete().eq('id', req.params.id);
     if (error) throw error;
-    if (!data) return res.status(403).json({ error: 'Acesso negado.' });
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/leads/:id:", err);

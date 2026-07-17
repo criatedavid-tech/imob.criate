@@ -164,11 +164,21 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 - **Conversas:** caixa por status, histórico, resposta humana, liga/desliga IA,
   responsável, fila, tags, notas e exclusão definitiva de um ticket/ciclo
   (`DELETE /api/conversas/:ticketId`, com mensagens/tags/notas em cascata).
+  Nome do contato (de `imf_contacts`, auto-salvo no primeiro inbound) exibido
+  na lista e no cabeçalho. Tags têm gerenciamento próprio (criar, renomear,
+  trocar cor, apagar — botão "Gerenciar tags", `PATCH`/`DELETE
+  /api/conversas/tags/:id`). Botão "Criar lead" cadastra o contato da
+  conversa como lead (nome + telefone), sem imóvel de interesse ainda —
+  idempotente, não duplica se já existir um lead com o telefone
+  (`POST /api/conversas/:ticketId/create-lead`).
 - **Assistente IA:** nome, instruções e Follow-Up Inteligente em área própria.
   Config não contém mais campos de IA na V2.
 - **Carteira:** imóveis, estados, imagens, landing pública e vitrine.
 - **Leads:** criação, edição, funil de `new` até `fechado` e exclusão
-  definitiva (`DELETE /api/leads/:id`).
+  definitiva (`DELETE /api/leads/:id`). Lead nem sempre tem imóvel — os
+  criados a partir de uma conversa ficam escopados direto por `broker_id`
+  (`property_id` null); os do fluxo tradicional (landing/cadastro manual)
+  continuam escopados via o imóvel.
 - **Agenda:** visitas e calendário com criação, alteração e cancelamento.
 - **Contatos:** CRUD e salvamento automático a partir de conversas.
 - **Locação:** contratos, vencimentos, valores para acompanhamento e exclusão

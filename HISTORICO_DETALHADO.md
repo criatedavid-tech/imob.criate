@@ -3567,3 +3567,95 @@ observando um ciclo real passar.
 
 `npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v92**,
 máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.
+
+## Atualização 2026-07-17 (continuação) — Gerenciar tags + "Criar lead" a partir de Conversas
+
+Usuário pediu duas coisas em Conversas: (1) já dava pra marcar tag numa
+conversa, mas não existia NENHUM lugar pra cadastrar/editar/apagar as tags
+em si — só criar uma nova de dentro do picker, sem editar nome/cor nem
+apagar; (2) quando um contato inicia uma conversa, deveria ter um botão
+"Criar lead" que cadastra o contato automaticamente como lead (aproveitando
+nome e telefone já disponíveis) e ele aparece em Leads.
+
+### Tags — gerenciamento completo
+
+- `PATCH /api/conversas/tags/:id` (renomear/recolorir) e
+  `DELETE /api/conversas/tags/:id` (apaga globalmente — os vínculos em
+  `imf_conversation_tag_links` somem sozinhos via `ON DELETE CASCADE`, não
+  precisou limpar manualmente) em `server/routes/wppShim.ts`. Sem
+  restrição de dono — mesmo padrão de filas (`imf_queues`), que também
+  qualquer membro do time gerencia.
+- Botão "Gerenciar tags" novo no topo de Conversas → `TagsManagerModal`
+  (`ConversasArea.tsx`): lista todas as tags com swatch de cor (hover abre
+  paleta pra trocar), edição de nome inline, apagar com confirmação, e
+  criação de tag nova — tudo num só lugar, sem precisar estar dentro de
+  uma conversa específica.
+
+### "Criar lead" a partir da conversa
+
+Descoberta ao investigar: toda mensagem inbound de um número novo já
+auto-cria um registro em `imf_contacts` com o nome do WhatsApp (pushName) —
+ver `server/routes/wppShim.ts` linha ~271, existia desde a Fase 5. Então o
+nome "já disponível" que o usuário mencionou já estava salvo, só não
+aparecia em lugar nenhum da tela de Conversas (só o telefone cru).
+
+Adicionado:
+- `contact_name` no retorno de `GET /api/conversas` — join com
+  `imf_contacts` por telefone, mostrado na lista (nome em destaque,
+  telefone como linha secundária) e no cabeçalho da conversa selecionada.
+- `POST /api/conversas/:ticketId/create-lead`: cria o lead usando o nome do
+  contato (ou o telefone, se não tiver nome salvo) + telefone. Idempotente
+  — se já existe um lead com esse telefone nesta conta (desse fluxo OU do
+  tradicional preso a um imóvel), devolve o existente em vez de duplicar
+  (`already_existed: true`).
+- Botão "Criar lead" no cabeçalho da conversa; depois de clicar vira um
+  selo fixo "Já é lead" (não tem como clicar duas vezes por engano criar
+  dois leads, mas mesmo que clicasse a rota já é idempotente).
+
+**Problema de arquitetura descoberto e resolvido**: todo lead sempre exigiu
+`property_id` (imóvel de interesse) — inclusive a validação no `POST
+/api/leads` tradicional barra sem isso ("Nome, telefone e ID do imóvel são
+obrigatórios"). Mas um contato que acabou de mandar mensagem no WhatsApp
+não necessariamente já tem um imóvel de interesse identificado. Verificado
+que `property_id` NÃO é `NOT NULL` no banco de verdade (só era exigido em
+código) e que a tabela `leads` já tem uma coluna `broker_id` própria,
+existente mas nunca usada em lugar nenhum das rotas (`GET`/`PATCH`/`DELETE`
+sempre escopavam só via `property_id → imf_properties.broker_id`).
+
+Decisão: leads criados a partir de conversa ficam com `property_id: null`
+e `broker_id` preenchido direto — um segundo modo de escopo multi-tenant,
+aditivo (não tira nem enfraquece o escopo via imóvel que já existia).
+`server/routes/leads.ts`:
+- `GET /api/leads` e `GET /api/leads/recent`: agora buscam leads com
+  `property_id IN (imóveis do broker) OR (property_id IS NULL AND
+  broker_id = brokerId)`. Usa `.or()` do supabase-js — confirmado seguro em
+  `.select()` (só quebra combinado com `.update().eq()`, gotcha já
+  documentado nesta base desde a correção do autocura de WhatsApp).
+- Novo helper `leadBrokerAccess()`: centraliza a checagem de posse (via
+  imóvel OU via `broker_id` direto, mais `owner_user_id` pra membro
+  não-dono) fazendo um `SELECT` primeiro. `PATCH /status`, `PATCH /:id` e
+  `DELETE /:id` passaram a validar por esse helper e só then rodar o
+  `UPDATE`/`DELETE` só pelo `id` — evita de vez precisar de `.or()`
+  combinado com mutação (o gotcha), e é mais simples que tentar embutir a
+  lógica OR na própria query de update.
+- Mapeamento de `property` no JSON de resposta: `null` (não mais "Imóvel
+  desconhecido") quando o lead não tem `property_id` — a UI
+  (`NegociosArea.tsx`) já só renderiza a linha do imóvel se o campo existir,
+  então passou a se comportar certo sem precisar mexer no frontend.
+
+### Teste ao vivo
+
+Conta descartável (imobiliária) contra `imobiflow-v2.fly.dev`: CRUD
+completo de tag (criar, renomear+recolorir, listar, apagar, confirmado
+sumindo do banco); conversa com contato pré-cadastrado retornando
+`contact_name` correto em `GET /api/conversas`; `create-lead` criando o
+lead com nome+telefone certos; chamado de novo confirmado idempotente
+(mesmo lead, sem duplicar — só 1 linha no banco pro telefone); lead sem
+imóvel aparecendo em `GET /api/leads` com `property: null`; `PATCH status`
+e `DELETE` funcionando nele. Segundo teste separado confirmou o branch
+`.or()` (quando o broker TEM imóveis cadastrados): lead preso a imóvel e
+lead sem imóvel aparecendo os dois juntos na mesma listagem. 14 checks no
+total, todos passando.
+
+`npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v93**,
+máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.
