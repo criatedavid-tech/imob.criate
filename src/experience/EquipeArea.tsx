@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy } from 'lucide-react';
+import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy, Mail } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { centsToReais } from '../lib/money';
@@ -26,7 +26,16 @@ interface Member {
   created_at: string;
 }
 
-function InviteModal({ onClose }: { onClose: () => void }) {
+interface Invite {
+  id: string;
+  code: string;
+  url: string;
+  created_at: string;
+  expires_at: string;
+  whatsapp_mode: 'shared' | 'own';
+}
+
+function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   // Escolha do dono, POR CONVITE: esse corretor vai ter WhatsApp próprio
   // (dentro do limite do plano) ou vai compartilhar o número da conta?
   // O convite só é gerado depois da escolha — "própria" pode ser recusada
@@ -50,6 +59,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body?.error || 'Falha ao gerar convite.');
         setUrl(body.url);
+        onCreated();
       })
       .catch((e) => setError(e.message || 'Falha ao gerar convite.'))
       .finally(() => setLoading(false));
@@ -182,6 +192,8 @@ export function EquipeArea() {
   const [inviting, setInviting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [ranking, setRanking] = useState<RankingRow[] | null>(null);
+  const [invites, setInvites] = useState<Invite[] | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -227,6 +239,32 @@ export function EquipeArea() {
       .then((data) => setRanking(data?.ranking || null))
       .catch(() => {});
   }, [iAmOwner, members]);
+
+  const loadInvites = () => {
+    if (!iAmOwner) return;
+    fetch('/api/equipe/invites', { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setInvites(Array.isArray(data) ? data : []))
+      .catch(() => setInvites([]));
+  };
+  useEffect(loadInvites, [iAmOwner]);
+
+  async function handleRevoke(inv: Invite) {
+    if (!confirm('Revogar este convite? O link deixa de funcionar imediatamente.')) return;
+    setRevokingId(inv.id);
+    try {
+      const res = await fetch(`/api/equipe/invites/${inv.id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao revogar convite.');
+      }
+      loadInvites();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao revogar convite.');
+    } finally {
+      setRevokingId(null);
+    }
+  }
 
   async function handleRemove(m: Member) {
     if (!confirm(`Remover ${m.name} da equipe? A pessoa perde acesso à conta imediatamente.`)) return;
@@ -338,6 +376,33 @@ export function EquipeArea() {
         </p>
       </GlassCard>
 
+      {iAmOwner && invites && invites.length > 0 && (
+        <GlassCard className="!p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Mail className="w-4 h-4 text-white/40" />
+            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Convites pendentes</h3>
+          </div>
+          <div className="space-y-2">
+            {invites.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {inv.whatsapp_mode === 'own' ? 'WhatsApp próprio' : 'Compartilhado'}
+                  </p>
+                  <p className="text-[12px] text-white/40 truncate">
+                    Expira em {new Date(inv.expires_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button onClick={() => handleRevoke(inv)} disabled={revokingId === inv.id}
+                  className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.03] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
+                  {revokingId === inv.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
       {iAmOwner && ranking && ranking.length > 0 && (
         <GlassCard className="!p-6 mt-6">
           <div className="flex items-center gap-2 mb-4">
@@ -365,7 +430,7 @@ export function EquipeArea() {
       )}
 
       {editing && <GoalEditor current={goal?.goal ?? null} onClose={() => setEditing(false)} onSaved={load} />}
-      {inviting && <InviteModal onClose={() => setInviting(false)} />}
+      {inviting && <InviteModal onClose={() => setInviting(false)} onCreated={loadInvites} />}
     </div>
   );
 }

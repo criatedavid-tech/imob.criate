@@ -136,6 +136,25 @@ async function ownsContract(brokerId: string, contractId: string): Promise<boole
   return !!data;
 }
 
+// Exclusão de verdade (não é só marcar "encerrado") — remove também as
+// cobranças (imf_rental_payments) geradas pra esse contrato, senão ficam
+// órfãs no banco.
+locacaoRouter.delete("/api/locacao/contracts/:id", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await ownsContract(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
+
+    await supabase.from("imf_rental_payments").delete().eq("contract_id", req.params.id);
+    const { error } = await supabase.from("imf_rental_contracts").delete().eq("id", req.params.id).eq("broker_id", brokerId);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/locacao/contracts/:id:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 locacaoRouter.get("/api/locacao/contracts/:id/payments", requireUser, async (req, res) => {
   try {
     const brokerId = await getBrokerId((req as any).userId);

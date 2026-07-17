@@ -563,6 +563,29 @@ wppShimRouter.patch("/api/conversas/:customerPhone/queue", requireUser, async (r
   }
 });
 
+// Apaga a conversa inteira (mensagens, tags, notas e o estado do ticket) —
+// exclusão de verdade, não é o mesmo que marcar "encerrado" em /status.
+wppShimRouter.delete("/api/conversas/:customerPhone", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    if (!(await canAccessConversation(userId, brokerId, req.params.customerPhone))) return res.status(403).json({ error: "Acesso negado." });
+
+    const phone = req.params.customerPhone;
+    await supabase.from("imf_conversation_messages").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
+    await supabase.from("imf_conversation_tag_links").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
+    await supabase.from("imf_conversation_notes").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
+    const { error } = await supabase.from("followup_conversations").delete().eq("broker_id", brokerId).eq("customer_phone", phone);
+    if (error) throw error;
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/conversas/:phone:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Filas ──────────────────────────────────────────────────────────────────
 wppShimRouter.get("/api/conversas/queues", requireUser, async (req, res) => {
   try {

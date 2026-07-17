@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil } from 'lucide-react';
+import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -268,6 +268,7 @@ export function LocacaoArea() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [endingId, setEndingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [chargingId, setChargingId] = useState<string | null>(null);
   const [chargeInfo, setChargeInfo] = useState<Record<string, ChargeInfo | undefined>>({});
   const [chargeError, setChargeError] = useState<Record<string, string>>({});
@@ -344,6 +345,26 @@ export function LocacaoArea() {
     }
   }
 
+  async function deleteContract(id: string) {
+    if (!confirm('Apagar este contrato de locação? Isso remove também as cobranças geradas para ele. Não dá pra desfazer.')) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/locacao/contracts/${id}`, {
+        method: 'DELETE',
+        headers: authService.getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao apagar contrato.');
+      }
+      load();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao apagar contrato.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (loading) {
     return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
   }
@@ -396,6 +417,10 @@ export function LocacaoArea() {
                     <button onClick={() => setEditingContract(c)}
                       className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => deleteContract(c.id)} disabled={deletingId === c.id}
+                      className="p-1 rounded-lg text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                      {deletingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                     </button>
                     <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${
                       c.status === 'ativo'

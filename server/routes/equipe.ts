@@ -169,6 +169,54 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
   }
 });
 
+// Convites ainda não aceitos (used_at null) e ainda não expirados — só o dono vê,
+// mesma regra de quem pode convidar/remover.
+equipeRouter.get("/api/equipe/invites", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.json([]);
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode ver os convites." });
+
+    const { data, error } = await supabase
+      .from("imf_broker_invites")
+      .select("id, code, created_at, expires_at, whatsapp_mode")
+      .eq("broker_id", brokerId)
+      .is("used_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+
+    res.json((data || []).map((i: any) => ({ ...i, url: `${APP_URL}/equipe/entrar/${i.code}` })));
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/invites:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Revoga um convite pendente antes que alguém o aceite (ex.: convite enviado
+// por engano ou pra número errado).
+equipeRouter.delete("/api/equipe/invites/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode revogar convites." });
+
+    const { error } = await supabase
+      .from("imf_broker_invites")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("broker_id", brokerId)
+      .is("used_at", null);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/equipe/invites/:id:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;

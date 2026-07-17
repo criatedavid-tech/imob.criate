@@ -293,3 +293,31 @@ leadsRouter.patch("/api/leads/:id", requireUser, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+leadsRouter.delete("/api/leads/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { data: propIds } = await supabase
+      .from('imf_properties')
+      .select('id')
+      .eq('broker_id', brokerId);
+    const ids = (propIds || []).map((p: any) => p.id);
+    if (!ids.length) return res.status(403).json({ error: 'Acesso negado.' });
+
+    let query = supabase.from('leads').delete().eq('id', req.params.id).in('property_id', ids);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+    const { data, error } = await query.select().maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(403).json({ error: 'Acesso negado.' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/leads/:id:", err);
+    res.status(500).json({ error: err.message });
+  }
+});

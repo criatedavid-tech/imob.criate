@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote } from 'lucide-react';
+import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -96,6 +96,7 @@ export function ConversasArea() {
   const [newPhone, setNewPhone] = useState('');
   const [newMessage, setNewMessage] = useState('');
   const [creatingConvo, setCreatingConvo] = useState(false);
+  const [deletingConvo, setDeletingConvo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldScrollToEndRef = useRef(false);
 
@@ -328,6 +329,23 @@ export function ConversasArea() {
     }
   };
 
+  const deleteConversation = async () => {
+    if (!selected) return;
+    if (!confirm('Apagar esta conversa? Isso remove todo o histórico de mensagens, notas e tags. Não dá pra desfazer.')) return;
+    setDeletingConvo(true);
+    setActionError(null);
+    try {
+      await api(`/api/conversas/${selected}`, { method: 'DELETE' });
+      setSelected(null);
+      setMessages(null);
+      loadConversations();
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao apagar conversa.');
+    } finally {
+      setDeletingConvo(false);
+    }
+  };
+
   const memberName = (userId: string | null) => {
     if (!userId) return null;
     return members.find((m) => m.user_id === userId)?.name || 'Membro';
@@ -427,12 +445,19 @@ export function ConversasArea() {
                   <div className="px-5 py-3.5 border-b border-white/8 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[14px] font-semibold text-white">{selected}</span>
-                      <button onClick={toggleAi}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
-                          selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
-                        }`}>
-                        <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={toggleAi}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
+                            selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
+                          }`}>
+                          <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
+                        </button>
+                        <button onClick={deleteConversation} disabled={deletingConvo}
+                          title="Apagar conversa"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-xl text-white/40 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                          {deletingConvo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-wrap">

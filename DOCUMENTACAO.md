@@ -3136,3 +3136,41 @@ referências reais antes de remover; build verde depois).
   mais), mas remover é mudança de config de produção — flagado, não removido.
 
 `npx tsc --noEmit` e `npm run build` limpos.
+
+## Atualização 2026-07-17 — Exclusão em Conversas, Locação, Leads e Equipe
+
+Usuário reportou que essas 4 áreas não tinham NENHUMA forma de apagar
+registro (só editar/mudar status) — mesmo em Locação, onde contratos já
+`encerrado` ficavam presos pra sempre sem botão nenhum. Adicionado DELETE de
+verdade nas quatro:
+
+- **Locação**: `DELETE /api/locacao/contracts/:id` (`server/routes/locacao.ts`)
+  — apaga o contrato e, em cascata, as cobranças (`imf_rental_payments`)
+  geradas pra ele. Botão de lixeira em `LocacaoArea.tsx`, ao lado do lápis de
+  editar, visível em qualquer status (antes só existia "Encerrar contrato",
+  que nem aparecia se já estava encerrado).
+- **Conversas**: `DELETE /api/conversas/:customerPhone` (`server/routes/wppShim.ts`)
+  — apaga a conversa inteira: `followup_conversations` + mensagens
+  (`imf_conversation_messages`) + tags (`imf_conversation_tag_links`) + notas
+  (`imf_conversation_notes`). Reusa `canAccessConversation` (mesma regra de
+  quem pode responder/gerenciar já vale pra apagar). Botão de lixeira no
+  cabeçalho da conversa selecionada, ao lado do toggle da IA, em `ConversasArea.tsx`.
+- **Leads**: `DELETE /api/leads/:id` (`server/routes/leads.ts`) — mesmo
+  padrão de escopo das outras rotas de leads (via `property_id` do broker +
+  `isBrokerOwner` pra membro só apagar os próprios). Botão de lixeira no
+  card do lead em `NegociosArea.tsx`, ao lado do lápis.
+- **Equipe**: convite pendente (gerado, ainda não aceito) não tinha como ser
+  cancelado antes disso — só existia deixar expirar (48h) ou remover membro
+  *depois* de aceito. Adicionado `GET /api/equipe/invites` (lista convites
+  com `used_at IS NULL` e não expirados) e `DELETE /api/equipe/invites/:id`
+  (só o dono, mesma regra de quem convida/remove membro) em
+  `server/routes/equipe.ts`. Nova seção "Convites pendentes" em
+  `EquipeArea.tsx` (só aparece pro dono, só quando há convite pendente).
+
+Todas as rotas de exclusão são reais (`DELETE`, sem soft-delete) e escopadas
+por `broker_id` — testado ao vivo contra a API em produção (conta
+descartável criada, contrato+cobrança / conversa+mensagem+tag+nota /
+lead / convite criados direto no banco ou via API, os 4 DELETEs chamados de
+verdade, removido do banco em cada caso, conta de teste apagada no final).
+
+`npx tsc --noEmit` e `npm run build` limpos; deploy no Fly V2 saudável (v89).

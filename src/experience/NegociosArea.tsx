@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase, Plus, X, User, Pencil } from 'lucide-react';
+import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase, Plus, X, User, Pencil, Trash2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -233,6 +233,7 @@ export function NegociosArea() {
   const [totalLeads, setTotalLeads] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = (append = false) => {
     if (append) setLoadingMore(true);
@@ -292,6 +293,24 @@ export function NegociosArea() {
       setLeads((cur) => (cur || []).map((l) => (l.id === lead.id ? { ...l, status: prevStatus } : l)));
     } finally {
       setMovingId(null);
+    }
+  };
+
+  const deleteLead = async (lead: Lead) => {
+    if (!confirm(`Apagar o lead "${lead.name}"? Não dá pra desfazer.`)) return;
+    setDeletingId(lead.id);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao apagar lead.');
+      }
+      setLeads((cur) => (cur || []).filter((l) => l.id !== lead.id));
+      setTotalLeads((t) => Math.max(0, t - 1));
+    } catch (e: any) {
+      alert(e.message || 'Falha ao apagar lead.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -396,10 +415,16 @@ export function NegociosArea() {
                       <GlassCard className="!p-4">
                         <div className="flex items-start justify-between gap-2">
                           <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
-                          <button onClick={() => setEditingLead(lead)}
-                            className="shrink-0 p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
-                            <Pencil className="w-3 h-3" />
-                          </button>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button onClick={() => setEditingLead(lead)}
+                              className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => deleteLead(lead)} disabled={deletingId === lead.id}
+                              className="p-1 rounded-lg text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                              {deletingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            </button>
+                          </div>
                         </div>
                         {lead.property && (
                           <p className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
