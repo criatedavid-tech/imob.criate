@@ -3745,3 +3745,22 @@ Leads com `status='fechado'` mas `closed_at` historicamente nulo recebem
 `closed_at = now()` no momento em que forem re-tocados (estimativa, mesma
 estratégia de `imf_units.sold_at`). Sem clientes reais no momento, impacto
 nulo; registrado caso surja em bases com histórico.
+
+### Ajuste visual do Kanban (release v95)
+
+Feedback do usuário com prints (referência de kanban em lanes): a barra de
+rolagem horizontal nativa ficava feia e os cards grandes demais. Redesign em
+`NegociosArea.tsx`:
+
+- cada etapa virou uma **lane** de altura cheia (min-h 380px) com fundo e
+  borda próprios, dividindo a largura da tela no desktop (`flex-1
+  min-w-[200px]`) — até ~5 etapas cabem sem rolagem; acima disso (ou em tela
+  estreita) rola por gesto com a scrollbar nativa escondida
+  (`[scrollbar-width:none] [&::-webkit-scrollbar]:hidden`);
+- cards compactados (padding/tipografia menores, voltar/avançar na linha do
+  timestamp, com tooltip);
+- a zona de drop passou a ser a lane inteira (soltar no vão vazio funciona);
+- coluna "Sem etapa" com o mesmo visual, em tom âmbar.
+
+Deploy Fly release **v95**, máquina `08075edf911368`, health check `1/1`,
+`/` e `/app` HTTP 200. tsc e build limpos.
