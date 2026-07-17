@@ -416,22 +416,30 @@ function KanbanBoard() {
           </button>
         </GlassCard>
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        // Lanes estilo referência: cada etapa é um painel de altura cheia com
+        // fundo próprio. No desktop as colunas DIVIDEM a largura disponível
+        // (flex-1) — sem barra de rolagem pra até ~5 etapas; com mais etapas
+        // (ou em tela estreita) o min-w derruba pra rolagem horizontal, mas
+        // com a barra nativa escondida (feia demais — feedback 17/07), rolando
+        // por gesto/trackpad/shift+scroll.
+        <div className="flex gap-3 items-stretch overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {stages.map((stage, idx) => {
             const stageLeads = byStage.get(stage.id) || [];
             const prev = stages[idx - 1];
             const next = stages[idx + 1];
             return (
-              <div key={stage.id} className="w-72 shrink-0">
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h3 className="text-[12px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5">
+              <div key={stage.id} className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-white/[0.03] border border-white/[0.06] p-2.5">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <h3 className="text-[11px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5 truncate">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || '#888' }} />
-                    {stage.name}
+                    <span className="truncate">{stage.name}</span>
                   </h3>
-                  <span className="text-[11px] text-white/30">{stageLeads.length}</span>
+                  <span className="text-[11px] text-white/30 shrink-0">{stageLeads.length}</span>
                 </div>
+                {/* Zona de drop = a lane inteira (inclui o vão vazio embaixo) —
+                    soltar em qualquer lugar da coluna funciona. */}
                 <div
-                  className={`space-y-3 rounded-2xl transition-colors min-h-[64px] ${
+                  className={`flex-1 space-y-2 rounded-xl transition-colors min-h-[380px] ${
                     dragOverStage === stage.id ? 'bg-white/[0.05] ring-2 ring-violet-400/40' : ''
                   }`}
                   onDragOver={(e) => { e.preventDefault(); if (draggingId) setDragOverStage(stage.id); }}
@@ -445,8 +453,8 @@ function KanbanBoard() {
                   }}
                 >
                   {stageLeads.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-white/10 py-8 text-center">
-                      <p className="text-[12px] text-white/25">vazio</p>
+                    <div className="rounded-xl border border-dashed border-white/[0.07] py-5 text-center">
+                      <p className="text-[11px] text-white/20">vazio</p>
                     </div>
                   ) : (
                     stageLeads.map((lead) => (
@@ -457,9 +465,9 @@ function KanbanBoard() {
                         onDragEnd={() => { setDraggingId(null); setDragOverStage(null); }}
                         className={`cursor-grab active:cursor-grabbing transition-opacity ${draggingId === lead.id ? 'opacity-40' : ''}`}
                       >
-                      <GlassCard className="!p-4">
+                      <GlassCard className="!p-3 !rounded-2xl">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
+                          <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button onClick={() => setEditingLead(lead)}
                               className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
@@ -472,37 +480,38 @@ function KanbanBoard() {
                           </div>
                         </div>
                         {lead.property && (
-                          <p className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
-                            <HomeIcon className="w-3 h-3 shrink-0" /> {lead.property}
+                          <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
+                            <HomeIcon className="w-2.5 h-2.5 shrink-0" /> {lead.property}
                           </p>
                         )}
                         {lead.phone && (
-                          <p className="text-[11px] text-white/45 flex items-center gap-1 mt-0.5">
-                            <Phone className="w-3 h-3 shrink-0" /> {lead.phone}
+                          <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5">
+                            <Phone className="w-2.5 h-2.5 shrink-0" /> {lead.phone}
                           </p>
                         )}
-                        <p className="text-[10px] text-white/25 mt-2">{timeAgo(lead.created_at)}</p>
-
-                        <div className="flex items-center gap-1.5 mt-3">
+                        <div className="flex items-center gap-1 mt-2">
+                          <span className="text-[9px] text-white/25 mr-auto">{timeAgo(lead.created_at)}</span>
                           {prev && (
                             <button
                               onClick={() => moveTo(lead, prev)}
                               disabled={movingId === lead.id}
-                              className="w-8 h-8 flex items-center justify-center rounded-xl text-white/30
+                              title={`Voltar pra ${prev.name}`}
+                              className="w-6 h-6 flex items-center justify-center rounded-lg text-white/30
                                 hover:bg-white/[0.08] hover:text-white/60 transition-colors disabled:opacity-40"
                             >
-                              <ChevronLeft className="w-3.5 h-3.5" />
+                              <ChevronLeft className="w-3 h-3" />
                             </button>
                           )}
                           {next && (
                             <button
                               onClick={() => moveTo(lead, next)}
                               disabled={movingId === lead.id}
-                              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[11px] font-semibold text-white/60
-                                bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40"
+                              title={`Avançar pra ${next.name}`}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-white/60
+                                bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40 max-w-[110px]"
                             >
-                              {movingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
-                              {next.name}
+                              {movingId === lead.id ? <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
+                              <span className="truncate">{next.name}</span>
                             </button>
                           )}
                         </div>
@@ -515,21 +524,21 @@ function KanbanBoard() {
             );
           })}
           {unassigned.length > 0 && (
-            <div className="w-72 shrink-0">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <h3 className="text-[12px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
+            <div className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-amber-500/[0.04] border border-amber-300/10 p-2.5">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <h3 className="text-[11px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
                 <span className="text-[11px] text-white/30">{unassigned.length}</span>
               </div>
-              <div className="space-y-3">
+              <div className="flex-1 space-y-2 min-h-[380px]">
                 {unassigned.map((lead) => (
                   <React.Fragment key={lead.id}>
-                    <GlassCard className="!p-4">
-                      <p className="text-[14px] font-bold text-white truncate">{lead.name}</p>
-                      <p className="text-[11px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline.</p>
+                    <GlassCard className="!p-3 !rounded-2xl">
+                      <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
+                      <p className="text-[10px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline.</p>
                       {stages[0] && (
                         <button
                           onClick={() => moveTo(lead, stages[0])}
-                          className="mt-2 w-full py-1.5 rounded-xl text-[11px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
+                          className="mt-2 w-full py-1 rounded-lg text-[10px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
                         >
                           Mover pra {stages[0].name}
                         </button>
