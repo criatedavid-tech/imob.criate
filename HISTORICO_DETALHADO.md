@@ -3659,3 +3659,89 @@ total, todos passando.
 
 `npx tsc --noEmit` e `npm run build` limpos; deploy Fly V2 release **v93**,
 máquina `08075edf911368`, health check `1/1`, `/` e `/app` HTTP 200.
+
+## 2026-07-17 — CRM: pipelines e etapas configuráveis (release v94)
+
+### Contexto
+
+O usuário pediu, se inspirando no Z-PRO (só conceitualmente): renomear
+"Leads" para "CRM" e, dentro do CRM, um lugar de criação/edição/gerenciamento
+de pipelines. A ideia anterior de mover as tags para a barra lateral foi
+explicitamente cancelada antes disso (revert limpo, sem sobra no working
+tree). Escopo desta fase 1: só Kanban configurável + aba Pipelines. Sem
+Dashboard/Calendário/Ações do CRM (ficam pra depois).
+
+### Decisões de arquitetura
+
+- Renomeação **só visual**: label `negocios` de "Leads" → "CRM" em
+  `engine.ts`. Chave interna `negocios`, componente `NegociosArea`, tabela
+  `leads` e endpoints `/api/leads` preservados de propósito (renomear tudo
+  só por estética seria risco sem ganho).
+- Modelo novo: `imf_crm_pipelines` (1 padrão por broker via unique index
+  parcial `WHERE is_default`) e `imf_crm_pipeline_stages` (posição única por
+  pipeline, `stage_type` CHECK open|won|lost). Colunas `leads.pipeline_id` e
+  `leads.pipeline_stage_id`, ambas sem `ON DELETE CASCADE` — apagar
+  pipeline/etapa com lead é bloqueado tanto pela API (409) quanto pelo
+  Postgres (RESTRICT).
+- `pipeline_id` do lead nunca é confiado solto: um trigger
+  (`trg_imf_sync_lead_pipeline_stage`, dispara em INSERT/UPDATE OF
+  pipeline_stage_id) deriva `pipeline_id` do stage e sincroniza
+  `status`/`closed_at` a partir do `stage_type` — won→fechado+closed_at,
+  lost→perdido+closed_at limpo, open→closed_at limpo ao trocar. Mesma ideia
+  do trigger `imf_sync_unit_sale_metadata` de `20260716d`.
+- Compatibilidade: relatórios, meta/ranking de equipe e o snapshot do agente
+  IA leem `closed_at` (ou `status` cru, sem hardcode dos 5 valores), então o
+  novo valor `perdido` não quebra nenhum. Único efeito cosmético: o gráfico
+  de distribuição por etapa de Relatórios bucketiza `perdido` como `new`.
+- `PATCH /api/leads/:id/status` legado mantido intocado ao lado do novo
+  `PATCH /api/leads/:id/stage` (o Kanban novo usa `/stage`).
+- Reorder de etapa via RPC `imf_crm_reorder_stages` (SECURITY DEFINER,
+  desloca pra posições negativas antes de reatribuir 1..N pra não colidir com
+  o unique index no meio). `p_broker_id` sempre resolvido no backend.
+- Todo caminho de criação de lead (POST /api/leads, agente IA, create-lead de
+  conversa) passa por `resolveNewLeadStage` → pipeline padrão + 1ª etapa
+  ativa, com autocura (`ensureDefaultPipeline`) pra contas criadas depois do
+  backfill. Blindado contra schema não migrado (42P01 → cai no fluxo antigo
+  sem pipeline, nunca derruba a criação de lead).
+
+### Endpoints
+
+`/api/crm/pipelines` (GET/POST/PATCH/DELETE), `/api/crm/pipelines/:id/stages`
+(POST), `/api/crm/stages/:id` (PATCH/DELETE), `/api/crm/pipelines/:id/stages/
+reorder` (PATCH), `PATCH /api/leads/:id/stage`. Todos atrás de `requireUser`;
+mutações de pipeline/etapa exigem titular (`isBrokerOwner`), membro só
+visualiza e move seus próprios leads. 409 em exclusão/arquivamento de
+pipeline padrão, pipeline com leads, ou etapa com leads (com opção
+`reassign_to_stage_id` pra mover antes).
+
+### Frontend
+
+`NegociosArea.tsx` reescrito: título "CRM", abas Kanban/Pipelines. Kanban lê
+colunas do pipeline selecionado (seletor, padrão automático, coluna "Sem
+etapa" pra leads órfãos de etapa arquivada/removida). `PipelinesManager.tsx`
+novo: CRUD de pipeline (renomear, padrão, arquivar, excluir) e etapa (nome,
+cor, tipo semântico, reordenar ↑/↓, arquivar/excluir com prompt de mover
+leads no 409).
+
+### Migration e validação
+
+`20260717b_crm_pipelines.sql` (idempotente, RLS espelhando `imf_properties`,
+backfill: 1 pipeline padrão + 5 etapas seed por broker, leads existentes
+associados por nome=status atual). Aplicada manualmente pelo usuário no
+Supabase da branch `v2` antes do deploy. `npx tsc --noEmit`, `npx knip`,
+`npm run build` e `git diff --check` limpos.
+
+Deploy Fly V2 release **v94**, commit `77769f0`, imagem
+`registry.fly.io/imobiflow-v2:deployment-01KXS0VH92QETBWY6BGGY3ZQS5`,
+manifesto
+`sha256:0928b4fe2ccf8b60a5652110680b3f9d26157eec8537b70098042d816bbff847`,
+máquina `08075edf911368` em `gru`, health check `1/1`, smoke `/`, `/app` e
+`/login` HTTP 200. Ambiente sem clientes reais; QA autenticado com dois
+tenants ainda pendente.
+
+### Risco registrado (backfill de closed_at)
+
+Leads com `status='fechado'` mas `closed_at` historicamente nulo recebem
+`closed_at = now()` no momento em que forem re-tocados (estimativa, mesma
+estratégia de `imf_units.sold_at`). Sem clientes reais no momento, impacto
+nulo; registrado caso surja em bases com histórico.

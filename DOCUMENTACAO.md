@@ -31,12 +31,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é a release Fly **v88**, que publica o commit
-funcional `d50e938`. A máquina `08075edf911368`, versão 88, está iniciada em
-`gru`, com
-health check `1/1`. A imagem é
-`registry.fly.io/imobiflow-v2:deployment-01KXR8YX3TNXM1H87M1DHSH41X`, manifesto
-`sha256:70f75818859b87132cd8659a91f9503cb171b9717c2a22e93c1eb47d4341814a`.
+O deploy vigente confirmado é a release Fly **v94**, que publica o commit
+funcional `77769f0` (CRM com pipelines e etapas configuráveis). A máquina
+`08075edf911368`, versão 94, está iniciada em `gru`, com health check `1/1`.
+A imagem é
+`registry.fly.io/imobiflow-v2:deployment-01KXS0VH92QETBWY6BGGY3ZQS5`, manifesto
+`sha256:0928b4fe2ccf8b60a5652110680b3f9d26157eec8537b70098042d816bbff847`.
 Os smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-17.
 
 O produto está funcional e sem usuários ativos registrados, mas **não deve ser
@@ -181,8 +181,8 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   nem sempre tem imóvel — os criados a partir de uma conversa ficam
   escopados direto por `broker_id` (`property_id` null); os do fluxo
   tradicional (landing/cadastro manual) continuam escopados via o imóvel.
-  **Pendente de execução manual:** `supabase/migrations/20260717b_crm_pipelines.sql`
-  (não aplicada ainda — ver seção 14).
+  Migration `20260717b_crm_pipelines.sql` aplicada; deployado na release v94
+  (ver seção 6 "CRM: pipelines e etapas" e seção 14).
 - **Agenda:** visitas e calendário com criação, alteração e cancelamento.
 - **Contatos:** CRUD e salvamento automático a partir de conversas.
 - **Locação:** contratos, vencimentos, valores para acompanhamento e exclusão
@@ -277,11 +277,21 @@ no Fly.
 
 ### CRM: pipelines e etapas (fase 1)
 
-Trabalho local (não deployado, não commitado) que transforma a área
-visualmente chamada "Leads" em "CRM". A chave interna `negocios`, o
-componente `NegociosArea.tsx`, a tabela `leads` e os endpoints `/api/leads`
-continuam existindo — a mudança é de apresentação e de modelo de estágios,
-não uma reescrita.
+Transforma a área visualmente chamada "Leads" em "CRM". A chave interna
+`negocios`, o componente `NegociosArea.tsx`, a tabela `leads` e os endpoints
+`/api/leads` continuam existindo — a mudança é de apresentação e de modelo de
+estágios, não uma reescrita.
+
+**Estado:** migration `20260717b_crm_pipelines.sql` aplicada manualmente no
+Supabase da branch `v2` em 17/07/2026; código publicado no commit `77769f0`
+e na release Fly **v94** (imagem
+`registry.fly.io/imobiflow-v2:deployment-01KXS0VH92QETBWY6BGGY3ZQS5`,
+manifesto `sha256:0928b4fe2ccf8b60a5652110680b3f9d26157eec8537b70098042d816bbff847`,
+máquina `08075edf911368` em `gru`, health check 1/1). Validação:
+`npx tsc --noEmit`, `npx knip`, `npm run build`, `git diff --check` e smoke
+HTTP 200 em `/`, `/app` e `/login`. Ambiente sem clientes reais; QA
+autenticado completo (isolamento entre dois tenants, comportamento de
+`closed_at`) ainda pendente.
 
 **O que existe agora:**
 
@@ -604,16 +614,17 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260716d_report_period_metrics.sql` | aplicada e verificada | `sold_at`, índice, trigger e Relatórios |
 | `20260716e_broker_asaas_key.sql` | aplicada | chave Asaas por conta |
 | `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
-| `20260717b_crm_pipelines.sql` | **NÃO aplicada** — escrita, não executada | pipelines/etapas do CRM; código que depende dela (`/api/crm/*`, `PATCH /api/leads/:id/stage`) está implementado mas não deployado |
+| `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
 checagem do ambiente antes de um novo deploy.
 
-`20260717b_crm_pipelines.sql` precisa ser aplicada manualmente no Supabase
-da branch `v2` antes de qualquer deploy do código que a acompanha. Depois de
-aplicar, validar (ver seção 6 "CRM: pipelines e etapas" para o passo a passo
-de teste) e só então marcar esta linha como aplicada.
+`20260717b_crm_pipelines.sql` foi aplicada manualmente no Supabase da branch
+`v2` em 17/07/2026, antes da release v94. O código de criação de lead ainda
+degrada com segurança (cai no fluxo antigo, sem pipeline) caso as tabelas do
+CRM não existam num ambiente futuro — ver `resolveNewLeadStage` em
+`server/services/crmPipelines.ts`.
 
 ## 15. Pendências e critérios de lançamento
 
