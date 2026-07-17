@@ -13,7 +13,7 @@ export function normalizePhoneBR(raw: string): string {
 
 // Tamanho máximo de um número local BR (DDD + até 9 dígitos do celular) —
 // o input já mostra "+55" fixo ao lado, então o campo só digita esta parte.
-export const BR_LOCAL_MAX_LEN = 11;
+const BR_LOCAL_MAX_LEN = 11;
 
 // Filtro pro campo de input: mantém só dígitos e trava no tamanho máximo de
 // um telefone BR local, pra não deixar colar/digitar um número sem fim.
