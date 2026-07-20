@@ -3764,3 +3764,31 @@ rolagem horizontal nativa ficava feia e os cards grandes demais. Redesign em
 
 Deploy Fly release **v95**, máquina `08075edf911368`, health check `1/1`,
 `/` e `/app` HTTP 200. tsc e build limpos.
+
+### CI de deploy da V2 (release v96)
+
+O `flyctl` local ficou bloqueado pela política de Application Control (Smart
+App Control) do Windows no meio da sessão — deploys manuais passaram a
+falhar com "Permission denied"/"política bloqueou este arquivo", sem
+relação com código, repo ou Fly.io. Reinstalar o flyctl não resolveu (SAC
+mantém a rejeição por reputação mesmo com o binário trocado). Decisão: não
+alterar configuração de segurança do Windows — construir um caminho de
+deploy que não dependa da máquina local.
+
+Criado `.github/workflows/deploy-v2.yml`:
+- só existe na branch `v2` (mesma regra do `fly.toml`, que também não deve
+  ir pra `main`);
+- gatilho `on: push: branches: [v2]` — GitHub só permite `workflow_dispatch`
+  (botão manual) se o arquivo também existir na branch padrão, e a decisão
+  foi não tocar a `main` só por isso; então todo `git push origin v2` agora
+  publica automaticamente, sem etapa manual depois;
+- usa `FLY_API_TOKEN_V2`, secret **novo e separado** do `FLY_API_TOKEN` que
+  o `deploy.yml` da v1 usa — a primeira tentativa (com o token da v1) falhou
+  com `unauthorized` (token escopado só ao app `imobiflow`), confirmando que
+  os dois apps precisam de tokens próprios.
+
+Release **v96** publicada pelo primeiro deploy automático (run
+`29745759396`, ~1m22s), commit `77769f0`→...→o commit deste workflow.
+Smoke `/`, `/app`, `/login` HTTP 200. Consequência prática registrada no
+próprio workflow: validar (tsc/build) precisa acontecer ANTES do commit,
+não depois — não existe mais gate manual pós-push nesta branch.

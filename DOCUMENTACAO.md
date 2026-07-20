@@ -31,13 +31,19 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é a release Fly **v94**, que publica o commit
-funcional `77769f0` (CRM com pipelines e etapas configuráveis). A máquina
-`08075edf911368`, versão 94, está iniciada em `gru`, com health check `1/1`.
-A imagem é
-`registry.fly.io/imobiflow-v2:deployment-01KXS0VH92QETBWY6BGGY3ZQS5`, manifesto
-`sha256:0928b4fe2ccf8b60a5652110680b3f9d26157eec8537b70098042d816bbff847`.
-Os smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-17.
+O deploy vigente confirmado é a release Fly **v96**, publicada automaticamente
+pelo workflow `deploy-v2.yml` a partir do commit `6eec0e3` (branch `v2`). Os
+smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-20.
+
+Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
+`imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
+gatilho `push`, secret `FLY_API_TOKEN_V2` — separado do `FLY_API_TOKEN` da
+v1). Não existe mais um passo manual de deploy nem uma revisão entre commit
+e publicação: `npx tsc --noEmit`/`npm run build`/`git diff --check` precisam
+rodar **antes** do commit, não depois. Motivo da mudança: o `flyctl` local
+pode ficar bloqueado por política de Application Control (Smart App Control)
+do Windows — o CI builda e publica 100% nos runners do GitHub, sem depender
+de nada local.
 
 O produto está funcional e sem usuários ativos registrados, mas **não deve ser
 declarado 100% pronto para lançamento** enquanto os QAs autenticados e as
@@ -670,8 +676,12 @@ git diff --check
 git status --short
 ```
 
-Antes de deploy: revisar diff, migrations, secrets e app alvo. Depois: guardar
-commit, release, imagem, máquina, região, health check e smoke HTTP no histórico.
+Na branch `v2`, o checklist acima roda **antes do commit**: `git push origin
+v2` publica sozinho via GitHub Actions (seção 1), sem revisão manual depois.
+Migrations continuam exigindo aplicação manual à parte (nunca automática).
+Depois do push: conferir o run em `gh run list --workflow=deploy-v2.yml` (ou
+a aba Actions no GitHub) e o smoke HTTP, e guardar release/commit/smoke no
+histórico.
 
 ## 16. Limpeza de código morto — 2026-07-17
 
