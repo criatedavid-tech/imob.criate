@@ -1,13 +1,21 @@
-name: Deploy V2 to Fly.io (manual)
+name: Deploy V2 to Fly.io
 
 # Só existe na branch v2 (assim como fly.toml — ver comentário nele).
-# Disparo manual (botão "Run workflow" na aba Actions do GitHub), nunca
-# automático em push: a v2 é publicada por decisão explícita, não a cada
-# commit. Existe porque o flyctl local pode ficar bloqueado por política de
-# segurança do Windows (Smart App Control) — isso builda e publica 100% nos
+# Roda em TODO push na v2: cada `git push origin v2` publica automaticamente
+# em imobiflow-v2.fly.dev — não há gate manual depois do push (decisão do
+# usuário 2026-07-17, pra não depender de workflow_dispatch, que o GitHub só
+# permite disparar se o arquivo também existir na branch padrão/main — e a
+# v2 não deve tocar a main, mesma regra do fly.toml).
+#
+# Consequência prática: valide (tsc/build) ANTES de commitar, nunca depois —
+# não existe mais uma etapa manual de "revisar e então publicar".
+#
+# Existe porque o flyctl local pode ficar bloqueado por política de
+# segurança do Windows (Smart App Control); isso builda e publica 100% nos
 # runners do GitHub, sem depender de nada local.
 on:
-  workflow_dispatch: {}
+  push:
+    branches: [v2]
 
 jobs:
   deploy:
