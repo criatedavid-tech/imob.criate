@@ -725,6 +725,20 @@ que já têm pipeline criado.
    responsividade desktop/mobile.
 11. Inspecionar logs, CSP reports, Sentry, jobs e webhooks sem erro.
 
+### Testes funcionais da IA — planejados (roteiro definido em 20/07/2026)
+
+Cenários ponta a ponta pra validar o agente de IA em uso real, ainda não
+executados:
+
+- [ ] **Teste 1 — cadastro assistido por IA:** usuário manda fotos e fala a
+  descrição do imóvel; o app cadastra o imóvel e gera o site; IA responde
+  corretamente perguntas feitas sobre esse imóvel específico.
+- [ ] **Teste 2 — atendimento a partir de anúncio:** cliente vê o anúncio,
+  pergunta disponibilidade e manda print (imagem) do anúncio; IA precisa
+  compreender o print e conduzir o atendimento.
+- [ ] **Teste 3 — follow-up:** pedir pra IA lembrar de fazer follow-up, ou
+  confirmar que ela mesma dispara sozinha (conforme configuração ativa).
+
 ### Checklist técnico por alteração
 
 ```powershell
