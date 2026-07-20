@@ -13,6 +13,10 @@ name: Deploy V2 to Fly.io
 # Existe porque o flyctl local pode ficar bloqueado por política de
 # segurança do Windows (Smart App Control); isso builda e publica 100% nos
 # runners do GitHub, sem depender de nada local.
+#
+# Usa o secret FLY_API_TOKEN_V2 (deploy token escopado só ao app
+# imobiflow-v2) — deliberadamente SEPARADO do FLY_API_TOKEN que o
+# deploy.yml da v1 usa, pra nunca misturar permissão entre os dois apps.
 on:
   push:
     branches: [v2]
@@ -33,4 +37,4 @@ jobs:
       - name: Deploy
         run: flyctl deploy --app imobiflow-v2 --config fly.toml --remote-only
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}
