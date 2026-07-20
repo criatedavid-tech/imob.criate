@@ -10,7 +10,7 @@ export const aiRouter = express.Router();
 const MAX_ENHANCE_TEXT_CHARS = 10_000;
 const MAX_AUDIO_DATA_CHARS = 9 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
-const AUDIO_DATA_PREFIX = /^data:(audio\/(?:webm|ogg|mp4|mp3|wav))(?:;[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*;base64$/i;
+const AUDIO_DATA_PREFIX = /^data:(audio\/(?:webm|ogg|mp4|mp3|wav))(?:;[a-z0-9!#$&^_.+-]+="?[a-z0-9!#$&^_.+-]+"?)*;base64$/i;
 const BASE64_PAYLOAD = /^[a-zA-Z0-9+/]+={0,2}$/;
 
 const enhanceTextSchema = z.object({
@@ -25,7 +25,7 @@ const audioMimeTypeSchema = z.string()
   .min(1, "Formato de áudio é obrigatório.")
   .max(100, "Formato de áudio inválido.")
   .regex(
-    /^audio\/(?:webm|ogg|mp4|mp3|wav)(?:;[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*$/i,
+    /^audio\/(?:webm|ogg|mp4|mp3|wav)(?:;[a-z0-9!#$&^_.+-]+="?[a-z0-9!#$&^_.+-]+"?)*$/i,
     "Formato de áudio não suportado.",
   );
 

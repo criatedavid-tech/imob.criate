@@ -457,6 +457,16 @@ sinalizando aqui em vez de decidir sozinho, conforme pedido.
   global da Criate. Segredos por tenant são criptografados com
   `LLM_PROXY_ENC_KEY`.
 
+**Fix — transcrição de áudio rejeitando formato válido (20/07/2026):**
+`POST /api/ai/transcribe` (botão de microfone do `CommandBar.tsx`) validava
+o `mimeType` reportado pelo navegador com um regex que só aceitava
+parâmetro de codec sem aspas (ex.: `codecs=opus`). Navegadores mobile que
+reportam o parâmetro entre aspas (ex.: `codecs="mp4a.40.2"`, formato válido
+por RFC) caíam direto na falha de validação, mostrando "Dados inválidos."
+no chat sem transcrever nada. Corrigido em `server/routes/ai.ts` — os dois
+regexes envolvidos (`AUDIO_DATA_PREFIX` e `audioMimeTypeSchema`) agora
+aceitam o valor do parâmetro com ou sem aspas.
+
 ### Asaas e limite do escopo financeiro
 
 O produto separa dois fluxos financeiros:
