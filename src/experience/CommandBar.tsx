@@ -386,28 +386,32 @@ export function CommandBar({
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
           bg-white/[0.09] border border-white/15
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
-          {/* Não usar display:none/hidden: em vários Android Chrome o seletor
-              de arquivo não abre ao chamar .click() num input com display:none.
-              Fica renderizado, porém fora da tela e sem interação direta. */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFileChange}
-            tabIndex={-1}
-            aria-hidden="true"
-            style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy || recording || transcribing}
-            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white/50
-              hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+          {/* Anexar foto via <label> apontando pro input, NÃO um botão que
+              chama .click(): em vários Android Chrome/WebView o .click()
+              programático num input de arquivo é ignorado — o seletor só abre
+              a partir de uma ativação de usuário direta. O clique num <label>
+              associado conta como essa ativação e abre o seletor em qualquer
+              navegador (inclusive iOS). Input desabilitado = label inerte. */}
+          <label
             aria-label="Anexar foto"
+            title="Anexar foto"
+            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+              busy || recording || transcribing
+                ? 'text-white/30 cursor-not-allowed'
+                : 'text-white/50 hover:text-white hover:bg-white/10 cursor-pointer'
+            }`}
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={busy || recording || transcribing}
+              onChange={handleFileChange}
+              className="hidden"
+            />
             <Paperclip className="w-4 h-4" />
-          </button>
+          </label>
           {micSupported && (
             <button
               onClick={recording ? stopRecording : startRecording}
