@@ -457,15 +457,26 @@ sinalizando aqui em vez de decidir sozinho, conforme pedido.
   global da Criate. Segredos por tenant são criptografados com
   `LLM_PROXY_ENC_KEY`.
 
-**Fix — transcrição de áudio rejeitando formato válido (20/07/2026):**
-`POST /api/ai/transcribe` (botão de microfone do `CommandBar.tsx`) validava
-o `mimeType` reportado pelo navegador com um regex que só aceitava
-parâmetro de codec sem aspas (ex.: `codecs=opus`). Navegadores mobile que
-reportam o parâmetro entre aspas (ex.: `codecs="mp4a.40.2"`, formato válido
-por RFC) caíam direto na falha de validação, mostrando "Dados inválidos."
-no chat sem transcrever nada. Corrigido em `server/routes/ai.ts` — os dois
-regexes envolvidos (`AUDIO_DATA_PREFIX` e `audioMimeTypeSchema`) agora
-aceitam o valor do parâmetro com ou sem aspas.
+**Fix — áudio (iOS) e anexo de foto (Android) no Assistente IA (20/07/2026):**
+Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
+
+1. *iOS — transcrição rejeitava com "Dados inválidos.":* `POST
+   /api/ai/transcribe` validava o `mimeType` do navegador com um regex
+   estrito de allowlist. O Safari iOS reporta o formato de jeito
+   imprevisível (`audio/mp4;codecs="mp4a.40.2"`, às vezes com espaço após
+   o `;`), caindo direto na falha de schema. A validação estrita de
+   formato não protegia nada de real — a proteção efetiva é o payload
+   base64 válido + o limite de tamanho. Reescrito `server/routes/ai.ts`:
+   o `mimeType` virou dica opcional (sem regex de allowlist); a validação
+   passou a ser "é um data URL de áudio + base64 válido"
+   (`AUDIO_DATA_URL_HEADER`); e o `format` enviado ao provedor é derivado
+   do tipo real do áudio (`resolveAudioFormat`), preferindo o declarado no
+   próprio data URL. Não-áudio continua barrado.
+2. *Android — seletor de foto não abria:* o `<input type="file">` usava
+   `display:none` (`className="hidden"`); vários Android Chrome não abrem
+   o seletor ao chamar `.click()` num input com `display:none`. Passou a
+   ser renderizado, porém fora da tela (`position:absolute; width:1px;
+   opacity:0`), mantendo o clique programático funcional.
 
 ### Asaas e limite do escopo financeiro
 

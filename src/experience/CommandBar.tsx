@@ -386,13 +386,18 @@ export function CommandBar({
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
           bg-white/[0.09] border border-white/15
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
+          {/* Não usar display:none/hidden: em vários Android Chrome o seletor
+              de arquivo não abre ao chamar .click() num input com display:none.
+              Fica renderizado, porém fora da tela e sem interação direta. */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
             onChange={handleFileChange}
-            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+            style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
           />
           <button
             onClick={() => fileInputRef.current?.click()}

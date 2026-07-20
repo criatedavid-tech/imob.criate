@@ -10,7 +10,14 @@ export const aiRouter = express.Router();
 const MAX_ENHANCE_TEXT_CHARS = 10_000;
 const MAX_AUDIO_DATA_CHARS = 9 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
-const AUDIO_DATA_PREFIX = /^data:(audio\/(?:webm|ogg|mp4|mp3|wav))(?:;[a-z0-9!#$&^_.+-]+="?[a-z0-9!#$&^_.+-]+"?)*;base64$/i;
+// Aceita QUALQUER data URL de áudio (ex.: data:audio/mp4;codecs="mp4a.40.2";base64
+// — formato que o Safari iOS produz, com aspas, espaço após ';' e parâmetros
+// imprevisíveis). O subtipo exato NÃO é whitelistado de propósito: a proteção
+// real é o payload base64 válido + o limite de tamanho. O mimeType do cliente
+// nunca é repassado cru pra lugar nenhum — vira só o "format" (enum curto) que
+// derivamos aqui.
+const AUDIO_DATA_URL_HEADER = /^data:audio\/[a-z0-9][a-z0-9.+-]*(?:;[^,]*)?;base64$/i;
+const AUDIO_BASE_TYPE = /^data:(audio\/[a-z0-9][a-z0-9.+-]*)/i;
 const BASE64_PAYLOAD = /^[a-zA-Z0-9+/]+={0,2}$/;
 
 const enhanceTextSchema = z.object({
@@ -20,33 +27,43 @@ const enhanceTextSchema = z.object({
     .max(MAX_ENHANCE_TEXT_CHARS, `Texto muito longo (máx. ${MAX_ENHANCE_TEXT_CHARS} caracteres).`),
 });
 
-const audioMimeTypeSchema = z.string()
-  .trim()
-  .min(1, "Formato de áudio é obrigatório.")
-  .max(100, "Formato de áudio inválido.")
-  .regex(
-    /^audio\/(?:webm|ogg|mp4|mp3|wav)(?:;[a-z0-9!#$&^_.+-]+="?[a-z0-9!#$&^_.+-]+"?)*$/i,
-    "Formato de áudio não suportado.",
-  );
-
+// mimeType é só uma dica opcional do cliente. Navegadores mobile reportam
+// formatos imprevisíveis (audio/mp4 com/sem codecs, com/sem aspas, com espaço
+// após o ';'), então NÃO rejeitamos por formato aqui — a validação de verdade
+// é o data URL de áudio + base64 em extractValidBase64Audio.
 const transcribeSchema = z.object({
   audioData: z.string()
     .min(1, "Áudio é obrigatório.")
     .max(MAX_AUDIO_DATA_CHARS, "Áudio excede o limite da requisição."),
-  mimeType: audioMimeTypeSchema.optional().default("audio/webm"),
+  mimeType: z.string().trim().max(100).optional().default("audio/webm"),
 });
 
-function extractValidBase64Audio(audioData: string, mimeType: string): string | null {
+function extractValidBase64Audio(audioData: string): string | null {
   const commaIdx = audioData.indexOf(",");
-  if (commaIdx >= 0) {
-    const prefixMatch = AUDIO_DATA_PREFIX.exec(audioData.slice(0, commaIdx));
-    const requestedBaseType = mimeType.split(";", 1)[0].toLowerCase();
-    if (!prefixMatch || prefixMatch[1].toLowerCase() !== requestedBaseType) return null;
+  if (commaIdx >= 0 && !AUDIO_DATA_URL_HEADER.test(audioData.slice(0, commaIdx))) {
+    return null;
   }
-
   const base64Data = commaIdx >= 0 ? audioData.slice(commaIdx + 1) : audioData;
   if (!base64Data || base64Data.length % 4 !== 0 || !BASE64_PAYLOAD.test(base64Data)) return null;
   return base64Data;
+}
+
+// Escolhe o "format" enviado ao provedor a partir do tipo REAL do áudio:
+// prefere o que está declarado no próprio data URL; cai pro header do cliente.
+function resolveAudioFormat(audioData: string, mimeType: string): string {
+  let baseType = "";
+  const commaIdx = audioData.indexOf(",");
+  if (commaIdx >= 0) {
+    const m = AUDIO_BASE_TYPE.exec(audioData.slice(0, commaIdx));
+    if (m) baseType = m[1].toLowerCase();
+  }
+  if (!baseType) baseType = (mimeType.split(";", 1)[0] || "").toLowerCase();
+
+  if (baseType.includes("mp3") || baseType.includes("mpeg")) return "mp3";
+  if (baseType.includes("wav")) return "wav";
+  if (baseType.includes("ogg")) return "ogg";
+  if (baseType.includes("mp4") || baseType.includes("m4a") || baseType.includes("aac")) return "mp4";
+  return "webm";
 }
 
 // OpenRouter é a ÚNICA fonte de IA deste arquivo (decisão explícita
@@ -157,12 +174,7 @@ const TRANSCRIBE_INSTRUCTION = "Transcreva o áudio a seguir em português do Br
 // MediaRecorder do navegador grava webm/opus por padrão e não tem como
 // gerar wav nativamente. Os modelos Gemini via OpenRouter aceitam "webm"
 // (formato real do navegador) sem validar à risca — confirmado com request real.
-async function transcribeWithOpenRouter(apiKey: string, base64Data: string, mimeType: string): Promise<string> {
-  const format = mimeType.includes("mp3") ? "mp3"
-    : mimeType.includes("wav") ? "wav"
-    : mimeType.includes("ogg") ? "ogg"
-    : mimeType.includes("mp4") ? "mp4"
-    : "webm";
+async function transcribeWithOpenRouter(apiKey: string, base64Data: string, format: string): Promise<string> {
   const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -197,7 +209,7 @@ async function transcribeWithOpenRouter(apiKey: string, base64Data: string, mime
  */
 aiRouter.post("/api/ai/transcribe", requireUser, aiTranscriptionLimiter, validateBody(transcribeSchema), async (req, res) => {
   const { audioData, mimeType } = req.body;
-  const base64Data = extractValidBase64Audio(audioData, mimeType);
+  const base64Data = extractValidBase64Audio(audioData);
   if (!base64Data) {
     return res.status(400).json({ error: "Conteúdo de áudio inválido." });
   }
@@ -210,7 +222,8 @@ aiRouter.post("/api/ai/transcribe", requireUser, aiTranscriptionLimiter, validat
   }
 
   try {
-    const text = await transcribeWithOpenRouter(process.env.OPENROUTER_API_KEY!, base64Data, mimeType);
+    const format = resolveAudioFormat(audioData, mimeType);
+    const text = await transcribeWithOpenRouter(process.env.OPENROUTER_API_KEY!, base64Data, format);
     res.json({ text });
   } catch (error: any) {
     logError("Erro na transcrição de áudio (OpenRouter)", error);

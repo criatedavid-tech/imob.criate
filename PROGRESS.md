@@ -25,15 +25,18 @@
 - Checkout `imob.criate-phase3` sincronizado com `origin/v2` (estava 20
   commits atrás) e validado localmente: `npx tsc --noEmit`, `npx knip` e
   `npm run build` limpos após `npm install`.
-- Fix (não commitado): transcrição de áudio do Assistente IA
-  (`POST /api/ai/transcribe`) rejeitava com "Dados inválidos." sempre que
-  o `mimeType` reportado pelo navegador vinha com parâmetro de codec entre
-  aspas (ex.: `codecs="mp4a.40.2"`, formato comum em navegadores mobile) —
-  o regex de validação em `server/routes/ai.ts` só aceitava valor sem
-  aspas. Corrigido nos dois regexes afetados (`AUDIO_DATA_PREFIX` e
-  `audioMimeTypeSchema`); confirmado com teste real contra o servidor
-  local (payload antes rejeitado no schema agora passa pra validação
-  seguinte; payload realmente inválido continua barrado).
+- Fix do Assistente IA no mobile (dois bugs, um por plataforma):
+  - iOS: `POST /api/ai/transcribe` rejeitava áudio com "Dados inválidos."
+    porque o Safari reporta `mimeType` imprevisível (mp4 com codec entre
+    aspas, às vezes com espaço). `server/routes/ai.ts` reescrito: mimeType
+    virou dica opcional, validação passou a ser data-URL-de-áudio +
+    base64, e o `format` do provedor é derivado do conteúdo real.
+  - Android: seletor de foto não abria (`<input type=file>` com
+    `display:none`); virou renderizado-fora-da-tela em `CommandBar.tsx`.
+  - Validado local: tsc/knip/build limpos; teste HTTP ao vivo cobrindo 5
+    formatos de mimeType (iOS/Android) todos passando e não-áudio barrado;
+    verificação no navegador de que o input renderiza e o clipe dispara o
+    seletor.
 
 # Em andamento
 
