@@ -41,3 +41,15 @@ Data: 2026-07-20
 Decisão: Migration `20260720_crm_pipelines_broker_cascade.sql` adiciona `ON DELETE CASCADE` em `imf_crm_pipeline_stages.pipeline_id` e `imf_crm_pipelines.broker_id`, sem alterar a ausência de CASCADE em `leads.pipeline_id`/`pipeline_stage_id`.
 Motivo: Exclusão de conta pelo admin (`DELETE /api/admin/brokers/:id`) começou a falhar pra qualquer broker que já tivesse um pipeline — regressão não percebida introduzida pela migration do CRM.
 Impacto: Apagar o broker inteiro volta a funcionar (leads já cascadeiam via `imf_properties`/`leads`→`imf_brokers` na mesma operação, então nada fica órfão). Proteção contra apagar UM pipeline/etapa isolado com leads vinculados continua intacta.
+
+---
+Data: 2026-07-20
+Decisão: Endurecer as mutações críticas do CRM com RPCs transacionais restritas à `service_role` e manter a aba Pipelines em leitura para membros.
+Motivo: A auditoria retroativa encontrou execução pública implícita na RPC `SECURITY DEFINER` de reorder, validação incompleta de listas e operações de múltiplos statements sujeitas a estado parcial/concorrência. A UI também oferecia controles que o backend recusava para membros.
+Impacto: Migration `20260720b_crm_security_hardening.sql` pendente de execução manual; reorder, autocura, troca de padrão e transições de etapa ficam atômicos; associação a etapa/pipeline inativo é recusada; titularidade passa a ser refletida na UI sem substituir a autorização do servidor.
+
+---
+Data: 2026-07-20
+Decisão: Todo deploy automático da V2 passa a depender de um job de validação no GitHub Actions.
+Motivo: O workflow publicava qualquer push em `v2` sem executar TypeScript, Knip ou build.
+Impacto: `deploy` depende de `validate` (`npm ci`, `npm run lint`, `npx knip`, `npm run build`). Não existe aprovação manual pós-push; falha técnica bloqueia a publicação.

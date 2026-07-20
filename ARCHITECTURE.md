@@ -55,8 +55,11 @@
   `token=<API Token da instância>`.
 - IA: OpenRouter — agente com ações próprias (`server/services/agent.ts`)
   + transcrição de voz.
-- Pagamento: Asaas — assinatura global + chave própria opcional por broker
-  (imobiliária/incorporadora) pra cobrança de aluguel/reserva.
+- Pagamento: Asaas permanece ativo para assinatura SaaS do próprio ImobiFlow.
+  Cobrança financeira de clientes por aluguel/reserva está desativada por
+  padrão (`CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e equivalente Vite); as
+  telas operacionais apenas registram e apresentam valores/status enquanto a
+  flag estiver desligada.
 
 ## Padrões e estratégias adotadas
 
@@ -70,6 +73,9 @@
   retornar 409 explicando a dependência (ex.: pipeline padrão não pode ser
   excluído sem outro padrão; pipeline/etapa com leads não pode ser
   apagado direto).
-- Deploy automático via GitHub Actions a cada push em `v2` — validação
-  técnica (tsc/knip/build) é responsabilidade do passo anterior ao
-  commit, não existe gate manual pós-push.
+- Deploy automático via GitHub Actions a cada push em `v2`, condicionado ao
+  job `validate` (`npm ci`, TypeScript, Knip e build). Continua sem gate manual
+  após o push; falha técnica impede o job de deploy.
+- RPCs `SECURITY DEFINER` do CRM são executáveis somente por `service_role`;
+  usuário autenticado opera sempre pelas rotas Express e pelo tenant resolvido
+  no backend.

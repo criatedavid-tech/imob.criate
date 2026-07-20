@@ -51,9 +51,10 @@ Express modularizado em `server/`. Detalhe completo em `ARCHITECTURE.md`.
 - Sem `@types/react` instalado à parte — `key` direto num componente
   customizado dentro de `.map()` gera erro de TS; usar
   `<React.Fragment key={...}>` ao redor do componente.
-- Deploy automático: todo `git push origin v2` publica em produção via
-  GitHub Actions, sem gate manual. Validação (tsc/knip/build) roda ANTES
-  do commit, não depois.
+- Deploy automático: todo `git push origin v2` inicia o GitHub Actions, sem
+  gate manual. O deploy só ocorre se o job automatizado de validação
+  (`npm ci`, TypeScript, Knip e build) passar; a validação local antes do
+  commit continua obrigatória.
 - Migrations nunca são executadas automaticamente — sempre aplicação
   manual pelo usuário no SQL Editor do Supabase, mesmo já commitadas.
 

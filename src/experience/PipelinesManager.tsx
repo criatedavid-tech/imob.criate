@@ -23,6 +23,9 @@ export interface CrmPipeline {
   is_default: boolean;
   active: boolean;
   stages: CrmStage[];
+  // Só o titular pode alterar a estrutura. Membros continuam vendo o funil
+  // e movimentando os próprios leads, mas a tela de Pipelines fica leitura.
+  can_manage?: boolean;
 }
 
 const STAGE_COLORS = ['#60a5fa', '#a78bfa', '#f472b6', '#fb923c', '#4ade80', '#facc15', '#38bdf8', '#f87171'];
@@ -82,11 +85,12 @@ function ReassignPrompt({
 }
 
 function StageRow({
-  stage, allStages, onReload,
+  stage, allStages, onReload, canManage,
 }: {
   stage: CrmStage;
   allStages: CrmStage[];
   onReload: () => void;
+  canManage: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(stage.name);
@@ -100,7 +104,7 @@ function StageRow({
   const idx = allStages.findIndex((s) => s.id === stage.id);
   const canMoveUp = idx > 0;
   const canMoveDown = idx >= 0 && idx < allStages.length - 1;
-  const otherStages = allStages.filter((s) => s.id !== stage.id);
+  const otherStages = allStages.filter((s) => s.id !== stage.id && s.active);
 
   const save = async () => {
     if (!name.trim()) return;
@@ -175,14 +179,16 @@ function StageRow({
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${stage.active ? 'bg-white/[0.03] border-white/10' : 'bg-white/[0.015] border-white/5 opacity-60'}`}>
       <div className="flex items-center gap-2">
-        <div className="flex flex-col shrink-0 -my-1">
-          <button onClick={() => move(-1)} disabled={!canMoveUp || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
-            <ChevronUp className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => move(1)} disabled={!canMoveDown || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex flex-col shrink-0 -my-1">
+            <button onClick={() => move(-1)} disabled={!canMoveUp || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => move(1)} disabled={!canMoveDown || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {editing ? (
           <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
@@ -218,15 +224,19 @@ function StageRow({
             </span>
             {!stage.active && <span className="text-[10px] text-white/30 shrink-0">arquivada</span>}
             <div className="flex-1" />
-            <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 shrink-0">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => toggleActive()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 disabled:opacity-40 shrink-0" title={stage.active ? 'Arquivar' : 'Reativar'}>
-              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : stage.active ? <Archive className="w-3.5 h-3.5" /> : <ArchiveRestore className="w-3.5 h-3.5" />}
-            </button>
-            <button onClick={() => remove()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40 shrink-0">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {canManage && (
+              <>
+                <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 shrink-0">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => toggleActive()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 disabled:opacity-40 shrink-0" title={stage.active ? 'Arquivar' : 'Reativar'}>
+                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : stage.active ? <Archive className="w-3.5 h-3.5" /> : <ArchiveRestore className="w-3.5 h-3.5" />}
+                </button>
+                <button onClick={() => remove()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40 shrink-0">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -244,7 +254,7 @@ function StageRow({
   );
 }
 
-function PipelineCard({ pipeline, onReload }: { pipeline: CrmPipeline; onReload: () => void }) {
+function PipelineCard({ pipeline, onReload, canManage }: { pipeline: CrmPipeline; onReload: () => void; canManage: boolean }) {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(pipeline.name);
   const [saving, setSaving] = useState(false);
@@ -342,9 +352,11 @@ function PipelineCard({ pipeline, onReload }: { pipeline: CrmPipeline; onReload:
         ) : (
           <>
             <h3 className="text-[16px] font-bold text-white">{pipeline.name}</h3>
-            <button onClick={() => setEditingName(true)} className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
+            {canManage && (
+              <button onClick={() => setEditingName(true)} className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
             {pipeline.is_default && (
               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-500/25 text-violet-200">
                 <Star className="w-2.5 h-2.5 fill-current" /> padrão
@@ -354,7 +366,7 @@ function PipelineCard({ pipeline, onReload }: { pipeline: CrmPipeline; onReload:
           </>
         )}
         <div className="flex-1" />
-        {!editingName && (
+        {canManage && !editingName && (
           <div className="flex items-center gap-1 shrink-0">
             {!pipeline.is_default && (
               <button onClick={setDefault} disabled={busy} title="Definir como padrão"
@@ -378,18 +390,20 @@ function PipelineCard({ pipeline, onReload }: { pipeline: CrmPipeline; onReload:
       <div className="space-y-1.5 mt-3">
         {stages.length === 0 ? (
           <p className="text-[12px] text-white/30 py-2">Nenhuma etapa ainda — crie a primeira abaixo.</p>
-        ) : stages.map((s) => <React.Fragment key={s.id}><StageRow stage={s} allStages={stages} onReload={onReload} /></React.Fragment>)}
+        ) : stages.map((s) => <React.Fragment key={s.id}><StageRow stage={s} allStages={stages} onReload={onReload} canManage={canManage} /></React.Fragment>)}
       </div>
 
-      <div className="flex gap-2 pt-3 mt-3 border-t border-white/10">
-        <input value={newStageName} onChange={(e) => setNewStageName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createStage()}
-          placeholder="Nova etapa…"
-          className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
-        <button onClick={createStage} disabled={creatingStage || !newStageName.trim()}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-bold text-white bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] disabled:opacity-40 transition-colors">
-          {creatingStage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Etapa
-        </button>
-      </div>
+      {canManage && (
+        <div className="flex gap-2 pt-3 mt-3 border-t border-white/10">
+          <input value={newStageName} onChange={(e) => setNewStageName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createStage()}
+            placeholder="Nova etapa…"
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+          <button onClick={createStage} disabled={creatingStage || !newStageName.trim()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-bold text-white bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] disabled:opacity-40 transition-colors">
+            {creatingStage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Etapa
+          </button>
+        </div>
+      )}
     </GlassCard>
   );
 }
@@ -428,17 +442,23 @@ export function PipelinesManager() {
     );
   }
 
+  const canManage = pipelines.some((pipeline) => pipeline.can_manage === true);
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createPipeline()}
-          placeholder="Nome do novo pipeline…"
-          className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
-        <button onClick={createPipeline} disabled={creating || !newName.trim()}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors shrink-0">
-          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Novo pipeline
-        </button>
-      </div>
+      {canManage ? (
+        <div className="flex gap-2">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createPipeline()}
+            placeholder="Nome do novo pipeline…"
+            className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+          <button onClick={createPipeline} disabled={creating || !newName.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors shrink-0">
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Novo pipeline
+          </button>
+        </div>
+      ) : (
+        <p className="text-[12px] text-white/40">Somente o titular da conta pode alterar pipelines e etapas.</p>
+      )}
 
       {error && pipelines !== null && <p className="text-[12px] text-red-300">{error}</p>}
 
@@ -450,7 +470,7 @@ export function PipelinesManager() {
           <p className="text-[15px] text-white/60">Nenhum pipeline configurado ainda.</p>
         </GlassCard>
       ) : (
-        pipelines.map((p) => <React.Fragment key={p.id}><PipelineCard pipeline={p} onReload={load} /></React.Fragment>)
+        pipelines.map((p) => <React.Fragment key={p.id}><PipelineCard pipeline={p} onReload={load} canManage={canManage} /></React.Fragment>)
       )}
     </div>
   );

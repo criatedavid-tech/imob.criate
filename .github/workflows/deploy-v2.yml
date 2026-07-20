@@ -7,8 +7,8 @@ name: Deploy V2 to Fly.io
 # permite disparar se o arquivo também existir na branch padrão/main — e a
 # v2 não deve tocar a main, mesma regra do fly.toml).
 #
-# Consequência prática: valide (tsc/build) ANTES de commitar, nunca depois —
-# não existe mais uma etapa manual de "revisar e então publicar".
+# O deploy só começa depois do gate automatizado de TypeScript, código morto e
+# build. Um push inválido falha no job validate e não chega ao Fly.io.
 #
 # Existe porque o flyctl local pode ficar bloqueado por política de
 # segurança do Windows (Smart App Control); isso builda e publica 100% nos
@@ -22,9 +22,34 @@ on:
     branches: [v2]
 
 jobs:
+  validate:
+    name: Validate V2
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Dead code
+        run: npx knip
+
+      - name: Production build
+        run: npm run build
+
   deploy:
     name: Deploy imobiflow-v2
     runs-on: ubuntu-latest
+    needs: validate
     concurrency:
       group: deploy-imobiflow-v2
       cancel-in-progress: false

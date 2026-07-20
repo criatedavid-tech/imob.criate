@@ -1,7 +1,13 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
-import { ensureDefaultPipeline, resyncLeadsOnStage, isStageType, StageType } from "../services/crmPipelines";
+import {
+  ensureDefaultPipeline,
+  resyncLeadsOnStage,
+  isMissingCrmHardeningRpc,
+  isStageType,
+  StageType,
+} from "../services/crmPipelines";
 
 export const crmPipelinesRouter = express.Router();
 
@@ -26,6 +32,11 @@ function cleanColor(value: unknown): string | null | undefined {
 
 function isUniqueViolation(err: any): boolean {
   return err?.code === "23505";
+}
+
+function sendInternalError(res: any, context: string, err: any) {
+  console.error(context, err);
+  return res.status(500).json({ error: "Falha interna ao processar o CRM." });
 }
 
 async function pipelineBrokerAccess(brokerId: string, pipelineId: string) {
@@ -82,10 +93,14 @@ crmPipelinesRouter.get("/api/crm/pipelines", requireUser, async (req, res) => {
       stagesByPipeline.get(s.pipeline_id)!.push(s);
     }
 
-    res.json((pipelines || []).map((p: any) => ({ ...p, stages: stagesByPipeline.get(p.id) || [] })));
+    const canManage = await isBrokerOwner(userId, brokerId);
+    res.json((pipelines || []).map((p: any) => ({
+      ...p,
+      stages: stagesByPipeline.get(p.id) || [],
+      can_manage: canManage,
+    })));
   } catch (err: any) {
-    console.error("Erro GET /api/crm/pipelines:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro GET /api/crm/pipelines:", err);
   }
 });
 
@@ -109,8 +124,7 @@ crmPipelinesRouter.post("/api/crm/pipelines", requireUser, async (req, res) => {
     if (error) throw error;
     res.status(201).json({ ...data, stages: [] });
   } catch (err: any) {
-    console.error("Erro POST /api/crm/pipelines:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro POST /api/crm/pipelines:", err);
   }
 });
 
@@ -125,6 +139,7 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id", requireUser, async (req, res)
     if (!pipeline) return res.status(404).json({ error: "Pipeline não encontrado." });
 
     const updates: Record<string, any> = {};
+    let defaultChanged = false;
     if (req.body?.name !== undefined) {
       const name = cleanName(req.body.name);
       if (!name) return res.status(400).json({ error: `Nome inválido (até ${NAME_MAX_LEN} caracteres).` });
@@ -135,6 +150,19 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id", requireUser, async (req, res)
       if (req.body.active === false && pipeline.is_default) {
         return res.status(409).json({ error: "Defina outro pipeline como padrão antes de arquivar este." });
       }
+      if (req.body.active === false) {
+        const { count, error: countError } = await supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("pipeline_id", pipeline.id);
+        if (countError) throw countError;
+        if ((count || 0) > 0) {
+          return res.status(409).json({
+            error: `Este pipeline tem ${count} lead(s). Mova-os antes de arquivar.`,
+            leads_count: count,
+          });
+        }
+      }
       updates.active = req.body.active;
     }
     if (req.body?.is_default !== undefined) {
@@ -143,27 +171,48 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id", requireUser, async (req, res)
         return res.status(409).json({ error: "Defina outro pipeline como padrão em vez de remover este — sempre precisa haver um padrão." });
       }
       if (req.body.is_default === true) {
-        const { error: unsetError } = await supabase
-          .from("imf_crm_pipelines")
-          .update({ is_default: false, updated_at: new Date().toISOString() })
-          .eq("broker_id", brokerId)
-          .eq("is_default", true)
-          .neq("id", pipeline.id);
-        if (unsetError) throw unsetError;
-        updates.is_default = true;
-        updates.active = true; // pipeline padrão nunca fica arquivado
+        if (Object.keys(updates).length > 0) {
+          return res.status(400).json({ error: "Defina o pipeline padrão e edite seus dados em operações separadas." });
+        }
+        const { error: defaultError } = await supabase.rpc("imf_crm_set_default_pipeline", {
+          p_pipeline_id: pipeline.id,
+          p_broker_id: brokerId,
+        });
+        if (defaultError) {
+          if (!isMissingCrmHardeningRpc(defaultError)) {
+            if (defaultError.code === "P0001") {
+              return res.status(409).json({ error: "O pipeline padrão precisa ter ao menos uma etapa ativa." });
+            }
+            throw defaultError;
+          }
+          // Compatibilidade temporária enquanto a migration corretiva não foi
+          // aplicada. O caminho novo acima é transacional.
+          const { error: unsetError } = await supabase
+            .from("imf_crm_pipelines")
+            .update({ is_default: false, updated_at: new Date().toISOString() })
+            .eq("broker_id", brokerId)
+            .eq("is_default", true)
+            .neq("id", pipeline.id);
+          if (unsetError) throw unsetError;
+          updates.is_default = true;
+          updates.active = true;
+        }
+        defaultChanged = true;
       }
     }
 
-    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nada para atualizar." });
-    updates.updated_at = new Date().toISOString();
+    if (Object.keys(updates).length === 0 && !defaultChanged) return res.status(400).json({ error: "Nada para atualizar." });
 
-    const { data, error } = await supabase.from("imf_crm_pipelines").update(updates).eq("id", pipeline.id).select("*").maybeSingle();
-    if (error) throw error;
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase.from("imf_crm_pipelines").update(updates).eq("id", pipeline.id);
+      if (error) throw error;
+    }
+
+    const data = await pipelineBrokerAccess(brokerId, pipeline.id);
     res.json(data);
   } catch (err: any) {
-    console.error("Erro PATCH /api/crm/pipelines/:id:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro PATCH /api/crm/pipelines/:id:", err);
   }
 });
 
@@ -187,14 +236,14 @@ crmPipelinesRouter.delete("/api/crm/pipelines/:id", requireUser, async (req, res
       return res.status(409).json({ error: `Este pipeline tem ${count} lead(s). Mova-os ou arquive o pipeline em vez de excluí-lo.`, leads_count: count });
     }
 
-    const { error: stagesError } = await supabase.from("imf_crm_pipeline_stages").delete().eq("pipeline_id", pipeline.id);
-    if (stagesError) throw stagesError;
+    // A FK stages.pipeline_id usa ON DELETE CASCADE desde 20260720. Uma única
+    // instrução mantém a remoção atômica; se um lead surgir após a contagem,
+    // a FK de leads bloqueia tudo sem deixar o pipeline parcialmente vazio.
     const { error } = await supabase.from("imf_crm_pipelines").delete().eq("id", pipeline.id);
     if (error) throw error;
     res.json({ ok: true });
   } catch (err: any) {
-    console.error("Erro DELETE /api/crm/pipelines/:id:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro DELETE /api/crm/pipelines/:id:", err);
   }
 });
 
@@ -233,8 +282,7 @@ crmPipelinesRouter.post("/api/crm/pipelines/:id/stages", requireUser, async (req
     }
     res.status(201).json(data);
   } catch (err: any) {
-    console.error("Erro POST /api/crm/pipelines/:id/stages:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro POST /api/crm/pipelines/:id/stages:", err);
   }
 });
 
@@ -259,16 +307,17 @@ crmPipelinesRouter.patch("/api/crm/stages/:id", requireUser, async (req, res) =>
       if (color === undefined) return res.status(400).json({ error: `Cor inválida (até ${COLOR_MAX_LEN} caracteres).` });
       updates.color = color;
     }
+    let requestedStageType: StageType | null = null;
     if (req.body?.stage_type !== undefined) {
       if (!isStageType(req.body.stage_type)) return res.status(400).json({ error: "stage_type deve ser open, won ou lost." });
-      updates.stage_type = req.body.stage_type;
+      requestedStageType = req.body.stage_type;
     }
 
     let reassignToStageId: string | null = null;
     if (req.body?.active === false) {
       if (typeof req.body.reassign_to_stage_id === "string" && req.body.reassign_to_stage_id) {
         const target = await stageBrokerAccess(brokerId, req.body.reassign_to_stage_id);
-        if (!target || target.pipeline_id !== stage.pipeline_id) {
+        if (!target || target.pipeline_id !== stage.pipeline_id || !target.active) {
           return res.status(400).json({ error: "Etapa de destino inválida para mover os leads." });
         }
         if (target.id === stage.id) return res.status(400).json({ error: "Escolha uma etapa de destino diferente." });
@@ -285,29 +334,81 @@ crmPipelinesRouter.patch("/api/crm/stages/:id", requireUser, async (req, res) =>
           leads_count: count,
         });
       }
-      updates.active = false;
     } else if (req.body?.active === true) {
       updates.active = true;
     }
 
-    if (Object.keys(updates).length === 0 && !reassignToStageId) return res.status(400).json({ error: "Nada para atualizar." });
-    updates.updated_at = new Date().toISOString();
-
-    if (reassignToStageId) {
-      const { error: moveError } = await supabase.from("leads").update({ pipeline_stage_id: reassignToStageId }).eq("pipeline_stage_id", stage.id);
-      if (moveError) throw moveError;
+    const archiveRequested = req.body?.active === false;
+    if (archiveRequested && (requestedStageType !== null || Object.keys(updates).length > 0)) {
+      return res.status(400).json({ error: "Edite a etapa e arquive em operações separadas." });
+    }
+    if (Object.keys(updates).length === 0 && !archiveRequested && requestedStageType === null) {
+      return res.status(400).json({ error: "Nada para atualizar." });
     }
 
-    const { data, error } = await supabase.from("imf_crm_pipeline_stages").update(updates).eq("id", stage.id).select("*").maybeSingle();
-    if (error) throw error;
+    if (Object.keys(updates).length > 0 && requestedStageType === null) {
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase.from("imf_crm_pipeline_stages").update(updates).eq("id", stage.id);
+      if (error) throw error;
+    }
 
-    // stage_type mudou: ressincroniza status/closed_at de quem ainda está nesta etapa.
-    if (updates.stage_type !== undefined) await resyncLeadsOnStage(stage.id);
+    if (requestedStageType !== null) {
+      const desiredName = updates.name ?? stage.name;
+      const desiredColor = updates.color !== undefined ? updates.color : stage.color;
+      const desiredActive = updates.active !== undefined ? updates.active : stage.active;
+      const { error: typeError } = await supabase.rpc("imf_crm_update_stage", {
+        p_stage_id: stage.id,
+        p_broker_id: brokerId,
+        p_name: desiredName,
+        p_color: desiredColor,
+        p_stage_type: requestedStageType,
+        p_active: desiredActive,
+      });
+      if (typeError) {
+        if (!isMissingCrmHardeningRpc(typeError)) throw typeError;
+        const { error: fallbackTypeError } = await supabase
+          .from("imf_crm_pipeline_stages")
+          .update({
+            name: desiredName,
+            color: desiredColor,
+            stage_type: requestedStageType,
+            active: desiredActive,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", stage.id);
+        if (fallbackTypeError) throw fallbackTypeError;
+        await resyncLeadsOnStage(stage.id);
+      }
+    }
 
+    if (archiveRequested) {
+      const { error: archiveError } = await supabase.rpc("imf_crm_transition_stage", {
+        p_stage_id: stage.id,
+        p_broker_id: brokerId,
+        p_action: "archive",
+        p_reassign_to_stage_id: reassignToStageId,
+      });
+      if (archiveError) {
+        if (archiveError.code === "P0001") {
+          return res.status(409).json({ error: "Um pipeline ativo precisa manter ao menos uma etapa ativa." });
+        }
+        if (!isMissingCrmHardeningRpc(archiveError)) throw archiveError;
+        if (reassignToStageId) {
+          const { error: moveError } = await supabase.from("leads").update({ pipeline_stage_id: reassignToStageId }).eq("pipeline_stage_id", stage.id);
+          if (moveError) throw moveError;
+        }
+        const { error: fallbackArchiveError } = await supabase
+          .from("imf_crm_pipeline_stages")
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .eq("id", stage.id);
+        if (fallbackArchiveError) throw fallbackArchiveError;
+      }
+    }
+
+    const { data } = await supabase.from("imf_crm_pipeline_stages").select("*").eq("id", stage.id).maybeSingle();
     res.json(data);
   } catch (err: any) {
-    console.error("Erro PATCH /api/crm/stages/:id:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro PATCH /api/crm/stages/:id:", err);
   }
 });
 
@@ -325,7 +426,7 @@ crmPipelinesRouter.delete("/api/crm/stages/:id", requireUser, async (req, res) =
     let reassignToStageId: string | null = null;
     if (reassignParam) {
       const target = await stageBrokerAccess(brokerId, reassignParam);
-      if (!target || target.pipeline_id !== stage.pipeline_id) {
+      if (!target || target.pipeline_id !== stage.pipeline_id || !target.active) {
         return res.status(400).json({ error: "Etapa de destino inválida para mover os leads." });
       }
       if (target.id === stage.id) return res.status(400).json({ error: "Escolha uma etapa de destino diferente." });
@@ -344,17 +445,27 @@ crmPipelinesRouter.delete("/api/crm/stages/:id", requireUser, async (req, res) =
       });
     }
 
-    if (reassignToStageId) {
-      const { error: moveError } = await supabase.from("leads").update({ pipeline_stage_id: reassignToStageId }).eq("pipeline_stage_id", stage.id);
-      if (moveError) throw moveError;
+    const { error: transitionError } = await supabase.rpc("imf_crm_transition_stage", {
+      p_stage_id: stage.id,
+      p_broker_id: brokerId,
+      p_action: "delete",
+      p_reassign_to_stage_id: reassignToStageId,
+    });
+    if (transitionError) {
+      if (transitionError.code === "P0001") {
+        return res.status(409).json({ error: "Um pipeline ativo precisa manter ao menos uma etapa ativa." });
+      }
+      if (!isMissingCrmHardeningRpc(transitionError)) throw transitionError;
+      if (reassignToStageId) {
+        const { error: moveError } = await supabase.from("leads").update({ pipeline_stage_id: reassignToStageId }).eq("pipeline_stage_id", stage.id);
+        if (moveError) throw moveError;
+      }
+      const { error } = await supabase.from("imf_crm_pipeline_stages").delete().eq("id", stage.id);
+      if (error) throw error;
     }
-
-    const { error } = await supabase.from("imf_crm_pipeline_stages").delete().eq("id", stage.id);
-    if (error) throw error;
     res.json({ ok: true });
   } catch (err: any) {
-    console.error("Erro DELETE /api/crm/stages/:id:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro DELETE /api/crm/stages/:id:", err);
   }
 });
 
@@ -369,7 +480,10 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id/stages/reorder", requireUser, a
     if (!pipeline) return res.status(404).json({ error: "Pipeline não encontrado." });
 
     const stageIds = req.body?.stage_ids;
-    if (!Array.isArray(stageIds) || stageIds.length === 0 || !stageIds.every((id: any) => typeof id === "string")) {
+    if (!Array.isArray(stageIds)
+      || stageIds.length === 0
+      || !stageIds.every((id: any) => typeof id === "string")
+      || new Set(stageIds).size !== stageIds.length) {
       return res.status(400).json({ error: "stage_ids deve ser uma lista de ids." });
     }
 
@@ -378,7 +492,7 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id/stages/reorder", requireUser, a
       p_broker_id: brokerId,
       p_stage_ids: stageIds,
     });
-    if (error) return res.status(400).json({ error: error.message || "Falha ao reordenar etapas." });
+    if (error) return res.status(400).json({ error: "Lista de etapas inválida ou desatualizada." });
 
     const { data: stages, error: stagesError } = await supabase
       .from("imf_crm_pipeline_stages")
@@ -388,7 +502,6 @@ crmPipelinesRouter.patch("/api/crm/pipelines/:id/stages/reorder", requireUser, a
     if (stagesError) throw stagesError;
     res.json(stages);
   } catch (err: any) {
-    console.error("Erro PATCH /api/crm/pipelines/:id/stages/reorder:", err.message);
-    res.status(500).json({ error: err.message });
+    return sendInternalError(res, "Erro PATCH /api/crm/pipelines/:id/stages/reorder:", err);
   }
 });

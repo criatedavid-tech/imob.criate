@@ -1,6 +1,6 @@
 # ImobiFlow V2 — referência atual do projeto
 
-> Estado consolidado do código da branch `v2` em 2026-07-17.
+> Estado consolidado do código da branch `v2` em 2026-07-20.
 >
 > O registro cronológico completo, com decisões, incidentes, comandos, releases e
 > investigações anteriores, foi preservado integralmente em
@@ -306,6 +306,16 @@ HTTP 200 em `/`, `/app` e `/login`. Ambiente sem clientes reais; QA
 autenticado completo (isolamento entre dois tenants, comportamento de
 `closed_at`) ainda pendente.
 
+Em 20/07/2026 foi preparada e executada manualmente a migration corretiva
+`20260720b_crm_security_hardening.sql` (execução informada pelo usuário;
+verificação pós-migration aprovada). Ela fecha a
+execução pública da RPC `SECURITY DEFINER` de reorder, rejeita listas
+duplicadas/incompletas, preserva a ordem por ordinality, torna autocura/troca
+de padrão/edição e remoção de etapa transacionais e impede associar lead novo
+a etapa ou pipeline arquivado. O backend tem compatibilidade temporária quando
+as RPCs novas ainda não existem, mas esta migration deve ser executada e
+verificada antes do próximo commit/push que publique esse código.
+
 **O que existe agora:**
 
 - `NegociosArea.tsx` ganhou duas abas: **Kanban** (o funil, agora com
@@ -328,6 +338,10 @@ autenticado completo (isolamento entre dois tenants, comportamento de
   criadas depois da migration (que não passaram pelo backfill) recebem o
   pipeline padrão na primeira chamada, por autocura — mesmo princípio do
   `getBrokerId`.
+- A aba Pipelines é leitura para membros. Só o titular recebe na resposta
+  `can_manage=true` e vê controles de criação, edição, reorder, arquivamento e
+  exclusão; o backend continua sendo a barreira definitiva com
+  `isBrokerOwner`.
 
 **Modelo de dados novo** (`supabase/migrations/20260717b_crm_pipelines.sql`,
 detalhada na seção 14): tabelas `imf_crm_pipelines` e
@@ -372,11 +386,12 @@ partir do `stage_type` da etapa atual:
 - `open` → `closed_at` limpo ao trocar de etapa; `status` normalizado pra
   `new` se não for um dos 4 valores legados de "em andamento".
 
-O endpoint legado `PATCH /api/leads/:id/status` continua existindo,
-intocado, para qualquer chamador externo que ainda dependa só dele — ele
-não toca `pipeline_stage_id`, então não conflita com o trigger. Nenhum
-chamador desse endpoint foi encontrado além do Kanban antigo (substituído
-por `/stage` nesta mudança), mas ele não foi removido por precaução.
+O endpoint legado `PATCH /api/leads/:id/status` continua existindo para
+chamadores externos. Quando o lead já pertence ao CRM, ele também resolve uma
+etapa ativa compatível dentro do mesmo pipeline e atualiza
+`pipeline_stage_id`; assim o status legado não diverge da coluna do Kanban.
+Para pipelines personalizados sem os nomes históricos, preserva a etapa
+`open` atual (ou usa a primeira ativa). O Kanban atual usa `/stage`.
 
 Consumidores revisados e confirmados sem regressão: `server/routes/
 relatorios.ts` (funil, negócios fechados, conversão — tudo via `closed_at`
@@ -574,7 +589,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | --- | --- |
 | Conta/equipe | `imf_brokers`, `imf_broker_members`, `imf_broker_invites` |
 | Imóveis/leads | `imf_properties`, `leads`, `imf_contacts` |
-| CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — pendente de migration, ver seção 14 |
+| CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — schema-base e hardening `20260720b` aplicados e verificados |
 | Agenda | `imf_agenda` |
 | Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
@@ -594,7 +609,7 @@ Os routers são montados diretamente em `server.ts`. Grupos principais:
 - `/api/auth/*`: cadastro, login, refresh, reset e entrada em equipe;
 - `/api/brokers/*`: perfil, agente, termos, WhatsApp, Asaas e foto;
 - `/api/properties/*`, `/api/leads/*`, `/api/agenda/*`, `/api/contacts/*`;
-- `/api/crm/*`: pipelines e etapas do CRM (pendente de migration, ver seção 6/14);
+- `/api/crm/*`: pipelines e etapas do CRM (schema-base e hardening aplicados e verificados, ver seções 6/14);
 - `/api/conversas/*` e `/api/wpp-shim/*`;
 - `/api/followup/*`, `/api/ai/*`, `/api/agent/*`, `/api/proxy/llm`;
 - `/api/locacao/*`, `/api/lancamentos/*`, `/api/financeiro/*`;
@@ -629,11 +644,9 @@ Controles existentes:
 
 Pendências de segurança/infraestrutura:
 
-- corrigir os **11 advisories confirmados pelo `npm audit` online** após a
-  release v86: 2 baixos, 5 moderados e 4 altos, sem críticos. Os diretos são
-  `express`, `react-router-dom` e `vite`; os demais são transitivos. Todos
-  indicam correção disponível, mas os upgrades exigem rodada própria de
-  compatibilidade e regressão;
+- dependências corrigidas em 20/07/2026 com upgrades compatíveis no lockfile e
+  `tsx` 4.23.1; `npm audit` online passou com **0 vulnerabilidades**. Repetir o
+  audit periodicamente e antes de lançamento;
 - observar relatórios reais da CSP e, após QA, decidir a passagem de
   `reportOnly: true` para bloqueio;
 - configurar Redis antes de escalar para várias máquinas, ou aceitar
@@ -693,6 +706,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
 | `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
 | `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
+| `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -711,6 +725,17 @@ imf_brokers` — mesma chamada que `admin.ts` faz): sem erro de FK, e
 pipeline/etapa confirmados removidos junto, atomicamente. `DELETE
 /api/admin/brokers/:id` está restaurado pra qualquer conta, inclusive as
 que já têm pipeline criado.
+
+`20260720b_crm_security_hardening.sql` foi executada manualmente pelo usuário
+em 20/07/2026. A consulta pós-migration confirmou as seis funções presentes,
+`search_path=public`, cinco RPCs `SECURITY DEFINER`, `EXECUTE=false` para
+`anon`/`authenticated`, `EXECUTE=true` para `service_role` nas RPCs e trigger
+`trg_imf_sync_lead_pipeline_stage` instalado; todas as seis linhas retornaram
+`resultado=OK`. A publicação do código foi autorizada pelo usuário em
+20/07/2026 e é rastreada pelo workflow automático da branch `v2`; o QA
+funcional do CRM permanece como etapa imediatamente posterior ao deploy. O
+arquivo usa `BEGIN`/`COMMIT`: qualquer erro durante a aplicação desfaz o bloco
+completo, evitando hardening parcial.
 
 ## 15. Pendências e critérios de lançamento
 

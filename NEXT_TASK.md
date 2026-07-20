@@ -1,33 +1,30 @@
 # Próxima tarefa
 
-**Situação:** o prompt mais recente pedia para implementar o CRM com
-pipelines neste checkout, mas essa feature já existe em produção
-(release v94/v95) — chegou junto na sincronização deste checkout com
-`origin/v2` (estava 20 commits atrás). Não há implementação pendente da
-v1 do CRM.
+**Objetivo:** concluir a publicação autorizada do hardening e executar o QA
+funcional pós-deploy.
 
-**Objetivo real ainda em aberto:** aguardar o usuário confirmar o que
-fazer a seguir. Duas frentes prováveis, nenhuma confirmada ainda:
+**Ordem obrigatória:**
 
-1. Auditoria do Codex sobre o CRM já implementado — o prompt original
-   mencionava "o usuário executará o SQL manualmente somente depois da
-   auditoria do Codex", mas o SQL das duas migrations do CRM já foi
-   executado e verificado pelo Claude nesta sessão. Confirmar se a
-   auditoria do Codex ainda se aplica (revisão retroativa) ou se era
-   sobre outra coisa.
-2. Decidir o destino de `HANDOFF.md` — descreve arquitetura antiga
-   (V1/Z-PRO, `server.ts` monolítico, deploy `--app imobiflow`), está
-   superseded por `DOCUMENTACAO.md`. O protocolo pede analisar antes de
-   decidir se ainda tem função própria; não apagar/duplicar sem
-   autorização explícita.
+1. **Concluído:** usuário executou manualmente no SQL Editor do Supabase o
+   arquivo `supabase/migrations/20260720b_crm_security_hardening.sql`.
+2. **Concluído:** consulta de verificação confirmou seis objetos `OK`, sem
+   `EXECUTE` para `anon`/`authenticated`, com `service_role` nas RPCs e
+   trigger instalado.
+3. **Concluído:** `npm ci`, TypeScript, Knip, build, `npm audit` e
+   `git diff --check` passaram sobre o estado combinado da branch.
+4. **Autorizado:** commit, push em `v2` e acompanhamento do workflow (o push
+   aciona deploy automático após o gate de validação).
+5. **Próximo após o deploy:** QA autenticado: reorder válido e duplicado,
+   troca de padrão, arquivar/excluir etapa com e sem reatribuição, titular
+   versus membro e tentativa de mover lead para etapa arquivada.
 
-**Arquivos envolvidos:** nenhum a alterar até confirmação do usuário.
-Referência: `DOCUMENTACAO.md` §14-15 (arquitetura do CRM e pendências),
-`HANDOFF.md` (candidato a obsoleto).
+**Arquivos envolvidos:** migration `20260720b_crm_security_hardening.sql`,
+rotas/serviço de CRM e leads, `PipelinesManager.tsx`, lockfile, workflow e
+documentação PMP.
 
-**Dependências:** decisão do usuário sobre qual das duas frentes (ou
-outra) é a prioridade real.
+**Fora deste escopo:** correções paralelas do Assistente IA/UAZAPI já foram
+commitadas separadamente (`22c99a2` e `152dda9`). Não misturar esses commits
+com o hardening do CRM ao revisar ou preparar a publicação.
 
-**Critério de conclusão:** usuário aponta a próxima tarefa concreta; este
-arquivo é atualizado com objetivo, arquivos envolvidos e critério de
-aceite específicos.
+**Critério de conclusão:** workflow/deploy confirmado e QA autenticado sem
+regressão.

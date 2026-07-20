@@ -273,11 +273,61 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     const lead = await leadBrokerAccess(brokerId, userId, isOwner, req.params.id);
     if (!lead) return res.status(403).json({ error: 'Acesso negado.' });
 
-    // closed_at marca quando o negócio foi de fato fechado (usado pela meta
-    // do mês em /api/equipe/goal) — seta ao entrar em "fechado", limpa se
-    // for movido de volta por engano.
+    // Compatibilidade com integrações antigas: se o lead já usa CRM dinâmico,
+    // o status legado não pode divergir da coluna mostrada no Kanban.
     const updates: Record<string, any> = { status };
     updates.closed_at = status === 'fechado' ? new Date().toISOString() : null;
+
+    if (lead.pipeline_id) {
+      const { data: pipeline, error: pipelineError } = await supabase
+        .from('imf_crm_pipelines')
+        .select('id')
+        .eq('id', lead.pipeline_id)
+        .eq('broker_id', brokerId)
+        .eq('active', true)
+        .maybeSingle();
+      if (pipelineError) throw pipelineError;
+      if (!pipeline) return res.status(409).json({ error: 'O pipeline atual do lead não está ativo.' });
+
+      const { data: stages, error: stagesError } = await supabase
+        .from('imf_crm_pipeline_stages')
+        .select('id, name, position, stage_type')
+        .eq('pipeline_id', pipeline.id)
+        .eq('active', true)
+        .order('position', { ascending: true });
+      if (stagesError) throw stagesError;
+
+      const activeStages = stages || [];
+      let targetStage: any | undefined;
+      if (status === 'fechado') {
+        targetStage = activeStages.find((stage: any) => stage.stage_type === 'won');
+      } else {
+        const expectedName: Record<string, string> = {
+          new: 'novo',
+          contato: 'em contato',
+          visita: 'visita',
+          proposta: 'proposta',
+        };
+        targetStage = activeStages.find((stage: any) => stage.stage_type === 'open'
+          && String(stage.name || '').trim().toLocaleLowerCase('pt-BR') === expectedName[status]);
+        // Pipelines personalizados podem não usar os nomes históricos. Nesse
+        // caso, preserva a etapa open atual; se ela não existir, usa a primeira.
+        targetStage ||= activeStages.find((stage: any) => stage.id === lead.pipeline_stage_id && stage.stage_type === 'open');
+        targetStage ||= activeStages.find((stage: any) => stage.stage_type === 'open');
+      }
+
+      if (!targetStage) {
+        return res.status(409).json({
+          error: status === 'fechado'
+            ? 'Este pipeline não possui uma etapa ativa do tipo Ganho.'
+            : 'Este pipeline não possui uma etapa ativa em andamento.',
+        });
+      }
+      // O trigger deriva pipeline_id e reforça status/closed_at a partir do
+      // tipo semântico da etapa. Incluir status mantém o valor legado mais
+      // específico (contato/visita/proposta) quando a etapa é open.
+      updates.pipeline_stage_id = targetStage.id;
+    }
 
     const { data, error } = await supabase.from('leads').update(updates).eq('id', req.params.id).select().maybeSingle();
 
@@ -286,14 +336,14 @@ leadsRouter.patch("/api/leads/:id/status", requireUser, async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("Erro PATCH /api/leads/:id/status:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Falha interna ao atualizar o status do lead." });
   }
 });
 
 // Move o lead pra uma etapa de um pipeline do CRM — substitui /status como
 // caminho principal do Kanban novo (pipelines/etapas configuráveis), mas
-// /status continua intocado ao lado (compat com qualquer chamador externo
-// que ainda dependa só do status legado de 5 valores fixos). pipeline_id
+// /status continua disponível ao lado e sincroniza a etapa quando possível
+// (compat com chamador externo que ainda usa os 5 valores fixos). pipeline_id
 // nunca é recebido do cliente: é sempre derivado do stage_id pelo trigger
 // trg_imf_sync_lead_pipeline_stage no banco, junto com status/closed_at
 // (ver supabase/migrations/20260717b_crm_pipelines.sql).
@@ -308,9 +358,20 @@ leadsRouter.patch("/api/leads/:id/stage", requireUser, async (req, res) => {
     const { stage_id } = req.body;
     if (!stage_id || typeof stage_id !== 'string') return res.status(400).json({ error: "stage_id é obrigatório." });
 
-    const { data: stage } = await supabase.from('imf_crm_pipeline_stages').select('id, pipeline_id').eq('id', stage_id).maybeSingle();
+    const { data: stage } = await supabase
+      .from('imf_crm_pipeline_stages')
+      .select('id, pipeline_id')
+      .eq('id', stage_id)
+      .eq('active', true)
+      .maybeSingle();
     if (!stage) return res.status(404).json({ error: "Etapa não encontrada." });
-    const { data: pipeline } = await supabase.from('imf_crm_pipelines').select('id').eq('id', stage.pipeline_id).eq('broker_id', brokerId).maybeSingle();
+    const { data: pipeline } = await supabase
+      .from('imf_crm_pipelines')
+      .select('id')
+      .eq('id', stage.pipeline_id)
+      .eq('broker_id', brokerId)
+      .eq('active', true)
+      .maybeSingle();
     if (!pipeline) return res.status(403).json({ error: "Etapa não pertence a este broker." });
 
     const isOwner = await isBrokerOwner(userId, brokerId);
@@ -323,7 +384,7 @@ leadsRouter.patch("/api/leads/:id/stage", requireUser, async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("Erro PATCH /api/leads/:id/stage:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Falha interna ao mover o lead." });
   }
 });
 

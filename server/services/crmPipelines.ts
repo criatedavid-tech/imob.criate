@@ -17,6 +17,17 @@ function isMissingCrmSchema(err: any): boolean {
   return err?.code === "42P01" || /imf_crm_pipeline/i.test(String(err?.message || ""));
 }
 
+// Permite publicar o código somente depois da migration nova, sem transformar
+// uma ordem operacional errada em indisponibilidade total. PGRST202/42883 são
+// os erros usuais enquanto a função ainda não existe ou o schema cache ainda
+// não foi atualizado.
+export function isMissingCrmHardeningRpc(err: any): boolean {
+  const message = String(err?.message || "");
+  return err?.code === "PGRST202"
+    || err?.code === "42883"
+    || /Could not find the function|does not exist|schema cache/i.test(message);
+}
+
 const DEFAULT_STAGE_SEEDS: { name: string; color: string; stage_type: StageType }[] = [
   { name: "Novo", color: "#60a5fa", stage_type: "open" },
   { name: "Em contato", color: "#a78bfa", stage_type: "open" },
@@ -29,7 +40,7 @@ const DEFAULT_STAGE_SEEDS: { name: string; color: string; stage_type: StageType 
 // mesmo espírito de autocura do getBrokerId (middleware/auth.ts). A migration
 // 20260717b faz esse backfill pra quem já existia; isso cobre contas criadas
 // DEPOIS dela, que nunca passaram pelo backfill.
-export async function ensureDefaultPipeline(brokerId: string): Promise<{ pipelineId: string; firstStageId: string | null }> {
+async function ensureDefaultPipelineLegacy(brokerId: string): Promise<{ pipelineId: string; firstStageId: string | null }> {
   const { data: existing, error: existingError } = await supabase
     .from("imf_crm_pipelines")
     .select("id")
@@ -49,6 +60,17 @@ export async function ensureDefaultPipeline(brokerId: string): Promise<{ pipelin
     if (createError) throw createError;
     pipelineId = created.id;
 
+  }
+
+  // Também repara o caso raro de um pipeline padrão ter sido criado mas a
+  // inserção das etapas ter falhado antes da migration transacional existir.
+  const { count: stagesCount, error: stagesCountError } = await supabase
+    .from("imf_crm_pipeline_stages")
+    .select("id", { count: "exact", head: true })
+    .eq("pipeline_id", pipelineId);
+  if (stagesCountError) throw stagesCountError;
+
+  if ((stagesCount || 0) === 0) {
     const rows = DEFAULT_STAGE_SEEDS.map((seed, i) => ({
       pipeline_id: pipelineId,
       name: seed.name,
@@ -74,6 +96,23 @@ export async function ensureDefaultPipeline(brokerId: string): Promise<{ pipelin
   return { pipelineId: pipelineId as string, firstStageId: firstStage?.id || null };
 }
 
+export async function ensureDefaultPipeline(brokerId: string): Promise<{ pipelineId: string; firstStageId: string | null }> {
+  const { data, error } = await supabase.rpc("imf_crm_ensure_default_pipeline", {
+    p_broker_id: brokerId,
+  });
+
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.pipeline_id || !row?.first_stage_id) {
+      throw new Error("Pipeline padrão sem etapa ativa.");
+    }
+    return { pipelineId: row.pipeline_id, firstStageId: row.first_stage_id };
+  }
+
+  if (!isMissingCrmHardeningRpc(error)) throw error;
+  return ensureDefaultPipelineLegacy(brokerId);
+}
+
 // Resolve pipeline_id/pipeline_stage_id pra um lead novo. Todo caminho de
 // criação de lead (POST /api/leads, agente de IA, "criar lead" a partir de
 // conversa) passa por aqui — nunca confia em id enviado pelo cliente sem
@@ -89,6 +128,7 @@ export async function resolveNewLeadStage(
         .select("id")
         .eq("id", pipelineIdHint)
         .eq("broker_id", brokerId)
+        .eq("active", true)
         .maybeSingle();
       if (hintError) throw hintError;
       if (pipeline) {
@@ -100,7 +140,7 @@ export async function resolveNewLeadStage(
           .order("position", { ascending: true })
           .limit(1)
           .maybeSingle();
-        return { pipeline_id: pipeline.id, pipeline_stage_id: firstStage?.id || null };
+        if (firstStage?.id) return { pipeline_id: pipeline.id, pipeline_stage_id: firstStage.id };
       }
     }
     const { pipelineId, firstStageId } = await ensureDefaultPipeline(brokerId);

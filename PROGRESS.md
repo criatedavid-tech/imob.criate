@@ -11,7 +11,8 @@
 - Fix de travamento do chat de IA no mobile (flip 3D + backdrop-blur
   trocado por slide/fade simples + `100dvh`).
 - Pipeline de deploy automático via GitHub Actions (`deploy-v2.yml`) —
-  todo push em `v2` publica sozinho, sem gate manual.
+  todo push em `v2` inicia o fluxo; deploy agora depende do gate automático
+  de `npm ci`, TypeScript, Knip e build.
 - Drag-and-drop cross-platform: migração de HTML5 DnD nativo pra
   `@dnd-kit/core` — confirmado funcionando em Android e iPhone reais pelo
   usuário em 20/07/2026.
@@ -40,7 +41,23 @@
 
 # Em andamento
 
-- Nenhuma implementação em andamento neste momento.
+- Hardening do CRM concluído tecnicamente e incluído no pacote de publicação
+  autorizado pelo usuário em 20/07/2026:
+  - migration `20260720b_crm_security_hardening.sql` executada manualmente
+    pelo usuário e verificada: seis objetos `OK`, RPCs exclusivas da
+    `service_role` e trigger instalado;
+  - RPC de reorder sem permissão pública e com validação de duplicidade,
+    completude e ordem;
+  - autocura, troca de padrão, edição e transição de etapa atômicas;
+  - trigger recusa associação a etapa/pipeline inativo;
+  - endpoint legado de status mantém o Kanban sincronizado;
+  - membros veem Pipelines em modo leitura; só titular vê controles;
+  - erros internos do CRM não são devolvidos crus ao cliente;
+  - dependências atualizadas: `npm audit` online com 0 vulnerabilidades.
+- Correção mobile do Assistente IA foi feita em paralelo e teve uma primeira
+  versão commitada em `e76181f`; há nova edição local concorrente e já staged
+  em `CommandBar.tsx`. Esse arquivo não faz parte nem deve ser incluído no diff
+  de hardening do CRM.
 
 # Bloqueios
 
@@ -50,6 +67,8 @@
   testes de toque dependem de confirmação manual do usuário (já feita
   pra drag-and-drop; outros fluxos mobile não têm confirmação formal
   registrada).
+- QA funcional autenticado do hardening do CRM será executado após o deploy
+  do backend que usa as novas RPCs.
 
 # Próxima tarefa
 
