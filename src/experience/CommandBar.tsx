@@ -398,33 +398,23 @@ export function CommandBar({
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
           bg-white/[0.09] border border-white/15
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
-          {/* Anexar foto via <label> apontando pro input, NÃO um botão que
-              chama .click(): em vários Android Chrome/WebView o .click()
-              programático num input de arquivo é ignorado — o seletor só abre
-              a partir de uma ativação de usuário direta. O clique num <label>
-              associado conta como essa ativação e abre o seletor em qualquer
-              navegador (inclusive iOS). Input desabilitado = label inerte. */}
-          <label
-            aria-label="Anexar foto"
-            title="Anexar foto"
-            onClick={(e) => {
-              if (busy || recording || transcribing) return;
-              // No WebView do WhatsApp (Android) o seletor de arquivo não abre —
-              // em vez de um toque que não faz nada, explica como resolver.
-              if (isAndroidInAppBrowser()) {
-                e.preventDefault();
-                pushTurn({
-                  role: 'ai',
-                  text: 'Pra anexar fotos, abra o app no Chrome: toque nos três pontinhos (⋮) aqui no topo e escolha "Abrir no Chrome". O navegador de dentro do WhatsApp não deixa selecionar arquivos.',
-                });
-              }
-            }}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+          {/* Anexar foto: o input de arquivo fica TRANSPARENTE POR CIMA do
+              ícone (absolute inset-0, opacity-0) — o toque cai direto no
+              próprio input, a ativação mais nativa que existe. Formas
+              indiretas falharam no Android Chrome real em teste de campo:
+              botão chamando .click() programático e label com input
+              display:none (Android Chrome não abre o seletor de input
+              display:none nem via label). Aqui não há display:none, label
+              nem .click() — nada entre o dedo e o input. */}
+          <div
+            className={`relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
               busy || recording || transcribing
-                ? 'text-white/30 cursor-not-allowed'
-                : 'text-white/50 hover:text-white hover:bg-white/10 cursor-pointer'
+                ? 'text-white/30'
+                : 'text-white/50 hover:text-white hover:bg-white/10'
             }`}
+            title="Anexar foto"
           >
+            <Paperclip className="w-4 h-4" />
             <input
               ref={fileInputRef}
               type="file"
@@ -432,10 +422,21 @@ export function CommandBar({
               multiple
               disabled={busy || recording || transcribing}
               onChange={handleFileChange}
-              className="hidden"
+              onClick={(e) => {
+                // Navegador embutido do WhatsApp (Android) não implementa o
+                // seletor de arquivo — explica em vez de um toque sem efeito.
+                if (isAndroidInAppBrowser()) {
+                  e.preventDefault();
+                  pushTurn({
+                    role: 'ai',
+                    text: 'Pra anexar fotos, abra o app no Chrome: toque nos três pontinhos (⋮) aqui no topo e escolha "Abrir no Chrome". O navegador de dentro do WhatsApp não deixa selecionar arquivos.',
+                  });
+                }
+              }}
+              aria-label="Anexar foto"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed file:cursor-pointer"
             />
-            <Paperclip className="w-4 h-4" />
-          </label>
+          </div>
           {micSupported && (
             <button
               onClick={recording ? stopRecording : startRecording}
