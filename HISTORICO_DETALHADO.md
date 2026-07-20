@@ -3853,8 +3853,11 @@ corretamente e persistiu via `PATCH /api/leads/:id/stage` — confirma que
 toda a parte que é código deste projeto (wiring do `DndContext` até a
 API) funciona ponta a ponta. `TouchSensor` é o mesmo mecanismo da
 biblioteca, só que ouvindo eventos de toque — não foi possível reproduzir
-com um gesto de toque real do WebKit nesta sessão. **Confirmação final em
-iPhone real depende do usuário testar.**
+com um gesto de toque real do WebKit nesta sessão.
+
+**Atualização 20/07/2026:** usuário testou em dispositivo Android e iPhone
+reais — arrastar lead entre colunas funciona nos dois. Bug de
+incompatibilidade cross-platform considerado resolvido e fechado.
 
 ### Efeito colateral encontrado durante o teste — exclusão de conta
 

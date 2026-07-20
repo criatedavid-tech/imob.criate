@@ -407,11 +407,9 @@ caneta via Pointer/Touch Events:
 - Validado localmente: sensor de mouse testado ponta a ponta (evento real
   de `mousedown`+`mousemove` incremental+`mouseup`, via conta descartável) —
   moveu o lead e persistiu via `PATCH /api/leads/:id/stage`. `TouchSensor` é
-  o mesmo mecanismo da biblioteca, só que ouvindo eventos de toque — não foi
-  reproduzido nesta sessão com um dispositivo iOS real (a ferramenta de
-  automação disponível não simula gestos de toque nativos), mas é o
-  componente padrão do dnd-kit feito especificamente para este cenário.
-  **Confirmação final em iPhone real depende do usuário testar.**
+  o mesmo mecanismo da biblioteca, só que ouvindo eventos de toque.
+  **Confirmado pelo usuário em 20/07/2026: arrastar funciona em dispositivo
+  Android e iPhone reais.** Bug considerado resolvido.
 
 **Efeito colateral corrigido — exclusão de conta pelo admin:**
 `DELETE /api/admin/brokers/:id` apaga a linha de `imf_brokers` confiando em
