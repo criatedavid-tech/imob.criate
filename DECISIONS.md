@@ -71,3 +71,9 @@ Data: 2026-07-20
 Decisão: O fluxo de conexão do WhatsApp (`POST /api/brokers/whatsapp/connect`) reafirma o webhook da instância UAZAPI a cada conexão (self-heal).
 Motivo: Instâncias provisionadas na era Z-PRO tinham o webhook apontando pro backend antigo (`appback.criate.online`), então as mensagens de entrada nunca chegavam no V2 e a conversa ficava "Sem mensagens registradas". O fluxo de conexão não reafirmava o webhook.
 Impacto: `setUazapiWebhook` extraído como helper exportado em `provisioning.ts`; `resolveManagedInstance` devolve o `instanceId` da instância existente; qualquer instância legada se autocura ao reconectar. ⚠️ Outras contas legadas podem ter o mesmo webhook podre — checar/reconectar. Confirmado pelo usuário: mensagem de entrada voltou a chegar.
+
+---
+Data: 2026-07-20
+Decisão: Processar áudio/PTT e imagem recebidos pela UAZAPI inteiramente no backend, convertendo ambos em texto antes de repassar ao N8N.
+Motivo: O inbound descartava toda mídia; a URL do webhook é criptografada e o workflow N8N não está acessível. Amostras reais e a API oficial confirmaram que `/message/download` devolve a mídia descriptografada em base64.
+Impacto: Áudio usa a transcrição OpenRouter compartilhada com `/api/ai/transcribe`; imagem usa visão pelo mesmo provedor; N8N continua recebendo `text`. Falhas viram fallback explícito. Nenhuma migration e nenhuma alteração no N8N.

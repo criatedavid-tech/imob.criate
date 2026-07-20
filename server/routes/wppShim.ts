@@ -12,6 +12,7 @@ import {
   recordConversationMessage,
 } from "../services/conversationTickets";
 import { resolveNewLeadStage } from "../services/crmPipelines";
+import { resolveInboundMedia } from "../services/inboundMedia";
 
 export const wppShimRouter = express.Router();
 
@@ -167,8 +168,10 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 
 // ─── Entrada direto da UAZAPI (Fase 5) ──────────────────────────────────────
 // Formato confirmado empiricamente em 09/07/2026 via webhook_logs (uazapiGO,
-// evento de mensagem de texto real): req.body = { message: { text, content,
-// chatid, fromMe, id, type }, chat: {...}, owner, token, EventType }. NÃO é o
+// evento de mensagem real): req.body = { message: { text, content, chatid,
+// fromMe, id, type, mediaType, messageType }, chat: {...}, owner, token,
+// EventType }. Texto chega como type="text"; áudio e imagem chegam como
+// type="media", diferenciados por mediaType (ptt/image). NÃO é o
 // formato Baileys (data.key.remoteJid) nem o array messages[] de instâncias
 // antigas — cada provedor UAZAPI parece variar. Outros tipos de evento
 // (ReadReceipt, sincronização de chat sem "message") caem no
@@ -231,14 +234,47 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
 
     const fromMe: boolean = !!message.fromMe;
     const messageId: string | undefined = message.id;
-    const text: string | undefined = message.text || message.content;
+    const plainText = typeof message.text === "string" && message.text.trim()
+      ? message.text.trim()
+      : typeof message.content === "string"
+        ? message.content.trim()
+        : "";
     // chatid vem como "556294381279@s.whatsapp.net" — "sender" costuma ser o
     // "@lid" (identificador interno da UAZAPI, não o telefone de verdade).
     const rawPhone: string | undefined = message.chatid;
 
-    if (!rawPhone || fromMe || !text || message.type !== "text") return; // sem dado suficiente, eco da própria IA, ou mídia (ainda não suportada)
+    if (!rawPhone || fromMe) return; // sem telefone suficiente ou eco da própria IA
     const customerPhone = normalizePhoneBR(rawPhone);
     if (!customerPhone) return;
+
+    // O provedor pode reenviar o mesmo webhook. Evita transcrever/descrever de
+    // novo (e evita novo repasse ao N8N) quando a mensagem já foi persistida.
+    if (messageId) {
+      const { data: existingMessage, error: existingError } = await supabase
+        .from("imf_conversation_messages")
+        .select("id")
+        .eq("broker_id", brokerId)
+        .eq("provider_message_id", messageId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existingMessage) return;
+    }
+
+    let agentText = plainText;
+    let storedBody = plainText;
+    let inboundMediaType: string | null = null;
+    if (message.type === "text") {
+      if (!plainText) return;
+    } else if (message.type === "media") {
+      if (message.isGroup) return; // evita custo/automação em grupos; atendimento é individual
+      const media = await resolveInboundMedia(message, instanceToken);
+      if (!media) return; // vídeo/documento/sticker ainda não fazem parte deste fluxo
+      agentText = media.agentText;
+      storedBody = media.storedBody;
+      inboundMediaType = media.mediaType;
+    } else {
+      return;
+    }
 
     const activityAt = new Date().toISOString();
     const ticket = await ensureConversationTicket({
@@ -256,7 +292,8 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
       ticketId: ticket.id,
       direction: "in",
       senderType: "customer",
-      body: text,
+      body: storedBody,
+      mediaType: inboundMediaType,
       providerMessageId: messageId || null,
     });
 
@@ -296,7 +333,8 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
           customer_phone: customerPhone,
           message_id: messageId || null,
           ticket_id: ticket.id,
-          text,
+          text: agentText,
+          input_type: inboundMediaType || "text",
         }),
       }).catch((e) => console.warn("[WppShim] repasse pro N8N falhou:", e.message));
     }

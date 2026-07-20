@@ -159,6 +159,8 @@ export async function recordConversationMessage(input: {
   direction: "in" | "out";
   senderType: "customer" | "ai" | "broker_manual";
   body: string | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
   providerMessageId?: string | null;
   ticketId?: string;
   initialStatus?: "pending" | "open";
@@ -187,6 +189,8 @@ export async function recordConversationMessage(input: {
     direction: input.direction,
     sender_type: input.senderType,
     body: input.body,
+    media_url: input.mediaUrl || null,
+    media_type: input.mediaType || null,
     provider_message_id: input.providerMessageId || null,
   }).select().single();
   if (error) throw error;

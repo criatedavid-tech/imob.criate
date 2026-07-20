@@ -31,12 +31,13 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é publicado automaticamente pelo workflow
-`deploy-v2.yml` a partir do commit `729b000` (branch `v2` — última rodada:
-correções mobile do Assistente IA — áudio iOS, anexo de foto Android,
-webhook de entrada do WhatsApp — sobre o hardening de segurança do CRM em
-`84497c3`; ver "Assistente IA e Follow-Up" e seção 6). Smoke de `/`, `/app`
-e `/login` respondeu HTTP 200 em 2026-07-20. Número exato da release Fly não
+O deploy vigente é publicado automaticamente pelo workflow `deploy-v2.yml`
+a partir do HEAD da branch `v2`. A baseline imediatamente anterior ao suporte
+multimodal do WhatsApp era `d36fac5`, contendo as correções mobile do
+Assistente IA sobre o hardening de segurança do CRM em `84497c3`; ver
+"Assistente IA e Follow-Up" e seção 6. O pacote de suporte a áudio/imagem no
+inbound segue pelo mesmo gate automático. Smoke de `/`, `/app` e `/login`
+respondeu HTTP 200 em 2026-07-20. Número exato da release Fly não
 confirmado nesta entrada — `flyctl` local está bloqueado por política de
 Application Control (Smart App Control) do Windows nesta máquina; consultar
 `fly status -a imobiflow-v2` ou o painel Fly quando disponível.
@@ -521,6 +522,41 @@ conexão. Assim qualquer instância legada se autocura ao reconectar. A
 instância afetada teve o webhook re-apontado manualmente na hora; confirmado
 pelo usuário que a mensagem de entrada voltou a chegar no painel.
 
+**Suporte — áudio e imagem recebidos do cliente no WhatsApp (20/07/2026):**
+o inbound `POST /api/wpp-shim/inbound/:instanceId` descartava de propósito
+qualquer mensagem cujo `message.type` não fosse `text`. A investigação
+read-only de amostras reais em `webhook_logs` confirmou que a UAZAPI entrega
+áudio e imagem como `type="media"`, com subtipo em `mediaType` (`ptt` ou
+`image`), tipo técnico em `messageType` (`AudioMessage`/`ImageMessage`) e
+metadados em `content`. A `content.URL` aponta para mídia criptografada do
+WhatsApp e não deve ser usada diretamente.
+
+O caminho confirmado contra a API real é `POST /message/download`, autenticado
+com o token da instância e `message.messageid`, pedindo `return_base64=true` e
+`return_link=false`. O teste read-only devolveu áudio `audio/mpeg` e imagem
+`image/jpeg` em base64. O backend agora:
+
+1. classifica somente áudio/PTT e imagem, mantendo texto e a trava `fromMe`
+   intactos e continuando a ignorar recibos e tipos ainda não suportados;
+   mídia de grupos também é ignorada para evitar automação/custo fora de uma
+   conversa privada de atendimento;
+2. baixa e descriptografa a mídia pela UAZAPI, com teto de 6 MB para áudio e
+   8 MB para imagem, sem persistir base64 nem URL pública temporária;
+3. reutiliza em `server/services/mediaAi.ts` a mesma transcrição OpenRouter
+   usada por `/api/ai/transcribe`; imagens são descritas pelo mesmo modelo
+   multimodal, incluindo a legenda quando existir;
+4. grava em `imf_conversation_messages` uma representação textual marcada com
+   `media_type`, depois repassa ao N8N somente texto (`input_type` informa
+   `audio`, `image` ou `text`);
+5. em falha de download, formato, cota ou timeout, ainda grava a ocorrência e
+   envia ao N8N uma instrução gentil de fallback, evitando silêncio;
+6. consulta `provider_message_id` antes do processamento para não cobrar IA
+   nem disparar resposta novamente em webhooks repetidos.
+
+Não há migration nem alteração necessária no workflow N8N: o contrato `text`
+continua válido. O QA real pós-deploy precisa repetir um áudio e uma imagem na
+conversa privada; a implementação não processa vídeo, documento ou sticker.
+
 ### Asaas e limite do escopo financeiro
 
 O produto separa dois fluxos financeiros:
@@ -759,9 +795,9 @@ em 20/07/2026. A consulta pós-migration confirmou as seis funções presentes,
 `search_path=public`, cinco RPCs `SECURITY DEFINER`, `EXECUTE=false` para
 `anon`/`authenticated`, `EXECUTE=true` para `service_role` nas RPCs e trigger
 `trg_imf_sync_lead_pipeline_stage` instalado; todas as seis linhas retornaram
-`resultado=OK`. A publicação do código foi autorizada pelo usuário em
-20/07/2026 e é rastreada pelo workflow automático da branch `v2`; o QA
-funcional do CRM permanece como etapa imediatamente posterior ao deploy. O
+`resultado=OK`. O código foi publicado no commit `84497c3` pelo workflow
+automático da branch `v2`; o QA funcional autenticado do CRM permanece
+pendente. O
 arquivo usa `BEGIN`/`COMMIT`: qualquer erro durante a aplicação desfaz o bloco
 completo, evitando hardening parcial.
 
@@ -784,7 +820,8 @@ completo, evitando hardening parcial.
    relatórios, equipe, locação, financeiro, lançamentos e documentos.
 4. Validar WhatsApp: autocura, QR, código, disconnect, troca de número,
    compartilhado e instância própria de membro.
-5. Validar Assistente IA separado da Config e os três Follow-Ups.
+5. Validar Assistente IA separado da Config, os três Follow-Ups e o inbound
+   WhatsApp com texto, áudio/PTT, imagem e fallback de falha de mídia.
 6. Em Conversas, encerrar um ticket e enviar nova mensagem pelo mesmo número;
    confirmar UUID novo, histórico separado e impossibilidade de reabrir ou
    responder no ticket encerrado.
@@ -801,8 +838,9 @@ completo, evitando hardening parcial.
 
 ### Testes funcionais da IA — planejados (roteiro definido em 20/07/2026)
 
-Cenários ponta a ponta pra validar o agente de IA em uso real, ainda não
-executados:
+Cenários ponta a ponta pra validar o agente de IA em uso real. O recebimento
+de texto e a captura dos webhooks reais de áudio/imagem foram confirmados; a
+resposta multimodal abaixo precisa de repetição após o novo deploy:
 
 - [ ] **Teste 1 — cadastro assistido por IA:** usuário manda fotos e fala a
   descrição do imóvel; o app cadastra o imóvel e gera o site; IA responde
@@ -810,6 +848,11 @@ executados:
 - [ ] **Teste 2 — atendimento a partir de anúncio:** cliente vê o anúncio,
   pergunta disponibilidade e manda print (imagem) do anúncio; IA precisa
   compreender o print e conduzir o atendimento.
+- [ ] **Teste 2B — áudio no WhatsApp:** cliente envia PTT; Conversas deve
+  registrar `[Áudio]` com a transcrição e a IA deve responder ao conteúdo.
+- [ ] **Teste 2C — fallback:** indisponibilidade simulada/real do provedor não
+  pode deixar o cliente em silêncio; a conversa deve registrar a mídia e a IA
+  pedir confirmação por texto.
 - [ ] **Teste 3 — follow-up:** pedir pra IA lembrar de fazer follow-up, ou
   confirmar que ela mesma dispara sozinha (conforme configuração ativa).
 

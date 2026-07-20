@@ -4,21 +4,21 @@ import { fetchWithTimeout } from "../lib/http";
 import { requireUser } from "../middleware/auth";
 import { aiTextLimiter, aiTranscriptionLimiter } from "../middleware/rateLimits";
 import { validateBody } from "../middleware/validate";
+import {
+  createOpenRouterError,
+  extractValidBase64Audio,
+  hasOpenRouterKey,
+  isAiQuotaError,
+  logAiProviderError,
+  MAX_AUDIO_BYTES,
+  MAX_AUDIO_DATA_CHARS,
+  resolveAudioFormat,
+  transcribeWithOpenRouter,
+} from "../services/mediaAi";
 
 export const aiRouter = express.Router();
 
 const MAX_ENHANCE_TEXT_CHARS = 10_000;
-const MAX_AUDIO_DATA_CHARS = 9 * 1024 * 1024;
-const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
-// Aceita QUALQUER data URL de áudio (ex.: data:audio/mp4;codecs="mp4a.40.2";base64
-// — formato que o Safari iOS produz, com aspas, espaço após ';' e parâmetros
-// imprevisíveis). O subtipo exato NÃO é whitelistado de propósito: a proteção
-// real é o payload base64 válido + o limite de tamanho. O mimeType do cliente
-// nunca é repassado cru pra lugar nenhum — vira só o "format" (enum curto) que
-// derivamos aqui.
-const AUDIO_DATA_URL_HEADER = /^data:audio\/[a-z0-9][a-z0-9.+-]*(?:;[^,]*)?;base64$/i;
-const AUDIO_BASE_TYPE = /^data:(audio\/[a-z0-9][a-z0-9.+-]*)/i;
-const BASE64_PAYLOAD = /^[a-zA-Z0-9+/]+={0,2}$/;
 
 const enhanceTextSchema = z.object({
   text: z.string()
@@ -37,106 +37,6 @@ const transcribeSchema = z.object({
     .max(MAX_AUDIO_DATA_CHARS, "Áudio excede o limite da requisição."),
   mimeType: z.string().trim().max(100).optional().default("audio/webm"),
 });
-
-function extractValidBase64Audio(audioData: string): string | null {
-  const commaIdx = audioData.indexOf(",");
-  if (commaIdx >= 0 && !AUDIO_DATA_URL_HEADER.test(audioData.slice(0, commaIdx))) {
-    return null;
-  }
-  const base64Data = commaIdx >= 0 ? audioData.slice(commaIdx + 1) : audioData;
-  if (!base64Data || base64Data.length % 4 !== 0 || !BASE64_PAYLOAD.test(base64Data)) return null;
-  return base64Data;
-}
-
-// Escolhe o "format" enviado ao provedor a partir do tipo REAL do áudio:
-// prefere o que está declarado no próprio data URL; cai pro header do cliente.
-function resolveAudioFormat(audioData: string, mimeType: string): string {
-  let baseType = "";
-  const commaIdx = audioData.indexOf(",");
-  if (commaIdx >= 0) {
-    const m = AUDIO_BASE_TYPE.exec(audioData.slice(0, commaIdx));
-    if (m) baseType = m[1].toLowerCase();
-  }
-  if (!baseType) baseType = (mimeType.split(";", 1)[0] || "").toLowerCase();
-
-  if (baseType.includes("mp3") || baseType.includes("mpeg")) return "mp3";
-  if (baseType.includes("wav")) return "wav";
-  if (baseType.includes("ogg")) return "ogg";
-  if (baseType.includes("mp4") || baseType.includes("m4a") || baseType.includes("aac")) return "mp4";
-  return "webm";
-}
-
-// OpenRouter é a ÚNICA fonte de IA deste arquivo (decisão explícita
-// 2026-07-14) — a chave Gemini pessoal ficava com cota zerada repetidamente
-// (confirmado direto contra a API: "limit: 0" em todos os modelos, texto e
-// áudio), então deixou de valer a pena manter como principal/fallback.
-function hasOpenRouterKey(): boolean {
-  const key = process.env.OPENROUTER_API_KEY;
-  return !!key && key.startsWith("sk-or-");
-}
-
-function isQuotaError(err: any): boolean {
-  if (err?.isQuota === true) return true;
-  const msg = String(err?.message || "");
-  return msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("high demand") || msg.toLowerCase().includes("resource_exhausted");
-}
-
-type AiProviderError = Error & {
-  provider?: "openrouter";
-  status?: number;
-  code?: string;
-  requestId?: string;
-  isQuota?: boolean;
-};
-
-function safeMetadata(value: unknown): string | undefined {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  const compact = String(value).trim();
-  return /^[a-zA-Z0-9._:-]{1,80}$/.test(compact) ? compact : undefined;
-}
-
-function sanitizeLogMessage(value: unknown): string {
-  const compact = String(value ?? "Erro desconhecido")
-    .slice(0, 2000)
-    .replace(/data:[^,\s]{0,200};base64,[a-zA-Z0-9+/=]+/gi, "[data-url-redacted]")
-    .replace(/(?:Bearer\s+|sk-or-v1-)[a-zA-Z0-9._~+/=-]+/gi, "[secret-redacted]")
-    .replace(/\b(authorization|token|api[_-]?key)\s*[:=]\s*["']?[^,\s"']+/gi, "$1=[secret-redacted]")
-    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[email-redacted]")
-    .replace(/\b(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-.\s]?\d{4}\b/g, "[phone-redacted]")
-    .replace(/[\u0000-\u001f\u007f]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return compact.length > 400 ? `${compact.slice(0, 397)}...` : compact;
-}
-
-function logError(label: string, error: any) {
-  const details: Record<string, string | number> = {
-    message: sanitizeLogMessage(error?.message ?? error),
-  };
-  if (error?.provider === "openrouter") details.provider = "openrouter";
-  if (Number.isInteger(error?.status)) details.status = error.status;
-  const code = safeMetadata(error?.code);
-  const requestId = safeMetadata(error?.requestId);
-  if (code) details.code = code;
-  if (requestId) details.requestId = requestId;
-  console.error(`${label}: ${JSON.stringify(details)}`);
-}
-
-function createOpenRouterError(resp: Response, data: any): AiProviderError {
-  const providerMessage = typeof data?.error?.message === "string" ? data.error.message.slice(0, 1000) : "";
-  const providerRaw = typeof data?.error?.metadata?.raw === "string" ? data.error.metadata.raw.slice(0, 1000) : "";
-  const error = new Error("Falha na requisição ao provedor de IA.") as AiProviderError;
-  error.provider = "openrouter";
-  error.status = resp.status;
-  error.code = safeMetadata(data?.error?.code ?? data?.error?.metadata?.code);
-  error.requestId = safeMetadata(
-    resp.headers.get("x-request-id")
-      ?? data?.error?.metadata?.request_id
-      ?? data?.request_id,
-  );
-  error.isQuota = isQuotaError({ message: `${resp.status} ${providerMessage} ${providerRaw}` });
-  return error;
-}
 
 const SYSTEM_INSTRUCTION = "Você é um especialista em redação imobiliária de alto padrão.\nReescreva a descrição abaixo com linguagem sofisticada, clara e atrativa,\nadequada para apresentação de residências premium.\nMantenha as informações originais, melhore a estrutura, o vocabulário\ne a formatação. Responda apenas com o texto melhorado, sem explicações adicionais.";
 
@@ -165,42 +65,6 @@ async function enhanceWithOpenRouter(apiKey: string, text: string): Promise<stri
   return content;
 }
 
-const TRANSCRIBE_INSTRUCTION = "Transcreva o áudio a seguir em português do Brasil. Responda APENAS com o texto transcrito, sem comentários, sem aspas e sem formatação. Se o áudio estiver em silêncio ou não for possível entender, responda com uma string vazia.";
-
-// google/gemini-2.5-flash-lite VIA OpenRouter (cota própria da OpenRouter,
-// não uma chave Gemini pessoal). Testado direto contra a API real antes de
-// integrar: os modelos de áudio da própria OpenAI (gpt-audio-mini) só
-// aceitam format "wav"/"mp3" e REJEITAM "webm" com 400 — inviável, já que o
-// MediaRecorder do navegador grava webm/opus por padrão e não tem como
-// gerar wav nativamente. Os modelos Gemini via OpenRouter aceitam "webm"
-// (formato real do navegador) sem validar à risca — confirmado com request real.
-async function transcribeWithOpenRouter(apiKey: string, base64Data: string, format: string): Promise<string> {
-  const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://imobiflow.fly.dev",
-      "X-Title": "ImobiFlow",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash-lite",
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: TRANSCRIBE_INSTRUCTION },
-          { type: "input_audio", input_audio: { data: base64Data, format } },
-        ],
-      }],
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) throw createOpenRouterError(resp, data);
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") throw new Error("Resposta vazia do OpenRouter.");
-  return content.trim();
-}
-
 /**
  * Botão de microfone do Assistente IA (CommandBar.tsx) — grava com
  * MediaRecorder no navegador (funciona em qualquer browser/celular,
@@ -223,11 +87,11 @@ aiRouter.post("/api/ai/transcribe", requireUser, aiTranscriptionLimiter, validat
 
   try {
     const format = resolveAudioFormat(audioData, mimeType);
-    const text = await transcribeWithOpenRouter(process.env.OPENROUTER_API_KEY!, base64Data, format);
+    const text = await transcribeWithOpenRouter(base64Data, format);
     res.json({ text });
   } catch (error: any) {
-    logError("Erro na transcrição de áudio (OpenRouter)", error);
-    const errorMsg = isQuotaError(error)
+    logAiProviderError("Erro na transcrição de áudio (OpenRouter)", error);
+    const errorMsg = isAiQuotaError(error)
       ? "O sistema atingiu o limite de uso temporário da IA (Cota). Por favor, aguarde 1 minuto e tente novamente."
       : "Não foi possível transcrever o áudio agora. Tente de novo ou digite a mensagem.";
     res.status(500).json({ error: errorMsg });
@@ -251,8 +115,8 @@ aiRouter.post("/api/ai/enhance-text", requireUser, aiTextLimiter, validateBody(e
     const suggestedText = await enhanceWithOpenRouter(process.env.OPENROUTER_API_KEY!, text);
     res.json({ suggestedText });
   } catch (error: any) {
-    logError("Erro na API da IA (OpenRouter)", error);
-    const errorMsg = isQuotaError(error)
+    logAiProviderError("Erro na API da IA (OpenRouter)", error);
+    const errorMsg = isAiQuotaError(error)
       ? "O sistema atingiu o limite de uso temporário da IA (Cota). Por favor, aguarde 1 minuto e tente novamente."
       : "Não foi possível gerar a sugestão no momento.";
     res.status(500).json({ error: errorMsg });

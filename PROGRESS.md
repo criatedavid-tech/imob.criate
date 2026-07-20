@@ -47,6 +47,19 @@
     de mimeType) + verificação no navegador (overlay do input, hit-test,
     detecção de WebView) + diagnóstico read-only do webhook contra
     Supabase/UAZAPI reais.
+- Inbound multimodal do agente WhatsApp implementado no backend:
+  - payload real confirmado em `webhook_logs`: `type=media`, `mediaType=ptt`
+    ou `image`, conteúdo em `message.content`;
+  - `POST /message/download` da UAZAPI validado read-only com áudio e imagem
+    reais, retornando base64 descriptografado;
+  - áudio é transcrito e imagem é descrita pelo OpenRouter antes do repasse
+    textual ao N8N; o workflow N8N não precisa mudar;
+  - falha/cota/timeout gera registro e texto de fallback, não descarte
+    silencioso; mensagens duplicadas são barradas por `provider_message_id`;
+  - mídia de grupos é ignorada; o novo fluxo atende somente conversa privada;
+  - limites de 6 MB (áudio) e 8 MB (imagem), sem persistência de base64/URL;
+  - sem migration; TypeScript, Knip, build, whitespace e testes locais com
+    dependências simuladas aprovados. QA real pós-deploy ainda pendente.
 
 # Em andamento
 
@@ -63,9 +76,8 @@
   - membros veem Pipelines em modo leitura; só titular vê controles;
   - erros internos do CRM não são devolvidos crus ao cliente;
   - dependências atualizadas: `npm audit` online com 0 vulnerabilidades.
-- Nada em aberto no momento. (A rodada mobile do Assistente IA — commits
-  `e76181f`→`729b000`, em paralelo ao hardening do CRM — está concluída e
-  confirmada pelo usuário; ver "Concluído".)
+- Publicação automática do suporte multimodal e QA real pós-deploy com um PTT
+  e uma imagem em conversa privada.
 
 # Bloqueios
 
@@ -77,6 +89,8 @@
   registrada).
 - QA funcional autenticado do hardening do CRM será executado após o deploy
   do backend que usa as novas RPCs.
+- Sem acesso direto ao workflow N8N; não é bloqueio para mídia porque o
+  backend mantém o contrato textual existente.
 
 # Próxima tarefa
 
