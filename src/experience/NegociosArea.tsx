@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Phone, Home as HomeIcon, ChevronLeft, ChevronRight, Briefcase, Plus, X, User, Pencil, Trash2 } from 'lucide-react';
+import {
+  DndContext, DragOverlay, useDraggable, useDroppable, useSensor, useSensors,
+  MouseSensor, TouchSensor, type DragEndEvent, type DragStartEvent,
+} from '@dnd-kit/core';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -210,6 +214,116 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+// Corpo visual de um card de lead — compartilhado entre a renderização normal
+// (dentro da coluna, arrastável) e o DragOverlay (cópia que segue o
+// dedo/cursor durante o arrasto).
+function LeadCardBody({
+  lead, prev, next, movingId, deletingId, onEdit, onDelete, onMove,
+}: {
+  lead: Lead;
+  prev?: CrmStage;
+  next?: CrmStage;
+  movingId: string | null;
+  deletingId: string | null;
+  onEdit: (lead: Lead) => void;
+  onDelete: (lead: Lead) => void;
+  onMove: (lead: Lead, stage: CrmStage) => void;
+}) {
+  return (
+    <GlassCard className="!p-3 !rounded-2xl">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button onClick={() => onEdit(lead)}
+            className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
+            <Pencil className="w-3 h-3" />
+          </button>
+          <button onClick={() => onDelete(lead)} disabled={deletingId === lead.id}
+            className="p-1 rounded-lg text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+            {deletingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+          </button>
+        </div>
+      </div>
+      {lead.property && (
+        <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
+          <HomeIcon className="w-2.5 h-2.5 shrink-0" /> {lead.property}
+        </p>
+      )}
+      {lead.phone && (
+        <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5">
+          <Phone className="w-2.5 h-2.5 shrink-0" /> {lead.phone}
+        </p>
+      )}
+      <div className="flex items-center gap-1 mt-2">
+        <span className="text-[9px] text-white/25 mr-auto">{timeAgo(lead.created_at)}</span>
+        {prev && (
+          <button
+            onClick={() => onMove(lead, prev)}
+            disabled={movingId === lead.id}
+            title={`Voltar pra ${prev.name}`}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-white/30
+              hover:bg-white/[0.08] hover:text-white/60 transition-colors disabled:opacity-40"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+        )}
+        {next && (
+          <button
+            onClick={() => onMove(lead, next)}
+            disabled={movingId === lead.id}
+            title={`Avançar pra ${next.name}`}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-white/60
+              bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40 max-w-[110px]"
+          >
+            {movingId === lead.id ? <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
+            <span className="truncate">{next.name}</span>
+          </button>
+        )}
+      </div>
+    </GlassCard>
+  );
+}
+
+// Arrasto via @dnd-kit (Pointer/Touch Events), não mais a API nativa HTML5
+// (draggable/onDragStart/onDragOver/onDrop) — essa API nunca funcionou por
+// toque no Safari iOS (o WebKit nunca implementou suporte a ela via touch;
+// o Chrome Android tinha uma camada de compatibilidade própria que mascarava
+// o problema, por isso "funcionava" só lá — feedback 20/07). Sensors
+// separados por tipo de entrada: mouse ativa por distância (resposta
+// imediata, igual antes), toque ativa por delay (dá tempo de um gesto de
+// rolar a tela — horizontal entre colunas, vertical dentro de uma — sem
+// disparar um arrasto sem querer). Mesmo padrão do exemplo oficial
+// "Multiple Containers" do dnd-kit.
+function DraggableLead({ lead, children }: { lead: Lead; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: lead.id });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        touchAction: 'none',
+        opacity: isDragging ? 0.3 : 1,
+      }}
+      className="cursor-grab active:cursor-grabbing"
+    >
+      {children}
+    </div>
+  );
+}
+
+// Toda a lane é a zona de soltar (não só os cards) — soltar no vão vazio
+// embaixo da coluna também funciona.
+function DroppableStage({ stageId, className, children }: { stageId: string; className?: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stageId });
+  return (
+    <div ref={setNodeRef} className={cn(className, isOver && 'bg-white/[0.05] ring-2 ring-violet-400/40')}>
+      {children}
+    </div>
+  );
+}
+
 // Kanban real sobre os leads já capturados (GET /api/leads?pipeline_id=,
 // mesma fonte do widget "leads recentes" do cockpit) — colunas vêm do
 // pipeline selecionado (GET /api/crm/pipelines), não mais de um array fixo.
@@ -228,8 +342,7 @@ function KanbanBoard() {
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [totalLeads, setTotalLeads] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -317,6 +430,29 @@ function KanbanBoard() {
       setMovingId(null);
     }
   };
+
+  // Mouse ativa por distância (resposta imediata, como um clique-e-arraste
+  // comum); toque ativa por delay — sem isso, um gesto de rolar a tela
+  // (a lista de colunas rola na horizontal, cada coluna pode rolar na
+  // vertical) seria interpretado como início de arrasto.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  const handleDragStart = (event: DragStartEvent) => setActiveId(String(event.active.id));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const lead = (leads || []).find((l) => l.id === active.id);
+    const targetStage = stages.find((s) => s.id === over.id);
+    if (lead && targetStage && lead.pipeline_stage_id !== targetStage.id) moveTo(lead, targetStage);
+  };
+
+  const activeLead = activeId ? (leads || []).find((l) => l.id === activeId) || null : null;
+  const activeLeadStageIdx = activeLead ? stages.findIndex((s) => s.id === activeLead.pipeline_stage_id) : -1;
 
   const deleteLead = async (lead: Lead) => {
     if (!confirm(`Apagar o lead "${lead.name}"? Não dá pra desfazer.`)) return;
@@ -422,134 +558,94 @@ function KanbanBoard() {
         // (ou em tela estreita) o min-w derruba pra rolagem horizontal, mas
         // com a barra nativa escondida (feia demais — feedback 17/07), rolando
         // por gesto/trackpad/shift+scroll.
-        <div className="flex gap-3 items-stretch overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {stages.map((stage, idx) => {
-            const stageLeads = byStage.get(stage.id) || [];
-            const prev = stages[idx - 1];
-            const next = stages[idx + 1];
-            return (
-              <div key={stage.id} className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-white/[0.03] border border-white/[0.06] p-2.5">
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <h3 className="text-[11px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5 truncate">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || '#888' }} />
-                    <span className="truncate">{stage.name}</span>
-                  </h3>
-                  <span className="text-[11px] text-white/30 shrink-0">{stageLeads.length}</span>
-                </div>
-                {/* Zona de drop = a lane inteira (inclui o vão vazio embaixo) —
-                    soltar em qualquer lugar da coluna funciona. */}
-                <div
-                  className={`flex-1 space-y-2 rounded-xl transition-colors min-h-[380px] ${
-                    dragOverStage === stage.id ? 'bg-white/[0.05] ring-2 ring-violet-400/40' : ''
-                  }`}
-                  onDragOver={(e) => { e.preventDefault(); if (draggingId) setDragOverStage(stage.id); }}
-                  onDragLeave={() => setDragOverStage((cur) => (cur === stage.id ? null : cur))}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOverStage(null);
-                    const lead = (leads || []).find((l) => l.id === draggingId);
-                    if (lead && lead.pipeline_stage_id !== stage.id) moveTo(lead, stage);
-                    setDraggingId(null);
-                  }}
-                >
-                  {stageLeads.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-white/[0.07] py-5 text-center">
-                      <p className="text-[11px] text-white/20">vazio</p>
-                    </div>
-                  ) : (
-                    stageLeads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        draggable
-                        onDragStart={(e) => { setDraggingId(lead.id); e.dataTransfer.effectAllowed = 'move'; }}
-                        onDragEnd={() => { setDraggingId(null); setDragOverStage(null); }}
-                        className={`cursor-grab active:cursor-grabbing transition-opacity ${draggingId === lead.id ? 'opacity-40' : ''}`}
-                      >
-                      <GlassCard className="!p-3 !rounded-2xl">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            <button onClick={() => setEditingLead(lead)}
-                              className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button onClick={() => deleteLead(lead)} disabled={deletingId === lead.id}
-                              className="p-1 rounded-lg text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
-                              {deletingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                            </button>
-                          </div>
-                        </div>
-                        {lead.property && (
-                          <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
-                            <HomeIcon className="w-2.5 h-2.5 shrink-0" /> {lead.property}
-                          </p>
-                        )}
-                        {lead.phone && (
-                          <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5">
-                            <Phone className="w-2.5 h-2.5 shrink-0" /> {lead.phone}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-1 mt-2">
-                          <span className="text-[9px] text-white/25 mr-auto">{timeAgo(lead.created_at)}</span>
-                          {prev && (
-                            <button
-                              onClick={() => moveTo(lead, prev)}
-                              disabled={movingId === lead.id}
-                              title={`Voltar pra ${prev.name}`}
-                              className="w-6 h-6 flex items-center justify-center rounded-lg text-white/30
-                                hover:bg-white/[0.08] hover:text-white/60 transition-colors disabled:opacity-40"
-                            >
-                              <ChevronLeft className="w-3 h-3" />
-                            </button>
-                          )}
-                          {next && (
-                            <button
-                              onClick={() => moveTo(lead, next)}
-                              disabled={movingId === lead.id}
-                              title={`Avançar pra ${next.name}`}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-white/60
-                                bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40 max-w-[110px]"
-                            >
-                              {movingId === lead.id ? <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
-                              <span className="truncate">{next.name}</span>
-                            </button>
-                          )}
-                        </div>
-                      </GlassCard>
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex gap-3 items-stretch overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {stages.map((stage, idx) => {
+              const stageLeads = byStage.get(stage.id) || [];
+              const prev = stages[idx - 1];
+              const next = stages[idx + 1];
+              return (
+                <div key={stage.id} className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-white/[0.03] border border-white/[0.06] p-2.5">
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <h3 className="text-[11px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5 truncate">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || '#888' }} />
+                      <span className="truncate">{stage.name}</span>
+                    </h3>
+                    <span className="text-[11px] text-white/30 shrink-0">{stageLeads.length}</span>
+                  </div>
+                  {/* Zona de drop = a lane inteira (inclui o vão vazio embaixo) —
+                      soltar em qualquer lugar da coluna funciona. */}
+                  <DroppableStage stageId={stage.id} className="flex-1 space-y-2 rounded-xl transition-colors min-h-[380px]">
+                    {stageLeads.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-white/[0.07] py-5 text-center">
+                        <p className="text-[11px] text-white/20">vazio</p>
                       </div>
-                    ))
-                  )}
+                    ) : (
+                      stageLeads.map((lead) => (
+                        <React.Fragment key={lead.id}>
+                          <DraggableLead lead={lead}>
+                            <LeadCardBody
+                              lead={lead} prev={prev} next={next}
+                              movingId={movingId} deletingId={deletingId}
+                              onEdit={setEditingLead} onDelete={deleteLead} onMove={moveTo}
+                            />
+                          </DraggableLead>
+                        </React.Fragment>
+                      ))
+                    )}
+                  </DroppableStage>
+                </div>
+              );
+            })}
+            {unassigned.length > 0 && (
+              <div className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-amber-500/[0.04] border border-amber-300/10 p-2.5">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <h3 className="text-[11px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
+                  <span className="text-[11px] text-white/30">{unassigned.length}</span>
+                </div>
+                <div className="flex-1 space-y-2 min-h-[380px]">
+                  {unassigned.map((lead) => (
+                    <React.Fragment key={lead.id}>
+                      <DraggableLead lead={lead}>
+                        <GlassCard className="!p-3 !rounded-2xl">
+                          <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
+                          <p className="text-[10px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline — arraste ou:</p>
+                          {stages[0] && (
+                            <button
+                              onClick={() => moveTo(lead, stages[0])}
+                              className="mt-2 w-full py-1 rounded-lg text-[10px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
+                            >
+                              Mover pra {stages[0].name}
+                            </button>
+                          )}
+                        </GlassCard>
+                      </DraggableLead>
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
-            );
-          })}
-          {unassigned.length > 0 && (
-            <div className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-amber-500/[0.04] border border-amber-300/10 p-2.5">
-              <div className="flex items-center justify-between mb-2 px-1">
-                <h3 className="text-[11px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
-                <span className="text-[11px] text-white/30">{unassigned.length}</span>
+            )}
+          </div>
+
+          {/* Cópia flutuante que segue o dedo/cursor durante o arrasto —
+              sem isso o card original ficaria só semitransparente (opacity
+              no DraggableLead) sem nenhum feedback visual de "onde ele está
+              indo". Fora do fluxo normal (portal do próprio dnd-kit), então
+              não é afetado pelo overflow-x-auto das colunas. */}
+          <DragOverlay>
+            {activeLead ? (
+              <div className="w-64 rotate-2 opacity-95">
+                <LeadCardBody
+                  lead={activeLead}
+                  prev={activeLeadStageIdx > 0 ? stages[activeLeadStageIdx - 1] : undefined}
+                  next={activeLeadStageIdx >= 0 ? stages[activeLeadStageIdx + 1] : undefined}
+                  movingId={null} deletingId={null}
+                  onEdit={() => {}} onDelete={() => {}} onMove={() => {}}
+                />
               </div>
-              <div className="flex-1 space-y-2 min-h-[380px]">
-                {unassigned.map((lead) => (
-                  <React.Fragment key={lead.id}>
-                    <GlassCard className="!p-3 !rounded-2xl">
-                      <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
-                      <p className="text-[10px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline.</p>
-                      {stages[0] && (
-                        <button
-                          onClick={() => moveTo(lead, stages[0])}
-                          className="mt-2 w-full py-1 rounded-lg text-[10px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
-                        >
-                          Mover pra {stages[0].name}
-                        </button>
-                      )}
-                    </GlassCard>
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {!isEmpty && hasMore && (

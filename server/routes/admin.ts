@@ -228,7 +228,11 @@ adminRouter.delete("/api/admin/brokers/:id", async (req, res) => {
     }
 
     // 2. Remove dados do corretor (cascade deve limpar propriedades/leads via FK)
-    await supabase.from('imf_brokers').delete().eq('id', req.params.id);
+    const { error: deleteBrokerError } = await supabase.from('imf_brokers').delete().eq('id', req.params.id);
+    if (deleteBrokerError) {
+      console.error('[Admin] Falha ao excluir broker:', deleteBrokerError.message);
+      return res.status(500).json({ error: `Não foi possível excluir a conta: ${deleteBrokerError.message}` });
+    }
 
     // 3. Remove usuário do Supabase Auth (invalida login)
     if (broker.user_id) {

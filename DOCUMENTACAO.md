@@ -308,6 +308,8 @@ autenticado completo (isolamento entre dois tenants, comportamento de
   proposta/fechado` e passam a vir das etapas do pipeline selecionado
   (seletor no topo, pipeline padrão pré-selecionado). Drag-and-drop e
   botões de avançar/voltar continuam, agora sobre a lista dinâmica.
+  Arrastar usa `@dnd-kit/core` (não mais a API nativa HTML5 Drag and
+  Drop) — ver "Drag-and-drop cross-platform" abaixo.
 - Cada broker pode ter vários pipelines; exatamente um é o padrão
   (`is_default`). Cada pipeline tem etapas ordenadas (`position`), cada
   etapa tem um `stage_type` semântico: `open` (em andamento), `won`
@@ -375,6 +377,48 @@ ou com fallback gracioso pra valor desconhecido), `server/routes/
 equipe.ts` (meta do mês e ranking, 100% via `closed_at`), `server/
 services/agent.ts` (snapshot da IA lê `status` cru, sem hardcode dos 5
 valores), `server/routes/dashboard.ts` (Dashboard 1.0 legado, não tocado).
+
+**Drag-and-drop cross-platform (20/07/2026):** a primeira versão do Kanban
+usava a API nativa HTML5 Drag and Drop (`draggable`/`onDragStart`/
+`onDragOver`/`onDrop`). Essa API nunca teve suporte a toque no Safari iOS —
+lacuna do WebKit, não específica deste app — então arrastar funcionava no
+desktop e no Chrome Android (que tem uma camada de compatibilidade própria),
+mas não no iPhone. Substituída por `@dnd-kit/core`, que unifica mouse/toque/
+caneta via Pointer/Touch Events:
+
+- `MouseSensor` ativa por distância (8px — resposta imediata, como antes);
+  `TouchSensor` ativa por delay (200ms + tolerância de 8px) — sem isso, um
+  gesto de rolar a tela (a lista de colunas rola na horizontal, cada coluna
+  pode rolar na vertical) seria interpretado como início de arrasto. Mesmo
+  padrão do exemplo oficial "Multiple Containers" da biblioteca.
+- `DragOverlay` mostra uma cópia do card seguindo o dedo/cursor durante o
+  arrasto; o card original fica semitransparente no lugar.
+- Toda a lane (não só os cards) é zona de soltar — inclui o vão vazio.
+- Os botões de avançar/voltar/editar/apagar dentro do card continuam
+  funcionando normalmente (um toque sem movimento nunca cruza o limiar de
+  ativação, então nunca vira arrasto).
+- Validado localmente: sensor de mouse testado ponta a ponta (evento real
+  de `mousedown`+`mousemove` incremental+`mouseup`, via conta descartável) —
+  moveu o lead e persistiu via `PATCH /api/leads/:id/stage`. `TouchSensor` é
+  o mesmo mecanismo da biblioteca, só que ouvindo eventos de toque — não foi
+  reproduzido nesta sessão com um dispositivo iOS real (a ferramenta de
+  automação disponível não simula gestos de toque nativos), mas é o
+  componente padrão do dnd-kit feito especificamente para este cenário.
+  **Confirmação final em iPhone real depende do usuário testar.**
+
+**Efeito colateral corrigido — exclusão de conta pelo admin:**
+`DELETE /api/admin/brokers/:id` apaga a linha de `imf_brokers` confiando em
+CASCADE pra limpar o resto (`server/routes/admin.ts`). `imf_crm_pipelines`/
+`imf_crm_pipeline_stages` foram criadas sem CASCADE de propósito (proteger
+contra apagar UM pipeline/etapa com leads ainda vinculados), o que quebrou
+esse fluxo mais amplo — a exclusão da conta inteira passou a falhar com
+violação de FK, e o código nem checava o erro desse delete (reportaria
+sucesso mesmo assim). Corrigido em duas frentes: migration
+`20260720_crm_pipelines_broker_cascade.sql` adiciona `ON DELETE CASCADE`
+só nessas duas FKs (seguro especificamente pro caso "apagar o broker
+inteiro", já que os leads dele já cascadeiam junto via `imf_properties`/
+`leads` → `imf_brokers`, então nada fica órfão); e `admin.ts` agora verifica
+o erro do delete antes de responder `success`.
 
 **Limitações da fase 1:** sem Dashboard/Calendário/Ações do CRM (fica pra
 depois, conforme pedido); reorder de etapa é por botões ↑/↓ na aba
@@ -621,6 +665,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260716e_broker_asaas_key.sql` | aplicada | chave Asaas por conta |
 | `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
 | `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
+| `20260720_crm_pipelines_broker_cascade.sql` | **NÃO aplicada** — escrita, não executada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -631,6 +676,14 @@ checagem do ambiente antes de um novo deploy.
 degrada com segurança (cai no fluxo antigo, sem pipeline) caso as tabelas do
 CRM não existam num ambiente futuro — ver `resolveNewLeadStage` em
 `server/services/crmPipelines.ts`.
+
+`20260720_crm_pipelines_broker_cascade.sql` precisa ser aplicada manualmente
+antes que `DELETE /api/admin/brokers/:id` volte a funcionar pra contas que já
+tenham algum pipeline criado (qualquer conta que tenha criado um lead depois
+da 20260717b). Sem ela, a exclusão de conta pelo admin falha com erro de FK
+em `imf_crm_pipelines_broker_id_fkey` — o `admin.ts` agora reporta esse erro
+em vez de mascará-lo como sucesso, mas a causa raiz só se resolve aplicando
+o SQL.
 
 ## 15. Pendências e critérios de lançamento
 
