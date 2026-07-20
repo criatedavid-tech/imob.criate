@@ -276,8 +276,10 @@ export function CommandBar({
 
   return (
     <div className="flex flex-col h-full w-full bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
-      {/* Cabeçalho — voltar fecha o chat (flip de volta pro app) */}
-      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-white/10 backdrop-blur-2xl bg-white/[0.03]">
+      {/* Cabeçalho — voltar fecha o chat. Sem backdrop-blur: o fundo do chat é
+          um gradiente opaco, então o blur não teria efeito visível e só custaria
+          GPU (peso desnecessário no mobile). */}
+      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-white/10 bg-white/[0.03]">
         <button
           onClick={onClose}
           className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0"
@@ -382,7 +384,7 @@ export function CommandBar({
           </div>
         )}
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
-          backdrop-blur-2xl bg-white/[0.09] border border-white/15
+          bg-white/[0.09] border border-white/15
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
           <input
             ref={fileInputRef}

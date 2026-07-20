@@ -149,7 +149,7 @@ export function ExperienceShell() {
   if (checkingAuth) return <FullScreenSpinner />;
 
   return (
-    <div className="flex h-screen overflow-hidden font-sans relative
+    <div className="flex h-[100dvh] overflow-hidden font-sans relative
       bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
       {/* brilho de fundo (profundidade de vidro, minimalista) */}
       <div className="absolute -top-40 -left-20 w-[420px] h-[420px] rounded-full bg-violet-600/20 blur-[120px] pointer-events-none" />
@@ -297,34 +297,38 @@ export function ExperienceShell() {
         </button>
       )}
 
-      {/* Chat — overlay independente, NUNCA aninhado dentro de um ancestral com
-          transform (nem em rotateY(0)): qualquer transform em ancestral vira
-          containing block novo pra filhos "fixed", e a app inteira tem vários
-          modais "fixed inset-0" (leads, equipe, lançamentos, locação,
-          conversas) que quebravam — apareciam espelhados/presos no mobile,
-          onde o viewport real diverge do 100vh por causa da barra do Safari.
-          Por isso a animação de entrada vive só aqui, isolada, sem tocar
-          na árvore principal do app. */}
+      {/* Chat — overlay independente, NUNCA aninhado dentro da árvore principal
+          do app: fica solto aqui no topo pra não virar containing block dos
+          vários modais "fixed inset-0" (leads, equipe, lançamentos, locação,
+          conversas), que no mobile apareciam espelhados/presos.
+          ⚠️ A animação de abertura ERA um flip 3D (rotateY + perspective +
+          preserve-3d). Somado ao backdrop-blur de tela cheia, o compositor do
+          Safari/Chrome mobile não dava conta de rasterizar 3D + blur a cada
+          frame: travava ao ABRIR e às vezes ficava preso ao FECHAR (a animação
+          de saída não completava e o painel nunca desmontava). Trocado por um
+          slide+fade simples (translateX), que é composição de GPU barata e não
+          precisa de perspective/preserve-3d. Como o CommandBar não tem nenhum
+          filho "fixed", o transform daqui não afeta modal nenhum do app.
+          A altura usa 100dvh (viewport dinâmico) pra o rodapé/input nunca
+          ficarem atrás da barra do Safari no mobile. */}
       <AnimatePresence>
         {chatOpen && (
-          <div className="fixed inset-0 z-[100]" style={{ perspective: 1800 }}>
-            <motion.div
-              initial={{ rotateY: -100, opacity: 0 }}
-              animate={{ rotateY: 0, opacity: 1 }}
-              exit={{ rotateY: -100, opacity: 0 }}
-              transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
-              style={{ transformStyle: 'preserve-3d', transformOrigin: 'right center' }}
-              className="w-full h-full"
-            >
-              <CommandBar
-                persona={persona}
-                autonomy={autonomy}
-                onNavigate={(a) => { setArea(a); setChatOpen(false); }}
-                onActionDone={() => setRefreshKey((k) => k + 1)}
-                onClose={() => setChatOpen(false)}
-              />
-            </motion.div>
-          </div>
+          <motion.div
+            key="ai-chat"
+            initial={{ opacity: 0, x: '6%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '6%' }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="fixed inset-0 z-[100] h-[100dvh]"
+          >
+            <CommandBar
+              persona={persona}
+              autonomy={autonomy}
+              onNavigate={(a) => { setArea(a); setChatOpen(false); }}
+              onActionDone={() => setRefreshKey((k) => k + 1)}
+              onClose={() => setChatOpen(false)}
+            />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
