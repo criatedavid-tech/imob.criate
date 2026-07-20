@@ -32,15 +32,14 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 ### Estado conhecido de produção
 
 O deploy vigente confirmado é publicado automaticamente pelo workflow
-`deploy-v2.yml` a partir do commit `c45733b` (branch `v2` — drag-and-drop
-cross-platform do Kanban + correção de exclusão de conta pelo admin; ver
-seção 6). Run do GitHub Actions `29749870999`, concluído em ~1m26s. Os
-smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-20.
-Número exato da release Fly não confirmado nesta entrada — `flyctl` local
-está bloqueado por política de Application Control (Smart App Control) do
-Windows nesta máquina (ver seção 6, "CI de deploy da V2" no histórico
-detalhado); consultar `fly status -a imobiflow-v2` ou o painel Fly quando
-disponível.
+`deploy-v2.yml` a partir do commit `729b000` (branch `v2` — última rodada:
+correções mobile do Assistente IA — áudio iOS, anexo de foto Android,
+webhook de entrada do WhatsApp — sobre o hardening de segurança do CRM em
+`84497c3`; ver "Assistente IA e Follow-Up" e seção 6). Smoke de `/`, `/app`
+e `/login` respondeu HTTP 200 em 2026-07-20. Número exato da release Fly não
+confirmado nesta entrada — `flyctl` local está bloqueado por política de
+Application Control (Smart App Control) do Windows nesta máquina; consultar
+`fly status -a imobiflow-v2` ou o painel Fly quando disponível.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
 `imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
@@ -487,11 +486,40 @@ Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
    (`AUDIO_DATA_URL_HEADER`); e o `format` enviado ao provedor é derivado
    do tipo real do áudio (`resolveAudioFormat`), preferindo o declarado no
    próprio data URL. Não-áudio continua barrado.
-2. *Android — seletor de foto não abria:* o `<input type="file">` usava
-   `display:none` (`className="hidden"`); vários Android Chrome não abrem
-   o seletor ao chamar `.click()` num input com `display:none`. Passou a
-   ser renderizado, porém fora da tela (`position:absolute; width:1px;
-   opacity:0`), mantendo o clique programático funcional.
+2. *Android — seletor de foto não abria (confirmado resolvido em aparelho
+   real após 3 tentativas):* o problema tinha duas frentes distintas.
+   - **Chrome Android real:** o `<input type="file">` estava com
+     `display:none` (acionado por um botão via `.click()` programático, e
+     depois por um `<label>`). Testado em campo, o Chrome Android **não
+     abre** o seletor de um input `display:none` por nenhum desses
+     caminhos. Solução final que funcionou: o input fica **transparente
+     por cima do ícone** de clipe (`absolute inset-0 opacity-0`, ícone
+     como irmão num wrapper `relative`) — o toque cai direto no próprio
+     input, sem `<label>`, sem `.click()`, sem `display:none`. É o padrão
+     canônico de upload da web. **Usar o mesmo padrão em qualquer upload
+     mobile futuro.**
+   - **Navegador embutido do WhatsApp (WebView Android):** não implementa
+     o seletor de arquivo — nenhum código abre a galeria lá (no iOS o
+     WebView implementa, por isso funcionava no iPhone). O `CommandBar`
+     detecta esse ambiente (`/Android/` + marcador `; wv)` no user agent —
+     Chrome/Samsung/Firefox/iOS reais não têm) e, ao tocar no clipe,
+     mostra a dica "abra no Chrome" em vez de um toque sem efeito.
+
+**Fix — WhatsApp de entrada não chegava no V2 (webhook apontando pro Z-PRO
+morto, 20/07/2026):** contas provisionadas na era Z-PRO tinham o webhook da
+instância UAZAPI ainda apontando pra `appback.criate.online/uazapi-webhook/…`
+(backend Z-PRO desativado) em vez de
+`…/api/wpp-shim/inbound/:instanceId` do V2. Com a instância `connected`, o
+UAZAPI entregava os eventos pro Z-PRO e o V2 nunca via a mensagem — a
+conversa ficava "Sem mensagens registradas" (diagnóstico: zero registros em
+`webhook_logs` source `uazapi`, que loga TODO evento ANTES de validar).
+Corrigido com self-heal: `setUazapiWebhook(token, instanceId)` extraído como
+helper exportado em `provisioning.ts`, `resolveManagedInstance` passou a
+devolver o `instanceId` da instância já existente, e
+`POST /api/brokers/whatsapp/connect` reafirma o webhook correto a cada
+conexão. Assim qualquer instância legada se autocura ao reconectar. A
+instância afetada teve o webhook re-apontado manualmente na hora; confirmado
+pelo usuário que a mensagem de entrada voltou a chegar no painel.
 
 ### Asaas e limite do escopo financeiro
 

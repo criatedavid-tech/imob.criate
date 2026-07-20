@@ -26,18 +26,27 @@
 - Checkout `imob.criate-phase3` sincronizado com `origin/v2` (estava 20
   commits atrás) e validado localmente: `npx tsc --noEmit`, `npx knip` e
   `npm run build` limpos após `npm install`.
-- Fix do Assistente IA no mobile (dois bugs, um por plataforma):
-  - iOS: `POST /api/ai/transcribe` rejeitava áudio com "Dados inválidos."
-    porque o Safari reporta `mimeType` imprevisível (mp4 com codec entre
-    aspas, às vezes com espaço). `server/routes/ai.ts` reescrito: mimeType
-    virou dica opcional, validação passou a ser data-URL-de-áudio +
-    base64, e o `format` do provedor é derivado do conteúdo real.
-  - Android: seletor de foto não abria (`<input type=file>` com
-    `display:none`); virou renderizado-fora-da-tela em `CommandBar.tsx`.
-  - Validado local: tsc/knip/build limpos; teste HTTP ao vivo cobrindo 5
-    formatos de mimeType (iOS/Android) todos passando e não-áudio barrado;
-    verificação no navegador de que o input renderiza e o clipe dispara o
-    seletor.
+- Rodada mobile do Assistente IA — três correções, todas confirmadas pelo
+  usuário em aparelho real (20/07/2026):
+  - **iOS — áudio "Dados inválidos.":** `POST /api/ai/transcribe`
+    (`server/routes/ai.ts`) rejeitava o mimeType imprevisível do Safari.
+    Largou a whitelist de formato: valida só "data URL de áudio + base64" e
+    deriva o `format` do provedor do conteúdo real (`resolveAudioFormat`).
+    ✅ confirmado.
+  - **Android — anexo de foto não abria (3 tentativas):** `.click()`
+    programático e `<label>` com input `display:none` falharam no Chrome
+    Android real. Solução final: input `type=file` transparente por cima do
+    ícone (`absolute inset-0 opacity-0`), toque direto no input. ✅
+    confirmado. + no WebView do WhatsApp (sem seletor de arquivo) mostra
+    dica "abrir no Chrome" (detecção `; wv)` no UA).
+  - **WhatsApp de entrada não chegava:** webhook da instância UAZAPI apontava
+    pro Z-PRO morto (`appback.criate.online`). Self-heal:
+    `setUazapiWebhook` reafirmado em `/api/brokers/whatsapp/connect`;
+    instância afetada re-apontada na hora. ✅ confirmado.
+  - Validado local: tsc/knip/build limpos; testes HTTP ao vivo (5 formatos
+    de mimeType) + verificação no navegador (overlay do input, hit-test,
+    detecção de WebView) + diagnóstico read-only do webhook contra
+    Supabase/UAZAPI reais.
 
 # Em andamento
 
@@ -54,10 +63,9 @@
   - membros veem Pipelines em modo leitura; só titular vê controles;
   - erros internos do CRM não são devolvidos crus ao cliente;
   - dependências atualizadas: `npm audit` online com 0 vulnerabilidades.
-- Correção mobile do Assistente IA foi feita em paralelo e teve uma primeira
-  versão commitada em `e76181f`; há nova edição local concorrente e já staged
-  em `CommandBar.tsx`. Esse arquivo não faz parte nem deve ser incluído no diff
-  de hardening do CRM.
+- Nada em aberto no momento. (A rodada mobile do Assistente IA — commits
+  `e76181f`→`729b000`, em paralelo ao hardening do CRM — está concluída e
+  confirmada pelo usuário; ver "Concluído".)
 
 # Bloqueios
 

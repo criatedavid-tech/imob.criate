@@ -53,3 +53,21 @@ Data: 2026-07-20
 Decisão: Todo deploy automático da V2 passa a depender de um job de validação no GitHub Actions.
 Motivo: O workflow publicava qualquer push em `v2` sem executar TypeScript, Knip ou build.
 Impacto: `deploy` depende de `validate` (`npm ci`, `npm run lint`, `npx knip`, `npm run build`). Não existe aprovação manual pós-push; falha técnica bloqueia a publicação.
+
+---
+Data: 2026-07-20
+Decisão: A validação de áudio da transcrição (`/api/ai/transcribe`) deixa de usar whitelist de mimeType e passa a validar só "data URL de áudio + base64 válido", derivando o `format` do provedor do conteúdo real.
+Motivo: O Safari iOS reporta o mimeType do áudio de forma imprevisível (mp4 com codec entre aspas, às vezes com espaço após `;`), quebrando qualquer regex de allowlist — duas rodadas de "regex mais permissivo" ainda falharam. O mimeType do cliente não é fonte de segurança (a proteção é base64 + limite de tamanho) e nunca é repassado cru.
+Impacto: `server/routes/ai.ts` reescrito (`resolveAudioFormat`, `AUDIO_DATA_URL_HEADER`). Áudio de qualquer navegador mobile passa; não-áudio continua barrado. Confirmado em iPhone real.
+
+---
+Data: 2026-07-20
+Decisão: Uploads de foto no mobile usam input `type=file` transparente sobreposto ao ícone (`absolute inset-0 opacity-0`), nunca botão com `.click()` programático nem `<label>` com input `display:none`.
+Motivo: Teste de campo no Chrome Android real: as duas abordagens indiretas não abrem o seletor de arquivo; só o toque direto no próprio input funciona. É o padrão canônico de upload da web.
+Impacto: Aplicado em `CommandBar.tsx` (anexo do Assistente IA); é o padrão a reusar em qualquer upload mobile futuro (ex.: PropertyForm). Confirmado em Android real.
+
+---
+Data: 2026-07-20
+Decisão: O fluxo de conexão do WhatsApp (`POST /api/brokers/whatsapp/connect`) reafirma o webhook da instância UAZAPI a cada conexão (self-heal).
+Motivo: Instâncias provisionadas na era Z-PRO tinham o webhook apontando pro backend antigo (`appback.criate.online`), então as mensagens de entrada nunca chegavam no V2 e a conversa ficava "Sem mensagens registradas". O fluxo de conexão não reafirmava o webhook.
+Impacto: `setUazapiWebhook` extraído como helper exportado em `provisioning.ts`; `resolveManagedInstance` devolve o `instanceId` da instância existente; qualquer instância legada se autocura ao reconectar. ⚠️ Outras contas legadas podem ter o mesmo webhook podre — checar/reconectar. Confirmado pelo usuário: mensagem de entrada voltou a chegar.
