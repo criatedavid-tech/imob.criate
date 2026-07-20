@@ -16,6 +16,18 @@ interface Turn {
   done?: boolean; // ação já confirmada/executada
 }
 
+// O navegador embutido de apps no Android (WebView do WhatsApp, Instagram,
+// Facebook, etc.) não implementa o seletor de arquivo — `<input type="file">`
+// vira um no-op silencioso e a galeria simplesmente não abre. O marcador
+// "; wv)" no user agent identifica o WebView do Android; Chrome, Samsung
+// Internet e Firefox de verdade não o trazem. No iOS o WebView implementa o
+// seletor normalmente, então o desvio é só pro Android.
+function isAndroidInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android/.test(ua) && /;\s*wv\)/.test(ua);
+}
+
 // Camada de comando REAL (Etapa 13): fala do corretor → agente Gemini no
 // backend (POST /api/agent/command) que responde, navega ou age sobre os
 // endpoints que já existem. A autonomia (Etapa 12) governa: piloto executa na
@@ -395,6 +407,18 @@ export function CommandBar({
           <label
             aria-label="Anexar foto"
             title="Anexar foto"
+            onClick={(e) => {
+              if (busy || recording || transcribing) return;
+              // No WebView do WhatsApp (Android) o seletor de arquivo não abre —
+              // em vez de um toque que não faz nada, explica como resolver.
+              if (isAndroidInAppBrowser()) {
+                e.preventDefault();
+                pushTurn({
+                  role: 'ai',
+                  text: 'Pra anexar fotos, abra o app no Chrome: toque nos três pontinhos (⋮) aqui no topo e escolha "Abrir no Chrome". O navegador de dentro do WhatsApp não deixa selecionar arquivos.',
+                });
+              }
+            }}
             className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
               busy || recording || transcribing
                 ? 'text-white/30 cursor-not-allowed'
