@@ -31,9 +31,16 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente confirmado é a release Fly **v96**, publicada automaticamente
-pelo workflow `deploy-v2.yml` a partir do commit `6eec0e3` (branch `v2`). Os
+O deploy vigente confirmado é publicado automaticamente pelo workflow
+`deploy-v2.yml` a partir do commit `c45733b` (branch `v2` — drag-and-drop
+cross-platform do Kanban + correção de exclusão de conta pelo admin; ver
+seção 6). Run do GitHub Actions `29749870999`, concluído em ~1m26s. Os
 smoke tests de `/`, `/app` e `/login` responderam HTTP 200 em 2026-07-20.
+Número exato da release Fly não confirmado nesta entrada — `flyctl` local
+está bloqueado por política de Application Control (Smart App Control) do
+Windows nesta máquina (ver seção 6, "CI de deploy da V2" no histórico
+detalhado); consultar `fly status -a imobiflow-v2` ou o painel Fly quando
+disponível.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
 `imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,

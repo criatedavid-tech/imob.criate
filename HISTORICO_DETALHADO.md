@@ -3792,3 +3792,108 @@ Release **v96** publicada pelo primeiro deploy automático (run
 Smoke `/`, `/app`, `/login` HTTP 200. Consequência prática registrada no
 próprio workflow: validar (tsc/build) precisa acontecer ANTES do commit,
 não depois — não existe mais gate manual pós-push nesta branch.
+
+## 2026-07-20 — Drag-and-drop do Kanban em touch (iOS/Android) + fix de exclusão de conta
+
+### Contexto
+
+Usuário testou o CRM no celular real (Android/Chrome e iPhone/Safari):
+arrastar lead entre colunas funcionava no Android igual ao desktop, mas não
+funcionava no iPhone. Pediu investigação da causa e, confirmada, autorizou
+trocar a biblioteca pra resolver "da forma mais segura possível, pra todos
+funcionarem".
+
+### Causa raiz
+
+O Kanban usava a API nativa HTML5 Drag and Drop (`draggable`,
+`onDragStart`, `onDragOver`, `onDrop` — único uso dessa API em todo o app,
+confirmado por grep). Essa API é baseada em eventos de mouse; o WebKit no
+Safari iOS nunca implementou suporte a ela via toque (lacuna de mais de 10
+anos, documentada, não específica deste projeto). O Chrome Android tem uma
+camada de compatibilidade própria que traduz toque em eventos de drag
+HTML5, por isso "funcionava" só lá. Os botões de avançar/voltar em cada
+card (onClick simples) continuavam funcionando nos dois sistemas — a
+função não estava bloqueada no iPhone, só um dos dois jeitos de mover.
+
+### Correção
+
+Trocada a biblioteca por `@dnd-kit/core` (unifica mouse/toque/caneta via
+Pointer/Touch Events, suportado no Safari iOS desde a v13). Reescrito
+`src/experience/NegociosArea.tsx`:
+
+- `MouseSensor` (`activationConstraint: { distance: 8 }`) + `TouchSensor`
+  (`activationConstraint: { delay: 200, tolerance: 8 }`) — mesmo padrão do
+  exemplo oficial "Multiple Containers" do dnd-kit. O delay no toque evita
+  que um gesto de rolar a tela (colunas rolam na horizontal, cada uma pode
+  rolar na vertical) seja interpretado como início de arrasto.
+- Cada card virou `DraggableLead` (`useDraggable`); cada coluna virou
+  `DroppableStage` (`useDroppable`, substitui o estado manual
+  `draggingId`/`dragOverStage` por `isOver` do próprio hook).
+  `DragOverlay` mostra uma cópia do card seguindo o cursor/dedo durante o
+  arrasto — UX melhor que a versão nativa anterior, que só deixava o
+  original semitransparente sem nenhum "fantasma".
+- Corpo visual do card extraído pra `LeadCardBody` (compartilhado entre
+  render normal e o overlay, evita duplicar JSX).
+- Zona de solta é a lane inteira (não só os cards), preservando o
+  comportamento anterior.
+
+### Validação (sem dispositivo iOS real disponível)
+
+`npx tsc --noEmit`, `npx knip`, `npm run build` limpos. Testado localmente
+com `npm run dev` + conta descartável: o clique nos botões de avançar
+continuava funcionando (confirma que os listeners do dnd-kit não
+capturam cliques em elementos internos). O gesto de arrastar simulado via
+ferramenta de automação (`left_click_drag`) não ativou o sensor — biblioteca
+de drag exige movimento incremental real do ponteiro pra distinguir de um
+clique acidental, e a automação disponível não gera essa sequência.
+Contornado disparando manualmente, via JavaScript no navegador, uma
+sequência real de `mousedown` → 12× `mousemove` incrementais → `mouseup`:
+o `DndContext` reconheceu o arrasto, resolveu a coluna de destino
+corretamente e persistiu via `PATCH /api/leads/:id/stage` — confirma que
+toda a parte que é código deste projeto (wiring do `DndContext` até a
+API) funciona ponta a ponta. `TouchSensor` é o mesmo mecanismo da
+biblioteca, só que ouvindo eventos de toque — não foi possível reproduzir
+com um gesto de toque real do WebKit nesta sessão. **Confirmação final em
+iPhone real depende do usuário testar.**
+
+### Efeito colateral encontrado durante o teste — exclusão de conta
+
+Ao limpar a conta de teste, `DELETE FROM imf_brokers` falhou com violação
+de FK em `imf_crm_pipelines_broker_id_fkey`. Investigação: `DELETE
+/api/admin/brokers/:id` (`server/routes/admin.ts`) apaga a linha de
+`imf_brokers` confiando em CASCADE pra limpar o resto (comentário no
+código: "cascade deve limpar propriedades/leads via FK"), mas **nunca
+checava o erro desse delete** — reportaria `{success: true}` mesmo se a
+exclusão falhasse silenciosamente. As tabelas `imf_crm_pipelines`/
+`imf_crm_pipeline_stages` (migration `20260717b`, sessão anterior) foram
+criadas sem `ON DELETE CASCADE` de propósito, pra proteger contra apagar
+UM pipeline/etapa isolado com leads ainda vinculados — mas isso quebrou o
+caso mais amplo de apagar a conta inteira.
+
+Corrigido em duas frentes:
+1. `admin.ts` agora verifica o erro do delete e retorna 500 com a mensagem
+   real em vez de reportar sucesso falso.
+2. Migration nova `20260720_crm_pipelines_broker_cascade.sql` (NÃO
+   executada) adiciona `ON DELETE CASCADE` só nessas 2 FKs
+   (`imf_crm_pipeline_stages.pipeline_id` e `imf_crm_pipelines.broker_id`).
+   Seguro especificamente pro caso "apagar o broker inteiro": os leads da
+   conta já cascadeiam junto via `imf_properties`/`leads` → `imf_brokers`
+   na mesma operação, então nada fica órfão. A proteção contra apagar UM
+   pipeline/etapa isolado (checagem 409 em `crmPipelines.ts`) continua
+   intacta — não foi alterada.
+
+### Deploy
+
+Commit `c45733b`, push em `v2` disparou o deploy automático (workflow
+`deploy-v2.yml`, run `29749870999`, ~1m26s). Smoke `/`, `/app`, `/login`
+HTTP 200. `flyctl` local seguia bloqueado pela política de Application
+Control do Windows (mesma causa da sessão anterior) — não foi possível
+confirmar o número exato da release Fly nesta entrada; a confirmação via
+GitHub Actions + smoke HTTP foi considerada suficiente.
+
+### Limpeza
+
+Contas de teste descartáveis (`histdebug.test@imobiflow.test`,
+`dndtest.test@imobiflow.test`) e seus dados (imóvel, leads, pipeline)
+removidos do banco ao final. Scripts temporários (`_tmp_*.mjs`) apagados,
+nenhum ficou no repositório.
