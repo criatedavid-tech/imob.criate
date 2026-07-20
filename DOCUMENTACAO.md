@@ -423,7 +423,8 @@ sucesso mesmo assim). Corrigido em duas frentes: migration
 só nessas duas FKs (seguro especificamente pro caso "apagar o broker
 inteiro", já que os leads dele já cascadeiam junto via `imf_properties`/
 `leads` → `imf_brokers`, então nada fica órfão); e `admin.ts` agora verifica
-o erro do delete antes de responder `success`.
+o erro do delete antes de responder `success`. Migration aplicada e
+verificada em 20/07/2026 (ver tabela de migrations).
 
 **Limitações da fase 1:** sem Dashboard/Calendário/Ações do CRM (fica pra
 depois, conforme pedido); reorder de etapa é por botões ↑/↓ na aba
@@ -670,7 +671,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260716e_broker_asaas_key.sql` | aplicada | chave Asaas por conta |
 | `20260717_conversation_ticket_cycles.sql` | aplicada e verificada | UUID por ticket e histórico separado por ciclo |
 | `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
-| `20260720_crm_pipelines_broker_cascade.sql` | **NÃO aplicada** — escrita, não executada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
+| `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -682,13 +683,13 @@ degrada com segurança (cai no fluxo antigo, sem pipeline) caso as tabelas do
 CRM não existam num ambiente futuro — ver `resolveNewLeadStage` em
 `server/services/crmPipelines.ts`.
 
-`20260720_crm_pipelines_broker_cascade.sql` precisa ser aplicada manualmente
-antes que `DELETE /api/admin/brokers/:id` volte a funcionar pra contas que já
-tenham algum pipeline criado (qualquer conta que tenha criado um lead depois
-da 20260717b). Sem ela, a exclusão de conta pelo admin falha com erro de FK
-em `imf_crm_pipelines_broker_id_fkey` — o `admin.ts` agora reporta esse erro
-em vez de mascará-lo como sucesso, mas a causa raiz só se resolve aplicando
-o SQL.
+`20260720_crm_pipelines_broker_cascade.sql` foi aplicada manualmente no
+Supabase da branch `v2` em 20/07/2026. Verificada com um teste descartável
+(broker + pipeline + etapa criados via service_role, depois `DELETE FROM
+imf_brokers` — mesma chamada que `admin.ts` faz): sem erro de FK, e
+pipeline/etapa confirmados removidos junto, atomicamente. `DELETE
+/api/admin/brokers/:id` está restaurado pra qualquer conta, inclusive as
+que já têm pipeline criado.
 
 ## 15. Pendências e critérios de lançamento
 

@@ -3876,14 +3876,21 @@ caso mais amplo de apagar a conta inteira.
 Corrigido em duas frentes:
 1. `admin.ts` agora verifica o erro do delete e retorna 500 com a mensagem
    real em vez de reportar sucesso falso.
-2. Migration nova `20260720_crm_pipelines_broker_cascade.sql` (NÃO
-   executada) adiciona `ON DELETE CASCADE` só nessas 2 FKs
-   (`imf_crm_pipeline_stages.pipeline_id` e `imf_crm_pipelines.broker_id`).
-   Seguro especificamente pro caso "apagar o broker inteiro": os leads da
-   conta já cascadeiam junto via `imf_properties`/`leads` → `imf_brokers`
-   na mesma operação, então nada fica órfão. A proteção contra apagar UM
-   pipeline/etapa isolado (checagem 409 em `crmPipelines.ts`) continua
-   intacta — não foi alterada.
+2. Migration nova `20260720_crm_pipelines_broker_cascade.sql` adiciona
+   `ON DELETE CASCADE` só nessas 2 FKs (`imf_crm_pipeline_stages.pipeline_id`
+   e `imf_crm_pipelines.broker_id`). Seguro especificamente pro caso "apagar
+   o broker inteiro": os leads da conta já cascadeiam junto via
+   `imf_properties`/`leads` → `imf_brokers` na mesma operação, então nada
+   fica órfão. A proteção contra apagar UM pipeline/etapa isolado (checagem
+   409 em `crmPipelines.ts`) continua intacta — não foi alterada.
+
+**Atualização 20/07/2026:** usuário aplicou a migration manualmente no
+Supabase. Verificado com teste descartável (script temporário, apagado
+depois): criado broker + pipeline + etapa via service_role, executado
+exatamente o `DELETE FROM imf_brokers` que `admin.ts` faz — sem erro de FK,
+e pipeline/etapa confirmados removidos junto (SELECT pós-delete retornou
+vazio pros dois). Cascade efetivo; exclusão de conta pelo admin restaurada
+pra qualquer broker, inclusive com pipeline criado.
 
 ### Deploy
 
