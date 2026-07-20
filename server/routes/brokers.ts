@@ -5,7 +5,7 @@ import { requireClientFinancialOperations } from "../middleware/clientFinancialO
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
 import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
-import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance } from "../services/provisioning";
+import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance, setUazapiWebhook } from "../services/provisioning";
 import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
 
 export const brokersRouter = express.Router();
@@ -203,36 +203,39 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
 // UAZAPI_HOST vazio = integração desligada no servidor (não tenta provisionar,
 // só reporta o que já tem no banco).
 async function resolveManagedInstance(userId: string, brokerId: string): Promise<{
-  token: string | null; ownInstance: boolean; provisioningStatus: string | null; provisioningError: string | null;
+  token: string | null; instanceId: string | null; ownInstance: boolean; provisioningStatus: string | null; provisioningError: string | null;
 }> {
   const { data: member } = await supabase
     .from('imf_broker_members')
-    .select('id, name, whatsapp_mode, uazapi_instance_token, provisioning_status, provisioning_error')
+    .select('id, name, whatsapp_mode, uazapi_instance_id, uazapi_instance_token, provisioning_status, provisioning_error')
     .eq('broker_id', brokerId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (member?.whatsapp_mode === 'own') {
+    // Recém-provisionada: createUazapiInstance já apontou o webhook certo, então
+    // instanceId volta null (não precisa re-afirmar). Instância já existente:
+    // devolve o instanceId pra quem chama poder re-afirmar o webhook (self-heal).
     if (!member.uazapi_instance_token && UAZAPI_HOST) {
       const ensured = await ensureMemberInstance({ id: member.id, name: member.name });
-      return { token: ensured.token, ownInstance: true, provisioningStatus: ensured.status, provisioningError: ensured.error };
+      return { token: ensured.token, instanceId: null, ownInstance: true, provisioningStatus: ensured.status, provisioningError: ensured.error };
     }
     return {
-      token: member.uazapi_instance_token || null, ownInstance: true,
+      token: member.uazapi_instance_token || null, instanceId: member.uazapi_instance_id || null, ownInstance: true,
       provisioningStatus: member.provisioning_status || null, provisioningError: member.provisioning_error || null,
     };
   }
 
   const { data: broker } = await supabase.from('imf_brokers')
-    .select('id, name, uazapi_instance_token, provisioning_status, provisioning_error')
+    .select('id, name, uazapi_instance_id, uazapi_instance_token, provisioning_status, provisioning_error')
     .eq('id', brokerId).single();
 
   if (!broker?.uazapi_instance_token && UAZAPI_HOST) {
     const ensured = await ensureBrokerInstance({ id: brokerId, name: broker?.name });
-    return { token: ensured.token, ownInstance: false, provisioningStatus: ensured.status, provisioningError: ensured.error };
+    return { token: ensured.token, instanceId: null, ownInstance: false, provisioningStatus: ensured.status, provisioningError: ensured.error };
   }
   return {
-    token: broker?.uazapi_instance_token || null, ownInstance: false,
+    token: broker?.uazapi_instance_token || null, instanceId: broker?.uazapi_instance_id || null, ownInstance: false,
     provisioningStatus: broker?.provisioning_status || null, provisioningError: broker?.provisioning_error || null,
   };
 }
@@ -282,7 +285,7 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker not found" });
 
-    const { token, provisioningStatus, provisioningError } = await resolveManagedInstance(userId, brokerId);
+    const { token, instanceId, provisioningStatus, provisioningError } = await resolveManagedInstance(userId, brokerId);
 
     if (!token) {
       const error = provisioningStatus === 'failed'
@@ -290,6 +293,13 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
         : "Sua instância de WhatsApp ainda está sendo preparada. Tente de novo em alguns segundos.";
       return res.status(409).json({ error, provisioningStatus });
     }
+
+    // Self-heal do webhook: instâncias criadas na era Z-PRO têm o webhook
+    // apontando pro backend antigo (appback.criate.online) e as mensagens de
+    // entrada nunca chegam no V2. Re-afirma o webhook correto a cada conexão.
+    // (instanceId só volta preenchido pra instância JÁ existente — a recém
+    // provisionada já nasce com o webhook certo.) Best-effort, não bloqueia.
+    if (instanceId) await setUazapiWebhook(token, instanceId);
 
     // phone opcional: se vier, a UAZAPI gera código de pareamento em vez de
     // QR code (POST /instance/connect aceita os dois modos — ver doc oficial).

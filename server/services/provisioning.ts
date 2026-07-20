@@ -15,6 +15,36 @@ import { fetchWithTimeout } from "../lib/http";
 // provisionar um MEMBRO com WhatsApp próprio (provisionUazapiInstanceForMember)
 // — cria a instância na UAZAPI e já aponta o webhook nativo pra ela. Quem
 // chama decide em qual tabela/linha persistir o resultado.
+// Aponta (ou RE-aponta) o webhook nativo da instância pro nosso backend atual
+// (`${APP_URL}/api/wpp-shim/inbound/:instanceId`), NUNCA pro Z-PRO. Idempotente
+// de propósito: chamado tanto na criação quanto a cada conexão, pra corrigir
+// instâncias legadas cujo webhook ainda aponta pro backend antigo do Z-PRO
+// (`appback.criate.online/uazapi-webhook/...`) — era exatamente isso que fazia
+// as mensagens de entrada dessas contas nunca chegarem no V2. Best-effort:
+// nunca lança (loga e devolve false), pra não derrubar quem chama.
+export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
+  const inboundUrl = `${APP_URL}/api/wpp-shim/inbound/${instanceId}`;
+  try {
+    const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
+      method: 'POST',
+      headers: { token: instanceToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: inboundUrl,
+        enabled: true,
+        events: ['messages', 'connection', 'wasSentByApi', 'messages_update', 'call', 'contacts', 'groups', 'history'],
+        excludeMessages: [],
+        addUrlEvents: false,
+        addUrlTypesMessages: false,
+      }),
+    });
+    console.log(`[Provisioning] webhook nativo ${res.ok ? 'configurado ✓' : 'FALHOU'} → ${inboundUrl}`);
+    return res.ok;
+  } catch (e: any) {
+    console.warn('[Provisioning] setUazapiWebhook exceção:', e.message);
+    return false;
+  }
+}
+
 async function createUazapiInstance(channelName: string): Promise<{ instanceId: string; instanceToken: string }> {
   const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
     method: 'POST',
@@ -30,20 +60,7 @@ async function createUazapiInstance(channelName: string): Promise<{ instanceId: 
   }
 
   // Webhook direto pro nosso backend — NUNCA pro Z-PRO.
-  const inboundUrl = `${APP_URL}/api/wpp-shim/inbound/${instanceId}`;
-  const webhookRes = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
-    method: 'POST',
-    headers: { token: instanceToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      url: inboundUrl,
-      enabled: true,
-      events: ['messages', 'connection', 'wasSentByApi', 'messages_update', 'call', 'contacts', 'groups', 'history'],
-      excludeMessages: [],
-      addUrlEvents: false,
-      addUrlTypesMessages: false,
-    }),
-  });
-  console.log(`[Provisioning] webhook nativo ${webhookRes.ok ? 'configurado ✓' : 'FALHOU'} → ${inboundUrl}`);
+  await setUazapiWebhook(instanceToken, instanceId);
 
   return { instanceId, instanceToken };
 }
