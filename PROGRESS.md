@@ -37,7 +37,11 @@
   `pending`, `processing` ou `dead`.
 - O primeiro rollout criou duas Machines `web` pela HA padrão do Fly. Como os
   schedulers restantes do Express não podem rodar duplicados com segurança, a
-  correção local adiciona `--ha=false` e `flyctl scale count web=1` ao workflow.
+  correção `45b41e0` adicionou `--ha=false` e `flyctl scale count web=1` ao
+  workflow. GitHub Actions run `29853031218` aprovado; uma `web` foi removida,
+  ficando uma `web` ativa, uma `worker` ativa e a standby parada do worker.
+- Smoke final: `/`, `/login` e `/app` HTTP 200; inbox/outbox sem itens
+  `pending`, `processing` ou `dead`.
 
 ## Aba Lembretes publicada (2026-07-21)
 

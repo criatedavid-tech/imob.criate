@@ -3,10 +3,8 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; HEAD publicado e sincronizado com `origin/v2`:
-  `e42c765`.
-- **Working tree NÃO está limpo**: correção do workflow para manter `web=1` e
-  suas atualizações documentais permanecem locais.
+- Branch: `v2`; worker e correção operacional publicados até `45b41e0`.
+- Working tree deve ficar limpo após o commit desta atualização documental.
 - O n8n não foi acessado nem alterado nesta etapa.
 
 ## Pacote publicado: inbox/outbox duráveis
@@ -58,9 +56,11 @@ Banco já preparado:
 - commit `e42c765` e GitHub Actions run `29852566289` aprovados;
 - smoke HTTP 200 e filas sem itens problemáticos após o deploy.
 
-Correção pendente: o primeiro rollout criou duas `web` pela HA padrão. Publicar
-o workflow local que usa `--ha=false` e reafirma `web=1`, pois os schedulers
-legados do Express ainda não podem rodar em duas Machines.
+Correção publicada: o primeiro rollout criou duas `web` pela HA padrão; o
+commit `45b41e0` passou a usar `--ha=false` e reafirmar `web=1`. GitHub Actions
+run `29853031218` aprovado e uma Machine web removida. Topologia final: uma
+`web` ativa, uma `worker` ativa e uma standby parada do worker. Smoke HTTP 200
+e filas sem itens problemáticos.
 
 ## Pacote publicado: aba Lembretes (2026-07-21)
 
@@ -105,7 +105,7 @@ pendente e confirmar que a Agenda não mostra lembretes.
 
 Depois de validar esta entrega:
 
-1. publicar e validar o process group de worker já implementado localmente;
+1. repetir o smoke com uma nova mensagem real após a separação do worker;
 2. implementar métricas e alertas de idade da fila/DLQ;
 3. substituir polling da tela Conversas por Realtime/SSE;
 4. configurar n8n em queue mode e dimensionar workers com teste de carga;
