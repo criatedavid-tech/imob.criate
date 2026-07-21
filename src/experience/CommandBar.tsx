@@ -433,9 +433,17 @@ export function CommandBar({
               botão chamando .click() programático e label com input
               display:none (Android Chrome não abre o seletor de input
               display:none nem via label). Aqui não há display:none, label
-              nem .click() — nada entre o dedo e o input. */}
+              nem .click() — nada entre o dedo e o input.
+              ⚠️ overflow-hidden é OBRIGATÓRIO neste wrapper: no iOS o
+              controle nativo do input file ("Choose File" + nome do
+              arquivo) tem largura intrínseca (~110px+) que o WebKit NÃO
+              encolhe pra caber nos 32px — sem o clip, o excedente
+              invisível transborda por cima do botão de microfone ao lado
+              e captura o toque dele (abria a galeria em vez de gravar;
+              bug real num iPhone 11, ~6 de 7 toques no mic). O clip corta
+              pintura E hit-test no limite da caixa. */}
           <div
-            className={`relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+            className={`relative overflow-hidden w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
               busy || recording || transcribing
                 ? 'text-white/30'
                 : 'text-white/50 hover:text-white hover:bg-white/10'
@@ -471,7 +479,11 @@ export function CommandBar({
               onClick={recording ? stopRecording : startRecording}
               disabled={busy || transcribing}
               title={recording ? 'Parar gravação' : 'Falar por voz'}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 ${
+              // relative z-10: defesa extra contra o transbordo do input file
+              // ao lado (ver comentário do wrapper acima) — posicionado com
+              // z-index pinta e recebe toque ACIMA do input, mesmo se algum
+              // engine ainda vazar hit-area além do overflow-hidden.
+              className={`relative z-10 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 ${
                 recording ? 'text-red-300 bg-red-500/20 animate-pulse' : 'text-white/50 hover:text-white hover:bg-white/10'
               }`}
               aria-label={recording ? 'Parar gravação' : 'Falar por voz'}

@@ -1,26 +1,29 @@
 # Estado do projeto
 
-## Bug: microfone reabre a galeria no iOS após anexar foto (2026-07-21)
+## Bug: microfone abre a galeria no iOS (2026-07-21, resolvido na 2ª tentativa)
 
-- Relatado pelo usuário (iPhone 11): com foto anexada no Assistente IA,
-  tocar no microfone abria o seletor de foto ("Photo Library / Take Photo /
-  Choose Files") em vez de gravar. Sem foto, funcionava. Os prints
-  confirmam o menu nativo do `<input type="file">` — ou seja, o toque no
-  mic estava caindo no seletor de foto invisível ao lado.
-- Causa: efeito colateral do overlay transparente do anexo (input file
-  `absolute opacity-0` sobre o ícone de clipe, solução do commit `729b000`
-  pro Android). No iOS o WebKit prende foco/prioridade de toque no controle
-  nativo depois de abrir o seletor uma vez — o toque seguinte, mesmo no mic
-  adjacente, volta pro input. Só quebrava DEPOIS de anexar (sem foto o input
-  nunca foi tocado). Não é regressão do textarea auto-grow (`320ad1d` não
-  tocou o input file/mic — confirmado no git show).
-- Correção em `CommandBar.tsx`: `key={fileInputResetKey}` no input,
-  incrementada em `handleFileChange` após capturar os arquivos → React
-  descarta o nó antigo com o estado preso e monta um limpo. Baixo risco:
-  Android recria o overlay idêntico, layout inalterado, arquivos já lidos
-  antes do remount.
-- Validado: `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. QA no
-  iPhone depende do usuário (não reproduzo iOS nem tenho device aqui).
+- Relatado pelo usuário (iPhone 11): tocar no microfone do Assistente IA
+  abria o seletor de foto ("Photo Library / Take Photo / Choose Files") em
+  vez de gravar. Falhava ~6 de cada 7 toques.
+- **1ª tentativa (publicada em `4c60a45`, hipótese ERRADA):** retenção de
+  foco no controle nativo após abrir o seletor → `key={fileInputResetKey}`
+  remontando o input após cada uso. Usuário retestou: continuou falhando
+  (1 sucesso em 7), inclusive sem foto anexada — a correlação "só com
+  foto" do primeiro relato era coincidência. O remount ficou no código
+  (inócuo), mas não era a causa.
+- **Causa real (geométrica):** o controle nativo do `<input type="file">`
+  no iOS tem largura intrínseca (~110px+) que o WebKit não encolhe pra
+  caber no wrapper de 32px; sem `overflow-hidden`, o excedente invisível
+  (opacity-0) transbordava por cima do mic (8px de gap) — e o input
+  posicionado (`absolute`) pinta/recebe toque acima do botão estático.
+  O "1 em 7" era o dedo acertando além da borda do transbordo.
+- **Correção em `CommandBar.tsx` (duas camadas):** `overflow-hidden` no
+  wrapper do clipe (clipa pintura e hit-test nos 32px; comentário ⚠️ no
+  código marca como obrigatório) + `relative z-10` no botão de microfone
+  (defesa extra: posicionado com z-index fica acima do input mesmo se
+  algum engine vazar hit-area). Padrão Android preservado por completo.
+- Validado: `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. QA
+  no iPhone depende do usuário (não reproduzo iOS nem tenho device aqui).
 - Pendente: autorização do usuário para commit/push. Sem migration.
 
 ## Bug: texto repetido nas seções da landing page de imóvel (2026-07-21)

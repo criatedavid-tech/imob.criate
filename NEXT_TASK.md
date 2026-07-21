@@ -3,24 +3,30 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; última base publicada `865f592` (fix do texto da landing).
+- Branch: `v2`; última base publicada `4c60a45` (1ª tentativa do fix do mic).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Bug: microfone reabre a galeria no iOS após anexar foto (2026-07-21) — aguardando autorização
+## Bug: microfone abre a galeria no iOS (2026-07-21) — 2ª correção aguardando autorização
 
-Print do usuário (iPhone 11): com foto anexada no Assistente IA, tocar no
-microfone abria o seletor de foto em vez de gravar; sem foto, funcionava.
-Causa: o iOS prende o foco/prioridade de toque no `<input type="file">`
-transparente (overlay do anexo) depois de abrir o seletor uma vez, e roteia
-o toque seguinte de volta pra ele. Correção em `CommandBar.tsx`:
-`key={fileInputResetKey}` no input, incrementada em `handleFileChange` após
-capturar os arquivos → remonta o input limpo e solta o foco preso.
+iPhone 11: tocar no mic do Assistente IA abria o seletor de foto, ~6 de 7
+toques. A 1ª correção (`4c60a45`, remount do input via `key` — hipótese de
+foco retido) NÃO resolveu: usuário retestou e continuou falhando, inclusive
+sem foto anexada.
+
+Causa real: o controle nativo do `<input type="file">` no iOS tem largura
+intrínseca (~110px+) que não encolhe pros 32px do wrapper; sem
+`overflow-hidden`, o excedente invisível transbordava por cima do mic e
+capturava o toque (input `absolute` pinta acima de botão estático).
+
+2ª correção em `CommandBar.tsx`: `overflow-hidden` no wrapper do clipe
+(clipa pintura e hit-test) + `relative z-10` no botão do mic (defesa
+extra). Padrão Android intacto.
 
 `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
-QA no iPhone depende do usuário.
 
-Pendente: autorização do usuário para commit/push.
+Pendente: autorização do usuário para commit/push; depois do deploy, QA no
+iPhone (vários toques seguidos no mic, com e sem foto anexada).
 
 ## Bug: texto repetido na landing page de imóvel (2026-07-21) — aguardando autorização
 

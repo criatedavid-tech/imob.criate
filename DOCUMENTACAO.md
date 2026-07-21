@@ -532,21 +532,36 @@ Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
      Chrome/Samsung/Firefox/iOS reais não têm) e, ao tocar no clipe,
      mostra a dica "abra no Chrome" em vez de um toque sem efeito.
 
-**Fix — microfone reabrindo a galeria no iOS depois de anexar foto
-(21/07/2026):** efeito colateral do overlay transparente acima. Relatado
-pelo usuário num iPhone 11: com foto já anexada, tocar no microfone abria o
-seletor de foto (menu "Photo Library / Take Photo / Choose Files") em vez de
-gravar; sem foto anexada, o microfone funcionava. Causa: no iOS o WebKit
-retém foco/prioridade de toque no controle nativo do `<input type="file">`
-depois que o seletor é aberto uma vez — o toque SEGUINTE, mesmo no botão de
-microfone ao lado (`gap-2`, ~8px de distância), era roteado de volta pro
-input. Por isso só quebrava DEPOIS de anexar uma foto (sem foto o input
-nunca tinha sido tocado). Correção: o input ganhou uma `key`
-(`fileInputResetKey`, em `CommandBar.tsx`) que é incrementada dentro de
-`handleFileChange` após capturar os arquivos — o React descarta o nó DOM
-antigo (com o estado preso) e monta um limpo, soltando o foco retido. Sem
-impacto no Android (o overlay é recriado idêntico) e sem mudar o layout.
-Não foi possível QA no iPhone nesta sessão — validar ao vivo.
+**Fix — microfone abrindo a galeria no iOS (21/07/2026, resolvido em DUAS
+tentativas):** efeito colateral do overlay transparente acima. Relatado
+pelo usuário num iPhone 11: tocar no microfone abria o seletor de foto
+(menu "Photo Library / Take Photo / Choose Files") em vez de gravar —
+falhava ~6 de cada 7 toques.
+
+- *1ª tentativa (errada, mantida por ser inócua):* a hipótese era retenção
+  de foco no controle nativo após abrir o seletor uma vez, "corrigida" com
+  `key={fileInputResetKey}` remontando o input após cada uso. O usuário
+  retestou: continuou falhando (7 tentativas, 1 sucesso) — inclusive SEM
+  foto anexada, o que derrubou a hipótese (a correlação "só com foto"
+  do primeiro relato era coincidência).
+- *Causa real (geométrica):* no iOS, o controle nativo do
+  `<input type="file">` ("Choose File" + nome do arquivo) tem **largura
+  intrínseca (~110px+)** que o WebKit **não encolhe** pra caber no wrapper
+  de 32px — `w-full h-full` define a caixa do elemento, mas o conteúdo
+  nativo transborda. O wrapper não tinha `overflow-hidden`, então o
+  excedente invisível (opacity-0) cobria o botão de microfone ao lado
+  (só 8px de gap) — e, por ser posicionado (`absolute`), o input pinta e
+  recebe toque ACIMA do botão estático. O "1 em 7" era o dedo acertando
+  além da borda do transbordo.
+- *Correção em duas camadas:* `overflow-hidden` no wrapper do clipe (clipa
+  pintura E hit-test no limite dos 32px — comentário ⚠️ no código marca
+  como obrigatório) + `relative z-10` no botão de microfone (mesmo se
+  algum engine vazar hit-area, o mic posicionado com z-index fica acima).
+  Zero impacto no padrão Android (sem display:none, sem label, sem
+  .click() — tudo preservado).
+- *Lição:* overlay `absolute + opacity-0` de input file SEMPRE precisa de
+  `overflow-hidden` no wrapper — o controle nativo do iOS não respeita a
+  caixa. Validar no iPhone real.
 
 **Fix — campo de mensagem de uma linha só e barra superior sobrepondo no
 mobile (21/07/2026):** dois bugs de UI relatados pelo usuário via print.
