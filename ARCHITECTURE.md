@@ -94,6 +94,9 @@
   apenas registram e exibem valores/status.
 - Push em `v2` executa GitHub Actions: `npm ci`, TypeScript, Knip, build e
   deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
+- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é versionada no `fly.toml` e
+  prevalece sobre `APP_URL`; evita que secrets legados recriem URLs/webhooks
+  para `appback.criate.online`.
 - A topologia inicial mantém uma Machine `web` ativa e uma `worker` ativa,
   ambas `shared-cpu-1x`/1 GB; o Fly pode conservar uma standby parada para o
   worker. A API ainda contém jobs periódicos legados, portanto o workflow usa

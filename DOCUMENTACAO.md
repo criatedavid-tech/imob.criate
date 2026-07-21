@@ -323,6 +323,22 @@ a etapa ou pipeline arquivado. O backend tem compatibilidade temporária quando
 as RPCs novas ainda não existem, mas esta migration deve ser executada e
 verificada antes do próximo commit/push que publique esse código.
 
+**Bug crítico encontrado em 21/07/2026 (só agora, por falta do QA autenticado
+citado acima):** `imf_crm_ensure_default_pipeline` (a autocura chamada por
+`GET /api/crm/pipelines` antes de listar) declarava
+`RETURNS TABLE (pipeline_id UUID, first_stage_id UUID)`, o que cria uma
+variável de saída `pipeline_id` visível na função inteira. Uma consulta no
+corpo usava `pipeline_id` sem alias — `imf_crm_pipeline_stages` também tem
+coluna `pipeline_id` — e o Postgres recusa a ambiguidade (42702, "It could
+refer to either a PL/pgSQL variable or a table column"). Essa consulta é a
+própria condição de um `IF`, roda sempre, então a função falhava em 100% das
+chamadas, pra qualquer broker: a tela Negócios/CRM inteira ficou fora do ar
+desde que `20260720b` foi aplicada (20/07/2026) até a descoberta ao vivo
+(21/07/2026). Corrigido em `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql`
+(mesma função, só qualifica a referência com o alias `stage`, já usado no
+resto da própria função). Não precisa de deploy — é só a função no Postgres;
+efeito imediato após aplicar a migration manualmente.
+
 **O que existe agora:**
 
 - `NegociosArea.tsx` ganhou duas abas: **Kanban** (o funil, agora com
@@ -528,6 +544,12 @@ devolver o `instanceId` da instância já existente, e
 conexão. Assim qualquer instância legada se autocura ao reconectar. A
 instância afetada teve o webhook re-apontado manualmente na hora; confirmado
 pelo usuário que a mensagem de entrada voltou a chegar no painel.
+
+Em 21/07/2026 o problema reapareceu após o self-heal: o Fly ainda possuía um
+`APP_URL` legado, então a própria rotina correta montava novamente a URL do
+Z-PRO. A correção definitiva adiciona `PUBLIC_APP_URL` com precedência em
+`server/config.ts` e fixa o domínio V2 no `fly.toml`; `APP_URL` permanece apenas
+como fallback compatível.
 
 **Suporte — áudio e imagem recebidos do cliente no WhatsApp (20/07/2026):**
 o inbound `POST /api/wpp-shim/inbound/:instanceId` descartava de propósito
@@ -875,7 +897,8 @@ scheduler singleton. Até lá, o workflow publica com `--ha=false` e executa
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_SUPABASE_ANON_KEY` no build do frontend
-- `APP_URL`
+- `PUBLIC_APP_URL` (canônica; prevalece sobre `APP_URL` legado)
+- `APP_URL` como fallback compatível
 
 ### Por integração
 
@@ -911,6 +934,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
 | `20260721c_agenda_event_type.sql` | aplicada e verificada | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
+| `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | **aguardando aplicação manual** | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

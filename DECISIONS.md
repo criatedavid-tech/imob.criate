@@ -21,6 +21,17 @@
   `service_role`; reorder, troca de padrão, autocura e transições são atômicos.
   A migration `20260720b_crm_security_hardening.sql` já foi aplicada e
   verificada.
+- **Bug crítico na autocura do CRM, achado em 21/07/2026.**
+  `imf_crm_ensure_default_pipeline` usava `RETURNS TABLE (pipeline_id UUID,
+  ...)`, criando uma variável de saída com o mesmo nome de uma coluna real de
+  `imf_crm_pipeline_stages`; uma referência sem alias no corpo da função virou
+  coluna ambígua (42702) e derrubava 100% das chamadas de `GET /api/crm/
+  pipelines`, pra qualquer broker, desde que `20260720b` foi aplicada — só
+  descoberto agora por falta de QA autenticado ao vivo da tela Negócios/CRM.
+  Corrigido em `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql`
+  (só qualifica a referência; mesma função, sem mudar assinatura/RPC). Lição:
+  em função `RETURNS TABLE`, nunca reusar nome de coluna real como nome de
+  saída sem qualificar toda referência a essa coluna no corpo.
 - **Exclusão segura.** Leads não usam CASCADE com pipeline/etapa; pipelines e
   etapas usam CASCADE apenas ao excluir o broker inteiro.
 - **Compatibilidade CRM.** Pipeline/etapa são fonte de verdade; trigger mantém
@@ -49,6 +60,10 @@
   `worker` faz polling da inbox/outbox e drena o ciclo ativo no desligamento.
   Isso isola CPU/memória de texto, áudio e imagem e permite escalar os workers
   sem aumentar a API. O n8n não foi alterado nesta etapa.
+- **URL pública versionada prevalece sobre secret legado (2026-07-21).** A V2
+  usa `PUBLIC_APP_URL` antes de `APP_URL`. Isso impede o self-heal da UAZAPI de
+  reapontar instâncias para `appback.criate.online` quando um secret antigo
+  ainda existir no Fly e mantém links/reset/landing pages no domínio V2.
 - **`web` singleton enquanto houver scheduler legado (2026-07-21).** O Fly
   criou duas Machines web por alta disponibilidade no primeiro rollout, mas
   isso também duplicaria os jobs periódicos ainda presentes em `server.ts`.

@@ -24,7 +24,14 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 // ─── VARIÁVEIS DE AMBIENTE EXTERNAS ───────────────────────────────────────────
-export const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
+// PUBLIC_APP_URL tem precedencia para permitir que o deploy versionado
+// neutralize um APP_URL legado ainda presente nos secrets do provedor.
+// APP_URL permanece como fallback para desenvolvimento e instalações antigas.
+export const APP_URL = (
+  process.env.PUBLIC_APP_URL
+  || process.env.APP_URL
+  || "http://localhost:3000"
+).replace(/\/+$/, "");
 export const ASAAS_API_KEY       = process.env.ASAAS_API_KEY       || "";
 export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
   ? 'https://api.asaas.com/v3'

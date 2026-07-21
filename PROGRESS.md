@@ -1,5 +1,41 @@
 # Estado do projeto
 
+## Correção local: webhook UAZAPI revertia para o legado (2026-07-21)
+
+- O teste "teste worker" das 14:34 não chegou à inbox. Leitura confirmou a
+  instância conectada, mas webhook novamente em `appback.criate.online`.
+- Causa: `setUazapiWebhook` usa `APP_URL`, e produção ainda possui valor legado.
+- Correção: `PUBLIC_APP_URL` passa a prevalecer em `server/config.ts` e o
+  `fly.toml` fixa `https://imobiflow-v2.fly.dev`. Sem migration e sem alteração
+  no n8n; aguardando validação/publicação.
+
+## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
+
+- Investigado a partir do print do usuário: aba Negócios mostrava "Erro ao
+  carregar pipelines." `flyctl logs` (em produção) revelou a causa real:
+  `imf_crm_ensure_default_pipeline` (autocura chamada por `GET /api/crm/
+  pipelines` antes de listar) tem uma coluna ambígua (42702) — a função
+  declara `RETURNS TABLE (pipeline_id UUID, ...)`, e uma consulta no corpo
+  referenciava `pipeline_id` sem alias, colidindo com a coluna real de
+  `imf_crm_pipeline_stages`.
+- Essa consulta é a própria condição de um `IF` (roda sempre, não depende de
+  nenhum dado existir): a função falhava em 100% das chamadas, pra qualquer
+  broker, desde que `20260720b_crm_security_hardening.sql` foi aplicada
+  (20/07/2026). A tela Negócios/CRM ficou fora do ar esse tempo todo sem
+  ninguém perceber, porque nunca houve QA autenticado ao vivo dessa tela
+  (`DOCUMENTACAO.md` já registrava isso como pendência).
+- Correção pronta: `supabase/migrations/20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql`
+  — mesma função, só qualifica a referência com o alias `stage` (padrão já
+  usado no resto da própria função). Não precisa de deploy: efeito imediato
+  assim que a migration rodar no Supabase.
+- Auditado o resto do arquivo `20260720b` em busca do mesmo padrão (OUT
+  parameter de `RETURNS TABLE` com nome igual a coluna real, referenciado sem
+  alias): as outras quatro funções e o trigger usam variáveis `v_`/`p_`
+  prefixadas ou já qualificam com alias — bug isolado, só nesta função.
+- **Pendente:** aplicar a migration manualmente no Supabase e autorização do
+  usuário para commit/push (regra padrão do projeto). Nenhuma mudança de
+  código TypeScript — só a função no Postgres.
+
 ## Fila durável de webhooks publicada (2026-07-21)
 
 - `POST /api/wpp-shim/inbound/:instanceId` não confirma mais antes de guardar

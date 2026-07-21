@@ -3,9 +3,38 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; worker e correção operacional publicados até `45b41e0`.
-- Working tree deve ficar limpo após o commit desta atualização documental.
+- Branch: `v2`; base publicada `94a704a`.
+- Working tree contém a correção local de `PUBLIC_APP_URL` e documentação.
 - O n8n não foi acessado nem alterado nesta etapa.
+
+## Correção imediata pendente
+
+O teste pós-worker das 14:34 não chegou à inbox porque a UAZAPI voltou a
+`appback.criate.online`. A instância está conectada; o self-heal usa o
+`APP_URL` legado do ambiente. Publicar a precedência de `PUBLIC_APP_URL`
+versionada no `fly.toml`, reapontar a instância para V2 e repetir o teste real.
+
+## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
+
+Investigado a partir de um erro relatado pelo usuário na aba Negócios ("Erro
+ao carregar pipelines."). Causa: coluna ambígua (42702) em
+`imf_crm_ensure_default_pipeline` — `RETURNS TABLE (pipeline_id UUID, ...)`
+cria uma variável de saída `pipeline_id`, e uma consulta no corpo da função
+referenciava a coluna real de `imf_crm_pipeline_stages` sem alias. Como essa
+consulta é a própria condição de um `IF` (roda sempre), a função falhava em
+100% das chamadas de `GET /api/crm/pipelines`, pra qualquer broker, desde que
+`20260720b_crm_security_hardening.sql` foi aplicada (20/07/2026) — só
+percebido agora por falta de QA autenticado ao vivo da tela.
+
+Correção pronta, ainda não aplicada nem publicada:
+
+- migration `supabase/migrations/20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql`
+  (só qualifica a referência com o alias `stage`; mesma assinatura/RPC);
+- nenhuma mudança de código TypeScript;
+- documentação já atualizada (`DOCUMENTACAO.md`, `DECISIONS.md`, `PROGRESS.md`).
+
+Pendente: aplicar a migration manualmente no Supabase (efeito imediato, sem
+deploy) e autorização do usuário para commit/push da migration + docs.
 
 ## Pacote publicado: inbox/outbox duráveis
 

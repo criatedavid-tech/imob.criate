@@ -52,4 +52,6 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 - Antes de commit: `npm run lint`, `npx knip`, `npm run build` e
   `git diff --check`.
 - `git push origin v2` dispara validação e deploy automaticamente.
+- A URL pública canônica da V2 é `PUBLIC_APP_URL`; ela prevalece sobre
+  `APP_URL` legado em produção.
 - Toda mudança funcional atualiza `DOCUMENTACAO.md` e os cinco arquivos PMP.
