@@ -3,16 +3,19 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; base publicada `94a704a`.
-- Working tree contém a correção local de `PUBLIC_APP_URL` e documentação.
+- Branch: `v2`; base publicada `5ff6b00`.
+- A correção de `PUBLIC_APP_URL` está publicada; permanece fora desse pacote a
+  migration não rastreada criada em outra sessão.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Correção imediata pendente
+## Correção imediata concluída; falta reteste real
 
 O teste pós-worker das 14:34 não chegou à inbox porque a UAZAPI voltou a
 `appback.criate.online`. A instância está conectada; o self-heal usa o
-`APP_URL` legado do ambiente. Publicar a precedência de `PUBLIC_APP_URL`
-versionada no `fly.toml`, reapontar a instância para V2 e repetir o teste real.
+`APP_URL` legado do ambiente. A precedência de `PUBLIC_APP_URL` versionada no
+`fly.toml` foi publicada no commit `5ff6b00` (workflow `29853967632`) e a
+instância foi reapontada e relida no endpoint V2. A mensagem antiga não é
+reprocessada retroativamente; repetir agora o teste com uma mensagem nova.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 

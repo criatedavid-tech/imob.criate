@@ -1,13 +1,16 @@
 # Estado do projeto
 
-## Correção local: webhook UAZAPI revertia para o legado (2026-07-21)
+## Correção publicada: webhook UAZAPI revertia para o legado (2026-07-21)
 
 - O teste "teste worker" das 14:34 não chegou à inbox. Leitura confirmou a
   instância conectada, mas webhook novamente em `appback.criate.online`.
 - Causa: `setUazapiWebhook` usa `APP_URL`, e produção ainda possui valor legado.
 - Correção: `PUBLIC_APP_URL` passa a prevalecer em `server/config.ts` e o
   `fly.toml` fixa `https://imobiflow-v2.fly.dev`. Sem migration e sem alteração
-  no n8n; aguardando validação/publicação.
+  no n8n. Publicada no commit `5ff6b00` pelo workflow `29853967632`; a instância
+  foi reapontada para a V2 e relida com webhook habilitado/evento `messages`.
+  Smoke HTTP retornou 200 e inbox/outbox ficaram sem itens pendentes,
+  processando ou mortos. Falta apenas uma nova mensagem real do usuário.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 

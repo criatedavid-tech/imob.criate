@@ -549,7 +549,9 @@ Em 21/07/2026 o problema reapareceu após o self-heal: o Fly ainda possuía um
 `APP_URL` legado, então a própria rotina correta montava novamente a URL do
 Z-PRO. A correção definitiva adiciona `PUBLIC_APP_URL` com precedência em
 `server/config.ts` e fixa o domínio V2 no `fly.toml`; `APP_URL` permanece apenas
-como fallback compatível.
+como fallback compatível. Foi publicada no commit `5ff6b00` pelo workflow
+`29853967632`; depois do rollout, a instância afetada foi reapontada e a leitura
+da UAZAPI confirmou o endpoint V2 habilitado com o evento `messages` ativo.
 
 **Suporte — áudio e imagem recebidos do cliente no WhatsApp (20/07/2026):**
 o inbound `POST /api/wpp-shim/inbound/:instanceId` descartava de propósito
