@@ -8,6 +8,7 @@ import { SUPABASE_URL } from "./server/config";
 import "./server/lib/infra"; // side-effect: inicializa Sentry/Redis se configurados
 import { prepareOverageBilling, reconcilePendingBillingActions } from "./server/services/billing";
 import { runFollowupTick } from "./server/services/followup";
+import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduledFollowups";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 
@@ -149,6 +150,13 @@ async function startServer() {
   // --- Jobs em background (ver server/services/) ---
   setInterval(runFollowupTick, 60_000);
   console.log('[Follow-up] scheduler ativo (tick 60s)');
+
+  // Follow-up agendado ad-hoc pelo Assistente IA interno (ação
+  // "schedule_followup" em server/services/agent.ts) — distinto do
+  // Follow-Up Inteligente acima (régua automática por status de conversa).
+  setInterval(runScheduledAgentFollowupsTick, 60_000);
+  runScheduledAgentFollowupsTick();
+  console.log('[Agent Follow-up] scheduler ativo (tick 60s)');
 
   // Verifica a cada hora se algum corretor tem renovação amanhã e emite o
   // valor combinado (mensalidade + excedente) na assinatura do Asaas.

@@ -126,6 +126,7 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     const CONFIRMABLE_ACTIONS = [
       "create_lead", "create_visit", "send_message", "create_property",
       "update_property", "cancel_visit", "update_visit", "end_rental_contract", "update_unit",
+      "create_reminder", "schedule_followup",
     ];
     if (!CONFIRMABLE_ACTIONS.includes(action.type)) {
       return res.status(400).json({ error: "Essa ação não precisa de confirmação." });

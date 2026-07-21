@@ -7,6 +7,7 @@ import { fetchWithTimeout } from "../lib/http";
 import { APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
 import { resolveNewLeadStage } from "./crmPipelines";
+import { scheduleAgentFollowup } from "./agentScheduledFollowups";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -29,9 +30,23 @@ function brDateTimeToISO(date: string, time: string): Date {
   return new Date(`${date}T${time}:00-03:00`);
 }
 
+// create_reminder / schedule_followup — "em 24h"/"em 2 dias" é um atraso
+// relativo a partir de agora, não uma data de calendário; por isso não
+// reaproveita brDateTimeToISO (que ancora no fuso do Brasil pra uma
+// data/hora ABSOLUTA que o modelo apontou). Retorna null se não der pra
+// interpretar, pra executeAction recusar com uma mensagem honesta em vez
+// de agendar num horário arbitrário.
+function computeDueAt(delayValue?: string, delayUnit?: string): Date | null {
+  const n = parseInt(String(delayValue || "").replace(/\D/g, ""), 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const msPerUnit = delayUnit === "dias" ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+  return new Date(Date.now() + n * msPerUnit);
+}
+
 export interface AgentAction {
   type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "send_message"
-      | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit";
+      | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
+      | "create_reminder" | "schedule_followup";
   area?: string;
   // create_lead / create_visit
   name?: string;
@@ -85,6 +100,15 @@ export interface AgentAction {
   // mensagem de verdade pelo WhatsApp depois de cancelar/remarcar — antes
   // disso a ação só mexia na agenda e nunca avisava ninguém.
   notify_message?: string;
+  // create_reminder / schedule_followup — atraso relativo a partir de AGORA.
+  // O modelo só extrai número+unidade da fala ("48h", "dois dias") — NUNCA
+  // calcula a data/hora absoluta, isso é feito em código (computeDueAt),
+  // mesmo princípio determinístico de query_agenda (sem 2ª chamada ao LLM
+  // pra aritmética que ele erra fácil).
+  delay_value?: string; // só o número, ex.: "24", "2"
+  delay_unit?: "horas" | "dias";
+  // create_reminder — o que lembrar, além do padrão "fazer follow-up".
+  note?: string;
 }
 
 export interface AgentTurn {
@@ -388,6 +412,8 @@ function buildSystemPrompt(snap: Snapshot, persona: string, autonomy: Autonomy):
   if (isIncorporadora) {
     extraActions.push(`${++actionNum}. "update_unit" — reservar, vender ou liberar uma unidade de lançamento. Precisa de unit_id (da lista de "Unidades" abaixo, nunca invente), unit_action ("reservar"|"vender"|"liberar"). Pra "reservar" precisa também de buyer_name (e buyer_phone se tiver). Pra "vender" buyer_name é opcional (mantém o que já estava reservado se não for informado).`);
   }
+  extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar), delay_value (só o número, ex.: "2", "48") e delay_unit ("horas" ou "dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
+  extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X um follow-up/mensagem pro Y" — a mensagem sai sozinha depois do prazo, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), delay_value e delay_unit (mesma regra de "create_reminder" acima), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
 
   return `Você é a assistente de IA do ImobiFlow, trabalhando para ${snap.brokerName}, um corretor de imóveis. Você fala português do Brasil, de forma curta, direta e cordial — como um colega de trabalho competente, nunca robótica.
 
@@ -757,6 +783,54 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     return { summary: `Unidade ${unit.code || ""} ${actionLabel}.`.replace("  ", " "), navigate: "lancamentos" };
   }
 
+  if (action.type === "create_reminder") {
+    if (!action.name) throw new Error("Preciso do nome do contato pra criar o lembrete.");
+    const dueAt = computeDueAt(action.delay_value, action.delay_unit);
+    if (!dueAt) throw new Error("Não consegui entender em quanto tempo lembrar.");
+
+    // Reaproveita a Agenda existente (mesma tabela/tela de visitas) — o
+    // corretor já confere lá, e "marcar como realizado" já é o fluxo que
+    // existe hoje. Sem imóvel, sem tabela nova: só um evento com o título
+    // deixando claro que é um lembrete, não uma visita marcada.
+    const { error } = await supabase.from("imf_agenda").insert({
+      broker_id: brokerId,
+      owner_user_id: userId,
+      client_name: action.name,
+      client_phone: action.phone ? normalizePhoneBR(action.phone) : null,
+      scheduled_at: dueAt.toISOString(),
+      duration_minutes: 15,
+      title: `Lembrete: ${action.note?.trim() || "fazer follow-up"}`,
+      status: "pendente",
+      source: "ia",
+    });
+    if (error) throw error;
+    const quando = dueAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BR_TZ });
+    return { summary: `Lembrete criado: follow-up com ${action.name} em ${quando}.`, navigate: "agenda" };
+  }
+
+  if (action.type === "schedule_followup") {
+    if (!action.name) throw new Error("Preciso do nome do contato.");
+    if (!action.phone) throw new Error("Preciso do telefone pra agendar o envio.");
+    if (!action.message?.trim()) throw new Error("Preciso do texto da mensagem.");
+    const dueAt = computeDueAt(action.delay_value, action.delay_unit);
+    if (!dueAt) throw new Error("Não consegui entender em quanto tempo enviar.");
+
+    // Só agenda aqui — o envio de verdade acontece no job de background
+    // (server/services/agentScheduledFollowups.ts, tick 60s), igual ao
+    // Follow-Up Inteligente. O texto já vem pronto agora; não é regenerado
+    // na hora do envio.
+    await scheduleAgentFollowup({
+      brokerId,
+      ownerUserId: userId,
+      contactName: action.name,
+      contactPhone: action.phone,
+      message: action.message,
+      dueAt,
+    });
+    const quando = dueAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BR_TZ });
+    return { summary: `Follow-up agendado para ${action.name} em ${quando}.` };
+  }
+
   throw new Error("Ação não executável.");
 }
 
@@ -764,7 +838,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 // garante JSON válido) — reforçado em texto no fim do system prompt também
 // (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "horas|dias", "note"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
