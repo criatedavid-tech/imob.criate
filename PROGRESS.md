@@ -1,6 +1,6 @@
 # Estado do projeto
 
-## Fila durável de webhooks implementada localmente (2026-07-21)
+## Fila durável de webhooks publicada (2026-07-21)
 
 - `POST /api/wpp-shim/inbound/:instanceId` não confirma mais antes de guardar
   o evento: autenticação da instância + INSERT na inbox precedem o HTTP 200;
@@ -13,8 +13,10 @@
 - `npm run lint`, `npm run build` e `git diff --check` aprovados localmente.
 - Migration aplicada manualmente e verificada por leitura em 21/07/2026: as
   duas tabelas estão acessíveis pelo backend, vazias e sem itens `dead`.
-- Código ainda não publicado: falta autorização para commit/push/deploy;
-  depois fazer smoke real e deduplicar `event_id` no workflow N8N.
+- Publicado no commit `28de500`; GitHub Actions run `29840243877` aprovou
+  TypeScript, Knip, build e deploy Fly. Smoke pós-deploy: `/`, `/login` e
+  `/app` HTTP 200; inbox/outbox sem itens `pending`, `processing` ou `dead`.
+- Falta o smoke com mensagem real e deduplicar `event_id` no workflow N8N.
 
 ## Implementado localmente, aguardando autorização de commit (2026-07-21)
 

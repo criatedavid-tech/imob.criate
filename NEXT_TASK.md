@@ -4,12 +4,11 @@
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
 - Branch: `v2`; HEAD publicado e sincronizado com `origin/v2`:
-  `2378cc3`.
-- Working tree não está limpo: contém a primeira etapa da evolução de
-  escalabilidade, ainda sem commit/push/deploy.
+  `28de500`.
+- Working tree limpo após a publicação da primeira etapa de escalabilidade.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Pacote local: inbox/outbox duráveis
+## Pacote publicado: inbox/outbox duráveis
 
 Implementado:
 
@@ -28,8 +27,16 @@ Implementado:
 Validações locais aprovadas:
 
 - `npm run lint`;
+- `npx knip`;
 - `npm run build`;
 - `git diff --check`.
+
+Publicação confirmada:
+
+- commit `28de500` em `v2`;
+- GitHub Actions run `29840243877` aprovado (validação + deploy Fly);
+- `/`, `/login` e `/app` responderam HTTP 200 após o deploy;
+- inbox/outbox sem itens `pending`, `processing` ou `dead` após o deploy.
 
 Banco já preparado:
 
@@ -40,14 +47,12 @@ Banco já preparado:
 
 ## Sequência obrigatória
 
-1. Revisar o diff local.
-2. Autorizar commit/push/deploy do backend; a migration já foi aplicada.
-3. Fazer smoke com uma mensagem textual real.
-4. Confirmar inbox e outbox em `completed`.
-5. Reenviar o mesmo evento e confirmar ausência de mensagem duplicada.
-6. Interromper/reiniciar um worker durante o processamento e confirmar
+1. Fazer smoke com uma mensagem textual real.
+2. Confirmar inbox e outbox em `completed`.
+3. Reenviar o mesmo evento e confirmar ausência de mensagem duplicada.
+4. Interromper/reiniciar um worker durante o processamento e confirmar
    recuperação do lease.
-7. Implementar no workflow n8n deduplicação pelo `event_id` antes de qualquer
+5. Implementar no workflow n8n deduplicação pelo `event_id` antes de qualquer
    envio ou mutação externa.
 
 ## Critério de conclusão desta etapa
