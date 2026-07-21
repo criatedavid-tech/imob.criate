@@ -787,8 +787,9 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   `event_type='lembrete'`, `status='pendente'`,
   `whatsapp_alert_sent_at IS NULL` e `scheduled_at` no passado (até 20 por
   tick), manda `sendUazapiText` (`server/services/uazapi.ts`) usando
-  `imf_brokers.phone`/`uazapi_instance_token` e marca
-  `whatsapp_alert_sent_at` pra não reenviar. Lock com `try_billing_lock`/
+  `imf_brokers.notification_phone` (número pessoal, com fallback pro `phone`
+  desde 2026-07-21 — evita auto-envio) a partir do `uazapi_instance_token` e
+  marca `whatsapp_alert_sent_at` pra não reenviar. Lock com `try_billing_lock`/
   `release_billing_lock` (mesmo padrão de `agentScheduledFollowups.ts`).
   Falha não marca nada — tenta de novo no próximo tick; sem estado "failed"
   separado (escopo baixo risco, complementar ao badge visual).
@@ -799,6 +800,43 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   historicamente só pra decidir de qual instância RESPONDER um cliente).
   Numa conta com membro em modo "own", o alerta cai no titular, não em quem
   criou o lembrete.
+- **Notificação de visita marcada pela IA de atendimento (2026-07-21):**
+  quando o cliente agenda uma visita conversando com a IA no WhatsApp
+  (`POST /api/agenda/n8n/create`, autenticado por `INTERNAL_PROXY_TOKEN`), o
+  corretor não está no loop e precisa ser avisado. Duas vias, escolhidas pelo
+  usuário: badge dentro do app **e** WhatsApp num número pessoal.
+  Migration `20260721g_visit_broker_notification.sql` (aplicada manualmente)
+  adiciona `imf_agenda.booked_by_chatbot` (bool), `broker_seen_at`,
+  `whatsapp_notified_at` e `imf_brokers.notification_phone`, mais um índice
+  parcial pro job.
+  - `booked_by_chatbot` é coluna própria em vez de reaproveitar `source`
+    (que já grava `'ia'` tanto pra visita do N8N quanto pra do Assistente
+    IA in-app) — assim os filtros/relatórios que agrupam por `source` não
+    mudam. Só `POST /api/agenda/n8n/create` seta `true`; o Assistente in-app
+    e a criação manual não setam (ali o corretor já vê a visita na tela).
+  - **Badge in-app:** `ManualRail.tsx` ganhou `useNewChatbotVisitCount(active)`
+    — busca `GET /api/agenda/visits` a cada 60s e conta as com
+    `booked_by_chatbot && !broker_seen_at`, mostrando badge vermelho no ícone
+    da Agenda (desktop + drawer). Ao abrir a Agenda (`active==='agenda'`) chama
+    `POST /api/agenda/visits/mark-chatbot-seen` (novo, seta `broker_seen_at`
+    em lote, respeitando escopo titular/membro) e zera o badge na hora. Falha
+    de rede silenciosa. `badgeFor(key)` centraliza a escolha lembrete×agenda.
+  - **WhatsApp:** `server/services/visitAlerts.ts` —
+    `runVisitWhatsappAlertTick`, job de 60s em `server.ts`. Busca
+    `booked_by_chatbot`, `whatsapp_notified_at IS NULL`, `scheduled_at >= now()`
+    (até 20/tick), manda `sendUazapiText` pro `imf_brokers.notification_phone`
+    a partir da instância da conta, marca `whatsapp_notified_at`. Sem
+    `notification_phone` configurado, marca como resolvida (o badge cobre) em
+    vez de reprocessar toda hora; falha de ENVIO não marca (retry no próximo
+    tick). Lock `visit_whatsapp_alerts` (mesmo padrão dos outros jobs).
+  - **Por que um número pessoal separado:** a instância UAZAPI é o número
+    comercial que a IA usa pra falar com o cliente; um número não notifica a
+    si mesmo de forma confiável pelo WhatsApp. `notification_phone` (novo
+    campo em Config → Seu perfil, `GET /api/brokers/me` +
+    `POST /api/brokers/settings`, whitelisted e normalizado, vazio→NULL) é o
+    número pessoal de destino. A UI avisa pra usar um número diferente do
+    comercial. Vazio = só badge in-app. Mesma limitação titular×membro do
+    alerta de lembrete.
 
 ### Asaas e limite do escopo financeiro
 

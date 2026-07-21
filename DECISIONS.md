@@ -145,3 +145,14 @@
   criou o lembrete foi um membro em modo "own" — nesse caso o alerta cai no
   titular, não no membro. Limitação conhecida e documentada; corrigir exigiria
   adicionar telefone próprio ao membro, fora do escopo deste pedido.
+- **Notificar corretor de visita da IA usa número PESSOAL separado, não o
+  comercial (2026-07-21).** A instância UAZAPI é o número comercial que a IA
+  de atendimento usa pra falar com o cliente; um número não consegue notificar
+  a si mesmo de forma confiável pelo WhatsApp. Por isso o alerta de visita
+  marcada pela IA (`booked_by_chatbot`) vai pra `imf_brokers.notification_phone`
+  (campo novo, editável em Config), sempre um número diferente do comercial.
+  Se não configurado, cai só no badge in-app. Optou-se por coluna própria
+  `booked_by_chatbot` em vez de reaproveitar `source` (que já grava `'ia'`
+  pra visita do N8N e do Assistente in-app) pra não notificar o corretor de
+  visita que ele mesmo acabou de ditar e não mexer nos relatórios que agrupam
+  por `source`. Mesma limitação titular×membro do alerta de lembrete.

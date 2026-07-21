@@ -10,6 +10,7 @@ import { prepareOverageBilling, reconcilePendingBillingActions } from "./server/
 import { runFollowupTick } from "./server/services/followup";
 import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduledFollowups";
 import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
+import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 
@@ -165,6 +166,12 @@ async function startServer() {
   setInterval(runReminderWhatsappAlertTick, 60_000);
   runReminderWhatsappAlertTick();
   console.log('[Reminder Alert] scheduler ativo (tick 60s)');
+
+  // Alerta por WhatsApp pro corretor quando a IA de atendimento (N8N) marca
+  // uma visita (booked_by_chatbot) — complementa o badge visual na Agenda.
+  setInterval(runVisitWhatsappAlertTick, 60_000);
+  runVisitWhatsappAlertTick();
+  console.log('[Visit Alert] scheduler ativo (tick 60s)');
 
   // Verifica a cada hora se algum corretor tem renovação amanhã e emite o
   // valor combinado (mensalidade + excedente) na assinatura do Asaas.

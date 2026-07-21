@@ -1,5 +1,30 @@
 # Estado do projeto
 
+## Feature: notificar corretor quando a IA de atendimento marca visita (2026-07-21)
+
+- Quando o cliente agenda visita conversando com a IA no WhatsApp
+  (`POST /api/agenda/n8n/create`), o corretor não estava no loop. Agora é
+  avisado por duas vias (escolha do usuário): badge na Agenda dentro do app
+  **e** WhatsApp num número pessoal.
+- Migration `20260721g_visit_broker_notification.sql` (aplicar manualmente):
+  `imf_agenda.booked_by_chatbot`, `broker_seen_at`, `whatsapp_notified_at` +
+  `imf_brokers.notification_phone` + índice parcial.
+- Backend: rota N8N grava `booked_by_chatbot=true`; novo
+  `POST /api/agenda/visits/mark-chatbot-seen`; job
+  `server/services/visitAlerts.ts` (`runVisitWhatsappAlertTick`, 60s) manda o
+  WhatsApp pro `notification_phone` a partir da instância da conta;
+  `/api/brokers/me` + `/api/brokers/settings` passam a expor/gravar
+  `notification_phone`.
+- Frontend: badge no ícone da Agenda (`useNewChatbotVisitCount` em
+  `ManualRail.tsx`) que zera ao abrir a Agenda; campo "Número pessoal para
+  alertas" em Config → Seu perfil (`ConfigArea.tsx`), com aviso pra usar um
+  número diferente do comercial.
+- Motivo do número separado: a instância UAZAPI é o número comercial que a IA
+  usa com o cliente; um número não notifica a si mesmo de forma confiável.
+  Sem `notification_phone`, só o badge in-app aparece.
+- `tsc`, `knip`, `build`, `git diff --check` OK. Não commitado — aguardando
+  autorização. Depende da migration aplicada no Supabase pra funcionar.
+
 ## Melhoria: seletor de data/hora no "Agendar Visita" da landing (2026-07-21)
 
 - Usuário pediu que o campo "Horário de preferência" (antes texto livre) vire

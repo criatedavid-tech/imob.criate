@@ -38,6 +38,42 @@ function useDueReminderCount(): number {
   return count;
 }
 
+// Badge da Agenda: conta visitas marcadas pela IA de atendimento (N8N,
+// booked_by_chatbot) que o corretor ainda não viu. Ao abrir a Agenda, chama
+// mark-chatbot-seen e zera na hora. Mesma filosofia do sino de lembretes:
+// extra silencioso, nunca trava a navegação.
+function useNewChatbotVisitCount(active: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch('/api/agenda/visits', { headers: authService.getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const n = Array.isArray(data)
+          ? data.filter((r: any) => r.booked_by_chatbot && !r.broker_seen_at).length
+          : 0;
+        if (!cancelled) setCount(n);
+      } catch {
+        // silencioso — ver comentário acima
+      }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  useEffect(() => {
+    if (active !== 'agenda') return;
+    fetch('/api/agenda/visits/mark-chatbot-seen', { method: 'POST', headers: authService.getAuthHeaders() })
+      .catch(() => { /* silencioso — o badge é um extra */ });
+    setCount(0);
+  }, [active]);
+
+  return count;
+}
+
 function RailIcon({ icon, badge }: { icon: React.ReactNode; badge: number }) {
   return (
     <span className="relative inline-flex">
@@ -84,6 +120,9 @@ export function ManualRail({
 }) {
   const areas = AREAS.filter((a) => a.personas.includes(persona));
   const lembretesDue = useDueReminderCount();
+  const agendaNew = useNewChatbotVisitCount(active);
+  const badgeFor = (key: string) =>
+    key === 'lembretes' ? lembretesDue : key === 'agenda' ? agendaNew : 0;
 
   return (
     <>
@@ -106,7 +145,7 @@ export function ManualRail({
                 isActive ? 'bg-white/[0.12] text-white' : 'text-white/45 hover:text-white/80 hover:bg-white/[0.05]',
               )}
             >
-              <RailIcon icon={ICONS[a.key]} badge={a.key === 'lembretes' ? lembretesDue : 0} />
+              <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
               <span className="text-[10px] font-medium leading-none">{a.label}</span>
             </button>
           );
@@ -149,7 +188,7 @@ export function ManualRail({
                         isActive ? 'bg-white/[0.12] text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.05]',
                       )}
                     >
-                      <RailIcon icon={ICONS[a.key]} badge={a.key === 'lembretes' ? lembretesDue : 0} />
+                      <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
                       <span className="text-[13px] font-semibold">{a.label}</span>
                     </button>
                   );

@@ -4,8 +4,9 @@ import { sendUazapiText } from "./uazapi";
 // ─────────────────────────────────────────────────────────────────────────
 // Alerta por WhatsApp pro PRÓPRIO corretor quando um lembrete
 // (create_reminder, server/services/agent.ts) vence — complementa o badge
-// visual do sino (ManualRail.tsx, useDueReminderCount). Sempre usa o
-// telefone/instância da CONTA (imf_brokers.phone/uazapi_instance_token),
+// visual do sino (ManualRail.tsx, useDueReminderCount). Destino: prefere o
+// número PESSOAL (imf_brokers.notification_phone), com fallback pro phone de
+// sempre; envia sempre pela instância da CONTA (uazapi_instance_token),
 // nunca a instância própria de um membro
 // (imf_broker_members.whatsapp_mode='own'): não existe telefone do membro
 // salvo em lugar nenhum do schema hoje — só o instance_token, que a UAZAPI
@@ -44,10 +45,14 @@ export async function runReminderWhatsappAlertTick(): Promise<void> {
       try {
         const { data: broker } = await supabase
           .from("imf_brokers")
-          .select("phone, uazapi_instance_token")
+          .select("notification_phone, phone, uazapi_instance_token")
           .eq("id", row.broker_id)
           .maybeSingle();
-        if (!broker?.phone || !broker?.uazapi_instance_token) {
+        // Prefere o numero PESSOAL (notification_phone) — separado do comercial
+        // conectado a instancia, evita o auto-envio (um numero nao notifica a si
+        // mesmo pelo WhatsApp). Sem ele, cai no phone de sempre (sem regressao).
+        const destination = broker?.notification_phone || broker?.phone;
+        if (!destination || !broker?.uazapi_instance_token) {
           throw new Error("Corretor sem telefone ou instância de WhatsApp configurados.");
         }
 
@@ -55,7 +60,7 @@ export async function runReminderWhatsappAlertTick(): Promise<void> {
           ? `Lembrete: ${row.title || "fazer follow-up"} — ${row.client_name}`
           : `Lembrete: ${row.title || "fazer follow-up"}`;
 
-        const sent = await sendUazapiText(broker.uazapi_instance_token, broker.phone, text);
+        const sent = await sendUazapiText(broker.uazapi_instance_token, destination, text);
         if (!sent.ok) throw new Error(`Falha ao enviar via UAZAPI (status ${sent.status}).`);
 
         await supabase

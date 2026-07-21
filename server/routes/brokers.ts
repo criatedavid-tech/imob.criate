@@ -21,7 +21,7 @@ brokersRouter.get("/api/brokers/me", requireUser, async (req, res) => {
     // Campos seguros para expor ao frontend — nunca incluir tokens de cartão,
     // credenciais de instância, reset_token ou reset_token_expires_at.
     const { data, error } = await supabase.from('imf_brokers').select(
-      'id, user_id, name, email, phone, ai_name, broker_address, status, plan, account_type, ' +
+      'id, user_id, name, email, phone, notification_phone, ai_name, broker_address, status, plan, account_type, ' +
       'valid_until, grace_until, is_admin, corretora_id, member_limit, ' +
       'asaas_customer_id, asaas_subscription_id, ' +
       'provisioning_status, provisioning_error, provisioning_completed_at, ' +
@@ -47,12 +47,17 @@ brokersRouter.post("/api/brokers/settings", requireUser, async (req, res) => {
 
     // Whitelist: impede mass assignment (ex.: is_admin, valid_until, status
     // ou tokens de pagamento enviados no body seriam gravados sem isso).
-    const ALLOWED_SETTINGS = ['name', 'phone', 'ai_name', 'broker_address'] as const;
+    const ALLOWED_SETTINGS = ['name', 'phone', 'notification_phone', 'ai_name', 'broker_address'] as const;
     const settings: Record<string, any> = {};
     for (const field of ALLOWED_SETTINGS) {
       if (req.body?.[field] !== undefined) settings[field] = req.body[field];
     }
     if (settings.phone !== undefined) settings.phone = normalizePhoneBR(settings.phone);
+    // Numero pessoal pra alertas (visitas do chatbot etc.). Vazio → NULL, pra
+    // o job de alerta saber que nao ha destino configurado.
+    if (settings.notification_phone !== undefined) {
+      settings.notification_phone = settings.notification_phone ? normalizePhoneBR(settings.notification_phone) : null;
+    }
     if (settings.ai_name !== undefined) {
       if (typeof settings.ai_name !== 'string') {
         return res.status(400).json({ error: 'O nome da IA deve ser um texto.' });
@@ -63,7 +68,7 @@ brokersRouter.post("/api/brokers/settings", requireUser, async (req, res) => {
       ...settings,
       updated_at: new Date()
     }).eq('id', brokerId).select(
-      'id, name, phone, ai_name, broker_address, updated_at'
+      'id, name, phone, notification_phone, ai_name, broker_address, updated_at'
     ).single();
 
     if (error) throw error;

@@ -39,6 +39,7 @@ interface Me {
   name: string;
   email: string;
   phone: string;
+  notification_phone: string | null;
   broker_address: string;
   status: string;
   plan: string;
@@ -63,6 +64,7 @@ export function ConfigArea() {
   // perfil
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [notifPhone, setNotifPhone] = useState('');
   const [address, setAddress] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -84,6 +86,7 @@ export function ConfigArea() {
         setTerms(termsData);
         setName(meData.name || '');
         setPhone(meData.phone ? stripDDI(meData.phone) : '');
+        setNotifPhone(meData.notification_phone ? stripDDI(meData.notification_phone) : '');
         // broker_address às vezes guarda lixo de outra origem (visto ao vivo:
         // um JSON de perfil de corretora em vez de endereço) — não exibir cru,
         // senão a pessoa pode salvar de volta sem perceber.
@@ -101,7 +104,12 @@ export function ConfigArea() {
       const res = await fetch('/api/brokers/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ name, phone: phone ? normalizePhoneBR(phone) : '', broker_address: address }),
+        body: JSON.stringify({
+          name,
+          phone: phone ? normalizePhoneBR(phone) : '',
+          notification_phone: notifPhone ? normalizePhoneBR(notifPhone) : '',
+          broker_address: address,
+        }),
       });
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b?.error || 'Falha ao salvar.'); }
       setProfileSaved(true);
@@ -152,6 +160,16 @@ export function ConfigArea() {
               <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><MapPin size={11} /> Cidade / endereço</label>
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Goiânia, GO" className={fieldCls} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Smartphone size={11} /> Número pessoal para alertas</label>
+            <div className="flex items-stretch gap-2">
+              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+              <input value={notifPhone} onChange={(e) => setNotifPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" className={`${fieldCls} flex-1 min-w-0`} />
+            </div>
+            <p className="text-[11px] text-white/30 mt-1.5">
+              Recebe aviso no WhatsApp quando a IA marca uma visita. Use um número <strong className="text-white/45">diferente</strong> do WhatsApp comercial conectado acima — senão o aviso não chega. Deixe vazio para receber só dentro do app.
+            </p>
           </div>
           {me?.email && <p className="text-[12px] text-white/30">E-mail de acesso: {me.email}</p>}
         </div>

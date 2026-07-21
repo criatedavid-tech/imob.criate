@@ -3,11 +3,26 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; última base publicada `4c60a45` (1ª tentativa do fix do mic).
+- Branch: `v2`; última base publicada `fdd8f93` (datetime-local no Agendar Visita).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Melhoria: seletor de data/hora no Agendar Visita (2026-07-21) — aguardando autorização
+## Feature: notificar corretor de visita marcada pela IA (2026-07-21) — aguardando autorização
+
+Quando a IA de atendimento marca visita (`POST /api/agenda/n8n/create`), o
+corretor passa a ser avisado por badge na Agenda + WhatsApp num número
+pessoal (`imf_brokers.notification_phone`). Arquivos: migration
+`20260721g_visit_broker_notification.sql` (**aplicar manual no Supabase antes
+de funcionar**), `server/routes/agenda.ts` (flag + endpoint mark-chatbot-seen),
+`server/services/visitAlerts.ts` (job novo), `server.ts` (registro),
+`server/routes/brokers.ts` (notification_phone), `src/experience/ManualRail.tsx`
+(badge), `src/experience/ConfigArea.tsx` (campo). `tsc`/`knip`/`build`/
+`git diff --check` OK.
+- **Pendências:** aplicar a migration; verificar o badge/campo ao vivo (o
+  browser pane esteve indisponível nesta sessão); testar ponta a ponta com uma
+  visita real vinda do N8N. Número pessoal precisa ser diferente do comercial.
+
+## Melhoria: seletor de data/hora no Agendar Visita (2026-07-21) — publicado (fdd8f93)
 
 Campo "Horário de preferência" do modal Agendar Visita virou
 `<input type="datetime-local">` (calendário + relógio nativos, `min` =

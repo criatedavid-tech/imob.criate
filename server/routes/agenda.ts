@@ -175,6 +175,35 @@ agendaRouter.delete("/api/agenda/visits/:id", requireUser, async (req, res) => {
   }
 });
 
+// Marca como vistas todas as visitas do chatbot ainda nao vistas — chamado
+// quando o corretor abre a Agenda no app, zerando o badge (ManualRail.tsx).
+// So mexe em broker_seen_at; nao afeta o alerta por WhatsApp (whatsapp_notified_at),
+// que e uma via independente.
+agendaRouter.post("/api/agenda/visits/mark-chatbot-seen", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.json({ ok: true, updated: 0 });
+
+    let query = supabase
+      .from('imf_agenda')
+      .update({ broker_seen_at: new Date().toISOString() })
+      .eq('broker_id', brokerId)
+      .eq('booked_by_chatbot', true)
+      .is('broker_seen_at', null);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
+
+    const { data, error } = await query.select('id');
+    if (error) throw error;
+    res.json({ ok: true, updated: data?.length || 0 });
+  } catch (err: any) {
+    console.error("Erro POST /api/agenda/visits/mark-chatbot-seen:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // AGENDA — Endpoints para N8N (auth: INTERNAL_PROXY_TOKEN, broker_id no body/query)
 // Endpoints internos de agenda consumidos pelo Agente IA Corretor.
@@ -284,6 +313,12 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
         property_id:      property_id || null,
         status:           'pendente',
         source:           'ia',
+        // Marca a visita como vinda da IA de atendimento (N8N) — o corretor
+        // nao esta no loop dessa conversa, entao precisa ser notificado
+        // (badge in-app + WhatsApp, server/services/visitAlerts.ts). O
+        // Assistente IA in-app e a criacao manual NAO setam isso: ali o
+        // corretor ja ve a visita na tela na hora.
+        booked_by_chatbot: true,
       })
       .select()
       .single();
