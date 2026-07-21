@@ -165,6 +165,7 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 | Leads | sim | sim | sim |
 | Agenda | sim | sim | sim |
 | Contatos | sim | sim | sim |
+| Lembretes | sim | sim | sim |
 | Locação | — | sim | — |
 | Lançamentos | — | — | sim |
 | Financeiro | — | sim | sim |
@@ -200,6 +201,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   (ver seção 6 "CRM: pipelines e etapas" e seção 14).
 - **Agenda:** visitas e calendário com criação, alteração e cancelamento.
 - **Contatos:** CRUD e salvamento automático a partir de conversas.
+- **Lembretes:** lembretes (`create_reminder`) e follow-ups agendados
+  (`schedule_followup`) criados pelo Assistente IA — ver "Ações agendadas do
+  Assistente IA interno" adiante. Sem cadastro manual próprio ainda; tela só
+  lista, conclui/apaga lembrete e cancela follow-up pendente.
 - **Locação:** contratos, vencimentos, valores para acompanhamento e exclusão
   definitiva de contrato com as cobranças associadas em cascata
   (`DELETE /api/locacao/contracts/:id`). A criação de boleto/PIX do cliente
@@ -647,11 +652,39 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   `null` — `executeAction` recusa com mensagem honesta em vez de adivinhar
   errado, mesmo princípio já usado no resto do agente (nunca escolher um
   id "parecido" ou uma unidade "provável"). Correção isolada em
-  `server/services/agent.ts`; aguardando autorização para commit/push.
-- Nenhuma mudança de UI: os dois novos tipos de ação são acionados só por
-  linguagem natural no Assistente IA (`CommandBar.tsx`), sem novo botão ou
-  tela. A visualização do lembrete acontece 100% dentro da tela Agenda já
-  existente.
+  `server/services/agent.ts`; publicada nos commits `7a1db57`+`2378cc3`
+  (GitHub Actions run `29839683334` aprovado, smoke HTTP 200).
+- As duas ações são acionadas só por linguagem natural no Assistente IA
+  (`CommandBar.tsx`, sem novo botão/formulário ali), mas ganharam tela
+  própria pra visualizar/gerenciar o resultado: área **Lembretes**
+  (`src/experience/LembretesArea.tsx`, registrada em `engine.ts`/
+  `ManualRail.tsx`/`ExperienceShell.tsx` e em `AREAS_BY_PERSONA` de
+  `agent.ts`, 3 personas). Decisão explícita do usuário (2026-07-21): separar
+  de Agenda, não misturar lembrete/follow-up com visita real na mesma tela.
+  Lista os lembretes (com "Concluir" — `PATCH .../status:'realizado'` — e
+  apagar, reaproveitando os endpoints já existentes de
+  `PATCH`/`DELETE /api/agenda/visits/:id`, já que lembrete é só uma linha de
+  `imf_agenda`) e os follow-ups agendados (com cancelar enquanto `pending`,
+  endpoints novos `GET`/`DELETE /api/agent/scheduled-followups`, ver seção
+  10). `create_reminder`/`schedule_followup` passaram a devolver
+  `navigate:'lembretes'` (antes: `'agenda'`/nenhum).
+- Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
+  'visita'`, migration `20260721c_agenda_event_type.sql`, **escrita, ainda
+  não aplicada**) separa lembrete de visita real no banco. Sem isso, todo
+  consumidor que assume "toda linha de imf_agenda é uma visita" contaria
+  lembrete errado: `buildSnapshot` do Assistente IA ("Próximas visitas" e
+  "Visitas neste mês"), `queryAgendaRange`, o resumo de Relatórios
+  (`visitsQueryFactory`), o card de KPI do Dashboard 1.0 e
+  `GET /api/agenda/n8n/list` (usado pelo agente externo de WhatsApp pra
+  decidir horário ocupado/livre) — todos os 5 ganharam
+  `.eq('event_type','visita')`. `create_reminder` grava
+  `event_type:'lembrete'` explicitamente; nenhum outro INSERT precisou
+  mudar (cai no `DEFAULT`). Endpoints por id (`PATCH`/`DELETE
+  /api/agenda/visits/:id`, `PATCH`/`DELETE /api/agenda/n8n/:id`,
+  `cancel_visit`/`update_visit`) não precisaram de filtro — já operam sobre
+  um id específico. `GET /api/agenda/visits` ganhou o parâmetro opcional
+  `?event_type=lembrete` (padrão continua `'visita'`, mantendo o
+  calendário de sempre sem lembretes).
 
 ### Asaas e limite do escopo financeiro
 
@@ -750,12 +783,12 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | Conta/equipe | `imf_brokers`, `imf_broker_members`, `imf_broker_invites` |
 | Imóveis/leads | `imf_properties`, `leads`, `imf_contacts` |
 | CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — schema-base e hardening `20260720b` aplicados e verificados |
-| Agenda | `imf_agenda` |
+| Agenda | `imf_agenda` (coluna `event_type` `'visita'|'lembrete'` — migration `20260721c`, escrita, aguardando aplicação manual) |
 | Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
 | Lançamentos | `imf_developments`, `imf_units`, `imf_unit_reservations`, `imf_reservation_documents` |
 | Billing SaaS | assinaturas, uso/excedentes, `imf_billing_lock`, `imf_billing_reconciliations` |
-| Agente | `broker_agents`, `imf_agent_log` (histórico do assistente interno) e `imf_agent_scheduled_followups` (follow-up ad-hoc agendado — escrita, aguardando aplicação manual) |
+| Agente | `broker_agents`, `imf_agent_log` (histórico do assistente interno) e `imf_agent_scheduled_followups` (follow-up ad-hoc agendado — aplicada e verificada, código publicado) |
 | Auditoria | `webhook_logs` com retenção operacional de 90 dias |
 
 O schema real inclui estruturas históricas criadas antes das migrations
@@ -869,6 +902,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 | `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
+| `20260721c_agenda_event_type.sql` | **escrita, aguardando aplicação manual** | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

@@ -20,25 +20,41 @@
 
 ## Implementado localmente, aguardando autorização de commit (2026-07-21)
 
-- Duas ações novas no Assistente IA interno (`server/services/agent.ts`):
-  `create_reminder` (cria um lembrete em `imf_agenda`, sem enviar nada ao
-  cliente — ex.: "me lembre em 48h de fazer follow-up pro fulano") e
-  `schedule_followup` (agenda o envio REAL de um WhatsApp pra daqui a
-  horas/dias — ex.: "envie em 24h um follow-up pro fulano"), via tabela nova
-  `imf_agent_scheduled_followups` + job de 60s em
-  `server/services/agentScheduledFollowups.ts` (registrado em `server.ts`).
-- Migration `supabase/migrations/20260721_agent_scheduled_followups.sql`
-  **aplicada e verificada em 21/07/2026** (tabela, RLS e policy confirmados
-  `true` na consulta pós-migration). `create_reminder` funciona
-  independentemente (só usa `imf_agenda`, já existente); `schedule_followup`
-  já tem a tabela pronta no banco, mas só funciona em produção depois do
-  código ser commitado/publicado.
-- Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build` e
-  `git diff --check` aprovados. Sem QA ao vivo (precisa de instância UAZAPI
-  real pra confirmar o envio agendado de fato saindo).
+- Nova aba **Lembretes** na experiência V2 (3 personas), separada da Agenda a
+  pedido do usuário (evita misturar visita real com lembrete/follow-up
+  agendado na mesma tela): `src/experience/LembretesArea.tsx`, registrada em
+  `engine.ts`/`ManualRail.tsx`/`ExperienceShell.tsx` e em `AREAS_BY_PERSONA`
+  (`server/services/agent.ts`, pra ação `navigate` reconhecer a área nova).
+  Lista os `create_reminder` (agora com "Concluir"/apagar, reaproveitando os
+  endpoints já existentes `PATCH`/`DELETE /api/agenda/visits/:id`) e os
+  `schedule_followup` (novos endpoints `GET`/`DELETE
+  /api/agent/scheduled-followups`, com cancelamento só enquanto `pending`).
+- Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, default
+  `'visita'`) pra separar de vez lembrete de visita real — sem ela, lembrete
+  contaminava "Próximas visitas"/"Visitas neste mês" do Assistente IA,
+  Relatórios, o KPI do Dashboard 1.0 e a lista que o agente externo de
+  WhatsApp usa pra decidir horário ocupado/livre. Todos os 4 consumidores
+  ganharam o filtro `.eq('event_type','visita')`; `create_reminder` passou a
+  gravar `event_type:'lembrete'` explicitamente; o resto do código (visitas
+  manuais, N8N) não precisou mudar por já cair no `DEFAULT`.
+- Migration `supabase/migrations/20260721c_agenda_event_type.sql` escrita,
+  **ainda não aplicada no Supabase**. Até aplicar, toda linha de `imf_agenda`
+  (inclusive lembretes antigos) segue sem a coluna e os filtros novos
+  falhariam — aplicar antes de autorizar commit/push deste pacote.
+- Validado localmente: `npx tsc --noEmit`, `npx knip` e `npm run build`
+  aprovados. `git diff --check` aprovado.
 - Sem commit/push/deploy — aguardando autorização explícita.
 
 ## Concluído e publicado
+
+- **Lembrete e follow-up agendado do Assistente IA interno** (`create_reminder`/
+  `schedule_followup`, `server/services/agent.ts`): publicado nos commits
+  `0e3373b`+`0b4f981`; corrigido no mesmo dia um bug real de fuso (unidade
+  "minutos" tratada como "horas" no cálculo do prazo — relatado pelo usuário
+  ao vivo, "5 minutos" virou "+5 horas") no commit `7a1db57`+`2378cc3`.
+  GitHub Actions runs `29837571160` e `29839683334` aprovados; smoke `/`,
+  `/login`, `/app` HTTP 200 nas duas rodadas. Migration
+  `20260721_agent_scheduled_followups.sql` aplicada e verificada.
 
 - CRM substituiu Leads: Kanban + gerenciamento de pipelines/etapas por broker;
   compatibilidade com `leads.status` preservada. Releases iniciais v94/v95.

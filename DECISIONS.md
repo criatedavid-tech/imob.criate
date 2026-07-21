@@ -77,3 +77,9 @@
   agendado grava `sender_type='ai'` e não pausa o atendimento da IA depois
   (trata como automático, não como intervenção manual do corretor — ao
   contrário de `send_message`, que pausa).
+- **Aba Lembretes separada da Agenda (2026-07-21).** Decisão explícita do
+  usuário: lembrete e visita real não dividem a mesma tela, pra evitar
+  mistura/conflito visual. Coluna `imf_agenda.event_type` faz a distinção no
+  banco (reaproveitando a tabela em vez de criar uma nova — os dois "tipos"
+  usam os mesmos campos); a Agenda (calendário) e tudo que conta "visitas"
+  passaram a filtrar `event_type='visita'` explicitamente.

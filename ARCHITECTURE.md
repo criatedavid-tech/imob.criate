@@ -61,12 +61,17 @@
   separado do agente externo de WhatsApp.
 - Usa OpenRouter, snapshot autorizado do tenant e ações estruturadas. A
   autonomia do app controla mutações; IDs nunca são inventados.
-- Duas ações agendadas: `create_reminder` (lembrete na Agenda existente, sem
+- Duas ações agendadas: `create_reminder` (lembrete em `imf_agenda`, sem
   enviar nada) e `schedule_followup` (grava em `imf_agent_scheduled_followups`
   e um job de 60s em `server/services/agentScheduledFollowups.ts` manda o
   WhatsApp real quando o prazo vence). Prazo relativo ("24h", "2 dias") nunca é
   calculado pelo modelo — só número+unidade; o `due_at` é determinístico em
   código.
+- As duas têm tela própria: área **Lembretes** (`src/experience/
+  LembretesArea.tsx`, 3 personas), separada da Agenda. `imf_agenda.event_type`
+  (`'visita'|'lembrete'`) distingue lembrete de visita real; todo consumidor
+  que conta/lista visitas (snapshot do Assistente IA, Relatórios, Dashboard
+  1.0, lista do agente externo de WhatsApp) filtra `event_type='visita'`.
 
 ## Frontend e mobile
 
