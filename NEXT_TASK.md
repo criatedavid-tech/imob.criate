@@ -3,9 +3,24 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; base publicada `67aa90d`.
+- Branch: `v2`; última base publicada `865f592` (fix do texto da landing).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
+
+## Bug: microfone reabre a galeria no iOS após anexar foto (2026-07-21) — aguardando autorização
+
+Print do usuário (iPhone 11): com foto anexada no Assistente IA, tocar no
+microfone abria o seletor de foto em vez de gravar; sem foto, funcionava.
+Causa: o iOS prende o foco/prioridade de toque no `<input type="file">`
+transparente (overlay do anexo) depois de abrir o seletor uma vez, e roteia
+o toque seguinte de volta pra ele. Correção em `CommandBar.tsx`:
+`key={fileInputResetKey}` no input, incrementada em `handleFileChange` após
+capturar os arquivos → remonta o input limpo e solta o foco preso.
+
+`npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
+QA no iPhone depende do usuário.
+
+Pendente: autorização do usuário para commit/push.
 
 ## Bug: texto repetido na landing page de imóvel (2026-07-21) — aguardando autorização
 

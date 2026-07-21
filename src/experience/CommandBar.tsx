@@ -114,6 +114,14 @@ export function CommandBar({
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Remonta o <input type="file"> transparente após cada uso (ver key no
+  // JSX). No iOS, depois que você abre o seletor de foto uma vez, o WebKit
+  // retém foco/prioridade de toque no controle nativo — o toque SEGUINTE,
+  // mesmo no botão de microfone ao lado, era roteado de volta pro seletor
+  // de foto (abria a galeria em vez de gravar). Por isso só quebrava DEPOIS
+  // de anexar uma foto (sem foto o input nunca foi tocado). Trocar a key
+  // descarta o nó DOM antigo com o estado preso e cria um limpo.
+  const [fileInputResetKey, setFileInputResetKey] = useState(0);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -143,6 +151,11 @@ export function CommandBar({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     e.target.value = '';
+    // Recria o input (ver fileInputResetKey) pra soltar o foco/prioridade de
+    // toque que o iOS prende no controle nativo depois de abrir a galeria —
+    // senão o próximo toque no microfone reabre a galeria. Os arquivos já
+    // foram lidos em `files` acima, então remontar aqui não perde nada.
+    setFileInputResetKey((k) => k + 1);
     if (!files.length) return;
     if (attachedImages.length + files.length > 15) {
       pushTurn({ role: 'ai', text: 'Você pode anexar no máximo 15 fotos por vez.' });
@@ -431,6 +444,7 @@ export function CommandBar({
           >
             <Paperclip className="w-4 h-4" />
             <input
+              key={fileInputResetKey}
               ref={fileInputRef}
               type="file"
               accept="image/*"

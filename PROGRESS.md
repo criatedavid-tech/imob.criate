@@ -1,5 +1,28 @@
 # Estado do projeto
 
+## Bug: microfone reabre a galeria no iOS após anexar foto (2026-07-21)
+
+- Relatado pelo usuário (iPhone 11): com foto anexada no Assistente IA,
+  tocar no microfone abria o seletor de foto ("Photo Library / Take Photo /
+  Choose Files") em vez de gravar. Sem foto, funcionava. Os prints
+  confirmam o menu nativo do `<input type="file">` — ou seja, o toque no
+  mic estava caindo no seletor de foto invisível ao lado.
+- Causa: efeito colateral do overlay transparente do anexo (input file
+  `absolute opacity-0` sobre o ícone de clipe, solução do commit `729b000`
+  pro Android). No iOS o WebKit prende foco/prioridade de toque no controle
+  nativo depois de abrir o seletor uma vez — o toque seguinte, mesmo no mic
+  adjacente, volta pro input. Só quebrava DEPOIS de anexar (sem foto o input
+  nunca foi tocado). Não é regressão do textarea auto-grow (`320ad1d` não
+  tocou o input file/mic — confirmado no git show).
+- Correção em `CommandBar.tsx`: `key={fileInputResetKey}` no input,
+  incrementada em `handleFileChange` após capturar os arquivos → React
+  descarta o nó antigo com o estado preso e monta um limpo. Baixo risco:
+  Android recria o overlay idêntico, layout inalterado, arquivos já lidos
+  antes do remount.
+- Validado: `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. QA no
+  iPhone depende do usuário (não reproduzo iOS nem tenho device aqui).
+- Pendente: autorização do usuário para commit/push. Sem migration.
+
 ## Bug: texto repetido nas seções da landing page de imóvel (2026-07-21)
 
 - Usuário mostrou print: a mesma descrição aparecia em TODAS as seções

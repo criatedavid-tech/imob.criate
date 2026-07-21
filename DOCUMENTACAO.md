@@ -532,6 +532,22 @@ Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
      Chrome/Samsung/Firefox/iOS reais não têm) e, ao tocar no clipe,
      mostra a dica "abra no Chrome" em vez de um toque sem efeito.
 
+**Fix — microfone reabrindo a galeria no iOS depois de anexar foto
+(21/07/2026):** efeito colateral do overlay transparente acima. Relatado
+pelo usuário num iPhone 11: com foto já anexada, tocar no microfone abria o
+seletor de foto (menu "Photo Library / Take Photo / Choose Files") em vez de
+gravar; sem foto anexada, o microfone funcionava. Causa: no iOS o WebKit
+retém foco/prioridade de toque no controle nativo do `<input type="file">`
+depois que o seletor é aberto uma vez — o toque SEGUINTE, mesmo no botão de
+microfone ao lado (`gap-2`, ~8px de distância), era roteado de volta pro
+input. Por isso só quebrava DEPOIS de anexar uma foto (sem foto o input
+nunca tinha sido tocado). Correção: o input ganhou uma `key`
+(`fileInputResetKey`, em `CommandBar.tsx`) que é incrementada dentro de
+`handleFileChange` após capturar os arquivos — o React descarta o nó DOM
+antigo (com o estado preso) e monta um limpo, soltando o foco retido. Sem
+impacto no Android (o overlay é recriado idêntico) e sem mudar o layout.
+Não foi possível QA no iPhone nesta sessão — validar ao vivo.
+
 **Fix — campo de mensagem de uma linha só e barra superior sobrepondo no
 mobile (21/07/2026):** dois bugs de UI relatados pelo usuário via print.
 
