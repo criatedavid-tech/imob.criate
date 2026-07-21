@@ -39,7 +39,17 @@ function brDateTimeToISO(date: string, time: string): Date {
 function computeDueAt(delayValue?: string, delayUnit?: string): Date | null {
   const n = parseInt(String(delayValue || "").replace(/\D/g, ""), 10);
   if (!Number.isFinite(n) || n <= 0) return null;
-  const msPerUnit = delayUnit === "dias" ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+  // Cada unidade precisa de um branch explícito — NUNCA cair num "else"
+  // que trata qualquer coisa não reconhecida como horas. Foi exatamente
+  // esse "else" que tratou "minutos" como "horas" silenciosamente (bug
+  // real relatado pelo usuário: pediu "em 5 minutos" e o sistema agendou
+  // 5 HORAS depois). Unidade não reconhecida agora falha honesto (null)
+  // em vez de adivinhar errado.
+  const msPerUnit = delayUnit === "minutos" ? 60 * 1000
+    : delayUnit === "horas" ? 60 * 60 * 1000
+    : delayUnit === "dias" ? 24 * 60 * 60 * 1000
+    : null;
+  if (msPerUnit === null) return null;
   return new Date(Date.now() + n * msPerUnit);
 }
 
@@ -105,8 +115,8 @@ export interface AgentAction {
   // calcula a data/hora absoluta, isso é feito em código (computeDueAt),
   // mesmo princípio determinístico de query_agenda (sem 2ª chamada ao LLM
   // pra aritmética que ele erra fácil).
-  delay_value?: string; // só o número, ex.: "24", "2"
-  delay_unit?: "horas" | "dias";
+  delay_value?: string; // só o número, ex.: "24", "2", "5"
+  delay_unit?: "minutos" | "horas" | "dias";
   // create_reminder — o que lembrar, além do padrão "fazer follow-up".
   note?: string;
 }
@@ -412,8 +422,8 @@ function buildSystemPrompt(snap: Snapshot, persona: string, autonomy: Autonomy):
   if (isIncorporadora) {
     extraActions.push(`${++actionNum}. "update_unit" — reservar, vender ou liberar uma unidade de lançamento. Precisa de unit_id (da lista de "Unidades" abaixo, nunca invente), unit_action ("reservar"|"vender"|"liberar"). Pra "reservar" precisa também de buyer_name (e buyer_phone se tiver). Pra "vender" buyer_name é opcional (mantém o que já estava reservado se não for informado).`);
   }
-  extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar), delay_value (só o número, ex.: "2", "48") e delay_unit ("horas" ou "dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
-  extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X um follow-up/mensagem pro Y" — a mensagem sai sozinha depois do prazo, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), delay_value e delay_unit (mesma regra de "create_reminder" acima), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
+  extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar), delay_value (só o número, ex.: "2", "48", "5") e delay_unit ("minutos", "horas" ou "dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"; "5 minutos" → delay_value "5" + delay_unit "minutos". NUNCA confunda minutos com horas). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
+  extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X um follow-up/mensagem pro Y" — a mensagem sai sozinha depois do prazo, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), delay_value e delay_unit (mesma regra de "create_reminder" acima, incluindo "minutos" quando for o caso), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
 
   return `Você é a assistente de IA do ImobiFlow, trabalhando para ${snap.brokerName}, um corretor de imóveis. Você fala português do Brasil, de forma curta, direta e cordial — como um colega de trabalho competente, nunca robótica.
 
@@ -838,7 +848,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 // garante JSON válido) — reforçado em texto no fim do system prompt também
 // (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "horas|dias", "note"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
