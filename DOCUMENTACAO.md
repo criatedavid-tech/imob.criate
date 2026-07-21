@@ -1,6 +1,6 @@
 # ImobiFlow V2 — referência atual do projeto
 
-> Estado consolidado do código da branch `v2` em 2026-07-20.
+> Estado consolidado do código da branch `v2` em 2026-07-21.
 >
 > O registro cronológico completo, com decisões, incidentes, comandos, releases e
 > investigações anteriores, foi preservado integralmente em
@@ -575,6 +575,71 @@ Estou passando aqui pra saber se você precisa de alguma informação ou se
 tem alguma dúvida sobre os imóveis. Estou à disposição!" — sem
 metacomentário.
 
+### Ações agendadas do Assistente IA interno (lembrete e follow-up ad-hoc)
+
+**Implementado em 2026-07-21, aguardando autorização de commit — ver
+PROGRESS.md/NEXT_TASK.md para o estado exato do working tree.**
+
+Duas ações novas em `server/services/agent.ts`, complementares a
+`send_message` (que já manda uma mensagem real na hora):
+
+- **`create_reminder`** — "me lembra em 48h/2 dias de fazer follow-up pro
+  fulano". Não manda nada ao cliente: cria um evento normal em `imf_agenda`
+  (mesma tabela/tela de visitas), com `title` prefixado `"Lembrete: ..."`,
+  sem imóvel vinculado e `duration_minutes=15`. Reaproveita 100% a Agenda
+  existente — o corretor confere e marca como realizado do mesmo jeito que
+  uma visita comum; não existe hoje nenhum sistema de notificação/sino no
+  app (confirmado por investigação direta do código), então esta foi a
+  forma de o lembrete aparecer pro corretor sem construir um mecanismo novo
+  do zero.
+- **`schedule_followup`** — "envie em 24h um follow-up pro fulano". Ao
+  contrário do lembrete, precisa de execução autônoma de verdade (ninguém
+  precisa estar com o app aberto), então grava em
+  `imf_agent_scheduled_followups` (tabela nova, migration
+  `20260721_agent_scheduled_followups.sql`, aplicada e verificada em
+  21/07/2026) e um job de 60s
+  (`server/services/agentScheduledFollowups.ts::runScheduledAgentFollowupsTick`,
+  registrado em `server.ts` junto dos demais jobs) manda de verdade pelo
+  WhatsApp quando o prazo vence, reaproveitando exatamente o mesmo par
+  `resolveOutboundInstanceToken`/`sendUazapiText` de `send_message` e do
+  Follow-Up Inteligente.
+- O texto da mensagem agendada é composto pelo modelo no momento do PEDIDO,
+  não no momento do envio — mesmo princípio de segurança de
+  `notify_message` (cancelamento/remarcação de visita): o corretor vê
+  exatamente o que vai sair antes de confirmar (em autonomia copiloto/
+  manual), em vez de uma geração posterior sem revisão humana possível.
+- Nenhuma das duas ações recebe data/hora absoluta do modelo — só
+  `delay_value` (número, ex.: "24", "2") e `delay_unit`
+  (`"horas"|"dias"`); o cálculo de `due_at` é 100% determinístico em código
+  (`computeDueAt` em `agent.ts`), mesmo princípio já usado em
+  `queryAgendaRange` (nunca deixar o modelo fazer aritmética de tempo, que
+  ele erra com frequência).
+- O job de follow-up agendado reaproveita o lock distribuído genérico
+  `try_billing_lock`/`release_billing_lock` (o mesmo mecanismo dos jobs de
+  billing e de expiração de reserva PIX — ver `20260630_billing_lock_and_rls.sql`)
+  para concorrência segura entre as 2 VMs do Fly. Não precisou de uma RPC de
+  claim dedicada como `claim_due_followups` do Follow-Up Inteligente, porque
+  aqui não há estado de máquina por conversa pra avançar atomicamente — só
+  "está vencido, ainda não foi tentado".
+- O envio grava `sender_type='ai'` e **não** chama `pauseAiForHumanTakeover`
+  depois — decisão deliberada: trata como um follow-up automático (mesmo
+  espírito do Follow-Up Inteligente), não como uma intervenção manual do
+  corretor, então não pausa o atendimento da IA pra esse cliente depois do
+  envio. Isso é diferente de `send_message` (envio imediato), que grava
+  `sender_type='broker_manual'` e pausa a IA, porque ali é literalmente o
+  corretor falando na hora através do assistente.
+- **Migration aplicada e verificada em 21/07/2026** — consulta pós-migration
+  confirmou tabela presente, RLS ativo e a policy criada (as três condições
+  retornaram `true`). O que falta agora é só o código ser commitado/
+  publicado (ver PROGRESS.md/NEXT_TASK.md); até lá `schedule_followup`
+  segue indisponível em produção mesmo com a tabela já existindo no banco.
+  `create_reminder` funciona de forma independente, pois só usa `imf_agenda`
+  (já existente e já com RLS/índices próprios).
+- Nenhuma mudança de UI: os dois novos tipos de ação são acionados só por
+  linguagem natural no Assistente IA (`CommandBar.tsx`), sem novo botão ou
+  tela. A visualização do lembrete acontece 100% dentro da tela Agenda já
+  existente.
+
 ### Asaas e limite do escopo financeiro
 
 O produto separa dois fluxos financeiros:
@@ -677,7 +742,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
 | Lançamentos | `imf_developments`, `imf_units`, `imf_unit_reservations`, `imf_reservation_documents` |
 | Billing SaaS | assinaturas, uso/excedentes, `imf_billing_lock`, `imf_billing_reconciliations` |
-| Agente | `broker_agents` e histórico do agente |
+| Agente | `broker_agents`, `imf_agent_log` (histórico do assistente interno) e `imf_agent_scheduled_followups` (follow-up ad-hoc agendado — escrita, aguardando aplicação manual) |
 | Auditoria | `webhook_logs` com retenção operacional de 90 dias |
 
 O schema real inclui estruturas históricas criadas antes das migrations
@@ -742,6 +807,7 @@ Pendências de segurança/infraestrutura:
 | Job | Intervalo | Função |
 | --- | --- | --- |
 | Follow-Up | 60 s | dispara a sequência configurada |
+| Follow-up agendado (Assistente IA) | 60 s | manda o WhatsApp de `schedule_followup` cujo prazo já venceu |
 | Preparação de excedentes | 1 h + boot | prepara cobrança do próximo ciclo |
 | Reconciliação financeira | 5 min + boot | reprocessa intenções monetárias pendentes |
 | Expiração de reserva PIX | 60 s + boot | libera reservas vencidas e cancela cobrança |
@@ -789,6 +855,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
 | `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 | `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
+| `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -818,6 +885,15 @@ automático da branch `v2`; o QA funcional autenticado do CRM permanece
 pendente. O
 arquivo usa `BEGIN`/`COMMIT`: qualquer erro durante a aplicação desfaz o bloco
 completo, evitando hardening parcial.
+
+`20260721_agent_scheduled_followups.sql` foi executada manualmente pelo
+usuário em 21/07/2026, antes do código dependente (`schedule_followup`) ter
+sido commitado/publicado. A consulta pós-migration confirmou as três
+condições: tabela `imf_agent_scheduled_followups` presente, RLS ativo
+(`relrowsecurity=true`) e a policy `broker_own_agent_scheduled_followups`
+criada. Como o código ainda está pendente de commit (ver PROGRESS.md/
+NEXT_TASK.md), a tabela existe no banco mas nenhuma linha será gravada nela
+até o deploy acontecer.
 
 ## 15. Pendências e critérios de lançamento
 

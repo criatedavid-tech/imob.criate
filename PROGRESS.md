@@ -1,5 +1,25 @@
 # Estado do projeto
 
+## Implementado localmente, aguardando autorização de commit (2026-07-21)
+
+- Duas ações novas no Assistente IA interno (`server/services/agent.ts`):
+  `create_reminder` (cria um lembrete em `imf_agenda`, sem enviar nada ao
+  cliente — ex.: "me lembre em 48h de fazer follow-up pro fulano") e
+  `schedule_followup` (agenda o envio REAL de um WhatsApp pra daqui a
+  horas/dias — ex.: "envie em 24h um follow-up pro fulano"), via tabela nova
+  `imf_agent_scheduled_followups` + job de 60s em
+  `server/services/agentScheduledFollowups.ts` (registrado em `server.ts`).
+- Migration `supabase/migrations/20260721_agent_scheduled_followups.sql`
+  **aplicada e verificada em 21/07/2026** (tabela, RLS e policy confirmados
+  `true` na consulta pós-migration). `create_reminder` funciona
+  independentemente (só usa `imf_agenda`, já existente); `schedule_followup`
+  já tem a tabela pronta no banco, mas só funciona em produção depois do
+  código ser commitado/publicado.
+- Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build` e
+  `git diff --check` aprovados. Sem QA ao vivo (precisa de instância UAZAPI
+  real pra confirmar o envio agendado de fato saindo).
+- Sem commit/push/deploy — aguardando autorização explícita.
+
 ## Concluído e publicado
 
 - CRM substituiu Leads: Kanban + gerenciamento de pipelines/etapas por broker;

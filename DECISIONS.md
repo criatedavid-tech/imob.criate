@@ -56,3 +56,17 @@
   narrar a própria ação (proibido "estou fazendo um follow-up...", "isto é um
   lembrete automático..."); regra explícita + exemplo no prompt, validada com
   chamada real ao modelo.
+- **Ações agendadas do assistente interno (2026-07-21).**
+  `create_reminder` (lembrete) e `schedule_followup` (envio futuro real)
+  resolvidas de duas formas diferentes por natureza: lembrete reaproveita a
+  Agenda existente (nenhuma tabela nova — não existe hoje nenhum sistema de
+  notificação/sino no app); follow-up agendado precisa de execução autônoma
+  de verdade, então usa tabela nova (`imf_agent_scheduled_followups`) + job
+  de 60s. Prazo relativo ("24h", "2 dias") nunca é calculado pelo modelo —
+  só número+unidade, o resto é determinístico em código (mesmo princípio de
+  `query_agenda`). O texto da mensagem agendada é composto no momento do
+  PEDIDO, não regenerado na hora do envio — o corretor revisa o texto exato
+  antes de confirmar (copiloto/manual), igual a `notify_message`. O envio
+  agendado grava `sender_type='ai'` e não pausa o atendimento da IA depois
+  (trata como automático, não como intervenção manual do corretor — ao
+  contrário de `send_message`, que pausa).

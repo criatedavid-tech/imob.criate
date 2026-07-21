@@ -56,6 +56,12 @@
   separado do agente externo de WhatsApp.
 - Usa OpenRouter, snapshot autorizado do tenant e ações estruturadas. A
   autonomia do app controla mutações; IDs nunca são inventados.
+- Duas ações agendadas: `create_reminder` (lembrete na Agenda existente, sem
+  enviar nada) e `schedule_followup` (grava em `imf_agent_scheduled_followups`
+  e um job de 60s em `server/services/agentScheduledFollowups.ts` manda o
+  WhatsApp real quando o prazo vence). Prazo relativo ("24h", "2 dias") nunca é
+  calculado pelo modelo — só número+unidade; o `due_at` é determinístico em
+  código.
 
 ## Frontend e mobile
 
