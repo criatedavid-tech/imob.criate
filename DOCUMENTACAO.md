@@ -701,14 +701,24 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   extra cosmético, nunca pode travar a navegação). Reaproveita o endpoint
   já existente — nenhuma rota nova. Só cobre `create_reminder`; não conta
   `schedule_followup` com falha de envio.
-- **Alerta por WhatsApp pro próprio corretor: adiado.** O usuário também
-  pediu mandar o lembrete vencido por WhatsApp pro número do corretor
-  (`imf_brokers.phone`), reaproveitando o job de 60s de
-  `agentScheduledFollowups.ts`. Adiado porque, no momento do pedido, o
-  Codex tinha em andamento uma limpeza grande do transporte WhatsApp na mesma
-  árvore. O transporte ficou consolidado em `server/services/uazapi.ts` e
-  `server/routes/conversations.ts`; a implementação do alerta já pode ser
-  retomada (ver `NEXT_TASK.md`).
+- **Alerta por WhatsApp pro próprio corretor (2026-07-21):**
+  `server/services/reminderAlerts.ts` — `runReminderWhatsappAlertTick`, job de
+  60s registrado em `server.ts` junto dos outros. Busca `imf_agenda` com
+  `event_type='lembrete'`, `status='pendente'`,
+  `whatsapp_alert_sent_at IS NULL` e `scheduled_at` no passado (até 20 por
+  tick), manda `sendUazapiText` (`server/services/uazapi.ts`) usando
+  `imf_brokers.phone`/`uazapi_instance_token` e marca
+  `whatsapp_alert_sent_at` pra não reenviar. Lock com `try_billing_lock`/
+  `release_billing_lock` (mesmo padrão de `agentScheduledFollowups.ts`).
+  Falha não marca nada — tenta de novo no próximo tick; sem estado "failed"
+  separado (escopo baixo risco, complementar ao badge visual).
+  Migration `20260721f_reminder_whatsapp_alert.sql` adiciona a coluna.
+  **Limitação conhecida:** sempre usa o telefone/instância da CONTA, nunca a
+  instância própria de um membro (`imf_broker_members.whatsapp_mode='own'`) —
+  não existe telefone do membro salvo no schema (só o instance_token, usado
+  historicamente só pra decidir de qual instância RESPONDER um cliente).
+  Numa conta com membro em modo "own", o alerta cai no titular, não em quem
+  criou o lembrete.
 
 ### Asaas e limite do escopo financeiro
 
@@ -941,7 +951,8 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260721e_prepare_native_whatsapp_schema.sql` | aplicada e verificada em 21/07/2026 | adiciona/backfill `source_ticket_id` e cria a RPC exclusiva `claim_due_followups_v2`, preservando o contrato compartilhado da V1 |
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
 | `20260721c_agenda_event_type.sql` | aplicada e verificada | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
-| `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | **aguardando aplicação manual** | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
+| `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | aplicada e verificada | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
+| `20260721f_reminder_whatsapp_alert.sql` | **aguardando aplicação manual** | coluna `imf_agenda.whatsapp_alert_sent_at` — marca lembrete já alertado por WhatsApp (ver seção "Ações agendadas do Assistente IA interno") |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

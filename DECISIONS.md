@@ -115,10 +115,19 @@
   banco (reaproveitando a tabela em vez de criar uma nova — os dois "tipos"
   usam os mesmos campos); a Agenda (calendário) e tudo que conta "visitas"
   passaram a filtrar `event_type='visita'` explicitamente.
-- **Alerta de lembrete: badge agora, WhatsApp adiado (2026-07-21).** Usuário
-  pediu os dois. O badge no sino (`ManualRail.tsx`) entrou porque só toca
-  arquivo isolado do frontend. O envio por WhatsApp pro próprio corretor foi
-  adiado de propósito: dependeria de `agentScheduledFollowups.ts` e do
-  transporte UAZAPI, ambos em refatoração ativa e não commitada do Codex no
-  mesmo momento (limpeza que consolida o transporte em
-  `uazapi.ts`/`conversations.ts`). Retomar depois que essa limpeza publicar.
+- **Alerta de lembrete: badge + WhatsApp pro corretor (2026-07-21).** Usuário
+  pediu os dois. O badge no sino (`ManualRail.tsx`) entrou primeiro porque só
+  tocava arquivo isolado do frontend. O envio por WhatsApp pro próprio
+  corretor (`server/services/reminderAlerts.ts`, job de 60s) foi adiado até o
+  Codex publicar a limpeza do transporte (`uazapi.ts`/`conversations.ts`) e
+  implementado logo em seguida, já em cima do transporte novo.
+- **Alerta de lembrete por WhatsApp sempre usa o número da CONTA, nunca o de
+  um membro (2026-07-21).** `imf_broker_members` guarda `uazapi_instance_token`
+  pra membro com WhatsApp próprio (`whatsapp_mode='own'`), mas não guarda o
+  número de telefone do membro em lugar nenhum — nunca precisou, porque essa
+  coluna só decidia de qual instância RESPONDER um cliente, nunca mandar
+  mensagem pro próprio membro. `runReminderWhatsappAlertTick` sempre usa
+  `imf_brokers.phone`/`uazapi_instance_token` (a conta), mesmo quando quem
+  criou o lembrete foi um membro em modo "own" — nesse caso o alerta cai no
+  titular, não no membro. Limitação conhecida e documentada; corrigir exigiria
+  adicionar telefone próprio ao membro, fora do escopo deste pedido.

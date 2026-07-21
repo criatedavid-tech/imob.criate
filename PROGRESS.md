@@ -1,22 +1,34 @@
 # Estado do projeto
 
-## Badge de lembrete vencido no sino; alerta por WhatsApp adiado (2026-07-21)
+## Alerta de lembrete vencido: badge + WhatsApp pro corretor (2026-07-21)
 
 - Usuário pediu duas formas de alertar sobre lembrete vencido: badge visual
-  no app e WhatsApp pro próprio corretor. Implementado só o badge por ora.
-- `ManualRail.tsx` ganhou `useDueReminderCount` (poll a cada 60s em
+  no app e WhatsApp pro próprio corretor. As duas implementadas.
+- Badge: `ManualRail.tsx` ganhou `useDueReminderCount` (poll a cada 60s em
   `GET /api/agenda/visits?event_type=lembrete`, já existente) e `RailIcon`
   (badge vermelho sobre o sino quando há lembrete `pendente` com
   `scheduled_at` no passado). Sem rota nova, sem migration. Falha de rede é
-  silenciosa — badge é cosmético, não pode travar a navegação.
+  silenciosa — badge é cosmético, não pode travar a navegação. Publicado no
+  commit `67aa90d`, run `29857448606` (entrou junto com a limpeza do Codex,
+  mesma árvore compartilhada).
+- WhatsApp: novo `server/services/reminderAlerts.ts`
+  (`runReminderWhatsappAlertTick`, job de 60s registrado em `server.ts`) —
+  busca lembrete `pendente` vencido e ainda não alertado
+  (`whatsapp_alert_sent_at IS NULL`), manda `sendUazapiText` pro telefone da
+  conta (`imf_brokers.phone`/`uazapi_instance_token`) e marca
+  `whatsapp_alert_sent_at`. Lock com `try_billing_lock`, mesmo padrão de
+  `agentScheduledFollowups.ts`. Adiado até o Codex publicar a limpeza do
+  transporte (`67aa90d`) — implementado logo em seguida, já sobre
+  `server/services/uazapi.ts`. Migration
+  `20260721f_reminder_whatsapp_alert.sql` (coluna nova), ainda não aplicada.
+- **Limitação conhecida:** o alerta por WhatsApp sempre usa o número da
+  CONTA, nunca a instância própria de um membro em modo "own" — não existe
+  telefone do membro salvo no schema.
 - Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
-  aprovados. A confirmação visual ainda requer sessão autenticada com um
-  lembrete real vencido.
-- **Alerta por WhatsApp pro corretor: adiado de propósito.** Reaproveitaria
-  `agentScheduledFollowups.ts` e o número `imf_brokers.phone`, mas o transporte
-  WhatsApp estava em refatoração ativa. Agora pode ser retomado usando apenas
-  `uazapi.ts` e `conversations.ts`.
-- Badge publicado no commit `67aa90d`, run `29857448606`.
+  aprovados. Confirmação visual do badge e teste real do envio ainda
+  dependem de sessão autenticada com lembrete vencido de verdade.
+- Pendente: aplicar a migration manualmente no Supabase e autorização do
+  usuário para commit/push.
 
 ## Limpeza total do transporte antigo publicada (2026-07-21)
 

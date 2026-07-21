@@ -46,17 +46,29 @@ Correção publicada:
   compartilhada); GitHub Actions run `29854511196` aprovado;
 - smoke `/`, `/login`, `/app` HTTP 200 após o deploy.
 
-## Badge de lembrete vencido no sino; WhatsApp pro corretor adiado (2026-07-21)
+## Alerta de lembrete vencido: badge + WhatsApp pro corretor (2026-07-21)
 
-Usuário pediu duas formas de alertar sobre lembrete vencido. Implementado só
-o badge (`ManualRail.tsx`, `useDueReminderCount` + `RailIcon`, poll de 60s em
-`GET /api/agenda/visits?event_type=lembrete` já existente — sem rota nova,
-sem migration). `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados.
+Usuário pediu duas formas de alertar sobre lembrete vencido. Badge
+(`ManualRail.tsx`, `useDueReminderCount` + `RailIcon`, poll de 60s em
+`GET /api/agenda/visits?event_type=lembrete` já existente) publicado no
+commit `67aa90d`. WhatsApp pro corretor implementado logo em seguida, já
+sobre o transporte novo do Codex: `server/services/reminderAlerts.ts`
+(`runReminderWhatsappAlertTick`, job de 60s em `server.ts`, mesmo padrão de
+lock de `agentScheduledFollowups.ts`) + migration
+`20260721f_reminder_whatsapp_alert.sql` (coluna
+`imf_agenda.whatsapp_alert_sent_at`). `npx tsc --noEmit`, `npx knip`,
+`npm run build` aprovados.
 
-O badge foi publicado no commit `67aa90d`. Pendente: validar visualmente com
-uma sessão autenticada e lembrete vencido real; depois implementar o alerta
-por WhatsApp pro número do corretor (`imf_brokers.phone`) reaproveitando
-`agentScheduledFollowups.ts` e `server/services/uazapi.ts`.
+Limitação conhecida: o alerta sempre usa `imf_brokers.phone`/
+`uazapi_instance_token` (a conta), nunca a instância própria de um membro em
+modo "own" — não existe telefone do membro salvo no schema.
+
+Pendente:
+
+1. aplicar `20260721f_reminder_whatsapp_alert.sql` manualmente no Supabase;
+2. autorização do usuário para commit/push;
+3. validar com sessão autenticada: lembrete vencido mostra badge no sino e
+   chega mensagem de WhatsApp no número do corretor.
 
 ## Pacote publicado: inbox/outbox duráveis
 

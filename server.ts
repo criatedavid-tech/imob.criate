@@ -9,6 +9,7 @@ import "./server/lib/infra"; // side-effect: inicializa Sentry/Redis se configur
 import { prepareOverageBilling, reconcilePendingBillingActions } from "./server/services/billing";
 import { runFollowupTick } from "./server/services/followup";
 import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduledFollowups";
+import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 
@@ -157,6 +158,13 @@ async function startServer() {
   setInterval(runScheduledAgentFollowupsTick, 60_000);
   runScheduledAgentFollowupsTick();
   console.log('[Agent Follow-up] scheduler ativo (tick 60s)');
+
+  // Alerta por WhatsApp pro próprio corretor quando um lembrete
+  // (create_reminder) vence — complementa o badge visual do sino
+  // (ManualRail.tsx, useDueReminderCount).
+  setInterval(runReminderWhatsappAlertTick, 60_000);
+  runReminderWhatsappAlertTick();
+  console.log('[Reminder Alert] scheduler ativo (tick 60s)');
 
   // Verifica a cada hora se algum corretor tem renovação amanhã e emite o
   // valor combinado (mensalidade + excedente) na assinatura do Asaas.
