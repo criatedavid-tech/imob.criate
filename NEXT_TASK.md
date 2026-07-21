@@ -7,6 +7,23 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21) — aguardando autorização
+
+Usuário pediu follow-up pro Hiago "às 16:00", sistema agendou 19:39.
+`create_reminder`/`schedule_followup` só aceitavam prazo relativo
+(delay_value+delay_unit) — sem campo pra hora do relógio, o modelo chutava
+um prazo a partir da hora e chutava errado. Corrigido em
+`server/services/agent.ts`: `resolveDueAt` tenta date+time (par que
+`create_visit` já usa) primeiro, cai pro relativo se não vier; sempre
+valida resultado no futuro (recusa honesto se já passou).
+
+`npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
+
+Pendente: autorização do usuário para commit/push. O follow-up errado do
+Hiago (19:39, `imf_agent_scheduled_followups`) continua pendente em
+produção — cancelar pela aba Lembretes (lixeira, "Aguardando envio") e
+pedir de novo depois do deploy.
+
 ## Dois bugs de UI relatados pelo usuário (2026-07-21) — aguardando autorização
 
 Print do usuário: barra superior mobile (admin) com "Corretor/Admin" e

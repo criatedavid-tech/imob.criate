@@ -649,12 +649,16 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   `notify_message` (cancelamento/remarcação de visita): o corretor vê
   exatamente o que vai sair antes de confirmar (em autonomia copiloto/
   manual), em vez de uma geração posterior sem revisão humana possível.
-- Nenhuma das duas ações recebe data/hora absoluta do modelo — só
-  `delay_value` (número, ex.: "24", "2", "5") e `delay_unit`
-  (`"minutos"|"horas"|"dias"`); o cálculo de `due_at` é 100% determinístico em código
-  (`computeDueAt` em `agent.ts`), mesmo princípio já usado em
-  `queryAgendaRange` (nunca deixar o modelo fazer aritmética de tempo, que
-  ele erra com frequência).
+- As duas ações aceitam DOIS formatos de "quando", nunca calculados pelo
+  modelo — sempre determinístico em código (`resolveDueAt` em `agent.ts`),
+  mesmo princípio já usado em `queryAgendaRange` (nunca deixar o modelo
+  fazer aritmética de tempo, que ele erra com frequência): (a) prazo
+  relativo — `delay_value` (número, ex.: "24", "2", "5") + `delay_unit`
+  (`"minutos"|"horas"|"dias"`), calculado por `computeDueAt`; (b) horário
+  absoluto — `date`+`time` (o mesmo par de `create_visit`/`update_visit`),
+  convertido por `brDateTimeToISO` e validado como estando no FUTURO antes
+  de aceitar. `resolveDueAt` tenta (b) primeiro; cai pra (a) se `date`/`time`
+  não vierem os dois.
 - O job de follow-up agendado reaproveita o lock distribuído genérico
   `try_billing_lock`/`release_billing_lock` (o mesmo mecanismo dos jobs de
   billing e de expiração de reserva PIX — ver `20260630_billing_lock_and_rls.sql`)
@@ -687,6 +691,24 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   id "parecido" ou uma unidade "provável"). Correção isolada em
   `server/services/agent.ts`; publicada nos commits `7a1db57`+`2378cc3`
   (GitHub Actions run `29839683334` aprovado, smoke HTTP 200).
+- **Bug encontrado e corrigido em produção (21/07/2026): horário do relógio
+  virava prazo relativo chutado.** Antes de `resolveDueAt` existir,
+  `create_reminder`/`schedule_followup` só tinham `delay_value`/
+  `delay_unit` — nenhum campo pra uma hora do relógio. Relatado pelo
+  usuário ao vivo: pediu "agendar um follow pro Hiago às 16:00" e o sistema
+  agendou pra 19:39 (o modelo, sem campo pra hora absoluta, inventou um
+  prazo relativo a partir da hora pedida — mesma categoria de erro do bug
+  de "minutos" acima, mas por falta de capacidade, não por bug de código).
+  Corrigido reaproveitando o par `date`+`time` que `create_visit` já usa
+  (nenhum campo novo no `AgentAction`/`JSON_SHAPE_HINT`): `resolveDueAt`
+  tenta absoluto primeiro, cai pro relativo se não vier os dois, e sempre
+  valida que o resultado é no futuro (a hora do relógio atual nunca é
+  exposta no prompt — só a data — então o modelo não tem como saber
+  sozinho se um horário de hoje já passou). Durante a implementação, um
+  discriminated union por boolean (`{ok:true;...}|{ok:false;...}`) não
+  narrava sob este `tsconfig.json` (sem `strict`/`strictNullChecks`) —
+  redesenhado pra `{date: Date|null; reason?: ...}`, sem depender de
+  narrowing de union.
 - As duas ações são acionadas só por linguagem natural no Assistente IA
   (`CommandBar.tsx`, sem novo botão/formulário ali), mas ganharam tela
   própria pra visualizar/gerenciar o resultado: área **Lembretes**

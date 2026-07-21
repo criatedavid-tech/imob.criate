@@ -109,6 +109,20 @@
   agendado grava `sender_type='ai'` e não pausa o atendimento da IA depois
   (trata como automático, não como intervenção manual do corretor — ao
   contrário de `send_message`, que pausa).
+- **create_reminder/schedule_followup também aceitam horário absoluto
+  (2026-07-21).** Bug real relatado pelo usuário: pediu "às 16:00" e o
+  sistema agendou pra outro horário (o modelo tinha só delay_value/
+  delay_unit disponível, e chutou um prazo relativo a partir de uma hora do
+  relógio — exatamente o tipo de aritmética que o modelo erra, e que este
+  produto já evita em todo outro lugar). Corrigido reaproveitando o par
+  date+time que `create_visit`/`update_visit` já usam: `resolveDueAt`
+  (server/services/agent.ts) tenta date+time primeiro (horário do relógio/
+  data específica) e cai pro delay_value/delay_unit relativo se os dois não
+  vierem. Sempre valida que o resultado é no FUTURO antes de aceitar — o
+  prompt só expõe a DATA de hoje pro modelo, nunca a hora do relógio atual,
+  então ele não tem como saber se um horário de hoje já passou; cair no
+  passado dispararia o job de 60s imediatamente, então falha honesto em vez
+  de arriscar.
 - **Aba Lembretes separada da Agenda (2026-07-21).** Decisão explícita do
   usuário: lembrete e visita real não dividem a mesma tela, pra evitar
   mistura/conflito visual. Coluna `imf_agenda.event_type` faz a distinção no

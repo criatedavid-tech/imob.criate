@@ -1,5 +1,39 @@
 # Estado do projeto
 
+## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21)
+
+- Usuário pediu "agendar um follow pro Hiago às 16:00" e o sistema agendou
+  pra 19:39 — visível no print da aba Lembretes. Causa: `create_reminder`/
+  `schedule_followup` só tinham `delay_value`+`delay_unit` (prazo relativo:
+  "em 24h", "2 dias"); um horário do relógio não tem pra onde ir nesse
+  formato, então o modelo era forçado a inventar um prazo relativo a partir
+  da hora — e inventava errado. Mesma categoria do bug de "5 minutos"
+  corrigido antes hoje, mas na raiz: ali era um bug de código (unidade
+  tratada errado); aqui é uma capacidade que faltava (nenhum jeito de
+  expressar hora do relógio).
+- Corrigido reaproveitando o par `date`+`time` que `create_visit`/
+  `update_visit` já usam (já existe no `AgentAction`/`JSON_SHAPE_HINT`,
+  nenhum campo novo): `resolveDueAt` (`server/services/agent.ts`) tenta
+  date+time (absoluto) primeiro, cai pro delay_value/delay_unit (relativo)
+  se os dois não vierem. Sempre valida que o resultado é no futuro —
+  recusa com mensagem honesta se já passou, em vez de arriscar disparar o
+  job de 60s na hora.
+- Prompt do modelo atualizado pras duas ações explicando quando usar cada
+  par (hora do relógio → date+time; prazo/duração → delay_value/
+  delay_unit), com a regra explícita de nunca converter uma hora do
+  relógio num prazo chutado.
+- Durante a implementação, `if (!resolved.ok)` com union discriminada por
+  boolean (`{ok:true;...}|{ok:false;...}`) não narrava sob este tsconfig
+  (sem `strict`/`strictNullChecks` — confirmado isolando o padrão num
+  arquivo à parte). Redesenhado pra um campo nullable simples
+  (`{date: Date|null; reason?: ...}`), sem depender de narrowing de union.
+- Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
+  aprovados.
+- Pendente: autorização do usuário para commit/push. O follow-up errado do
+  Hiago (19:39) continua pendente em produção — o usuário pode cancelar
+  direto na aba Lembretes (botão de lixeira, enquanto "Aguardando envio")
+  e pedir de novo pro Assistente IA depois do deploy.
+
 ## Dois bugs de UI relatados pelo usuário (2026-07-21)
 
 - **Barra superior sobrepondo no mobile (admin):** print do usuário mostrava

@@ -53,6 +53,33 @@ function computeDueAt(delayValue?: string, delayUnit?: string): Date | null {
   return new Date(Date.now() + n * msPerUnit);
 }
 
+type DueAtResolution = { date: Date | null; reason?: "invalid" | "past" };
+
+// create_reminder / schedule_followup também aceitam horário ABSOLUTO
+// (date+time, mesmo par de create_visit/update_visit) além do atraso
+// relativo de computeDueAt acima — sem isso, um pedido com hora do
+// relógio ("às 16:00") não tinha campo nenhum pra ir: o modelo era
+// forçado a inventar um delay_value/delay_unit chutado a partir da hora
+// (bug real relatado pelo usuário: pediu "às 16:00" e o sistema agendou
+// pra 19:39). date+time sempre ganha quando os dois vierem preenchidos.
+//
+// Sempre valida que o resultado é no FUTURO: o prompt só expõe a DATA de
+// hoje pro modelo (ver buildSystemPrompt), nunca a hora do relógio atual
+// — então ele não tem como saber se "16:00" de hoje já passou. Cair no
+// passado dispararia o job de 60s na próxima checagem (>= now()), o que
+// seria pior que recusar. Falha honesto em vez de arriscar.
+function resolveDueAt(action: { date?: string; time?: string; delay_value?: string; delay_unit?: string }): DueAtResolution {
+  if (action.date && action.time) {
+    const absolute = brDateTimeToISO(action.date, action.time);
+    if (isNaN(absolute.getTime())) return { date: null, reason: "invalid" };
+    if (absolute.getTime() <= Date.now()) return { date: null, reason: "past" };
+    return { date: absolute };
+  }
+  const relative = computeDueAt(action.delay_value, action.delay_unit);
+  if (!relative) return { date: null, reason: "invalid" };
+  return { date: relative };
+}
+
 export interface AgentAction {
   type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "send_message"
       | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
@@ -62,6 +89,9 @@ export interface AgentAction {
   name?: string;
   phone?: string;
   property_id?: string;
+  // create_visit / update_visit; também o par ABSOLUTO opcional de
+  // create_reminder / schedule_followup (ver resolveDueAt e delay_value
+  // abaixo — os dois usam o mesmo par date+time de create_visit).
   date?: string; // YYYY-MM-DD
   time?: string; // HH:MM
   // query_agenda — consulta real de visitas fora da janela do snapshot
@@ -110,11 +140,13 @@ export interface AgentAction {
   // mensagem de verdade pelo WhatsApp depois de cancelar/remarcar — antes
   // disso a ação só mexia na agenda e nunca avisava ninguém.
   notify_message?: string;
-  // create_reminder / schedule_followup — atraso relativo a partir de AGORA.
-  // O modelo só extrai número+unidade da fala ("48h", "dois dias") — NUNCA
-  // calcula a data/hora absoluta, isso é feito em código (computeDueAt),
-  // mesmo princípio determinístico de query_agenda (sem 2ª chamada ao LLM
-  // pra aritmética que ele erra fácil).
+  // create_reminder / schedule_followup — atraso RELATIVO a partir de AGORA
+  // (alternativa a date+time acima, que é pra horário/data ABSOLUTA — ver
+  // resolveDueAt). O modelo só extrai número+unidade da fala ("48h", "dois
+  // dias") ou data+hora do relógio ("às 16h", "amanhã às 9h") — NUNCA
+  // calcula a data/hora final sozinho, isso é sempre feito em código
+  // (resolveDueAt/computeDueAt), mesmo princípio determinístico de
+  // query_agenda (sem 2ª chamada ao LLM pra aritmética que ele erra fácil).
   delay_value?: string; // só o número, ex.: "24", "2", "5"
   delay_unit?: "minutos" | "horas" | "dias";
   // create_reminder — o que lembrar, além do padrão "fazer follow-up".
@@ -426,8 +458,8 @@ function buildSystemPrompt(snap: Snapshot, persona: string, autonomy: Autonomy):
   if (isIncorporadora) {
     extraActions.push(`${++actionNum}. "update_unit" — reservar, vender ou liberar uma unidade de lançamento. Precisa de unit_id (da lista de "Unidades" abaixo, nunca invente), unit_action ("reservar"|"vender"|"liberar"). Pra "reservar" precisa também de buyer_name (e buyer_phone se tiver). Pra "vender" buyer_name é opcional (mantém o que já estava reservado se não for informado).`);
   }
-  extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar), delay_value (só o número, ex.: "2", "48", "5") e delay_unit ("minutos", "horas" ou "dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"; "5 minutos" → delay_value "5" + delay_unit "minutos". NUNCA confunda minutos com horas). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
-  extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X um follow-up/mensagem pro Y" — a mensagem sai sozinha depois do prazo, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), delay_value e delay_unit (mesma regra de "create_reminder" acima, incluindo "minutos" quando for o caso), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
+  extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar) e QUANDO — escolha UM dos dois jeitos, o que combinar com o que o corretor disse: (a) prazo relativo ("em 2 dias", "48h", "5 minutos") → delay_value (só o número) + delay_unit ("minutos"|"horas"|"dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"; "5 minutos" → delay_value "5" + delay_unit "minutos". NUNCA confunda minutos com horas); (b) horário do relógio ou data específica ("às 16h", "amanhã às 9h", "sexta de manhã") → date (YYYY-MM-DD, resolvendo dia relativo a partir da data de hoje, igual "create_visit") + time (HH:MM). Se o pedido tem uma HORA DO RELÓGIO, use sempre (b) — NUNCA converta hora do relógio num prazo relativo chutado (é assim que "às 16:00" virava agendado pra outro horário qualquer). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
+  extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo ou pra um horário específico — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X (ou às X) um follow-up/mensagem pro Y" — a mensagem sai sozinha na hora certa, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), QUANDO (mesma escolha e mesma regra de "create_reminder" acima: delay_value+delay_unit pra prazo relativo, ou date+time pra horário do relógio/data específica — nunca inventar um prazo quando o pedido deu uma hora), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
 
   return `Você é a assistente de IA do ImobiFlow, trabalhando para ${snap.brokerName}, um corretor de imóveis. Você fala português do Brasil, de forma curta, direta e cordial — como um colega de trabalho competente, nunca robótica.
 
@@ -799,8 +831,13 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 
   if (action.type === "create_reminder") {
     if (!action.name) throw new Error("Preciso do nome do contato pra criar o lembrete.");
-    const dueAt = computeDueAt(action.delay_value, action.delay_unit);
-    if (!dueAt) throw new Error("Não consegui entender em quanto tempo lembrar.");
+    const resolved = resolveDueAt(action);
+    if (!resolved.date) {
+      throw new Error(resolved.reason === "past"
+        ? "Esse horário já passou hoje — me diga um horário no futuro ou daqui a quantas horas/dias."
+        : "Não consegui entender quando lembrar.");
+    }
+    const dueAt = resolved.date;
 
     // Reaproveita a Agenda existente (mesma tabela/tela de visitas) — o
     // corretor já confere lá, e "marcar como realizado" já é o fluxo que
@@ -827,8 +864,13 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     if (!action.name) throw new Error("Preciso do nome do contato.");
     if (!action.phone) throw new Error("Preciso do telefone pra agendar o envio.");
     if (!action.message?.trim()) throw new Error("Preciso do texto da mensagem.");
-    const dueAt = computeDueAt(action.delay_value, action.delay_unit);
-    if (!dueAt) throw new Error("Não consegui entender em quanto tempo enviar.");
+    const resolved = resolveDueAt(action);
+    if (!resolved.date) {
+      throw new Error(resolved.reason === "past"
+        ? "Esse horário já passou hoje — me diga um horário no futuro ou daqui a quantas horas/dias."
+        : "Não consegui entender quando enviar.");
+    }
+    const dueAt = resolved.date;
 
     // Só agenda aqui — o envio de verdade acontece no job de background
     // (server/services/agentScheduledFollowups.ts, tick 60s), igual ao
