@@ -17,6 +17,11 @@
   visão OpenRouter, persistência textual, deduplicação e fallback. Publicado no
   commit `5d096ef`; GitHub Actions run `29781792572` aprovado; `/`, `/login` e
   `/app` retornaram HTTP 200.
+- Assistente interno (`server/services/agent.ts`, ação `send_message`) para de
+  narrar a própria ação em mensagens ao cliente ("estou fazendo um
+  follow-up..."). Regra explícita + exemplo no prompt; validado com chamada
+  real ao modelo em `autonomy=manual` (ação só proposta, nunca enviada).
+  Publicado no commit `c372ccc`; smoke `/`, `/login`, `/app` HTTP 200.
 
 ## Pacote publicado nesta sessão
 

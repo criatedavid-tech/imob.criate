@@ -32,15 +32,17 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 ### Estado conhecido de produção
 
 O deploy vigente é publicado automaticamente pelo workflow `deploy-v2.yml`
-a partir do HEAD da branch `v2`. A baseline imediatamente anterior ao suporte
-multimodal do WhatsApp era `d36fac5`, contendo as correções mobile do
-Assistente IA sobre o hardening de segurança do CRM em `84497c3`; ver
-"Assistente IA e Follow-Up" e seção 6. O pacote de suporte a áudio/imagem no
-inbound segue pelo mesmo gate automático. Smoke de `/`, `/app` e `/login`
-respondeu HTTP 200 em 2026-07-20. Número exato da release Fly não
-confirmado nesta entrada — `flyctl` local está bloqueado por política de
-Application Control (Smart App Control) do Windows nesta máquina; consultar
-`fly status -a imobiflow-v2` ou o painel Fly quando disponível.
+a partir do HEAD da branch `v2`, atualmente `c372ccc` (fix de metacomentário
+do assistente interno em mensagens ao cliente — ver "Assistente IA e
+Follow-Up"). Nessa mesma linha vieram: o suporte multimodal do WhatsApp
+(áudio/imagem, baseline `d36fac5`→`5d096ef`), o alinhamento de
+`imf_brokers.ai_name` com o contrato `agent_name` do N8N (`069db64`) e as
+correções mobile do Assistente IA sobre o hardening de segurança do CRM em
+`84497c3`; ver seção 6. Smoke de `/`, `/app` e `/login` respondeu HTTP 200
+em 2026-07-21. Número exato da release Fly não confirmado nesta entrada —
+`flyctl` local está bloqueado por política de Application Control (Smart
+App Control) do Windows nesta máquina; consultar `fly status -a
+imobiflow-v2` ou o painel Fly quando disponível.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
 `imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
@@ -556,6 +558,22 @@ com o token da instância e `message.messageid`, pedindo `return_base64=true` e
 Não há migration nem alteração necessária no workflow N8N: o contrato `text`
 continua válido. O QA real pós-deploy precisa repetir um áudio e uma imagem na
 conversa privada; a implementação não processa vídeo, documento ou sticker.
+
+**Fix — assistente interno narrando a própria ação em mensagens ao cliente
+(21/07/2026):** ao pedir "faça um follow pro X" no Assistente IA
+(`server/services/agent.ts`, ação `send_message` — o agente INTERNO do app,
+que atende comando do corretor; diferente do agente externo do WhatsApp
+documentado acima, que roda no N8N), o texto gerado para o CLIENTE vinha com
+metacomentário ("Estou fazendo um follow-up sobre as fotos que você
+pediu"), soando robótico e expondo o mecanismo interno pro cliente final. O
+system prompt já pedia "natural e cordial" mas não proibia frases
+auto-referentes. Adicionada regra explícita + exemplo negativo/positivo no
+prompt (linha da ação 6, `send_message`). Validado com chamada real ao
+modelo em `autonomy=manual` (ação só proposta, nunca enviada de verdade):
+pedido "faça um follow para o hunter" passou a gerar "Oi Hunter, tudo bem?
+Estou passando aqui pra saber se você precisa de alguma informação ou se
+tem alguma dúvida sobre os imóveis. Estou à disposição!" — sem
+metacomentário.
 
 ### Asaas e limite do escopo financeiro
 

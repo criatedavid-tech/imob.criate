@@ -50,3 +50,9 @@
 - **Nome público único.** O N8N deve usar `imf_brokers.ai_name`, configurado na
   interface; `broker_agents.agent_name` é fallback legado e `Juliana` é o
   fallback final.
+- **Assistente interno sem metacomentário.** Mensagens que o assistente
+  interno do app (`server/services/agent.ts`, ação `send_message` — distinto
+  do agente externo do WhatsApp acima) escreve para o CLIENTE nunca podem
+  narrar a própria ação (proibido "estou fazendo um follow-up...", "isto é um
+  lembrete automático..."); regra explícita + exemplo no prompt, validada com
+  chamada real ao modelo.

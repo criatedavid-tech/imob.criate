@@ -3,14 +3,14 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; último commit funcional publicado: `069db64`.
-- Produção atual contém o inbound multimodal e o alinhamento de
-  `imf_brokers.ai_name` com o contrato `agent_name` do N8N.
+- Branch: `v2`; último commit funcional publicado: `c372ccc`.
+- Produção atual contém o inbound multimodal, o alinhamento de
+  `imf_brokers.ai_name` com o contrato `agent_name` do N8N, e o fix do
+  assistente interno (para de narrar a própria ação em `send_message`).
 - Branch local/remota sincronizadas e working tree limpo após o registro
   documental da publicação.
 - Nenhuma migration pendente deste pacote.
-- GitHub Actions run `29832355248` aprovado; `/`, `/login` e `/app` retornaram
-  HTTP 200.
+- Smoke `/`, `/login`, `/app` HTTP 200 em 2026-07-21.
 - N8N ainda usa o prompt anterior. A instância `https://212n8n.criate.online`
   abriu na tela de login e requer sessão autenticada com acesso de edição.
 
