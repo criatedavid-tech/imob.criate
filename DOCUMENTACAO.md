@@ -609,8 +609,8 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   exatamente o que vai sair antes de confirmar (em autonomia copiloto/
   manual), em vez de uma geração posterior sem revisão humana possível.
 - Nenhuma das duas ações recebe data/hora absoluta do modelo — só
-  `delay_value` (número, ex.: "24", "2") e `delay_unit`
-  (`"horas"|"dias"`); o cálculo de `due_at` é 100% determinístico em código
+  `delay_value` (número, ex.: "24", "2", "5") e `delay_unit`
+  (`"minutos"|"horas"|"dias"`); o cálculo de `due_at` é 100% determinístico em código
   (`computeDueAt` em `agent.ts`), mesmo princípio já usado em
   `queryAgendaRange` (nunca deixar o modelo fazer aritmética de tempo, que
   ele erra com frequência).
@@ -635,6 +635,19 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   segue indisponível em produção mesmo com a tabela já existindo no banco.
   `create_reminder` funciona de forma independente, pois só usa `imf_agenda`
   (já existente e já com RLS/índices próprios).
+- **Bug encontrado e corrigido em produção (21/07/2026):** `delay_unit`
+  originalmente só reconhecia `"dias"` explicitamente em `computeDueAt`;
+  qualquer outro valor (inclusive `"minutos"`, que o modelo extrai
+  corretamente quando o corretor diz "em 5 minutos") caía num `else` que
+  tratava como `"horas"`. Relatado pelo usuário ao vivo: pediu "faça um
+  follow para o hunter em 5 minutos" às 11:22 e o sistema agendou para
+  16:22 (exatamente +5 horas em vez de +5 minutos). Corrigido: `"minutos"`
+  virou uma unidade de primeira classe (branch explícito, 60\*1000ms) e
+  qualquer `delay_unit` não reconhecido agora faz `computeDueAt` devolver
+  `null` — `executeAction` recusa com mensagem honesta em vez de adivinhar
+  errado, mesmo princípio já usado no resto do agente (nunca escolher um
+  id "parecido" ou uma unidade "provável"). Correção isolada em
+  `server/services/agent.ts`; aguardando autorização para commit/push.
 - Nenhuma mudança de UI: os dois novos tipos de ação são acionados só por
   linguagem natural no Assistente IA (`CommandBar.tsx`), sem novo botão ou
   tela. A visualização do lembrete acontece 100% dentro da tela Agenda já
