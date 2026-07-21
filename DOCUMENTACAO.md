@@ -838,6 +838,18 @@ Exclusividade), uma por foto destacada (`featuredImages`, até 5). O texto de
 cada seção vem de `descParagraphs` — a `description` do imóvel dividida por
 quebra dupla de linha (ou quebra simples seguida de maiúscula).
 
+**Fix — foto falsa de corretor na landing (21/07/2026):** a seção "Seu
+Corretor" (e o modal "Saiba Mais") usava uma foto de banco de imagens
+(Unsplash, um homem aleatório) como fallback quando o corretor não tinha
+foto configurada no perfil — apresentava o rosto de um estranho como se
+fosse o corretor real (relatado pelo usuário via print). O fallback agora
+é um monograma com a inicial do nome, no mesmo estilo visual da seção
+(gradiente escuro + serifa), nos dois pontos de render. Foto real continua
+sendo configurada no perfil do Dashboard 1.0 ("Carregar Foto" →
+`broker_address.photoUrl`); quando existe, aparece normalmente. Os textos
+padrão de bio/título ("Principal Broker" etc.) foram mantidos — são
+genéricos, não identificam ninguém; só a foto era enganosa.
+
 **Fix — dados cadastrados (quartos, banheiros, piscina...) sumidos da
 landing (21/07/2026):** relatado pelo usuário via print: a landing mostrava
 só título/preço/descrição — a faixa de specs, as tags de característica e

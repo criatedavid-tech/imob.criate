@@ -170,10 +170,16 @@ export default function PropertyLanding() {
     gourmet: extraData.varanda_gourmet || 'Não',
   };
 
+  // photoUrl SÓ é preenchido se o corretor configurou a própria foto no
+  // perfil (broker_address abaixo). O fallback antigo era uma foto de
+  // banco de imagens (Unsplash) de um homem aleatório — mostrar o rosto de
+  // um estranho como se fosse o corretor real engana o cliente (relatado
+  // pelo usuário via print). Sem foto real, renderizamos um monograma com
+  // a inicial do nome (ver os dois pontos de render abaixo).
   let brokerProfile = {
     name: property.brokers?.name || 'Corretor',
     title: 'Principal Broker',
-    photoUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80',
+    photoUrl: '',
     bio1: 'Para quem busca excelência no mercado imobiliário.',
     bio2: 'Com experiência e dedicação, garantimos a melhor experiência na compra ou venda do seu imóvel.',
     quote: ''
@@ -525,7 +531,17 @@ export default function PropertyLanding() {
               className="w-full md:w-64 lg:w-72 shrink-0"
             >
               <div className="aspect-[3/4] rounded-[40px] overflow-hidden">
-                <img src={brokerProfile.photoUrl} alt={brokerProfile.name} className="w-full h-full object-cover" />
+                {brokerProfile.photoUrl ? (
+                  <img src={brokerProfile.photoUrl} alt={brokerProfile.name} className="w-full h-full object-cover" />
+                ) : (
+                  // Sem foto configurada: monograma com a inicial, em vez de
+                  // foto de banco de imagens de um estranho (ver brokerProfile).
+                  <div className="w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] border border-white/10 flex items-center justify-center">
+                    <span className="font-serif text-8xl font-light text-white/25 select-none">
+                      {brokerProfile.name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
               </div>
             </motion.div>
 
@@ -722,7 +738,17 @@ export default function PropertyLanding() {
               className="relative bg-[#FAFAFA] w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl flex flex-col md:flex-row"
             >
               <div className="w-full md:w-2/5 h-56 md:h-auto bg-black relative shrink-0">
-                <img src={brokerProfile.photoUrl} alt="Corretor" className="w-full h-full object-cover opacity-75" />
+                {brokerProfile.photoUrl ? (
+                  <img src={brokerProfile.photoUrl} alt="Corretor" className="w-full h-full object-cover opacity-75" />
+                ) : (
+                  // Mesmo monograma da seção do corretor — nunca foto de
+                  // banco de imagens no lugar do corretor real.
+                  <div className="w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#111] flex items-center justify-center">
+                    <span className="font-serif text-8xl font-light text-white/20 select-none">
+                      {brokerProfile.name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-8">
                   <p className="text-white font-serif text-3xl font-light">{brokerProfile.name}</p>
                   <p className="text-white/60 text-[10px] tracking-[0.2em] uppercase mt-2">{brokerProfile.title}</p>

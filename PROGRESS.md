@@ -1,5 +1,18 @@
 # Estado do projeto
 
+## Fix: foto falsa de corretor na landing (2026-07-21)
+
+- Print do usuário: a seção "Seu Corretor" mostrava a foto de um homem
+  aleatório (placeholder Unsplash hardcoded) como se fosse o corretor
+  "hunter" — o fallback disparava sempre que o corretor não tinha foto
+  própria configurada no perfil (caso da conta de teste).
+- Correção em `PropertyLanding.tsx` (seção + modal "Saiba Mais"): fallback
+  virou monograma com a inicial do nome, no estilo da seção; foto real
+  (perfil do Dashboard 1.0, `broker_address.photoUrl`) continua aparecendo
+  quando configurada.
+- `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
+- Pendente: autorização do usuário para commit/push.
+
 ## Bug: dados cadastrados sumidos da landing page do imóvel (2026-07-21)
 
 - Print do usuário: a landing pública mostrava só título/preço/descrição —

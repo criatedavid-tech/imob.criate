@@ -7,6 +7,15 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Fix: foto falsa de corretor na landing (2026-07-21) — aguardando autorização
+
+Seção "Seu Corretor" e modal "Saiba Mais" usavam foto de banco de imagens
+(Unsplash) como fallback quando o corretor não tinha foto no perfil —
+rosto de um estranho apresentado como o corretor real. Fallback agora é um
+monograma com a inicial do nome (`PropertyLanding.tsx`, dois pontos de
+render). Foto real do perfil (Dashboard 1.0) continua aparecendo quando
+existe. `tsc`/`knip`/`build` aprovados. Sem migration.
+
 ## Bug: dados cadastrados sumidos da landing (2026-07-21) — aguardando autorização
 
 Landing pública não mostrava quartos/banheiros/piscina/etc. (faixa de
