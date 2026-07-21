@@ -4,9 +4,9 @@
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
 - Branch: `v2`; HEAD publicado e sincronizado com `origin/v2`:
-  `0916b8a`.
-- **Working tree NÃO está limpo**: somente o pacote do worker separado e suas
-  atualizações documentais permanecem locais.
+  `e42c765`.
+- **Working tree NÃO está limpo**: correção do workflow para manter `web=1` e
+  suas atualizações documentais permanecem locais.
 - O n8n não foi acessado nem alterado nesta etapa.
 
 ## Pacote publicado: inbox/outbox duráveis
@@ -46,7 +46,7 @@ Banco já preparado:
 - smoke real confirmou inbox/outbox `completed` em uma tentativa, entrega ao
   n8n em cerca de 0,3 s e zero itens `pending`, `processing` ou `dead`.
 
-## Pacote local pendente: worker separado (2026-07-21)
+## Pacote publicado: worker separado (2026-07-21)
 
 - `webhook-worker.ts` executa exclusivamente os ticks da inbox/outbox;
 - `server.ts` e `POST /api/wpp-shim/inbound/:instanceId` apenas persistem;
@@ -55,9 +55,12 @@ Banco já preparado:
 - `SIGTERM`/`SIGINT` interrompem novos ciclos e drenam o ativo antes de sair;
 - TypeScript, Knip, build, TOML e `git diff --check` aprovados localmente;
 - nenhuma migration nova e nenhuma alteração no n8n.
+- commit `e42c765` e GitHub Actions run `29852566289` aprovados;
+- smoke HTTP 200 e filas sem itens problemáticos após o deploy.
 
-Não há migration nova para este pacote. Depois do deploy, confirmar as duas
-Machines e repetir o smoke real.
+Correção pendente: o primeiro rollout criou duas `web` pela HA padrão. Publicar
+o workflow local que usa `--ha=false` e reafirma `web=1`, pois os schedulers
+legados do Express ainda não podem rodar em duas Machines.
 
 ## Pacote publicado: aba Lembretes (2026-07-21)
 

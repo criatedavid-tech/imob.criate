@@ -865,7 +865,8 @@ do Express, e pode usar múltiplas Machines porque os claims usam
 `FOR UPDATE SKIP LOCKED`, lease e partição por conversa. Os demais jobs ainda
 rodam dentro de cada processo Express. Antes de aumentar o grupo `web`, revisar
 as garantias de idempotência e concorrência desses jobs ou movê-los para um
-scheduler singleton.
+scheduler singleton. Até lá, o workflow publica com `--ha=false` e executa
+`flyctl scale count web=1` depois de cada deploy.
 
 ## 13. Variáveis de ambiente
 

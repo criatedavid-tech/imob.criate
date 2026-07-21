@@ -23,7 +23,7 @@
   o usuário confirmou a chegada de uma nova mensagem no V2.
 - Continua pendente deduplicar `event_id` no workflow N8N.
 
-## Implementado localmente, aguardando autorização de commit (2026-07-21)
+## Worker separado publicado (2026-07-21)
 
 - Worker da fila separado da API: `webhook-worker.ts` executa inbox/outbox,
   `server.ts` e o endpoint UAZAPI apenas persistem, e o gatilho em memória foi
@@ -32,6 +32,12 @@
   ativo por até 25 s. Sem migration e sem alteração no n8n.
 - Validações locais aprovadas: `npm run lint`, `npx knip`, `npm run build`,
   parse do `fly.toml` e `git diff --check`.
+- Publicado no commit `e42c765`; GitHub Actions run `29852566289` aprovou
+  validação e deploy. Smoke `/`, `/login` e `/app` HTTP 200; filas sem itens
+  `pending`, `processing` ou `dead`.
+- O primeiro rollout criou duas Machines `web` pela HA padrão do Fly. Como os
+  schedulers restantes do Express não podem rodar duplicados com segurança, a
+  correção local adiciona `--ha=false` e `flyctl scale count web=1` ao workflow.
 
 ## Aba Lembretes publicada (2026-07-21)
 

@@ -94,7 +94,8 @@
   apenas registram e exibem valores/status.
 - Push em `v2` executa GitHub Actions: `npm ci`, TypeScript, Knip, build e
   deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
-- O primeiro deploy com process groups cria ao menos uma Machine `web` e uma
-  `worker`; ambas começam em `shared-cpu-1x`/1 GB. A API ainda contém jobs
-  periódicos legados, portanto o grupo `web` permanece com uma Machine até
-  esses jobs serem isolados ou comprovadamente idempotentes.
+- A topologia inicial mantém uma Machine `web` ativa e uma `worker` ativa,
+  ambas `shared-cpu-1x`/1 GB; o Fly pode conservar uma standby parada para o
+  worker. A API ainda contém jobs periódicos legados, portanto o workflow usa
+  `--ha=false` e reafirma `web=1` até esses jobs serem isolados ou
+  comprovadamente idempotentes.

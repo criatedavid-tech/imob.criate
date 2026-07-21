@@ -49,6 +49,11 @@
   `worker` faz polling da inbox/outbox e drena o ciclo ativo no desligamento.
   Isso isola CPU/memória de texto, áudio e imagem e permite escalar os workers
   sem aumentar a API. O n8n não foi alterado nesta etapa.
+- **`web` singleton enquanto houver scheduler legado (2026-07-21).** O Fly
+  criou duas Machines web por alta disponibilidade no primeiro rollout, mas
+  isso também duplicaria os jobs periódicos ainda presentes em `server.ts`.
+  O deploy usa `--ha=false` e `flyctl scale count web=1`; redundância web só
+  volta depois de mover/auditar esses jobs. Worker continua escalável.
 
 - **UAZAPI direta.** Z-PRO está removido da V2; a reconexão reafirma o webhook.
 - **Mídia convertida no backend.** PTT e imagem privados viram texto antes do

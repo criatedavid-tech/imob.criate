@@ -60,6 +60,15 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy
-        run: flyctl deploy --app imobiflow-v2 --config fly.toml --remote-only
+        run: flyctl deploy --app imobiflow-v2 --config fly.toml --remote-only --ha=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}
+
+      # Enquanto os schedulers legados ainda rodam dentro de server.ts, duas
+      # Machines web executariam follow-ups/billing em paralelo. O worker da
+      # inbox/outbox pode escalar horizontalmente; o web permanece singleton
+      # até esses jobs serem movidos para um scheduler dedicado.
+      - name: Keep web scheduler singleton
+        run: flyctl scale count web=1 --app imobiflow-v2 --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}

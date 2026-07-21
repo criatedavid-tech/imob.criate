@@ -99,14 +99,17 @@ Não apagar inbox/outbox durante um incidente.
 - o desligamento usa `SIGTERM`, até 30 segundos no Fly e drenagem de até 25
   segundos no worker. Se o processo for interrompido antes, o lease devolve a
   linha para retry;
-- o primeiro deploy dessa configuração cria uma Machine adicional para o
-  grupo `worker`, portanto aumenta o custo de infraestrutura;
+- por padrão, o primeiro deploy de novos grupos pode criar duas `web` e uma
+  `worker` com standby. Como os schedulers legados ainda estão em `server.ts`,
+  o workflow usa `--ha=false` e reduz `web` para uma Machine após o deploy;
+- a topologia alvo inicial é uma `web` ativa e uma `worker` ativa; uma standby
+  parada do worker não consome CPU/RAM até precisar assumir;
 - não aumentar o grupo `web` enquanto os demais schedulers de `server.ts` não
   forem isolados ou auditados para execução concorrente.
 
 Validação depois do primeiro deploy:
 
-1. confirmar uma Machine saudável em `web` e uma em `worker`;
+1. confirmar uma Machine ativa em `web` e uma ativa em `worker`;
 2. procurar o log `[Webhook Worker] inbox/outbox ativas`;
 3. enviar uma nova mensagem e confirmar inbox/outbox em `completed`;
 4. reiniciar somente o worker durante um teste controlado e confirmar que a
