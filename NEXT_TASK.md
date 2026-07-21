@@ -3,39 +3,41 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; base local/remota antes deste pacote: commit `5d096ef`.
-- Produção atual contém o inbound multimodal desse commit.
-- Há alterações locais intencionais e não publicadas. Preservar todas:
-  `PROMPT-AGENTE-WHATSAPP.md`, `server/routes/brokers.ts`, `DOCUMENTACAO.md` e
-  os cinco arquivos PMP.
+- Branch: `v2`; último commit funcional publicado: `069db64`.
+- Produção atual contém o inbound multimodal e o alinhamento de
+  `imf_brokers.ai_name` com o contrato `agent_name` do N8N.
+- Branch local/remota sincronizadas e working tree limpo após o registro
+  documental da publicação.
 - Nenhuma migration pendente deste pacote.
-- N8N ainda usa o prompt anterior.
+- GitHub Actions run `29832355248` aprovado; `/`, `/login` e `/app` retornaram
+  HTTP 200.
+- N8N ainda usa o prompt anterior. A instância `https://212n8n.criate.online`
+  abriu na tela de login e requer sessão autenticada com acesso de edição.
 
 ## Objetivo imediato
 
-Publicar o alinhamento do nome do agente e instalar o novo prompt padrão sem
-alterar V1, tools de agenda ou contrato textual entre backend e N8N.
+Instalar o novo prompt padrão no N8N e concluir o QA de nome, personalização,
+agenda e mídia sem alterar V1, nomes das tools ou contrato textual entre backend
+e N8N.
 
 ## Sequência
 
-1. Rodar `git status`, `git diff` e conferir que o pacote contém apenas prompt,
-   endpoint de nome e documentação.
-2. Confirmar `npm run lint`, `npx knip`, `npm run build` e `git diff --check`.
-3. Com autorização do usuário, commitar e executar `git push origin v2`; o push
-   dispara deploy automático. Não executar SQL.
-4. Confirmar GitHub Actions e smoke de `/`, `/login` e `/app`.
-5. No N8N, substituir manualmente o prompt principal pelo conteúdo integral de
+1. Entrar em `https://212n8n.criate.online` com uma conta que possa editar o
+   workflow de produção do atendimento WhatsApp.
+2. No N8N, substituir manualmente o prompt principal pelo conteúdo integral de
    `PROMPT-AGENTE-WHATSAPP.md`; manter os nomes das tools:
    `[verificacao]`, `[agendamento]`, `[atualizar agendamento]` e
    `[deletar agendamento]`.
-6. Alterar o nome na tela Assistente IA e confirmar que o endpoint interno
+3. Salvar/ativar o workflow e confirmar que nenhuma conexão ou configuração das
+   quatro tools de agenda foi alterada.
+4. Alterar o nome na tela Assistente IA e confirmar que o endpoint interno
    retorna esse valor em `agent_name`.
-7. Configurar uma instrução personalizada simples e iniciar conversa nova.
+5. Configurar uma instrução personalizada simples e iniciar conversa nova.
    Confirmar: 1–3 frases, uma pergunta por vez, sem repetir dados já informados,
    nome correto e regras de agenda preservadas.
-8. Testar PTT e imagem novos em conversa privada; verificar transcrição/descrição
+6. Testar PTT e imagem novos em conversa privada; verificar transcrição/descrição
    no painel, resposta coerente e ausência de duplicação ou base64 nos logs.
-9. Repetir com IA desativada/human takeover e concluir QA titular versus membro
+7. Repetir com IA desativada/human takeover e concluir QA titular versus membro
    do CRM.
 
 ## Critério de conclusão

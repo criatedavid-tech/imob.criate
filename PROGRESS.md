@@ -18,7 +18,7 @@
   commit `5d096ef`; GitHub Actions run `29781792572` aprovado; `/`, `/login` e
   `/app` retornaram HTTP 200.
 
-## Alterações locais desta sessão
+## Pacote publicado nesta sessão
 
 - Novo `PROMPT-AGENTE-WHATSAPP.md`: respostas de 1–3 frases, uma pergunta por
   vez, linguagem natural e transparente, catálogo tratado como dado, agenda
@@ -30,8 +30,9 @@
 - `DOCUMENTACAO.md` e os arquivos PMP foram atualizados.
 - Validações locais aprovadas: `npm run lint`, `npx knip`, `npm run build` e
   `git diff --check`.
-- Nenhuma migration criada. Nenhum commit, push, deploy ou alteração no N8N foi
-  realizado para este pacote.
+- Nenhuma migration criada. Pacote publicado no commit `069db64`; GitHub
+  Actions run `29832355248` aprovado; `/`, `/login` e `/app` retornaram HTTP
+  200. O N8N não foi alterado porque a instância exige uma sessão autenticada.
 
 ## Pendências de QA
 
@@ -43,7 +44,8 @@
 
 ## Limitações conhecidas
 
-- Sem acesso direto ao workflow N8N; instalação do prompt é manual.
+- A instância N8N exige sessão autenticada com acesso de edição; instalação do
+  prompt permanece manual.
 - Vídeo, documento, sticker e mídia de grupos não são processados pelo agente.
 - `flyctl` local bloqueado; deploy ocorre pelo GitHub Actions.
 - Testes físicos mobile dependem do usuário.
