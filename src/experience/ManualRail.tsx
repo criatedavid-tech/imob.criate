@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Home, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
-  Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot,
+  Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -16,6 +16,7 @@ const ICONS: Record<string, React.ReactNode> = {
   negocios: <LayoutGrid className="w-[18px] h-[18px]" />,
   agenda: <Calendar className="w-[18px] h-[18px]" />,
   contatos: <Contact className="w-[18px] h-[18px]" />,
+  lembretes: <Bell className="w-[18px] h-[18px]" />,
   locacao: <KeyRound className="w-[18px] h-[18px]" />,
   lancamentos: <Layers className="w-[18px] h-[18px]" />,
   financeiro: <Wallet className="w-[18px] h-[18px]" />,

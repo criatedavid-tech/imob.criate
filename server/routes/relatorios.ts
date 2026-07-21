@@ -227,6 +227,7 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
       let query = supabase.from("imf_agenda")
         .select("id, status, scheduled_at")
         .eq("broker_id", brokerId)
+        .eq("event_type", "visita")
         .gte("scheduled_at", startIso)
         .lte("scheduled_at", endIso);
       if (!owner) query = query.eq("owner_user_id", userId);

@@ -49,6 +49,7 @@ dashboardRouter.get("/api/dashboard/metrics", requireUser, async (req, res) => {
       .from('imf_agenda')
       .select('id', { count: 'exact', head: true })
       .eq('broker_id', brokerId)
+      .eq('event_type', 'visita')
       .in('status', ['pendente', 'confirmado'])
       .gte('scheduled_at', new Date().toISOString());
     if (!owner) visitsQuery.eq('owner_user_id', userId);

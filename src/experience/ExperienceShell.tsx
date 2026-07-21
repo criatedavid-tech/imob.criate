@@ -11,6 +11,7 @@ import { CarteiraArea } from './CarteiraArea';
 import { ConversasArea } from './ConversasArea';
 import { NegociosArea } from './NegociosArea';
 import { ContatosArea } from './ContatosArea';
+import { LembretesArea } from './LembretesArea';
 import { AgendaArea } from './AgendaArea';
 import { LocacaoArea } from './LocacaoArea';
 import { LancamentosArea } from './LancamentosArea';
@@ -252,6 +253,8 @@ export function ExperienceShell() {
             <NegociosArea />
           ) : area === 'contatos' ? (
             <ContatosArea />
+          ) : area === 'lembretes' ? (
+            <LembretesArea />
           ) : area === 'agenda' ? (
             <AgendaArea />
           ) : area === 'locacao' ? (

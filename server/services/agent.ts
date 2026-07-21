@@ -136,9 +136,9 @@ export interface AgentResult {
 
 // Áreas navegáveis por persona (espelha engine.ts no front — mantém as duas em sincronia).
 const AREAS_BY_PERSONA: Record<string, string[]> = {
-  corretor:      ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "divulgacao", "relatorios", "config"],
-  imobiliaria:   ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "locacao", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
-  incorporadora: ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lancamentos", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
+  corretor:      ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "divulgacao", "relatorios", "config"],
+  imobiliaria:   ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "locacao", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
+  incorporadora: ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "lancamentos", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
 };
 
 interface Snapshot {
@@ -188,6 +188,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
     .from("imf_agenda")
     .select("id, scheduled_at, client_name")
     .eq("broker_id", brokerId)
+    .eq("event_type", "visita")
     .gte("scheduled_at", new Date().toISOString())
     .order("scheduled_at", { ascending: true })
     .limit(5);
@@ -263,6 +264,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
         .eq("broker_id", brokerId).eq("direction", "in").in("customer_phone", recentPhones)
         .order("created_at", { ascending: false }).limit(100),
       supabase.from("imf_agenda").select("client_phone").eq("broker_id", brokerId)
+        .eq("event_type", "visita")
         .in("client_phone", recentPhones).gte("scheduled_at", new Date().toISOString()),
     ]);
     const nameByPhone = new Map((contactsForConv || []).map((c: any) => [c.phone, c.name]));
@@ -287,6 +289,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
     .from("imf_agenda")
     .select("status")
     .eq("broker_id", brokerId)
+    .eq("event_type", "visita")
     .gte("scheduled_at", monthStart.toISOString());
   if (!owner) monthVisitsQuery.eq("owner_user_id", userId);
   const { data: monthVisits } = await monthVisitsQuery;
@@ -337,6 +340,7 @@ async function queryAgendaRange(brokerId: string, userId: string, dateFrom?: str
     .from("imf_agenda")
     .select("scheduled_at, client_name, status, imf_properties(title)")
     .eq("broker_id", brokerId)
+    .eq("event_type", "visita")
     .gte("scheduled_at", `${from}T00:00:00-03:00`)
     .lte("scheduled_at", `${to}T23:59:59-03:00`)
     .order("scheduled_at", { ascending: true });
@@ -812,10 +816,11 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       title: `Lembrete: ${action.note?.trim() || "fazer follow-up"}`,
       status: "pendente",
       source: "ia",
+      event_type: "lembrete",
     });
     if (error) throw error;
     const quando = dueAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BR_TZ });
-    return { summary: `Lembrete criado: follow-up com ${action.name} em ${quando}.`, navigate: "agenda" };
+    return { summary: `Lembrete criado: follow-up com ${action.name} em ${quando}.`, navigate: "lembretes" };
   }
 
   if (action.type === "schedule_followup") {
@@ -838,7 +843,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       dueAt,
     });
     const quando = dueAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BR_TZ });
-    return { summary: `Follow-up agendado para ${action.name} em ${quando}.` };
+    return { summary: `Follow-up agendado para ${action.name} em ${quando}.`, navigate: "lembretes" };
   }
 
   throw new Error("Ação não executável.");

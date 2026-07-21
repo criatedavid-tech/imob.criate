@@ -13,6 +13,7 @@ export const AREAS: AreaItem[] = [
   { key: 'negocios',    label: 'CRM',         personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'agenda',      label: 'Agenda',      personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'contatos',    label: 'Contatos',    personas: ['corretor', 'imobiliaria', 'incorporadora'] },
+  { key: 'lembretes',   label: 'Lembretes',   personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'locacao',     label: 'Locação',     personas: ['imobiliaria'] },
   { key: 'lancamentos', label: 'Lançamentos', personas: ['incorporadora'] },
   { key: 'financeiro',  label: 'Financeiro',  personas: ['imobiliaria', 'incorporadora'] },

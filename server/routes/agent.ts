@@ -1,5 +1,5 @@
 import express from "express";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { runAgent, executeAction, type Autonomy, type AgentAction } from "../services/agent";
 import { supabase } from "../supabase";
 
@@ -137,6 +137,61 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     res.json({ executed: summary, navigate, refresh: true });
   } catch (err: any) {
     console.error("Erro POST /api/agent/execute:", err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/agent/scheduled-followups — lista os follow-ups agendados pela
+// ação "schedule_followup" (server/services/agent.ts), pra exibir na aba
+// Lembretes. Dono vê tudo da conta; membro só o que ele mesmo pediu.
+agentRouter.get("/api/agent/scheduled-followups", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+    let query = supabase
+      .from("imf_agent_scheduled_followups")
+      .select("id, contact_name, contact_phone, message, due_at, status, sent_at, last_error, created_at")
+      .eq("broker_id", brokerId)
+      .order("due_at", { ascending: true })
+      .limit(100);
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq("owner_user_id", userId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err: any) {
+    console.error("Erro GET /api/agent/scheduled-followups:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/agent/scheduled-followups/:id — cancela um follow-up agendado
+// ainda pendente. Nunca cancela um que já foi enviado (status != 'pending'
+// não bate no WHERE, então a linha simplesmente não é afetada e a resposta
+// vira 404, honesto em vez de fingir sucesso).
+agentRouter.delete("/api/agent/scheduled-followups/:id", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+    const { id } = req.params;
+    let query = supabase
+      .from("imf_agent_scheduled_followups")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("broker_id", brokerId)
+      .eq("status", "pending");
+    if (!(await isBrokerOwner(userId, brokerId))) query = query.eq("owner_user_id", userId);
+
+    const { data, error } = await query.select("id");
+    if (error) throw error;
+    if (!data || data.length === 0) return res.status(404).json({ error: "Follow-up não encontrado ou já processado." });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro DELETE /api/agent/scheduled-followups/:id:", err);
     res.status(400).json({ error: err.message });
   }
 });

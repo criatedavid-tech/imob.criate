@@ -36,11 +36,21 @@ agendaRouter.get("/api/agenda/visits", requireUser, async (req, res) => {
     if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 1000) {
       return res.status(400).json({ error: 'limit deve ser um inteiro entre 1 e 1000.' });
     }
+    // event_type distingue visita real (padrão, calendário de sempre) de
+    // lembrete criado pelo Assistente IA (ação create_reminder) — a tela
+    // Lembretes pede ?event_type=lembrete; a Agenda não passa nada e cai
+    // no padrão de sempre.
+    const eventTypeRaw = req.query.event_type;
+    if (eventTypeRaw !== undefined && eventTypeRaw !== 'visita' && eventTypeRaw !== 'lembrete') {
+      return res.status(400).json({ error: "event_type deve ser 'visita' ou 'lembrete'." });
+    }
+    const eventType = eventTypeRaw === 'lembrete' ? 'lembrete' : 'visita';
 
     let query = supabase
       .from('imf_agenda')
       .select('*, imf_properties(title)')
-      .eq('broker_id', brokerId);
+      .eq('broker_id', brokerId)
+      .eq('event_type', eventType);
 
     if (!(await isBrokerOwner(userId, brokerId))) query = query.eq('owner_user_id', userId);
     if (start) query = query.gte('scheduled_at', start);
@@ -191,6 +201,7 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
       .from('imf_agenda')
       .select('*, imf_properties(title)')
       .eq('broker_id', broker_id)
+      .eq('event_type', 'visita') // agente externo só decide horário ocupado/livre com base em visita real, nunca lembrete do corretor
       .order('scheduled_at', { ascending: true });
 
     if (phone) {
