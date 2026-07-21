@@ -1,67 +1,55 @@
-# ImobiFlow
+# ImobiFlow V2
 
-## Nome
+## Produto
 
-ImobiFlow V2 (nome comercial anterior do produto: "Criate"). Repositório: `imob.criate`.
+SaaS B2B brasileiro para corretores autônomos, imobiliárias e incorporadoras.
+Centraliza carteira de imóveis, landing pages, atendimento de leads pelo
+WhatsApp com IA, CRM, agenda, contatos, locação, lançamentos, equipe e
+relatórios.
 
-## Objetivo
+O foco é atendimento e vendas do dia a dia. O ImobiFlow não executa operações
+financeiras dos clientes: cobrança de aluguel/reserva e pagamentos ficam fora
+do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 
-SaaS B2B para corretores de imóveis, imobiliárias e incorporadoras no Brasil.
-Cadastro de imóveis com geração de site/landing por imóvel, atendimento a
-leads via WhatsApp com agente de IA, CRM de leads, locação, lançamentos
-(venda de unidades em empreendimentos), gestão de equipe e financeiro.
+## Escopo ativo
 
-## Escopo
+- V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
+  `imobiflow-v2`.
+- V1: branch `main`, `https://imobiflow.fly.dev`; congelada como rollback e
+  nunca deve ser alterada.
+- Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
+  permissões diferentes.
+- Ambiente ainda em QA, sem clientes ativos/pagantes confirmados em produção.
 
-- V2 é o único produto em desenvolvimento ativo. V1 (`imobiflow.fly.dev`,
-  branch `main`) está congelado — existe só como rollback de segurança,
-  nenhuma alteração deve ser feita nele.
-- Três tipos de conta, cada um com fluxo/permissões próprios: corretor
-  autônomo, imobiliária, incorporadora.
-- Multi-tenant: cada broker (conta) é isolado. Contas imobiliária/
-  incorporadora podem ter membros de equipe vinculados ao broker titular.
+## Repositório
 
-## Arquitetura geral
-
-Frontend novo em `src/experience/*` (interface única `/app`) + backend
-Express modularizado em `server/`. Detalhe completo em `ARCHITECTURE.md`.
+- Remoto: `criatedavid-tech/imob.criate`.
+- Checkout canônico compartilhado por Claude e Codex:
+  `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
+- O checkout antigo `C:\Users\Criate\imob.criate` está congelado e não deve ser
+  usado.
 
 ## Stack
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React 19 + Vite + TypeScript + Tailwind (design system "Liquid Glass") |
+| Frontend | React 19, Vite, TypeScript, Tailwind, design Liquid Glass |
 | Backend | Express + TypeScript, `tsx server.ts`, porta 3000 |
-| Banco/Auth | Supabase Postgres (backend usa `service_role`, bypassa RLS) |
-| WhatsApp | UAZAPI direto (Z-PRO foi eliminado do V2) |
-| IA | OpenRouter (única fonte de IA — Gemini removido) |
-| Pagamento | Asaas — assinatura mensal recorrente |
-| Deploy | Fly.io, região `gru`, app `imobiflow-v2` |
-| CI/CD | GitHub Actions — push em `v2` dispara deploy automático |
+| Banco/Auth | Supabase Postgres; backend com `service_role` |
+| WhatsApp | UAZAPI direta |
+| IA | OpenRouter; N8N orquestra o atendimento externo |
+| Assinatura SaaS | Asaas |
+| Deploy | Fly.io `gru`, via GitHub Actions |
 
-## Convenções permanentes
+## Regras permanentes
 
-- Branch única de trabalho: `v2`. Nunca commitar ou alterar `main` (V1).
-- Checkout canônico (compartilhado Claude/Codex, desde 20/07/2026):
-  `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Prefixo de tabela núcleo no Supabase (instância compartilhada com outros
-  projetos do usuário): `imf_`.
-- `service_role` nunca confia em `broker_id` vindo do cliente — sempre
-  resolvido no backend a partir do usuário autenticado.
-- Sem `@types/react` instalado à parte — `key` direto num componente
-  customizado dentro de `.map()` gera erro de TS; usar
-  `<React.Fragment key={...}>` ao redor do componente.
-- Deploy automático: todo `git push origin v2` inicia o GitHub Actions, sem
-  gate manual. O deploy só ocorre se o job automatizado de validação
-  (`npm ci`, TypeScript, Knip e build) passar; a validação local antes do
-  commit continua obrigatória.
-- Migrations nunca são executadas automaticamente — sempre aplicação
-  manual pelo usuário no SQL Editor do Supabase, mesmo já commitadas.
-
-## Requisitos permanentes
-
-- Isolamento multi-tenant estrito: nenhum dado (imóvel, lead, pipeline,
-  conversa, financeiro) de um broker pode ser acessível por outro.
-- Nenhuma alteração no comportamento de V1 (`imobiflow.fly.dev`).
-- Ambiente atual sem clientes reais/pagantes (fase de testes) — reduz risco
-  de ações diretas em produção, mas não deve ser assumido como permanente.
+- Isolamento multi-tenant é obrigatório. O backend resolve `broker_id` pela
+  sessão; nunca confia no tenant enviado pelo cliente.
+- Tabelas núcleo usam prefixo `imf_`; a instância Supabase é compartilhada com
+  outros projetos.
+- Migrations são executadas manualmente pelo usuário no SQL Editor; nunca pelo
+  deploy.
+- Antes de commit: `npm run lint`, `npx knip`, `npm run build` e
+  `git diff --check`.
+- `git push origin v2` dispara validação e deploy automaticamente.
+- Toda mudança funcional atualiza `DOCUMENTACAO.md` e os cinco arquivos PMP.

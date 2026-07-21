@@ -1,37 +1,47 @@
 # Próxima tarefa
 
-**Objetivo:** executar o QA real pós-publicação do inbound multimodal do
-WhatsApp e concluir o QA autenticado do hardening do CRM.
+## Ponto exato de retomada
 
-**Estado entregue neste pacote:**
+- Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
+- Branch: `v2`; base local/remota antes deste pacote: commit `5d096ef`.
+- Produção atual contém o inbound multimodal desse commit.
+- Há alterações locais intencionais e não publicadas. Preservar todas:
+  `PROMPT-AGENTE-WHATSAPP.md`, `server/routes/brokers.ts`, `DOCUMENTACAO.md` e
+  os cinco arquivos PMP.
+- Nenhuma migration pendente deste pacote.
+- N8N ainda usa o prompt anterior.
 
-1. Payloads reais confirmados em `webhook_logs`: áudio e imagem chegam como
-   `type=media`, com `mediaType=ptt|image`.
-2. Download real confirmado em `POST /message/download`: áudio MP3 e imagem
-   JPEG retornaram em base64; nenhuma mídia/token foi persistida no checkout.
-3. Backend implementado sem migration e sem mudança no N8N: download UAZAPI,
-   transcrição/visão OpenRouter, persistência textual e fallback.
-4. Teste local com dependências simuladas cobre áudio, imagem e falha; tsc,
-   Knip, build e `git diff --check` passaram.
+## Objetivo imediato
 
-**Próximo após o deploy:**
+Publicar o alinhamento do nome do agente e instalar o novo prompt padrão sem
+alterar V1, tools de agenda ou contrato textual entre backend e N8N.
 
-1. Em conversa privada com a instância usada no teste, enviar um PTT curto
-   contendo uma pergunta clara sobre imóvel.
-2. Confirmar no painel que aparece `[Áudio]` com a transcrição e que a IA
-   responde à pergunta — não apenas confirma o recebimento.
-3. Enviar um print de anúncio de imóvel, preferencialmente com preço e texto.
-4. Confirmar no painel que aparece `[Imagem]` com descrição coerente e que a
-   IA conduz o atendimento usando a informação visível.
-5. Verificar `webhook_logs`, `imf_conversation_messages` e logs do Fly sem
-   base64/tokens e sem duplicação pelo mesmo `provider_message_id`.
-6. Repetir com IA desativada/atendimento humano para confirmar que as regras
-   existentes do ticket continuam valendo.
-7. Retomar o QA do CRM: titular versus membro, reorder, troca de padrão,
-   arquivamento/reatribuição e tentativa de mover lead para etapa inativa.
+## Sequência
 
-**Fora deste escopo:** vídeo, documento e sticker; mudança do workflow N8N;
-qualquer migration; V1 (`main`/app Fly `imobiflow`).
+1. Rodar `git status`, `git diff` e conferir que o pacote contém apenas prompt,
+   endpoint de nome e documentação.
+2. Confirmar `npm run lint`, `npx knip`, `npm run build` e `git diff --check`.
+3. Com autorização do usuário, commitar e executar `git push origin v2`; o push
+   dispara deploy automático. Não executar SQL.
+4. Confirmar GitHub Actions e smoke de `/`, `/login` e `/app`.
+5. No N8N, substituir manualmente o prompt principal pelo conteúdo integral de
+   `PROMPT-AGENTE-WHATSAPP.md`; manter os nomes das tools:
+   `[verificacao]`, `[agendamento]`, `[atualizar agendamento]` e
+   `[deletar agendamento]`.
+6. Alterar o nome na tela Assistente IA e confirmar que o endpoint interno
+   retorna esse valor em `agent_name`.
+7. Configurar uma instrução personalizada simples e iniciar conversa nova.
+   Confirmar: 1–3 frases, uma pergunta por vez, sem repetir dados já informados,
+   nome correto e regras de agenda preservadas.
+8. Testar PTT e imagem novos em conversa privada; verificar transcrição/descrição
+   no painel, resposta coerente e ausência de duplicação ou base64 nos logs.
+9. Repetir com IA desativada/human takeover e concluir QA titular versus membro
+   do CRM.
 
-**Critério de conclusão:** áudio e imagem geram registro e resposta coerente
-em produção, sem regressão do texto, sem duplicação e sem vazamento de mídia.
+## Critério de conclusão
+
+- Nome e instruções do corretor chegam ao agente sem substituir regras-base.
+- Texto, áudio e imagem recebem resposta coerente e concisa.
+- Agenda só confirma ações após sucesso real das tools.
+- Sem regressão multi-tenant, duplicação, vazamento de mídia ou alteração da V1.
+- Working tree limpo, commit/push/deploy registrados nos documentos oficiais.

@@ -55,6 +55,12 @@ brokersRouter.post("/api/brokers/settings", requireUser, async (req, res) => {
       if (req.body?.[field] !== undefined) settings[field] = req.body[field];
     }
     if (settings.phone !== undefined) settings.phone = normalizePhoneBR(settings.phone);
+    if (settings.ai_name !== undefined) {
+      if (typeof settings.ai_name !== 'string') {
+        return res.status(400).json({ error: 'O nome da IA deve ser um texto.' });
+      }
+      settings.ai_name = settings.ai_name.trim().slice(0, 60);
+    }
     const { data, error } = await supabase.from('imf_brokers').update({
       ...settings,
       updated_at: new Date()
@@ -175,15 +181,38 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
   }
   try {
     const { id } = req.params;
-    const { data } = await supabase
-      .from('broker_agents')
-      .select('agent_name, system_prompt')
-      .eq('broker_id', id)
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle();
+    const [agentResult, brokerResult] = await Promise.all([
+      supabase
+        .from('broker_agents')
+        .select('agent_name, system_prompt')
+        .eq('broker_id', id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('imf_brokers')
+        .select('ai_name')
+        .eq('id', id)
+        .maybeSingle(),
+    ]);
 
-    res.json({ agent_name: data?.agent_name ?? 'Agente Principal', system_prompt: data?.system_prompt ?? '' });
+    if (agentResult.error) throw agentResult.error;
+    if (brokerResult.error) throw brokerResult.error;
+
+    // A tela do Assistente IA salva o nome público em imf_brokers.ai_name.
+    // O N8N já consome agent_name deste endpoint; devolver o nome público aqui
+    // mantém o contrato existente e faz a alteração da tela chegar ao prompt.
+    const publicName = typeof brokerResult.data?.ai_name === 'string'
+      ? brokerResult.data.ai_name.trim()
+      : '';
+    const legacyName = typeof agentResult.data?.agent_name === 'string'
+      ? agentResult.data.agent_name.trim()
+      : '';
+
+    res.json({
+      agent_name: publicName || legacyName || 'Juliana',
+      system_prompt: agentResult.data?.system_prompt ?? '',
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

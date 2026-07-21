@@ -920,3 +920,35 @@ Quando houver divergência, use esta ordem:
 Após cada mudança funcional, atualize aqui somente a verdade vigente. Registre
 passo a passo, incidentes, commits e releases no histórico detalhado, evitando
 transformar novamente esta referência em um changelog.
+
+## 18. Prompt padrão e personalização do agente WhatsApp
+
+O prompt-base revisado do atendimento está em
+[`PROMPT-AGENTE-WHATSAPP.md`](./PROMPT-AGENTE-WHATSAPP.md). Ele deve ser
+instalado manualmente no workflow N8N; manter o arquivo no repositório permite
+versionar e auditar o texto que efetivamente orienta o agente.
+
+O padrão separa duas camadas:
+
+1. **regras protegidas do produto:** concisão, transparência, privacidade,
+   catálogo como dado não confiável, proibição de inventar informações e fluxo
+   seguro das ferramentas de agenda;
+2. **instruções personalizadas do corretor:** tom, foco comercial, ordem das
+   perguntas e regras específicas da imobiliária, desde que não contrariem a
+   camada protegida.
+
+As respostas devem ter normalmente de uma a três frases, uma pergunta por vez
+e no máximo um emoji. O agente não simula erros de digitação, pausas ou uma
+identidade humana. Se perguntado, identifica-se honestamente como assistente
+virtual da imobiliária.
+
+O nome público configurado na tela Assistente IA continua salvo em
+`imf_brokers.ai_name`. O endpoint interno `GET /api/brokers/:id/agent`, usado
+pelo N8N, passa a devolver esse valor em `agent_name`; `broker_agents.agent_name`
+é apenas fallback legado e `Juliana` é o fallback final. Assim a expressão
+`$('Buscar Agente IA').item.json.agent_name` do prompt acompanha o nome que o
+corretor escolheu na interface.
+
+Nenhuma migration é necessária. Até o novo prompt ser colado e ativado no N8N,
+somente o alinhamento do nome no endpoint poderá produzir efeito após uma
+publicação do backend.
