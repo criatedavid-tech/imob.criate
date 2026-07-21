@@ -1,5 +1,31 @@
 # Estado do projeto
 
+## Dois bugs de UI relatados pelo usuário (2026-07-21)
+
+- **Barra superior sobrepondo no mobile (admin):** print do usuário mostrava
+  "Corretor/Admin" e "Piloto automático" sobrepostos no celular. Causa: as
+  pílulas "ver como" (Corretor/Imobiliária/Incorporadora) e o botão de
+  autonomia ("Piloto automático") não tinham `shrink-0`/`whitespace-nowrap` —
+  a barra inteira não cabe nessa largura, então o texto quebrava linha dentro
+  dos próprios botões e as duas linhas se sobrepunham. Corrigido em
+  `ExperienceShell.tsx`: pílulas de persona ganharam `shrink-0
+  whitespace-nowrap` e o container delas `overflow-x-auto` (rola se ainda não
+  couber); botão de autonomia esconde o rótulo de texto abaixo de `sm`
+  (mostra só bolinha+seta) — sem remover nenhuma função, só reduz o que
+  aparece por extenso no celular.
+- **Campo de mensagem de uma linha só:** usuário pediu ver o texto inteiro
+  depois de escrever ou ditar por voz — hoje só rolava na horizontal.
+  `CommandBar.tsx`: trocado `<input>` por `<textarea rows={1}>` que cresce
+  com o conteúdo (efeito lendo `scrollHeight`) até `MAX_INPUT_HEIGHT_PX`
+  (144px), depois rola por dentro. Enter sozinho continua enviando (igual
+  antes); Shift+Enter agora quebra linha. Ditado por voz cai na mesma
+  `value`, então também cresce.
+- Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
+  aprovados. Confirmação visual real (mobile, admin autenticado) ainda
+  depende do usuário — não reproduzo sessão autenticada nem visão de admin
+  sem credenciais.
+- Pendente: autorização do usuário para commit/push. Nenhuma migration.
+
 ## Alerta de lembrete vencido: badge + WhatsApp pro corretor (2026-07-21)
 
 - Usuário pediu duas formas de alertar sobre lembrete vencido: badge visual

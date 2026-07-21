@@ -7,6 +7,27 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Dois bugs de UI relatados pelo usuário (2026-07-21) — aguardando autorização
+
+Print do usuário: barra superior mobile (admin) com "Corretor/Admin" e
+"Piloto automático" sobrepostos, e campo de mensagem do Assistente IA de uma
+linha só (texto ditado/longo ilegível, só rolava na horizontal).
+
+Corrigido:
+
+- `ExperienceShell.tsx`: pílulas "ver como" com `shrink-0 whitespace-nowrap` +
+  container `overflow-x-auto`; botão de autonomia esconde o rótulo de texto
+  abaixo de `sm` (só bolinha+seta no mobile);
+- `CommandBar.tsx`: `<input>` → `<textarea rows={1}>` com auto-grow até
+  144px (`MAX_INPUT_HEIGHT_PX`) e scroll interno depois disso; Enter envia,
+  Shift+Enter quebra linha; ditado por voz também cresce (mesma `value`).
+
+`npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
+
+Pendente: autorização do usuário para commit/push; confirmação visual real
+(mobile, sessão admin) fica por conta do usuário — não reproduzo login nem
+visão de admin sem credenciais.
+
 ## Limpeza publicada e verificada (2026-07-21)
 
 - Commit `67aa90d`; GitHub Actions run `29857448606` aprovado.

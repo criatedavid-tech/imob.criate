@@ -28,6 +28,11 @@ function isAndroidInAppBrowser(): boolean {
   return /Android/.test(ua) && /;\s*wv\)/.test(ua);
 }
 
+// Altura máxima do campo de mensagem antes de passar a rolar por dentro
+// (~6 linhas em text-[14px]) — cresce com o texto até aqui, depois vira scroll
+// interno em vez de empurrar o resto do painel pra fora da tela.
+const MAX_INPUT_HEIGHT_PX = 144;
+
 // Camada de comando REAL (Etapa 13): fala do corretor → agente Gemini no
 // backend (POST /api/agent/command) que responde, navega ou age sobre os
 // endpoints que já existem. A autonomia (Etapa 12) governa: piloto executa na
@@ -55,7 +60,17 @@ export function CommandBar({
   const [confirmingIdx, setConfirmingIdx] = useState<number | null>(null);
   const [clearingHistory, setClearingHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Textarea que cresce com o texto (até MAX_INPUT_HEIGHT_PX, depois rola por
+  // dentro) — era um <input> de uma linha só, texto ditado/longo ficava
+  // ilegível porque só rolava na horizontal em vez de quebrar linha.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT_PX)}px`;
+  }, [value]);
 
   // O chat é desmontado toda vez que fecha (ver ExperienceShell) e o estado
   // era só local — fechar/reabrir, ou recarregar a página, apagava tudo.
@@ -450,14 +465,24 @@ export function CommandBar({
               {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : recording ? <Square className="w-3.5 h-3.5" /> : <Mic className="w-4 h-4" />}
             </button>
           )}
-          <input
+          <textarea
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            onKeyDown={(e) => {
+              // Enter sozinho envia (igual ao input de antes); Shift+Enter
+              // quebra linha — senão dá pra crescer o texto mas nunca revisar
+              // antes de mandar sem querer no meio de uma frase.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
             disabled={busy}
+            rows={1}
             placeholder={recording ? 'Gravando… fale sua mensagem' : transcribing ? 'Transcrevendo áudio…' : 'Fale com a IA…  ex: cadastra a Maria 62999998888 no apê centro'}
-            className="flex-1 bg-transparent outline-none text-[14px] text-white placeholder:text-white/35 disabled:opacity-60"
+            className="flex-1 bg-transparent outline-none resize-none text-[14px] text-white placeholder:text-white/35 disabled:opacity-60 py-1 leading-snug"
+            style={{ maxHeight: MAX_INPUT_HEIGHT_PX, overflowY: 'auto' }}
           />
           <button onClick={submit} disabled={busy || uploadingCount > 0 || recording || transcribing}
             title={uploadingCount > 0 ? 'Aguarde as fotos terminarem de enviar' : transcribing ? 'Aguarde a transcrição terminar' : undefined}

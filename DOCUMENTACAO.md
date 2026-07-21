@@ -532,6 +532,33 @@ Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
      Chrome/Samsung/Firefox/iOS reais não têm) e, ao tocar no clipe,
      mostra a dica "abra no Chrome" em vez de um toque sem efeito.
 
+**Fix — campo de mensagem de uma linha só e barra superior sobrepondo no
+mobile (21/07/2026):** dois bugs de UI relatados pelo usuário via print.
+
+1. *Campo de mensagem ilegível ao digitar/ditar texto longo:* `CommandBar.tsx`
+   usava `<input>` (uma linha, rola na horizontal). Trocado por
+   `<textarea rows={1}>` com auto-grow: um `useEffect` em `[value]` lê
+   `scrollHeight` e ajusta `style.height`, até `MAX_INPUT_HEIGHT_PX` (144px),
+   depois vira scroll interno (`overflowY:auto`). Enter sozinho continua
+   enviando (`onKeyDown` com `preventDefault` só quando `!e.shiftKey`);
+   Shift+Enter quebra linha. Ditado por voz (`POST /api/ai/transcribe`) grava
+   no mesmo estado `value`, então também aciona o auto-grow.
+2. *Barra superior sobrepondo (só admin, "ver como" ativo, mobile):* as
+   pílulas de persona (Corretor/Imobiliária/Incorporadora) e o botão de
+   autonomia ("Piloto automático") não tinham `shrink-0`/`whitespace-nowrap`
+   — a soma do conteúdo não cabe na largura de um celular, então o texto
+   quebrava linha dentro dos próprios botões e as duas "linhas" resultantes
+   se sobrepunham visualmente. Corrigido em `ExperienceShell.tsx`: pílulas
+   ganharam `shrink-0 whitespace-nowrap`, o container delas
+   `overflow-x-auto` (rola por dentro se ainda não couber), e o botão de
+   autonomia esconde o rótulo de texto abaixo de `sm` (`hidden sm:inline`,
+   mostra só a bolinha verde + seta no mobile) — nenhuma função foi
+   removida, só o texto por extenso.
+
+Sem migration, sem mudança de backend. Confirmação visual real (mobile,
+sessão admin) depende do usuário — sem credenciais não há como reproduzir
+login nem a visão de admin.
+
 **Autocura do webhook UAZAPI:** `setUazapiWebhook(token, instanceId)` monta o
 endpoint exclusivamente com `PUBLIC_APP_URL`. `resolveManagedInstance` devolve
 o `instanceId` existente e `POST /api/brokers/whatsapp/connect` reafirma o

@@ -179,12 +179,17 @@ export function ExperienceShell() {
               {isAdmin ? (
                 <>
                   {/* Só admin troca de persona — pra demonstrar/dar suporte */}
-                  <span className="text-[11px] text-white/35 mr-1 hidden sm:inline">ver como</span>
-                  <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
+                  <span className="text-[11px] text-white/35 mr-1 hidden sm:inline shrink-0">ver como</span>
+                  {/* overflow-x-auto: no mobile as 3 opções (Corretor/Imobiliária/
+                      Incorporadora) não cabem lado a lado com o resto da barra —
+                      sem isso e sem shrink-0/whitespace-nowrap nos botões, o texto
+                      quebrava linha dentro do próprio botão e sobrepunha o botão
+                      de autonomia ao lado. */}
+                  <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10 overflow-x-auto max-w-full">
                     {PERSONAS.map((p) => (
                       <button key={p} onClick={() => changePersona(p)}
                         className={cn(
-                          'px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
+                          'px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors shrink-0 whitespace-nowrap',
                           persona === p ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
                         )}>
                         {PERSONA_LABEL[p]}
@@ -194,13 +199,13 @@ export function ExperienceShell() {
                 </>
               ) : (
                 // Usuário normal: só vê o mundo da própria conta (sem troca).
-                <span className="px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.06] border border-white/10">
+                <span className="px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.06] border border-white/10 shrink-0 whitespace-nowrap">
                   {PERSONA_LABEL[persona]}
                 </span>
               )}
               {/* Aviso honesto: nunca deixar parecer que o mock é dado real da conta */}
               {layout && !layout.isRealData && (
-                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300 bg-amber-400/15 px-2 py-1 rounded-full">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300 bg-amber-400/15 px-2 py-1 rounded-full shrink-0 whitespace-nowrap">
                   prévia · dados de demonstração
                 </span>
               )}
@@ -212,8 +217,8 @@ export function ExperienceShell() {
                 <button onClick={() => navigate('/admin')}
                   title="Painel administrativo"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-[12px] font-semibold text-amber-200
-                    bg-amber-400/12 border border-amber-300/25 hover:bg-amber-400/20 transition-colors">
-                  <Shield className="w-3.5 h-3.5" /> Admin
+                    bg-amber-400/12 border border-amber-300/25 hover:bg-amber-400/20 transition-colors shrink-0 whitespace-nowrap">
+                  <Shield className="w-3.5 h-3.5 shrink-0" /> Admin
                 </button>
               )}
 
@@ -230,13 +235,15 @@ export function ExperienceShell() {
                 </button>
               )}
 
-              {/* Botão de autonomia */}
+              {/* Botão de autonomia — no mobile mostra só a bolinha+seta (sem o
+                  rótulo, "Piloto automático" é longo demais pra caber ao lado
+                  do "ver como"/pílulas de persona sem quebrar linha). */}
               <button onClick={cycleAutonomy}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-2xl text-[12px] font-semibold text-white
-                  bg-white/[0.06] border border-white/12 hover:bg-white/[0.12] transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                {AUTONOMY_LABEL[autonomy]}
-                <ChevronDown className="w-3.5 h-3.5 text-white/40" />
+                  bg-white/[0.06] border border-white/12 hover:bg-white/[0.12] transition-colors shrink-0 whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">{AUTONOMY_LABEL[autonomy]}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-white/40 shrink-0" />
               </button>
             </div>
           </div>
