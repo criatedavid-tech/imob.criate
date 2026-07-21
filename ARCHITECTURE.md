@@ -43,6 +43,10 @@
   `imf_webhook_inbox`. Claims atômicos com lease processam cada conversa em
   ordem; `imf_webhook_outbox` repassa ao N8N com retry e DLQ. O contrato é
   at-least-once e inclui `event_id` estável para deduplicação no workflow.
+- O Fly usa process groups separados: `web` executa `server.ts`, recebe HTTP e
+  apenas enfileira; `worker` executa `webhook-worker.ts`, processa inbox/outbox
+  e faz a conversão de áudio/imagem. O serviço HTTP é ligado somente a `web`.
+  Os claims com `SKIP LOCKED` permitem aumentar apenas o grupo `worker`.
 - Áudio e imagem são baixados em base64 pela UAZAPI e convertidos em texto pelo
   OpenRouter antes do N8N. Base64/URLs temporárias não são persistidos. Vídeo,
   documento, sticker e mídia de grupos permanecem fora do escopo.
@@ -90,3 +94,7 @@
   apenas registram e exibem valores/status.
 - Push em `v2` executa GitHub Actions: `npm ci`, TypeScript, Knip, build e
   deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
+- O primeiro deploy com process groups cria ao menos uma Machine `web` e uma
+  `worker`; ambas começam em `shared-cpu-1x`/1 GB. A API ainda contém jobs
+  periódicos legados, portanto o grupo `web` permanece com uma Machine até
+  esses jobs serem isolados ou comprovadamente idempotentes.

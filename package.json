@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "tsx --max-old-space-size=1024 server.ts"
+    "start": "npm run start:web",
+    "start:web": "tsx --max-old-space-size=1024 server.ts",
+    "start:worker": "tsx --max-old-space-size=1024 webhook-worker.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

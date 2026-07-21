@@ -11,10 +11,6 @@ import { runFollowupTick } from "./server/services/followup";
 import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduledFollowups";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
-import {
-  runWebhookInboxTick,
-  runWebhookOutboxTick,
-} from "./server/services/inboundWebhookQueue";
 
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
@@ -152,16 +148,8 @@ async function startServer() {
   app.use(contactsRouter);
 
   // --- Jobs em background (ver server/services/) ---
-  // Entrada WhatsApp duravel: o webhook apenas grava na inbox. Claims com
-  // SKIP LOCKED permitem que as VMs cooperem sem processar a mesma linha.
-  // A outbox repassa ao n8n com retry; futuramente estes ticks podem virar
-  // um process group de worker sem alterar o contrato persistido da fila.
-  setInterval(() => void runWebhookInboxTick(), 1_000);
-  setInterval(() => void runWebhookOutboxTick(), 1_000);
-  void runWebhookInboxTick();
-  void runWebhookOutboxTick();
-  console.log('[Webhook Queue] inbox/outbox ativas (tick 1s)');
-
+  // A inbox/outbox do WhatsApp roda exclusivamente no process group `worker`
+  // (webhook-worker.ts). O processo web apenas persiste o evento antes do ACK.
   setInterval(runFollowupTick, 60_000);
   console.log('[Follow-up] scheduler ativo (tick 60s)');
 

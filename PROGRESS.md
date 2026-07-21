@@ -16,9 +16,24 @@
 - Publicado no commit `28de500`; GitHub Actions run `29840243877` aprovou
   TypeScript, Knip, build e deploy Fly. Smoke pós-deploy: `/`, `/login` e
   `/app` HTTP 200; inbox/outbox sem itens `pending`, `processing` ou `dead`.
-- Falta o smoke com mensagem real e deduplicar `event_id` no workflow N8N.
+- Smoke real aprovado em 21/07/2026: inbox `completed` em uma tentativa e
+  outbox `completed` cerca de 0,3 s depois, sem erro; eco `fromMe` ignorado e
+  zero itens `pending`, `processing` ou `dead`. O incidente anterior era a
+  URL da UAZAPI ainda apontada ao backend legado; a instância foi corrigida e
+  o usuário confirmou a chegada de uma nova mensagem no V2.
+- Continua pendente deduplicar `event_id` no workflow N8N.
 
 ## Implementado localmente, aguardando autorização de commit (2026-07-21)
+
+- Worker da fila separado da API: `webhook-worker.ts` executa inbox/outbox,
+  `server.ts` e o endpoint UAZAPI apenas persistem, e o gatilho em memória foi
+  removido. `fly.toml` define `web`/`worker`, associa HTTP somente a `web` e
+  concede 30 s para desligamento; o worker para novos ciclos e aguarda o ciclo
+  ativo por até 25 s. Sem migration e sem alteração no n8n.
+- Validações locais aprovadas: `npm run lint`, `npx knip`, `npm run build`,
+  parse do `fly.toml` e `git diff --check`.
+
+## Aba Lembretes publicada (2026-07-21)
 
 - Nova aba **Lembretes** na experiência V2 (3 personas), separada da Agenda a
   pedido do usuário (evita misturar visita real com lembrete/follow-up
@@ -37,13 +52,12 @@
   ganharam o filtro `.eq('event_type','visita')`; `create_reminder` passou a
   gravar `event_type:'lembrete'` explicitamente; o resto do código (visitas
   manuais, N8N) não precisou mudar por já cair no `DEFAULT`.
-- Migration `supabase/migrations/20260721c_agenda_event_type.sql` escrita,
-  **ainda não aplicada no Supabase**. Até aplicar, toda linha de `imf_agenda`
-  (inclusive lembretes antigos) segue sem a coluna e os filtros novos
-  falhariam — aplicar antes de autorizar commit/push deste pacote.
+- Migration `supabase/migrations/20260721c_agenda_event_type.sql` aplicada e
+  coluna `event_type` verificada por leitura no Supabase.
 - Validado localmente: `npx tsc --noEmit`, `npx knip` e `npm run build`
   aprovados. `git diff --check` aprovado.
-- Sem commit/push/deploy — aguardando autorização explícita.
+- Publicada nos commits `a023d78` + `0916b8a`; GitHub Actions run
+  `29851172091` aprovado.
 
 ## Concluído e publicado
 

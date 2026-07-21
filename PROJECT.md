@@ -34,12 +34,12 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 | Camada | Tecnologia |
 |---|---|
 | Frontend | React 19, Vite, TypeScript, Tailwind, design Liquid Glass |
-| Backend | Express + TypeScript, `tsx server.ts`, porta 3000 |
+| Backend | Express + TypeScript (`server.ts`) e worker de webhooks (`webhook-worker.ts`) |
 | Banco/Auth | Supabase Postgres; backend com `service_role` |
 | WhatsApp | UAZAPI direta |
 | IA | OpenRouter; N8N orquestra o atendimento externo |
 | Assinatura SaaS | Asaas |
-| Deploy | Fly.io `gru`, via GitHub Actions |
+| Deploy | Fly.io `gru`, process groups `web`/`worker`, via GitHub Actions |
 
 ## Regras permanentes
 

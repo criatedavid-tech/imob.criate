@@ -44,6 +44,11 @@
   durável nesta primeira etapa, evitando introduzir Redis/BullMQ antes de
   existir medição de carga. A entrega ao N8N é at-least-once, com `event_id`
   estável para deduplicação do workflow.
+- **Worker de webhook separado da API (2026-07-21).** O process group `web`
+  não executa mais os ticks nem o gatilho local depois do ACK; o grupo
+  `worker` faz polling da inbox/outbox e drena o ciclo ativo no desligamento.
+  Isso isola CPU/memória de texto, áudio e imagem e permite escalar os workers
+  sem aumentar a API. O n8n não foi alterado nesta etapa.
 
 - **UAZAPI direta.** Z-PRO está removido da V2; a reconexão reafirma o webhook.
 - **Mídia convertida no backend.** PTT e imagem privados viram texto antes do

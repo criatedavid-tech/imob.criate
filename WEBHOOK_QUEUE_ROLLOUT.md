@@ -78,6 +78,7 @@ de enviar WhatsApp ou alterar dados e ignorar IDs já concluídos.
 WEBHOOK_INBOX_BATCH_SIZE=10
 WEBHOOK_OUTBOX_BATCH_SIZE=20
 WEBHOOK_QUEUE_MAX_ATTEMPTS=20
+WEBHOOK_WORKER_POLL_MS=1000
 ```
 
 Os defaults já são seguros para o rollout inicial. Aumentar batches somente
@@ -89,10 +90,31 @@ Reverter apenas o backend para a versão anterior. As tabelas podem permanecer
 no banco sem afetar a versão antiga e preservam os eventos para diagnóstico.
 Não apagar inbox/outbox durante um incidente.
 
+## Process groups no Fly
+
+- `web`: executa `server.ts`, recebe HTTP e persiste o webhook antes do ACK;
+- `worker`: executa `webhook-worker.ts`, sem serviço HTTP, e processa
+  inbox/outbox;
+- `fly.toml` associa `[http_service]` apenas a `web`;
+- o desligamento usa `SIGTERM`, até 30 segundos no Fly e drenagem de até 25
+  segundos no worker. Se o processo for interrompido antes, o lease devolve a
+  linha para retry;
+- o primeiro deploy dessa configuração cria uma Machine adicional para o
+  grupo `worker`, portanto aumenta o custo de infraestrutura;
+- não aumentar o grupo `web` enquanto os demais schedulers de `server.ts` não
+  forem isolados ou auditados para execução concorrente.
+
+Validação depois do primeiro deploy:
+
+1. confirmar uma Machine saudável em `web` e uma em `worker`;
+2. procurar o log `[Webhook Worker] inbox/outbox ativas`;
+3. enviar uma nova mensagem e confirmar inbox/outbox em `completed`;
+4. reiniciar somente o worker durante um teste controlado e confirmar que a
+   fila volta a zero;
+5. só então aumentar batches ou quantidade de workers.
+
 ## Próximas etapas
 
-- mover os ticks para um process group de workers separado da API;
-- retirar áudio/imagem do processo web;
 - implementar deduplicação por `event_id` no n8n;
 - adicionar métricas de idade da fila e DLQ;
 - executar testes de carga e de reinício dos processos.

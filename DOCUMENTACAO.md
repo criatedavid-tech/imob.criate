@@ -669,8 +669,8 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   10). `create_reminder`/`schedule_followup` passaram a devolver
   `navigate:'lembretes'` (antes: `'agenda'`/nenhum).
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
-  'visita'`, migration `20260721c_agenda_event_type.sql`, **escrita, ainda
-  não aplicada**) separa lembrete de visita real no banco. Sem isso, todo
+  'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
+  verificada) separa lembrete de visita real no banco. Sem isso, todo
   consumidor que assume "toda linha de imf_agenda é uma visita" contaria
   lembrete errado: `buildSnapshot` do Assistente IA ("Próximas visitas" e
   "Visitas neste mês"), `queryAgendaRange`, o resumo de Relatórios
@@ -783,7 +783,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | Conta/equipe | `imf_brokers`, `imf_broker_members`, `imf_broker_invites` |
 | Imóveis/leads | `imf_properties`, `leads`, `imf_contacts` |
 | CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — schema-base e hardening `20260720b` aplicados e verificados |
-| Agenda | `imf_agenda` (coluna `event_type` `'visita'|'lembrete'` — migration `20260721c`, escrita, aguardando aplicação manual) |
+| Agenda | `imf_agenda` (coluna `event_type` `'visita'|'lembrete'` — migration `20260721c` aplicada e verificada) |
 | Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
 | Locação | `imf_rental_contracts`, `imf_rental_payments` |
 | Lançamentos | `imf_developments`, `imf_units`, `imf_unit_reservations`, `imf_reservation_documents` |
@@ -852,6 +852,7 @@ Pendências de segurança/infraestrutura:
 
 | Job | Intervalo | Função |
 | --- | --- | --- |
+| Inbox/outbox do WhatsApp | 1 s (configurável) | processa mensagens e entrega eventos ao N8N no process group `worker` |
 | Follow-Up | 60 s | dispara a sequência configurada |
 | Follow-up agendado (Assistente IA) | 60 s | manda o WhatsApp de `schedule_followup` cujo prazo já venceu |
 | Preparação de excedentes | 1 h + boot | prepara cobrança do próximo ciclo |
@@ -859,8 +860,12 @@ Pendências de segurança/infraestrutura:
 | Expiração de reserva PIX | 60 s + boot | libera reservas vencidas e cancela cobrança |
 | Retenção de webhook logs | 24 h + boot | remove logs com mais de 90 dias |
 
-Esses jobs rodam dentro de cada processo Express. Antes de aumentar o número de
-máquinas, revisar garantias de idempotência e concorrência de todos eles.
+A inbox/outbox é a exceção: roda exclusivamente em `webhook-worker.ts`, fora
+do Express, e pode usar múltiplas Machines porque os claims usam
+`FOR UPDATE SKIP LOCKED`, lease e partição por conversa. Os demais jobs ainda
+rodam dentro de cada processo Express. Antes de aumentar o grupo `web`, revisar
+as garantias de idempotência e concorrência desses jobs ou movê-los para um
+scheduler singleton.
 
 ## 13. Variáveis de ambiente
 
@@ -880,6 +885,8 @@ máquinas, revisar garantias de idempotência e concorrência de todos eles.
 - UAZAPI: `UAZAPI_HOST`, `UAZAPI_TOKEN`, `UAZAPI_PLATFORM_SESSION`;
 - N8N/IA: `N8N_WEBHOOK_URL`, `INTERNAL_PROXY_TOKEN`,
   `LLM_PROXY_ENC_KEY`, `OPENROUTER_API_KEY`;
+- fila: `WEBHOOK_INBOX_BATCH_SIZE`, `WEBHOOK_OUTBOX_BATCH_SIZE`,
+  `WEBHOOK_QUEUE_MAX_ATTEMPTS`, `WEBHOOK_WORKER_POLL_MS`;
 - operação: `REDIS_URL`, `SENTRY_DSN`, `NODE_ENV`.
 
 `server/config.ts` aceita a URL Supabase pública como fallback conhecido, mas
@@ -902,7 +909,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 | `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
-| `20260721c_agenda_event_type.sql` | **escrita, aguardando aplicação manual** | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
+| `20260721c_agenda_event_type.sql` | aplicada e verificada | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

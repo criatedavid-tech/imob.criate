@@ -31,3 +31,18 @@ export function makeRedisStore(prefix: string, windowMs: number) {
     async resetKey(key: string)  { await redisClient!.del(`rl:${prefix}:${key}`); },
   };
 }
+
+export async function closeInfra(): Promise<void> {
+  const client = redisClient;
+  redisClient = null;
+
+  if (client) {
+    try {
+      await client.quit();
+    } catch {
+      client.disconnect();
+    }
+  }
+
+  if (SENTRY_DSN) await Sentry.close(2_000);
+}

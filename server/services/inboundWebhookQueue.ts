@@ -39,7 +39,6 @@ const MAX_ATTEMPTS = envInteger("WEBHOOK_QUEUE_MAX_ATTEMPTS", 20, 1, 100);
 
 let inboxTickRunning = false;
 let outboxTickRunning = false;
-let wakeScheduled = false;
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const parsed = Number(process.env[name]);
@@ -512,13 +511,4 @@ export async function runWebhookOutboxTick(): Promise<void> {
   } finally {
     outboxTickRunning = false;
   }
-}
-
-export function triggerWebhookWorkers(): void {
-  if (wakeScheduled) return;
-  wakeScheduled = true;
-  setImmediate(() => {
-    wakeScheduled = false;
-    void Promise.all([runWebhookInboxTick(), runWebhookOutboxTick()]);
-  });
 }

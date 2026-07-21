@@ -11,10 +11,7 @@ import {
   recordConversationMessage,
 } from "../services/conversationTickets";
 import { resolveNewLeadStage } from "../services/crmPipelines";
-import {
-  enqueueUazapiWebhook,
-  triggerWebhookWorkers,
-} from "../services/inboundWebhookQueue";
+import { enqueueUazapiWebhook } from "../services/inboundWebhookQueue";
 
 export const wppShimRouter = express.Router();
 
@@ -180,7 +177,6 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
     // Eventos validos so chegam aqui depois do INSERT duravel na inbox.
     res.status(200).json({ ok: true, queued: result === "accepted" });
 
-    if (result === "accepted") triggerWebhookWorkers();
   } catch (err: any) {
     // Sem persistencia nao ha ACK: 503 pede que a UAZAPI tente novamente.
     console.error("[WppShim] falha ao persistir webhook na inbox:", err.message);
