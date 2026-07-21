@@ -838,6 +838,26 @@ Exclusividade), uma por foto destacada (`featuredImages`, até 5). O texto de
 cada seção vem de `descParagraphs` — a `description` do imóvel dividida por
 quebra dupla de linha (ou quebra simples seguida de maiúscula).
 
+**Fix — dados cadastrados (quartos, banheiros, piscina...) sumidos da
+landing (21/07/2026):** relatado pelo usuário via print: a landing mostrava
+só título/preço/descrição — a faixa de specs, as tags de característica e
+os mini-stats não apareciam, mesmo com o formulário de edição exibindo tudo
+preenchido. Causa: desde a modularização do backend (`8443173`),
+`GET /api/properties/:slug` separa o bloco `---DETALHES-GERADOS---` da
+descrição NO SERVIDOR e devolve o JSON já parseado no campo `details` — mas
+a landing (que nasceu antes disso) continuava parseando o bloco de dentro
+da `description`, que passou a chegar sempre limpa → `extraData` ficava
+`{}` → quartos/banheiros/área viravam 0 e toda a UI condicionada a `> 0`
+sumia. O formulário de edição não sofria porque `CarteiraArea.tsx` espalha
+`...details` ao abrir (`{...editing, ...(editing.details || {})}`).
+Correção: a landing agora usa `property.details` como fonte primária e
+mantém o parse inline da description só como fallback pra resposta antiga
+que ainda embuta o bloco. Verificado contra o payload real de produção do
+imóvel do print (`details` presente com `quartos:4, banheiros:4,
+piscina:"Sim", varanda_gourmet:"Sim"` — confirmando de quebra que a
+extração estruturada do `create_property` ditado por voz já funcionava; o
+elo quebrado era só a exibição).
+
 **Fix — texto duplicado em todas as seções (21/07/2026):** relatado pelo
 usuário via print (a mesma descrição aparecia em "Sobre o Imóvel",
 "Detalhes", "Experiência" e "Exclusividade", palavra por palavra). Causa: o

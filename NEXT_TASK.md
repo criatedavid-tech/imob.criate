@@ -7,6 +7,21 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Bug: dados cadastrados sumidos da landing (2026-07-21) — aguardando autorização
+
+Landing pública não mostrava quartos/banheiros/piscina/etc. (faixa de
+specs, tags e mini-stats sumidos) apesar do formulário de edição exibir
+tudo. Causa: `GET /api/properties/:slug` separa o bloco
+`---DETALHES-GERADOS---` no servidor (desde `8443173`) e devolve `details`
+parseado, mas `PropertyLanding.tsx` ainda parseava a description (que chega
+limpa). Correção: landing lê `property.details` primeiro; parse inline vira
+fallback. Verificado contra payload real de produção (details com
+quartos:4, banheiros:4, piscina/varanda "Sim") — a extração estruturada do
+ditado pelo agente já funcionava; só a exibição estava quebrada.
+
+`tsc`/`knip`/`build` aprovados. Sem migration. Pendente: autorização para
+commit/push; depois recarregar a landing e conferir specs/tags/mini-stats.
+
 ## Bug: microfone abre a galeria no iOS (2026-07-21) — 2ª correção aguardando autorização
 
 iPhone 11: tocar no mic do Assistente IA abria o seletor de foto, ~6 de 7

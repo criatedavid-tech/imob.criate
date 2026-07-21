@@ -1,5 +1,31 @@
 # Estado do projeto
 
+## Bug: dados cadastrados sumidos da landing page do imóvel (2026-07-21)
+
+- Print do usuário: a landing pública mostrava só título/preço/descrição —
+  faixa de specs, tags de característica e mini-stats (quartos, banheiros,
+  piscina, varanda gourmet) não apareciam, mesmo com o formulário de edição
+  exibindo tudo preenchido.
+- Causa: desde a modularização (`8443173`), `GET /api/properties/:slug`
+  separa o bloco `---DETALHES-GERADOS---` da descrição no servidor e devolve
+  o JSON parseado em `details` — mas `PropertyLanding.tsx` (anterior a isso)
+  continuava parseando o bloco de dentro da `description`, que passou a
+  chegar limpa → `extraData` ficava `{}` → tudo condicionado a `> 0` sumia.
+  A tela de edição não sofria porque `CarteiraArea.tsx` espalha `...details`
+  ao abrir o form. Bug latente desde a modularização.
+- Correção: landing usa `property.details` como fonte primária; parse
+  inline vira fallback pra resposta antiga com o bloco embutido.
+- Verificado contra o payload REAL de produção do imóvel do print:
+  `details` presente com `quartos:4, banheiros:4, piscina:"Sim",
+  varanda_gourmet:"Sim"` e description sem separador — o que também
+  confirma que a segunda parte do pedido do usuário ("quando ditado para o
+  agente, cada parte deve ser agregada onde compete") JÁ funciona: o
+  `create_property` do Assistente IA extraiu os campos estruturados
+  corretamente do ditado; o elo quebrado era só a exibição na landing.
+- `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration,
+  sem mudança de backend.
+- Pendente: autorização do usuário para commit/push.
+
 ## Bug: microfone abre a galeria no iOS (2026-07-21, resolvido na 2ª tentativa)
 
 - Relatado pelo usuário (iPhone 11): tocar no microfone do Assistente IA

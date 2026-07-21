@@ -129,12 +129,24 @@ export default function PropertyLanding() {
   );
 
   // ── Data processing ────────────────────────────────────────────────────────
-  let extraData: any = {};
+  // Os campos estruturados (quartos, banheiros, área, piscina...) chegam em
+  // `property.details`: o backend (GET /api/properties/:slug) separa o bloco
+  // ---DETALHES-GERADOS--- da descrição no servidor desde a modularização
+  // (8443173) e devolve o JSON já parseado ali. Esta página nasceu ANTES
+  // disso, parseando o bloco da própria description — que passou a chegar
+  // sempre limpa, então extraData ficava {} e a landing mostrava o imóvel
+  // sem NENHUM dado cadastrado (0 quartos some a faixa de specs, as tags e
+  // os mini-stats). O parse inline fica só como fallback pra alguma resposta
+  // antiga que ainda embuta o bloco.
+  let extraData: any =
+    property.details && Object.keys(property.details).length > 0 ? property.details : {};
   let cleanDescription = property.description;
   if (property.description?.includes('---DETALHES-GERADOS---')) {
     const parts = property.description.split('---DETALHES-GERADOS---');
     cleanDescription = parts[0].trim();
-    try { extraData = JSON.parse(parts[1].trim()); } catch { }
+    if (Object.keys(extraData).length === 0) {
+      try { extraData = JSON.parse(parts[1].trim()); } catch { }
+    }
   }
 
   const mainImage = property.images?.length > 0
