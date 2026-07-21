@@ -7,6 +7,24 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Bug: texto repetido na landing page de imóvel (2026-07-21) — aguardando autorização
+
+Print do usuário: a mesma descrição aparecia em todas as seções da página
+pública do imóvel. `src/pages/PropertyLanding.tsx` divide a descrição em
+parágrafos por seção, mas caía pro parágrafo 0 inteiro quando uma seção não
+tinha parágrafo próprio — sempre acontecia com descrição ditada por voz
+(sai como um bloco só, 1 parágrafo). Corrigido: só a seção 0 cai pra
+descrição inteira; as demais ficam sem parágrafo de corpo se não tiverem um
+próprio (mantêm heading/tag/CTA).
+
+`npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Verificado
+simulando a transformação com o texto real do print (fora do repo) — não
+consegui abrir o Browser pane nesta sessão pra QA visual ao vivo. Sem
+migration, sem mudança de backend.
+
+Pendente: autorização do usuário para commit/push; confirmação visual real
+fica por conta do usuário.
+
 ## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21) — aguardando autorização
 
 Usuário pediu follow-up pro Hiago "às 16:00", sistema agendou 19:39.

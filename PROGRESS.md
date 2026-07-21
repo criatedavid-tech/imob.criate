@@ -1,5 +1,36 @@
 # Estado do projeto
 
+## Bug: texto repetido nas seções da landing page de imóvel (2026-07-21)
+
+- Usuário mostrou print: a mesma descrição aparecia em TODAS as seções
+  ("Sobre o Imóvel", "Detalhes", "Experiência", "Exclusividade") da página
+  pública do imóvel. Causa em `src/pages/PropertyLanding.tsx`: o template já
+  dividia a descrição em parágrafos (`descParagraphs`, por quebra dupla de
+  linha) pra dar um parágrafo diferente a cada seção, mas o fallback
+  (`descParagraphs[i] || descParagraphs[0] || cleanDescription`) repetia o
+  parágrafo 0 inteiro em TODA seção sem parágrafo próprio — e uma descrição
+  ditada por voz pro Assistente IA sai como um bloco só (sem quebra de
+  linha), então vira exatamente 1 parágrafo e todas as 5 seções mostravam
+  o mesmo texto completo.
+- Corrigido: só a seção 0 ("Sobre o Imóvel") cai pra descrição inteira; as
+  seções seguintes só mostram texto se tiverem parágrafo PRÓPRIO
+  (`descParagraphs[i]`), senão ficam sem parágrafo de corpo (mantêm
+  heading/tag e o conteúdo extra que já existia — tags de característica,
+  mini-stats, botões de CTA). Sem duplicar texto nunca mais, independente de
+  como o imóvel foi cadastrado (voz, texto, formulário).
+- Validado simulando a transformação exata com o texto real do print do
+  usuário (script isolado, fora do repo): antes, as 5 seções mostravam os
+  335 caracteres completos; depois, só a seção 0. Não consegui abrir o
+  Browser pane nesta sessão pra verificação visual ao vivo (tabs_create e
+  navigate falharam) — parei o dev server que cheguei a levantar
+  (`imobiflow-dev`, que rodou uma purge real de `webhook_logs` antigos
+  contra a Supabase de produção, efeito colateral esperado do maintenance
+  job — nada de errado, só um lembrete de que dev local usa o banco real).
+- `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration,
+  sem mudança de backend.
+- Pendente: autorização do usuário para commit/push; confirmação visual
+  real (recarregar a página do imóvel) fica por conta do usuário.
+
 ## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21)
 
 - Usuário pediu "agendar um follow pro Hiago às 16:00" e o sistema agendou

@@ -347,7 +347,15 @@ export default function PropertyLanding() {
       {featuredImages.map((img, i) => {
         const isReverse = i % 2 !== 0;
         const meta = sectionMeta[i];
-        const text = descParagraphs[i] || descParagraphs[0] || cleanDescription || '';
+        // A seção 0 ("Sobre o Imóvel") sempre mostra a descrição (ou o
+        // primeiro parágrafo dela) — é a seção "sobre", faz sentido ter
+        // texto sempre. As seções seguintes só mostram parágrafo se a
+        // descrição realmente tiver um parágrafo PRÓPRIO pra elas
+        // (descParagraphs[i]): cair pro parágrafo 0 aqui repetia o mesmo
+        // texto em todas as seções sempre que a descrição não tinha quebra
+        // de parágrafo (ex.: texto ditado por voz pro Assistente IA, que
+        // sai como um bloco só) — relatado pelo usuário via print.
+        const text = i === 0 ? (descParagraphs[0] || cleanDescription || '') : (descParagraphs[i] || '');
         const sectionBg = i % 2 === 0 ? 'bg-[#F5F2EF]' : 'bg-white';
 
         return (

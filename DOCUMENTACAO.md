@@ -799,6 +799,31 @@ A estrutura de chave própria continua criptografada no banco apenas para
 compatibilidade/reversibilidade; ela não aparece na Config enquanto a flag do
 frontend estiver desligada.
 
+### Landing page pública do imóvel (`src/pages/PropertyLanding.tsx`)
+
+Página pública em `/p/:slug` (sem autenticação). Até 5 seções alternadas
+foto+texto (`sectionMeta`: Sobre o Imóvel/Detalhes/Diferenciais/Experiência/
+Exclusividade), uma por foto destacada (`featuredImages`, até 5). O texto de
+cada seção vem de `descParagraphs` — a `description` do imóvel dividida por
+quebra dupla de linha (ou quebra simples seguida de maiúscula).
+
+**Fix — texto duplicado em todas as seções (21/07/2026):** relatado pelo
+usuário via print (a mesma descrição aparecia em "Sobre o Imóvel",
+"Detalhes", "Experiência" e "Exclusividade", palavra por palavra). Causa: o
+fallback era `descParagraphs[i] || descParagraphs[0] || cleanDescription` —
+quando a descrição não tem quebra de parágrafo (`descParagraphs.length ===
+1`, o caso mais comum: descrição ditada por voz pro Assistente IA sai como
+um bloco de fala contínuo, sem `\n\n`), TODA seção sem parágrafo próprio
+caía pro parágrafo 0 inteiro, repetindo o texto completo 4-5 vezes.
+Corrigido: só a seção 0 ("Sobre o Imóvel") usa esse fallback; as seções 1-4
+só mostram texto se tiverem parágrafo PRÓPRIO (`descParagraphs[i]`), senão
+ficam sem parágrafo de corpo — heading, tag e o conteúdo extra que já
+existia por seção (tags de característica na seção 0, mini-stats na seção
+1, botões de CTA nas seções 2+) continuam aparecendo normalmente. Sem
+mudança de backend, sem migration. Verificado simulando a transformação com
+o texto real do print do usuário (fora do repo, não parte do código); não
+foi possível abrir o Browser pane nesta sessão pra QA visual ao vivo.
+
 ## 7. Lançamentos — fases entregues
 
 ### Fase 1 — simulador
