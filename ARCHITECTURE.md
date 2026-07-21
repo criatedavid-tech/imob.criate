@@ -39,6 +39,10 @@
 - UAZAPI substituiu integralmente Z-PRO na V2.
 - Inbound: `POST /api/wpp-shim/inbound/:instanceId`; mensagens privadas de
   texto, PTT e imagem são persistidas e encaminhadas ao N8N.
+- O inbound confirma a UAZAPI somente depois do INSERT em
+  `imf_webhook_inbox`. Claims atômicos com lease processam cada conversa em
+  ordem; `imf_webhook_outbox` repassa ao N8N com retry e DLQ. O contrato é
+  at-least-once e inclui `event_id` estável para deduplicação no workflow.
 - Áudio e imagem são baixados em base64 pela UAZAPI e convertidos em texto pelo
   OpenRouter antes do N8N. Base64/URLs temporárias não são persistidos. Vídeo,
   documento, sticker e mídia de grupos permanecem fora do escopo.
@@ -49,6 +53,7 @@
   `broker_agents.system_prompt`.
 - Prompt padrão versionado: `PROMPT-AGENTE-WHATSAPP.md`. Regras protegidas
   prevalecem sobre personalizações do corretor. A instalação no N8N é manual.
+- Ordem de deploy e consultas operacionais: `WEBHOOK_QUEUE_ROLLOUT.md`.
 
 ## Assistente interno do app
 

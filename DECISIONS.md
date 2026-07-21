@@ -38,6 +38,13 @@
 
 ## WhatsApp e IA
 
+- **Inbox/outbox antes de escalar máquinas (2026-07-21).** A UAZAPI só recebe
+  ACK depois da persistência em `imf_webhook_inbox`; processamento e despacho
+  ao N8N usam claims recuperáveis e `imf_webhook_outbox`. PostgreSQL é a fonte
+  durável nesta primeira etapa, evitando introduzir Redis/BullMQ antes de
+  existir medição de carga. A entrega ao N8N é at-least-once, com `event_id`
+  estável para deduplicação do workflow.
+
 - **UAZAPI direta.** Z-PRO está removido da V2; a reconexão reafirma o webhook.
 - **Mídia convertida no backend.** PTT e imagem privados viram texto antes do
   N8N; base64 não é persistido; falhas geram fallback e mensagens duplicadas são

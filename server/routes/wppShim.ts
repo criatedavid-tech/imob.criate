@@ -3,16 +3,18 @@ import { supabase } from "../supabase";
 import { sendUazapiText, resolveOutboundInstanceToken } from "../services/wppShim";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
-import { N8N_WEBHOOK_URL, INTERNAL_PROXY_TOKEN } from "../config";
+import { INTERNAL_PROXY_TOKEN } from "../config";
 import { pauseAiForHumanTakeover } from "../services/followup";
-import { fetchWithTimeout } from "../lib/http";
 import {
   ensureConversationTicket,
   getConversationTicket,
   recordConversationMessage,
 } from "../services/conversationTickets";
 import { resolveNewLeadStage } from "../services/crmPipelines";
-import { resolveInboundMedia } from "../services/inboundMedia";
+import {
+  enqueueUazapiWebhook,
+  triggerWebhookWorkers,
+} from "../services/inboundWebhookQueue";
 
 export const wppShimRouter = express.Router();
 
@@ -167,179 +169,22 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 });
 
 // ─── Entrada direto da UAZAPI (Fase 5) ──────────────────────────────────────
-// Formato confirmado empiricamente em 09/07/2026 via webhook_logs (uazapiGO,
-// evento de mensagem real): req.body = { message: { text, content, chatid,
-// fromMe, id, type, mediaType, messageType }, chat: {...}, owner, token,
-// EventType }. Texto chega como type="text"; áudio e imagem chegam como
-// type="media", diferenciados por mediaType (ptt/image). NÃO é o
-// formato Baileys (data.key.remoteJid) nem o array messages[] de instâncias
-// antigas — cada provedor UAZAPI parece variar. Outros tipos de evento
-// (ReadReceipt, sincronização de chat sem "message") caem no
-// `if (!message) return` abaixo, sem erro.
+// A rota preserva o payload bruto numa inbox duravel antes do ACK. O parsing,
+// a persistencia da conversa e o repasse ao n8n acontecem nos workers de
+// inboundWebhookQueue.ts, com deduplicacao, lease, retry e DLQ.
 wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
-  // Responde rápido sempre — nunca perder mensagem por causa de um erro de
-  // interpretação de payload ou de uma falha ao repassar pro N8N.
-  res.status(200).json({ ok: true });
-
   try {
-    await supabase.from("webhook_logs").insert({
-      source: "uazapi",
-      event_type: req.body?.EventType || req.body?.event || req.body?.type || "unknown",
-      payload: { instance_id: req.params.instanceId, body: req.body },
-      status: "received",
-    });
+    const result = await enqueueUazapiWebhook(req.params.instanceId, req.body);
 
-    // Resolve a instância — primeiro tenta a instância COMPARTILHADA da
-    // conta (imf_brokers), senão tenta a instância PRÓPRIA de um membro da
-    // equipe (imf_broker_members.whatsapp_mode='own', ver migração
-    // 20260713_member_whatsapp.sql). instanceOwnerUserId só fica setado no
-    // segundo caso — é isso que faz a resposta sair pela instância certa
-    // (ver resolveOutboundInstanceToken em server/services/wppShim.ts).
-    let brokerId: string | null = null;
-    let instanceToken: string | null = null;
-    let instanceOwnerUserId: string | null = null;
+    // Duplicatas e payloads invalidos recebem 200 para o provedor nao insistir.
+    // Eventos validos so chegam aqui depois do INSERT duravel na inbox.
+    res.status(200).json({ ok: true, queued: result === "accepted" });
 
-    const { data: broker } = await supabase
-      .from("imf_brokers")
-      .select("id, uazapi_instance_token")
-      .eq("uazapi_instance_id", req.params.instanceId)
-      .maybeSingle();
-
-    if (broker) {
-      brokerId = broker.id;
-      instanceToken = broker.uazapi_instance_token;
-    } else {
-      const { data: member } = await supabase
-        .from("imf_broker_members")
-        .select("broker_id, user_id, uazapi_instance_token")
-        .eq("uazapi_instance_id", req.params.instanceId)
-        .maybeSingle();
-      if (member) {
-        brokerId = member.broker_id;
-        instanceToken = member.uazapi_instance_token;
-        instanceOwnerUserId = member.user_id;
-      }
-    }
-
-    // A UAZAPI ecoa o token da própria instância em body.token em todo evento
-    // (confirmado empiricamente contra webhook_logs reais) — só quem já tem
-    // esse token (a UAZAPI, ou alguém que já comprometeu essa instância
-    // especificamente) consegue produzir um match. Sem isso, :instanceId
-    // sozinho não é segredo — dava pra injetar mensagem "de cliente" falsa ou
-    // acionar a IA a mandar WhatsApp real em nome de qualquer corretor/membro.
-    if (!brokerId || !instanceToken || req.body?.token !== instanceToken) return;
-
-    const message = req.body?.message;
-    if (!message) return; // evento sem mensagem (recibo de leitura, sync de chat, etc.)
-
-    const fromMe: boolean = !!message.fromMe;
-    const messageId: string | undefined = message.id;
-    const plainText = typeof message.text === "string" && message.text.trim()
-      ? message.text.trim()
-      : typeof message.content === "string"
-        ? message.content.trim()
-        : "";
-    // chatid vem como "556294381279@s.whatsapp.net" — "sender" costuma ser o
-    // "@lid" (identificador interno da UAZAPI, não o telefone de verdade).
-    const rawPhone: string | undefined = message.chatid;
-
-    if (!rawPhone || fromMe) return; // sem telefone suficiente ou eco da própria IA
-    const customerPhone = normalizePhoneBR(rawPhone);
-    if (!customerPhone) return;
-
-    // O provedor pode reenviar o mesmo webhook. Evita transcrever/descrever de
-    // novo (e evita novo repasse ao N8N) quando a mensagem já foi persistida.
-    if (messageId) {
-      const { data: existingMessage, error: existingError } = await supabase
-        .from("imf_conversation_messages")
-        .select("id")
-        .eq("broker_id", brokerId)
-        .eq("provider_message_id", messageId)
-        .maybeSingle();
-      if (existingError) throw existingError;
-      if (existingMessage) return;
-    }
-
-    let agentText = plainText;
-    let storedBody = plainText;
-    let inboundMediaType: string | null = null;
-    if (message.type === "text") {
-      if (!plainText) return;
-    } else if (message.type === "media") {
-      if (message.isGroup) return; // evita custo/automação em grupos; atendimento é individual
-      const media = await resolveInboundMedia(message, instanceToken);
-      if (!media) return; // vídeo/documento/sticker ainda não fazem parte deste fluxo
-      agentText = media.agentText;
-      storedBody = media.storedBody;
-      inboundMediaType = media.mediaType;
-    } else {
-      return;
-    }
-
-    const activityAt = new Date().toISOString();
-    const ticket = await ensureConversationTicket({
-      brokerId,
-      customerPhone,
-      initialStatus: "pending",
-      aiActive: true,
-      instanceOwnerUserId,
-      lastActivityAt: activityAt,
-    });
-
-    await recordConversationMessage({
-      brokerId,
-      customerPhone,
-      ticketId: ticket.id,
-      direction: "in",
-      senderType: "customer",
-      body: storedBody,
-      mediaType: inboundMediaType,
-      providerMessageId: messageId || null,
-    });
-
-    // Contato automático: primeira mensagem real de um número novo já cria
-    // o contato salvo, usando o "pushName" que a UAZAPI manda em todo
-    // evento (chat.wa_contactName/wa_name = nome do WhatsApp da pessoa;
-    // message.senderName é o fallback mais simples). DO NOTHING no
-    // conflito — nunca sobrescreve um nome que o corretor já tenha
-    // editado manualmente na tela de Contatos.
-    const chatMeta = req.body?.chat;
-    const pushName: string =
-      chatMeta?.wa_contactName || chatMeta?.wa_name || message.senderName || customerPhone;
-    await supabase.from("imf_contacts").upsert(
-      { broker_id: brokerId, phone: customerPhone, name: pushName },
-      { onConflict: "broker_id,phone", ignoreDuplicates: true }
-    );
-
-    // followup_conversations permanece como ponte operacional do ticket ATIVO.
-    // Se o anterior estava encerrado, ensureConversationTicket criou outro UUID.
-    await supabase.from("followup_conversations").update({
-      ticket_id: ticket.id,
-      last_customer_message_at: activityAt,
-      follow_sent: false,
-      instance_owner_user_id: instanceOwnerUserId,
-      updated_at: activityAt,
-    }).eq("broker_id", brokerId).eq("customer_phone", customerPhone);
-
-    // Repasse pro N8N — formato próprio (não emula o do Z-PRO), consumido
-    // pelo workflow de teste "Teste-v2 imob" (Fase 5).
-    if (N8N_WEBHOOK_URL) {
-      fetchWithTimeout(N8N_WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: "imobiflow_wpp_shim",
-          broker_id: brokerId,
-          customer_phone: customerPhone,
-          message_id: messageId || null,
-          ticket_id: ticket.id,
-          text: agentText,
-          input_type: inboundMediaType || "text",
-        }),
-      }).catch((e) => console.warn("[WppShim] repasse pro N8N falhou:", e.message));
-    }
+    if (result === "accepted") triggerWebhookWorkers();
   } catch (err: any) {
-    console.error("[WppShim] erro em /inbound:", err.message);
+    // Sem persistencia nao ha ACK: 503 pede que a UAZAPI tente novamente.
+    console.error("[WppShim] falha ao persistir webhook na inbox:", err.message);
+    res.status(503).json({ error: "Webhook temporariamente indisponivel." });
   }
 });
 

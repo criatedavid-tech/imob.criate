@@ -3,69 +3,75 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; último commit publicado: `e2b4bfe` (branch local sincronizada
-  com `origin/v2` até este commit).
-- **Working tree NÃO está limpo** (sessão de 2026-07-21): duas ações novas do
-  Assistente IA interno implementadas e validadas localmente, mas ainda sem
-  commit — ver "Pacote local pendente de autorização" abaixo. Antes de
-  qualquer novo trabalho nesta branch, decidir o destino desse pacote (commit
-  ou descarte) em vez de simplesmente sobrescrever.
-- Produção atual (deploy do commit `e2b4bfe`) contém o inbound multimodal, o
-  alinhamento de `imf_brokers.ai_name` com o contrato `agent_name` do N8N, e o
-  fix do assistente interno (para de narrar a própria ação em
-  `send_message`) — as duas ações novas NÃO estão em produção.
-- Smoke `/`, `/login`, `/app` HTTP 200 em 2026-07-21 (antes desta sessão).
-- N8N ainda usa o prompt anterior. A instância `https://212n8n.criate.online`
-  abriu na tela de login e requer sessão autenticada com acesso de edição.
+- Branch: `v2`; HEAD publicado e sincronizado com `origin/v2`:
+  `2378cc3`.
+- Working tree não está limpo: contém a primeira etapa da evolução de
+  escalabilidade, ainda sem commit/push/deploy.
+- O n8n não foi acessado nem alterado nesta etapa.
 
-## Pacote local pendente de autorização (2026-07-21)
+## Pacote local: inbox/outbox duráveis
 
-`server/services/agent.ts` ganhou duas ações novas — `create_reminder`
-(lembrete em `imf_agenda`, sem enviar nada) e `schedule_followup` (agenda
-envio real de WhatsApp via tabela nova `imf_agent_scheduled_followups` + job
-de 60s em `server/services/agentScheduledFollowups.ts`). Migration
-`supabase/migrations/20260721_agent_scheduled_followups.sql` **aplicada e
-verificada em 21/07/2026** (tabela, RLS e policy confirmados `true` na
-consulta pós-migration). `npx tsc --noEmit`, `npx knip`, `npm run build` e
-`git diff --check` aprovados; nenhum QA ao vivo ainda. Falta só: autorizar
-commit/push (o push já dispara deploy automático) — ver detalhe completo em
-PROGRESS.md/DECISIONS.md e na seção "Ações agendadas do Assistente IA
-interno" do DOCUMENTACAO.md.
+Implementado:
 
-## Objetivo imediato
+- migration `supabase/migrations/20260721b_webhook_inbox_outbox.sql`;
+- serviço `server/services/inboundWebhookQueue.ts`;
+- webhook UAZAPI confirma HTTP 200 somente depois do INSERT na inbox;
+- falha de persistência retorna 503 para o provedor tentar novamente;
+- claim atômico em batch com `FOR UPDATE SKIP LOCKED`;
+- lease recuperável depois de crash;
+- ordem preservada por corretor + conversa;
+- retry com backoff e estado terminal `dead`;
+- outbox para o n8n com header/campo `event_id`;
+- índices de lookup por `uazapi_instance_id`;
+- runbook `WEBHOOK_QUEUE_ROLLOUT.md`.
 
-Duas frentes pendentes, sem ordem obrigatória entre si:
+Validações locais aprovadas:
 
-1. Revisar e autorizar (ou pedir ajuste no) o pacote local acima.
-2. Instalar o novo prompt padrão no N8N e concluir o QA de nome,
-   personalização, agenda e mídia sem alterar V1, nomes das tools ou contrato
-   textual entre backend e N8N (sequência já represada de sessões
-   anteriores, abaixo).
+- `npm run lint`;
+- `npm run build`;
+- `git diff --check`.
 
-## Sequência (item 2 acima)
+Banco já preparado:
 
-1. Entrar em `https://212n8n.criate.online` com uma conta que possa editar o
-   workflow de produção do atendimento WhatsApp.
-2. No N8N, substituir manualmente o prompt principal pelo conteúdo integral de
-   `PROMPT-AGENTE-WHATSAPP.md`; manter os nomes das tools:
-   `[verificacao]`, `[agendamento]`, `[atualizar agendamento]` e
-   `[deletar agendamento]`.
-3. Salvar/ativar o workflow e confirmar que nenhuma conexão ou configuração das
-   quatro tools de agenda foi alterada.
-4. Alterar o nome na tela Assistente IA e confirmar que o endpoint interno
-   retorna esse valor em `agent_name`.
-5. Configurar uma instrução personalizada simples e iniciar conversa nova.
-   Confirmar: 1–3 frases, uma pergunta por vez, sem repetir dados já informados,
-   nome correto e regras de agenda preservadas.
-6. Testar PTT e imagem novos em conversa privada; verificar transcrição/descrição
-   no painel, resposta coerente e ausência de duplicação ou base64 nos logs.
-7. Repetir com IA desativada/human takeover e concluir QA titular versus membro
-   do CRM.
+- migration `20260721b_webhook_inbox_outbox.sql` aplicada manualmente em
+  21/07/2026;
+- leitura via backend confirmou `imf_webhook_inbox` e
+  `imf_webhook_outbox` acessíveis, ambas vazias e sem itens `dead`.
 
-## Critério de conclusão
+## Sequência obrigatória
 
-- Nome e instruções do corretor chegam ao agente sem substituir regras-base.
-- Texto, áudio e imagem recebem resposta coerente e concisa.
-- Agenda só confirma ações após sucesso real das tools.
-- Sem regressão multi-tenant, duplicação, vazamento de mídia ou alteração da V1.
-- Working tree limpo, commit/push/deploy registrados nos documentos oficiais.
+1. Revisar o diff local.
+2. Autorizar commit/push/deploy do backend; a migration já foi aplicada.
+3. Fazer smoke com uma mensagem textual real.
+4. Confirmar inbox e outbox em `completed`.
+5. Reenviar o mesmo evento e confirmar ausência de mensagem duplicada.
+6. Interromper/reiniciar um worker durante o processamento e confirmar
+   recuperação do lease.
+7. Implementar no workflow n8n deduplicação pelo `event_id` antes de qualquer
+   envio ou mutação externa.
+
+## Critério de conclusão desta etapa
+
+- Nenhum ACK antes da persistência.
+- Nenhuma mensagem duplicada no banco.
+- Falha temporária do n8n mantém a outbox pendente e recuperável.
+- Eventos que excedem o limite de tentativas aparecem em `dead`.
+- Métricas/consultas mostram que a fila volta a zero após o smoke.
+- Rollback não exige apagar inbox/outbox.
+
+## Evolução seguinte
+
+Depois de validar esta entrega:
+
+1. mover os ticks para um process group de workers separado da API;
+2. retirar áudio/imagem do processo web;
+3. substituir polling da tela Conversas por Realtime/SSE;
+4. implementar métricas e alertas de idade da fila;
+5. configurar n8n em queue mode e dimensionar workers com teste de carga;
+6. executar cenários de 2, 10 e 50 mensagens por segundo.
+
+## Pendências anteriores que permanecem
+
+- Instalar manualmente o prompt vigente de `PROMPT-AGENTE-WHATSAPP.md` no n8n.
+- Fazer QA de nome, instruções personalizadas, agenda, PTT e imagem.
+- Confirmar isolamento titular/membro e human takeover em produção.

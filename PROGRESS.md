@@ -1,5 +1,21 @@
 # Estado do projeto
 
+## Fila durável de webhooks implementada localmente (2026-07-21)
+
+- `POST /api/wpp-shim/inbound/:instanceId` não confirma mais antes de guardar
+  o evento: autenticação da instância + INSERT na inbox precedem o HTTP 200;
+  falha de banco responde 503 para provocar retry da UAZAPI.
+- `server/services/inboundWebhookQueue.ts` processa inbox/outbox em batches,
+  preserva ordem por conversa, recupera leases após crash, aplica retry com
+  backoff e move poison messages para `dead` após o limite de tentativas.
+- O payload do N8N foi preservado e ganhou `event_id` estável. Migration:
+  `supabase/migrations/20260721b_webhook_inbox_outbox.sql`.
+- `npm run lint`, `npm run build` e `git diff --check` aprovados localmente.
+- Migration aplicada manualmente e verificada por leitura em 21/07/2026: as
+  duas tabelas estão acessíveis pelo backend, vazias e sem itens `dead`.
+- Código ainda não publicado: falta autorização para commit/push/deploy;
+  depois fazer smoke real e deduplicar `event_id` no workflow N8N.
+
 ## Implementado localmente, aguardando autorização de commit (2026-07-21)
 
 - Duas ações novas no Assistente IA interno (`server/services/agent.ts`):
