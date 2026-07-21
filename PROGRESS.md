@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Melhoria: seletor de data/hora no "Agendar Visita" da landing (2026-07-21)
+
+- Usuário pediu que o campo "Horário de preferência" (antes texto livre) vire
+  um calendário com relógio. Trocado por `<input type="datetime-local">` em
+  `PropertyLanding.tsx` — calendário + seletor de hora nativos (desktop e
+  mobile), com `min` = agora (bloqueia horário no passado). Como
+  datetime-local não aceita placeholder, o rótulo "Horário de preferência
+  (opcional)" virou label acima do campo.
+- O valor (`YYYY-MM-DDTHH:mm`, fuso local do cliente) é formatado pra pt-BR
+  ("22/07/2026 às 15:00") antes de ir pra nota do lead. Continua opcional e
+  continua NÃO agendando nada em `imf_agenda` — é só a preferência do cliente.
+- `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration,
+  sem mudança de backend. Não foi possível QA visual ao vivo (browser pane
+  indisponível nesta sessão) — comportamento nativo do input, validar após
+  deploy.
+- Pendente: autorização do usuário para commit/push.
+
 ## Fix: foto falsa de corretor na landing (2026-07-21)
 
 - Print do usuário: a seção "Seu Corretor" mostrava a foto de um homem

@@ -838,6 +838,15 @@ Exclusividade), uma por foto destacada (`featuredImages`, até 5). O texto de
 cada seção vem de `descParagraphs` — a `description` do imóvel dividida por
 quebra dupla de linha (ou quebra simples seguida de maiúscula).
 
+O modal "Agendar Visita" grava um lead (`POST /api/leads`, status
+`visita`) com o horário de preferência do cliente na nota. Esse campo de
+horário usa `<input type="datetime-local">` (calendário + relógio nativos,
+desktop e mobile) com `min` = agora (bloqueia passado); antes era texto
+livre. O valor (`"YYYY-MM-DDTHH:mm"` no fuso local do cliente) é formatado
+pra pt-BR ("22/07/2026 às 15:00") antes de ir pra nota. O lead NÃO agenda
+nada em `imf_agenda` automaticamente — é só a preferência do cliente pro
+corretor combinar depois.
+
 **Fix — foto falsa de corretor na landing (21/07/2026):** a seção "Seu
 Corretor" (e o modal "Saiba Mais") usava uma foto de banco de imagens
 (Unsplash, um homem aleatório) como fallback quando o corretor não tinha

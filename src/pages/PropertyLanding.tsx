@@ -63,6 +63,15 @@ export default function PropertyLanding() {
     e.preventDefault();
     setScheduleLoading(true);
     try {
+      // preferredTime vem do <input type="datetime-local"> como
+      // "2026-07-22T15:00" (fuso local do navegador do cliente). Formata pra
+      // pt-BR legível antes de gravar na nota do lead — o corretor lê
+      // "22/07/2026 às 15:00", não o ISO cru.
+      const formattedPreferred = scheduleData.preferredTime
+        ? new Date(scheduleData.preferredTime).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+          })
+        : '';
       const response = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,8 +81,8 @@ export default function PropertyLanding() {
           // "visita" é o estágio real do Kanban; agendamento confirmado vive
           // em imf_agenda, não em um status paralelo de lead.
           status: 'visita',
-          notes: scheduleData.preferredTime
-            ? `Visita solicitada — horário de preferência: ${scheduleData.preferredTime}`
+          notes: formattedPreferred
+            ? `Visita solicitada — preferência: ${formattedPreferred}`
             : 'Visita solicitada via landing page'
         })
       });
@@ -81,6 +90,16 @@ export default function PropertyLanding() {
     } catch (e) { console.error(e); }
     finally { setScheduleLoading(false); }
   };
+
+  // Mínimo do seletor de data/hora = agora (no fuso local do cliente), no
+  // formato exigido pelo datetime-local ("YYYY-MM-DDTHH:mm") — impede
+  // escolher um horário no passado pra visitar o imóvel.
+  const minDateTime = (() => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  })();
 
   const handleWhatsApp = () => {
     const phone = property.brokers?.phone || '5500000000000';
@@ -696,9 +715,24 @@ export default function PropertyLanding() {
                         <input required type="email" placeholder="E-mail" value={scheduleData.email} onChange={e => setScheduleData({ ...scheduleData, email: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
                       </div>
                     </div>
-                    <div className="relative">
-                      <Calendar size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-                      <input type="text" placeholder="Horário de preferência (opcional)" value={scheduleData.preferredTime} onChange={e => setScheduleData({ ...scheduleData, preferredTime: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF]" />
+                    {/* datetime-local: calendário + relógio nativos (funciona em
+                        desktop e mobile). Não aceita placeholder, então o
+                        rótulo fica acima; o valor cru fica "cinza" até o
+                        cliente escolher (via [&:invalid] quando vazio). */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide mb-1.5 ml-1">
+                        Horário de preferência (opcional)
+                      </label>
+                      <div className="relative">
+                        <Calendar size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
+                        <input
+                          type="datetime-local"
+                          min={minDateTime}
+                          value={scheduleData.preferredTime}
+                          onChange={e => setScheduleData({ ...scheduleData, preferredTime: e.target.value })}
+                          className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black focus:border-black outline-none transition-all text-[#1a1a1a] [&:invalid]:text-[#9CA3AF]"
+                        />
+                      </div>
                     </div>
                     <button disabled={scheduleLoading} className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
                       {scheduleLoading ? <Loader2 className="animate-spin" size={16} /> : 'Confirmar Visita'}

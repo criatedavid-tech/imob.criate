@@ -7,6 +7,15 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Melhoria: seletor de data/hora no Agendar Visita (2026-07-21) — aguardando autorização
+
+Campo "Horário de preferência" do modal Agendar Visita virou
+`<input type="datetime-local">` (calendário + relógio nativos, `min` =
+agora). Rótulo acima (datetime-local não tem placeholder). Valor formatado
+pra pt-BR antes de gravar na nota do lead. Continua opcional e sem agendar
+nada em imf_agenda. `PropertyLanding.tsx`, `tsc`/`knip`/`build` aprovados,
+sem migration.
+
 ## Fix: foto falsa de corretor na landing (2026-07-21) — aguardando autorização
 
 Seção "Seu Corretor" e modal "Saiba Mais" usavam foto de banco de imagens
