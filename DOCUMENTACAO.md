@@ -592,8 +592,7 @@ metacomentário.
 
 ### Ações agendadas do Assistente IA interno (lembrete e follow-up ad-hoc)
 
-**Implementado em 2026-07-21, aguardando autorização de commit — ver
-PROGRESS.md/NEXT_TASK.md para o estado exato do working tree.**
+**Implementado e publicado em 2026-07-21.**
 
 Duas ações novas em `server/services/agent.ts`, complementares a
 `send_message` (que já manda uma mensagem real na hora):
@@ -645,11 +644,8 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   corretor falando na hora através do assistente.
 - **Migration aplicada e verificada em 21/07/2026** — consulta pós-migration
   confirmou tabela presente, RLS ativo e a policy criada (as três condições
-  retornaram `true`). O que falta agora é só o código ser commitado/
-  publicado (ver PROGRESS.md/NEXT_TASK.md); até lá `schedule_followup`
-  segue indisponível em produção mesmo com a tabela já existindo no banco.
-  `create_reminder` funciona de forma independente, pois só usa `imf_agenda`
-  (já existente e já com RLS/índices próprios).
+  retornaram `true`). `schedule_followup` e `create_reminder` estão publicados;
+  o segundo usa `imf_agenda`, já existente e com RLS/índices próprios.
 - **Bug encontrado e corrigido em produção (21/07/2026):** `delay_unit`
   originalmente só reconhecia `"dias"` explicitamente em `computeDueAt`;
   qualquer outro valor (inclusive `"minutos"`, que o modelo extrai
@@ -711,8 +707,8 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   `agentScheduledFollowups.ts`. Adiado porque, no momento do pedido, o
   Codex tinha em andamento uma limpeza grande do transporte WhatsApp na mesma
   árvore. O transporte ficou consolidado em `server/services/uazapi.ts` e
-  `server/routes/conversations.ts`; retomar o alerta depois que esta limpeza
-  publicar (ver `NEXT_TASK.md`).
+  `server/routes/conversations.ts`; a implementação do alerta já pode ser
+  retomada (ver `NEXT_TASK.md`).
 
 ### Asaas e limite do escopo financeiro
 

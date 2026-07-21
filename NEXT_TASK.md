@@ -3,24 +3,27 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; base publicada `5700f81`.
-- Working tree contém a limpeza do transporte antigo e a migration aditiva
-  exclusiva da V2 já aplicada e verificada no Supabase.
+- Branch: `v2`; base publicada `67aa90d`.
+- Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Ordem obrigatória para concluir a limpeza
+## Limpeza publicada e verificada (2026-07-21)
 
-1. Validar e publicar o código da working tree.
-2. Confirmar produção e o fluxo de uma mensagem real.
-3. Executar a busca global final de resíduos.
+- Commit `67aa90d`; GitHub Actions run `29857448606` aprovado.
+- Migration `20260721e` aplicada manualmente e schema confirmado.
+- Uma web e um worker ativos na release Fly v128; standby do worker parado.
+- `/`, `/login` e `/app` responderam HTTP 200.
+- Webhook UAZAPI habilitado e apontando para `imobiflow-v2.fly.dev`.
+- Inbox/outbox sem itens `pending`, `processing` ou `dead`.
+- Busca global final sem resíduos no runtime/documentação; a migration aditiva
+  contém os nomes antigos apenas para copiar dados e preservar a V1.
 
 A migration só adiciona `source_ticket_id` e `claim_due_followups_v2`. A função
 e as colunas compartilhadas anteriores permanecem intactas para a V1 congelada.
-Aplicada manualmente pelo usuário em 21/07/2026; a inspeção do schema confirmou
-as duas colunas neutras e a nova RPC, sem executar o claim.
 
-Os secrets residuais já foram removidos do Fly; o app permaneceu HTTP 200 e o
-webhook UAZAPI continuou apontando para o domínio V2.
+Próximo QA recomendado: enviar uma mensagem real após esta release e confirmar
+a entrada na tela Conversas. Depois, implementar o alerta de lembrete vencido
+por WhatsApp usando `server/services/uazapi.ts`.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 
@@ -50,16 +53,10 @@ o badge (`ManualRail.tsx`, `useDueReminderCount` + `RailIcon`, poll de 60s em
 `GET /api/agenda/visits?event_type=lembrete` já existente — sem rota nova,
 sem migration). `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados.
 
-**Adiado:** alerta por WhatsApp pro número do corretor (`imf_brokers.phone`),
-que reaproveitaria `agentScheduledFollowups.ts`. Adiado porque esse arquivo e
-todo o transporte WhatsApp estão em refatoração ativa e não commitada do
-Codex (seção "Limpeza total do transporte antigo" abaixo) — implementar
-agora seria construir sobre uma abstração prestes a mudar de nome/forma.
-
-Pendente: commit/push do badge (mesma fila do CRM — aguardar o Codex
-publicar a limpeza de transporte primeiro) e, depois que essa limpeza
-publicar, implementar o alerta por WhatsApp reaproveitando o novo
-`server/services/uazapi.ts`.
+O badge foi publicado no commit `67aa90d`. Pendente: validar visualmente com
+uma sessão autenticada e lembrete vencido real; depois implementar o alerta
+por WhatsApp pro número do corretor (`imf_brokers.phone`) reaproveitando
+`agentScheduledFollowups.ts` e `server/services/uazapi.ts`.
 
 ## Pacote publicado: inbox/outbox duráveis
 

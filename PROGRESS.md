@@ -10,18 +10,15 @@
   `scheduled_at` no passado). Sem rota nova, sem migration. Falha de rede é
   silenciosa — badge é cosmético, não pode travar a navegação.
 - Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
-  aprovados. Não deu pra confirmar visualmente no navegador (precisa de
-  sessão autenticada com lembrete real vencido, e a árvore está em meio à
-  limpeza de transporte do Codex abaixo — rodar o dev server agora testaria
-  contra código dela pela metade).
+  aprovados. A confirmação visual ainda requer sessão autenticada com um
+  lembrete real vencido.
 - **Alerta por WhatsApp pro corretor: adiado de propósito.** Reaproveitaria
   `agentScheduledFollowups.ts` e o número `imf_brokers.phone`, mas o transporte
-  WhatsApp estava em refatoração ativa. Retomar depois da publicação desta
-  limpeza, usando apenas `uazapi.ts` e `conversations.ts`.
-- Pendente: commit/push (aguardando o Codex publicar a limpeza de transporte
-  primeiro, mesma ordem já combinada com o usuário para o fix do CRM).
+  WhatsApp estava em refatoração ativa. Agora pode ser retomado usando apenas
+  `uazapi.ts` e `conversations.ts`.
+- Badge publicado no commit `67aa90d`, run `29857448606`.
 
-## Limpeza total do transporte antigo em andamento (2026-07-21)
+## Limpeza total do transporte antigo publicada (2026-07-21)
 
 - A origem pública agora é exclusivamente `PUBLIC_APP_URL`; o fallback antigo
   foi removido do código e do `.env.example`.
@@ -38,6 +35,9 @@
 - Secrets residuais de URL/admin foram removidos do Fly em 21/07/2026. O
   rolling restart terminou com web/worker saudáveis, HTTP 200 e a leitura da
   UAZAPI manteve o webhook habilitado em `imobiflow-v2.fly.dev`.
+- Publicada no commit `67aa90d`, GitHub Actions run `29857448606`, release Fly
+  v128. Uma web e um worker ativos, health check passando; `/`, `/login` e
+  `/app` HTTP 200; inbox/outbox sem itens problemáticos.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 
