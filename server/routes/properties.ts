@@ -1,7 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
-import { APP_URL } from "../config";
+import { PUBLIC_APP_URL } from "../config";
 
 export const propertiesRouter = express.Router();
 
@@ -105,12 +105,12 @@ propertiesRouter.post("/api/properties", requireUser, async (req, res) => {
      * Gera o link completo da landing page exclusiva do imóvel.
      * O link segue o padrão: https://[dominio]/p/[slug-do-imovel]
      *
-     * Usa sempre APP_URL (configurado no servidor), nunca o header
+     * Usa sempre PUBLIC_APP_URL (configurado no servidor), nunca o header
      * Origin/Referer do cliente — uma sessão local (npm run dev) gravando
      * contra o Supabase de produção contaminava o link pra sempre com
      * "localhost" (achado em 9 dos 12 imóveis da plataforma, 2026-07-14).
      */
-    const cleanOrigin = APP_URL.endsWith('/') ? APP_URL.slice(0, -1) : APP_URL;
+    const cleanOrigin = PUBLIC_APP_URL;
     property.link = `${cleanOrigin}/p/${property.slug}`;
 
     // Link to broker
@@ -211,8 +211,8 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
 propertiesRouter.get("/api/properties/:slug", async (req, res) => {
   try {
     // Landing pública — allowlist explícita do corretor embutido: o resto de
-    // imf_brokers tem segredo (reset_token, zpro_api_token, uazapi_instance_token,
-    // asaas_credit_card_token, zpro_password, is_admin), que um select('*') vazava
+    // imf_brokers tem segredos (reset_token, uazapi_instance_token,
+    // asaas_credit_card_token, is_admin), que um select('*') vazava
     // pra qualquer um que acessasse um slug de imóvel.
     const { data, error } = await supabase
       .from('imf_properties')

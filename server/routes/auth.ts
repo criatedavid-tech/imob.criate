@@ -7,7 +7,7 @@ import { authLimiter } from "../middleware/rateLimits";
 import { validateBody } from "../middleware/validate";
 import { normalizePhoneBR } from "../lib/crypto";
 import {
-  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL,
+  SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_APP_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
@@ -160,7 +160,7 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
     }).eq('id', broker.id);
 
     // Monta link e envia via WhatsApp (UAZAPI)
-    const resetLink = `${APP_URL}/reset-password?token=${token}`;
+    const resetLink = `${PUBLIC_APP_URL}/reset-password?token=${token}`;
     const phone = normalizePhoneBR(broker.phone);
 
     if (UAZAPI_HOST && UAZAPI_TOKEN && UAZAPI_PLATFORM_SESSION && phone) {

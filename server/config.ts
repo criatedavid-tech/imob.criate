@@ -24,13 +24,11 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 // ─── VARIÁVEIS DE AMBIENTE EXTERNAS ───────────────────────────────────────────
-// PUBLIC_APP_URL tem precedencia para permitir que o deploy versionado
-// neutralize um APP_URL legado ainda presente nos secrets do provedor.
-// APP_URL permanece como fallback para desenvolvimento e instalações antigas.
-export const APP_URL = (
-  process.env.PUBLIC_APP_URL
-  || process.env.APP_URL
-  || "http://localhost:3000"
+// Uma única origem pública, versionada no deploy. Não existe fallback para
+// endereço externo armazenado em secret: isso impede que uma configuração
+// antiga volte a alterar links e webhooks da V2.
+export const PUBLIC_APP_URL = (
+  process.env.PUBLIC_APP_URL || "http://localhost:3000"
 ).replace(/\/+$/, "");
 export const ASAAS_API_KEY       = process.env.ASAAS_API_KEY       || "";
 export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
@@ -39,7 +37,7 @@ export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
 // Versão vigente dos Termos de Uso / Política de Privacidade (data de vigência).
 // Ao alterar os documentos de forma relevante, mude esta constante — usuários
 // logados com versão aceita divergente verão o modal de re-aceite (TermsGate).
-export const TERMS_VERSION = '2026-07-01';
+export const TERMS_VERSION = '2026-07-21';
 export const UAZAPI_HOST             = process.env.UAZAPI_HOST             || "https://criate.uazapi.com";
 export const UAZAPI_TOKEN            = process.env.UAZAPI_TOKEN            || "";
 export const UAZAPI_PLATFORM_SESSION = process.env.UAZAPI_PLATFORM_SESSION || "";

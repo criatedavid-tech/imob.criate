@@ -38,7 +38,7 @@ interface Message {
 type Category = 'ia' | 'aguardando' | 'encerrado';
 
 // Categoriza pelo estado que já temos (ai_active + conversation_status) — não
-// é o Aberto/Pendente/Fechado do Z-PRO puro (isso vira o seletor de status
+// é o ciclo Aberto/Pendente/Fechado do atendimento (isso vira o seletor de status
 // dentro da conversa), é a pergunta que importa pro corretor na lista: quem
 // está com a bola agora. Nunca fica "sem dono" — é sempre IA ou você.
 function categoryOf(c: ConversationSummary): Category {
@@ -221,7 +221,7 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
 // Conversas real — lista quem está falando com a IA agora, a thread de cada
 // conversa, e permite responder manualmente / ligar-desligar a IA / gerenciar
 // o ticket (status, fila, atribuição, tags, notas — inspirado na API de
-// Tickets do Z-PRO, implementado nativo). Envio e entrada precisam de um
+// atendimento, implementado nativamente). Envio e entrada precisam de um
 // corretor com UAZAPI conectada pra funcionar de ponta a ponta — sem isso, a
 // lista funciona mas responder vai dar erro claro, não fingir sucesso.
 export function ConversasArea() {

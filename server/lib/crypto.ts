@@ -24,7 +24,7 @@ export function decryptKey(packed: string): string {
   return decipher.update(ciphertext).toString('utf8') + decipher.final('utf8');
 }
 
-// Normaliza telefone BR para o formato exigido pelo WhatsApp/Z-PRO:
+// Normaliza telefone BR para o formato exigido pelo WhatsApp:
 // DDI 55 + DDD (2) + 8 dígitos, sem o nono dígito.
 // Ex.: "(62)99159-2150" -> "556291592150"
 export function normalizePhoneBR(raw: string): string {

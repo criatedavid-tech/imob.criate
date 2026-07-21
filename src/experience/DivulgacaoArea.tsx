@@ -6,7 +6,7 @@ import { GlassCard } from './ui';
 // Etapa 10 (Divulgação) — por ora só a vitrine pública (o que dá pra fazer sem
 // integração externa). Portais (OLX/ZAP) e disparo de campanha ficam de fora:
 // portais exigem integração com cada portal; campanha em massa depende do envio
-// por WhatsApp, que se resolve junto com a eliminação do Z-PRO.
+// por WhatsApp, resolvida pelo transporte nativo da V2.
 export function DivulgacaoArea() {
   const [brokerId, setBrokerId] = useState<string | null>(null);
   const [availableCount, setAvailableCount] = useState<number | null>(null);

@@ -3,8 +3,7 @@ import { normalizePhoneBR } from "../lib/crypto";
 import { fetchWithTimeout } from "../lib/http";
 import { supabase } from "../supabase";
 
-// ─── Disfarce UAZAPI (substitui o envio via Z-PRO) ──────────────────────────
-// Ver plano "Eliminar o Z-PRO" (C:\Users\Criate\.claude\plans\stateless-drifting-turing.md).
+// ─── Cliente UAZAPI nativo ─────────────────────────────────────────────────
 //
 // ✅ FORMATO CONFIRMADO AO VIVO (2026-07-03) contra a instância real do Hunter
 // (WhatsApp conectado de verdade): POST /send/text — SEM identificador nenhum
@@ -27,7 +26,7 @@ export async function sendUazapiText(
     const raw = await r.text();
     return { ok: r.ok, status: r.status, raw };
   } catch (e: any) {
-    console.warn("[WppShim] sendUazapiText exceção:", e.message);
+    console.warn("[UAZAPI] sendUazapiText exceção:", e.message);
     return { ok: false, status: 0, raw: e.message };
   }
 }
@@ -95,7 +94,7 @@ export async function downloadUazapiMedia(
 // Decide qual instância usar pra RESPONDER esse cliente: se a conversa
 // entrou pela instância própria de um membro (marcado em
 // followup_conversations.instance_owner_user_id pelo webhook inbound — ver
-// POST /api/wpp-shim/inbound/:instanceId em server/routes/wppShim.ts),
+// POST /api/wpp-shim/inbound/:instanceId em server/routes/conversations.ts),
 // responde por ela; senão cai pra instância compartilhada da conta
 // (comportamento de sempre, e também o fallback se a instância do membro
 // tiver sumido/nunca terminado de provisionar — não falha o envio por isso).

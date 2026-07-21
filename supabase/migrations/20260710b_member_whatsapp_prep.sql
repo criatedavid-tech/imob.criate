@@ -9,7 +9,7 @@
 -- continua sendo o único que funciona de fato até a decisão ser tomada e a
 -- lógica de provisionamento por membro + roteamento de mensagens por
 -- instância ser implementada (ver server/services/provisioning.ts,
--- server/services/wppShim.ts, server/services/agent.ts — hoje tudo assume
+-- server/services/uazapi.ts, server/services/agent.ts — hoje tudo assume
 -- 1 conta = 1 instância, chaveado só por broker_id).
 
 ALTER TABLE imf_broker_members

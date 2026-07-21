@@ -1,5 +1,5 @@
 import express from "express";
-import { INTERNAL_PROXY_TOKEN, OPENROUTER_API_KEY, APP_URL } from "../config";
+import { INTERNAL_PROXY_TOKEN, OPENROUTER_API_KEY, PUBLIC_APP_URL } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 
 export const llmProxyRouter = express.Router();
@@ -30,7 +30,7 @@ llmProxyRouter.all('/api/proxy/llm/:brokerPhone/*', async (req, res) => {
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': APP_URL,
+        'HTTP-Referer': PUBLIC_APP_URL,
         'X-Title': 'ImobiFlow'
       },
       body: ['GET', 'HEAD'].includes(req.method.toUpperCase()) ? undefined : JSON.stringify(req.body)

@@ -281,15 +281,15 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   com todos os campos (quartos, banheiros, área, garagem, descrição, fotos) já
   preenchidos corretamente a partir do dado real.
 - **2026-07-03 — Etapa 2 (Conversas) PARCIAL — ~50%, dentro da iniciativa maior de
-  eliminar o Z-PRO (ver [[project_imobiflow_zpro_elimination]] e o plano
+  consolidar o transporte nativo de WhatsApp e o plano
   `C:\Users\Criate\.claude\plans\stateless-drifting-turing.md`).
   `src/experience/ConversasArea.tsx` construído (abas ia/aguardando/encerrado,
-  thread, resposta manual, toggle de IA), backend em `server/routes/wppShim.ts` +
-  `server/services/wppShim.ts` (disfarce que substitui o Z-PRO no envio de
+  thread, resposta manual, toggle de IA), backend em `server/routes/conversations.ts` +
+  `server/services/uazapi.ts` (cliente nativo usado no envio de
   mensagens). Saída (IA/corretor→cliente) testada de ponta a ponta com envio real
   contra a instância do Hunter. Entrada (cliente→IA) ainda é formato hipotético,
   nunca observado com tráfego real. Nenhum corretor migrado de fato — Hunter
-  continua 100% no Z-PRO até a Fase 3 do plano.
+  continua no fluxo atual até a Fase 3 do plano.
 - ✅ **Commit feito 2026-07-03 (`8443173`)** — todo o backend modularizado
   (Etapas 0/1/3 desta rodada) + Etapa 2 acima, tudo em `main`. **Ainda NÃO
   deployado** — produção (`imobiflow.fly.dev`) continua no código anterior.
@@ -420,7 +420,7 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   `{` não é exibido) tanto no endpoint público quanto no Config. **Deixado de
   fora:** portais (OLX/ZAP/Viva Real, cada um exige integração própria) e
   disparo de campanha em massa (depende do envio direto por WhatsApp, RESOLVE
-  junto com a eliminação do Z-PRO).
+  junto com a consolidação do transporte nativo).
 - **2026-07-06 — Etapa 14 (Conta/Config) CONSTRUÍDA, incluindo faturas +
   termos.** `ConfigArea.tsx` (rail "Config") reaproveita 100% endpoints que já
   existiam — zero rota nova: perfil (`brokers/me|settings`), plano/status,
@@ -643,6 +643,6 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   612d...`, em uso temporário no agente — ver nota de segurança). Decidir
   quando fazer o deploy de tudo (merge já está pronto em `main`) — sabendo
   que login/logout/tipo de conta/agente já foram validados localmente com as
-  3 personas. Entrada real de WhatsApp (Fase 3-5 da eliminação do Z-PRO)
+  3 personas. Entrada real de WhatsApp (Fases 3-5 do transporte nativo)
   continua pendente, precisa de um número de teste genuinamente separado do
   Hunter antes de tentar de novo.

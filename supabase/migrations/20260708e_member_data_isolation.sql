@@ -3,7 +3,7 @@
 -- O dono original da conta (imf_brokers.user_id) continua vendo tudo (visão
 -- gerencial). Conversas (WhatsApp) não ganha coluna própria — a visibilidade
 -- é derivada casando o telefone do cliente com o lead correspondente (ver
--- server/routes/wppShim.ts).
+-- server/routes/conversations.ts).
 
 ALTER TABLE imf_properties ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id);
 ALTER TABLE leads          ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id);

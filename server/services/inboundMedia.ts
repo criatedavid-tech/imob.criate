@@ -6,7 +6,7 @@ import {
   resolveAudioFormat,
   transcribeWithOpenRouter,
 } from "./mediaAi";
-import { downloadUazapiMedia } from "./wppShim";
+import { downloadUazapiMedia } from "./uazapi";
 
 type InboundMediaKind = "audio" | "image";
 
@@ -150,7 +150,7 @@ export async function resolveInboundMedia(
       usedFallback: false,
     };
   } catch (error: any) {
-    logAiProviderError(`[WppShim] processamento de ${kind} falhou`, error);
+    logAiProviderError(`[WhatsApp] processamento de ${kind} falhou`, error);
     return fallbackResult(kind);
   }
 }

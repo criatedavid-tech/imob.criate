@@ -1,10 +1,10 @@
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
-import { sendUazapiText, resolveOutboundInstanceToken } from "./wppShim";
+import { sendUazapiText, resolveOutboundInstanceToken } from "./uazapi";
 import { pauseAiForHumanTakeover } from "./followup";
 import { isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
-import { APP_URL } from "../config";
+import { PUBLIC_APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
 import { resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
@@ -598,7 +598,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
   if (action.type === "send_message") {
     if (!action.phone || !action.message?.trim()) throw new Error("Preciso do telefone e do texto da mensagem.");
 
-    // ⚠️ Envio REAL pelo WhatsApp — mesmo caminho de Conversas (wppShim.ts),
+    // ⚠️ Envio REAL pelo WhatsApp — mesmo caminho de Conversas (conversations.ts),
     // incluindo o roteamento por instância própria de membro quando aplicável.
     // Sem instância configurada, falha honesto em vez de fingir que enviou.
     const customerPhone = normalizePhoneBR(action.phone);
@@ -619,7 +619,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
       initialStatus: "open",
     });
     // Mesmo efeito de handover de uma resposta manual em Conversas — evita o
-    // atendimento automático (Z-PRO/N8N) responder em cima dessa mensagem.
+    // atendimento automático do N8N responder em cima dessa mensagem.
     await pauseAiForHumanTakeover(brokerId, customerPhone).catch(() => {});
 
     return { summary: `Mensagem enviada para ${customerPhone}.`, navigate: "conversas" };
@@ -658,7 +658,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     const slugBase = title.toLowerCase().normalize("NFD").replace(DIACRITICS_RE, "")
       .replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
     const slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
-    const link = `${APP_URL}/p/${slug}`;
+    const link = `${PUBLIC_APP_URL}/p/${slug}`;
 
     const { data: created, error } = await supabase.from("imf_properties").insert({
       title,
@@ -868,7 +868,7 @@ async function callOpenRouter(apiKey: string, systemPrompt: string, message: str
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://imobiflow.fly.dev",
+      "HTTP-Referer": PUBLIC_APP_URL,
       "X-Title": "ImobiFlow",
     },
     body: JSON.stringify({

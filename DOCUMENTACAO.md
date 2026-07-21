@@ -2,11 +2,8 @@
 
 > Estado consolidado do código da branch `v2` em 2026-07-21.
 >
-> O registro cronológico completo, com decisões, incidentes, comandos, releases e
-> investigações anteriores, foi preservado integralmente em
-> [HISTORICO_DETALHADO.md](./HISTORICO_DETALHADO.md). Consulte-o quando precisar
-> reconstruir por que uma decisão foi tomada. Este arquivo descreve somente como
-> o sistema está estruturado e o que é verdade agora.
+> Este arquivo descreve somente como o sistema está estruturado e o que é
+> verdade agora. Guias de integrações desativadas não fazem parte da V2.
 
 ## 1. Produto, escopo e ambientes
 
@@ -252,13 +249,19 @@ de reconciliação para operações externas que não concluíram de forma atôm
   token e usam trava comparar-e-trocar para evitar provisionamento duplicado.
 - O status e o connect chamam a autocura; a ativação manual do Admin também.
 - A instância recebe webhook direto em
-  `/api/wpp-shim/inbound/:instanceId`; o fluxo ativo não provisiona Z-PRO.
+  `/api/wpp-shim/inbound/:instanceId`; não há intermediário de mensagens.
 - É possível conectar por QR code ou código de pareamento. O telefone completo
   brasileiro é normalizado sem remover o nono dígito nesse fluxo.
 - Desconectar chama `/instance/disconnect` sem apagar a instância, permitindo
   parear outro número e preservar token/webhook.
 - Falhas de provisionamento são expostas à UI com retry, em vez de deixar o
   usuário indefinidamente no estado “configurando”.
+- Não existe rota de envio por API externa de terceiro. O N8N responde por
+  `/api/wpp-shim/ai-reply`, autenticado com `INTERNAL_PROXY_TOKEN`, e o backend
+  envia diretamente pela instância UAZAPI correta.
+- A neutralização da V2 usa a migration aditiva `20260721e`: adiciona e
+  preenche `source_ticket_id` e cria `claim_due_followups_v2`. A função e as
+  colunas compartilhadas anteriores não são alteradas, preservando a V1.
 
 ### Ciclos de ticket e histórico de conversas
 
@@ -529,29 +532,12 @@ Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
      Chrome/Samsung/Firefox/iOS reais não têm) e, ao tocar no clipe,
      mostra a dica "abra no Chrome" em vez de um toque sem efeito.
 
-**Fix — WhatsApp de entrada não chegava no V2 (webhook apontando pro Z-PRO
-morto, 20/07/2026):** contas provisionadas na era Z-PRO tinham o webhook da
-instância UAZAPI ainda apontando pra `appback.criate.online/uazapi-webhook/…`
-(backend Z-PRO desativado) em vez de
-`…/api/wpp-shim/inbound/:instanceId` do V2. Com a instância `connected`, o
-UAZAPI entregava os eventos pro Z-PRO e o V2 nunca via a mensagem — a
-conversa ficava "Sem mensagens registradas" (diagnóstico: zero registros em
-`webhook_logs` source `uazapi`, que loga TODO evento ANTES de validar).
-Corrigido com self-heal: `setUazapiWebhook(token, instanceId)` extraído como
-helper exportado em `provisioning.ts`, `resolveManagedInstance` passou a
-devolver o `instanceId` da instância já existente, e
-`POST /api/brokers/whatsapp/connect` reafirma o webhook correto a cada
-conexão. Assim qualquer instância legada se autocura ao reconectar. A
-instância afetada teve o webhook re-apontado manualmente na hora; confirmado
-pelo usuário que a mensagem de entrada voltou a chegar no painel.
-
-Em 21/07/2026 o problema reapareceu após o self-heal: o Fly ainda possuía um
-`APP_URL` legado, então a própria rotina correta montava novamente a URL do
-Z-PRO. A correção definitiva adiciona `PUBLIC_APP_URL` com precedência em
-`server/config.ts` e fixa o domínio V2 no `fly.toml`; `APP_URL` permanece apenas
-como fallback compatível. Foi publicada no commit `5ff6b00` pelo workflow
-`29853967632`; depois do rollout, a instância afetada foi reapontada e a leitura
-da UAZAPI confirmou o endpoint V2 habilitado com o evento `messages` ativo.
+**Autocura do webhook UAZAPI:** `setUazapiWebhook(token, instanceId)` monta o
+endpoint exclusivamente com `PUBLIC_APP_URL`. `resolveManagedInstance` devolve
+o `instanceId` existente e `POST /api/brokers/whatsapp/connect` reafirma o
+webhook canônico a cada conexão. Não existe fallback de origem pública por
+secret; links, redirects e webhooks usam a configuração versionada no
+`fly.toml`.
 
 **Suporte — áudio e imagem recebidos do cliente no WhatsApp (20/07/2026):**
 o inbound `POST /api/wpp-shim/inbound/:instanceId` descartava de propósito
@@ -709,6 +695,24 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   um id específico. `GET /api/agenda/visits` ganhou o parâmetro opcional
   `?event_type=lembrete` (padrão continua `'visita'`, mantendo o
   calendário de sempre sem lembretes).
+- **Alerta visual no sino (2026-07-21):** o corretor pediu um jeito de ser
+  avisado de lembrete vencido sem precisar entrar na aba. `ManualRail.tsx`
+  ganhou `useDueReminderCount` — busca `GET /api/agenda/visits?
+  event_type=lembrete` a cada 60s (mesmo intervalo dos jobs de fila) e conta
+  quantos têm `status:'pendente'` com `scheduled_at` no passado — e mostra
+  um badge vermelho sobre o ícone de sino (desktop e drawer mobile) quando
+  a contagem é maior que zero. Falha de rede é silenciosa (o badge é um
+  extra cosmético, nunca pode travar a navegação). Reaproveita o endpoint
+  já existente — nenhuma rota nova. Só cobre `create_reminder`; não conta
+  `schedule_followup` com falha de envio.
+- **Alerta por WhatsApp pro próprio corretor: adiado.** O usuário também
+  pediu mandar o lembrete vencido por WhatsApp pro número do corretor
+  (`imf_brokers.phone`), reaproveitando o job de 60s de
+  `agentScheduledFollowups.ts`. Adiado porque, no momento do pedido, o
+  Codex tinha em andamento uma limpeza grande do transporte WhatsApp na mesma
+  árvore. O transporte ficou consolidado em `server/services/uazapi.ts` e
+  `server/routes/conversations.ts`; retomar o alerta depois que esta limpeza
+  publicar (ver `NEXT_TASK.md`).
 
 ### Asaas e limite do escopo financeiro
 
@@ -899,8 +903,7 @@ scheduler singleton. Até lá, o workflow publica com `--ha=false` e executa
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_SUPABASE_ANON_KEY` no build do frontend
-- `PUBLIC_APP_URL` (canônica; prevalece sobre `APP_URL` legado)
-- `APP_URL` como fallback compatível
+- `PUBLIC_APP_URL` (origem pública única e canônica)
 
 ### Por integração
 
@@ -914,6 +917,11 @@ scheduler singleton. Até lá, o workflow publica com `--ha=false` e executa
 - fila: `WEBHOOK_INBOX_BATCH_SIZE`, `WEBHOOK_OUTBOX_BATCH_SIZE`,
   `WEBHOOK_QUEUE_MAX_ATTEMPTS`, `WEBHOOK_WORKER_POLL_MS`;
 - operação: `REDIS_URL`, `SENTRY_DSN`, `NODE_ENV`.
+
+Em 21/07/2026, os secrets residuais de origem pública e administração da
+integração desativada foram removidos do app Fly. A origem pública permanece
+somente no `PUBLIC_APP_URL` versionado e o webhook UAZAPI foi relido no domínio
+V2 após o rolling restart.
 
 `server/config.ts` aceita a URL Supabase pública como fallback conhecido, mas
 recusa iniciar sem `SUPABASE_SERVICE_ROLE_KEY`. Não criar fallback `VITE_*`
@@ -934,6 +942,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260717b_crm_pipelines.sql` | aplicada | pipelines/etapas do CRM; código dependente (`/api/crm/*`, `PATCH /api/leads/:id/stage`) deployado na release v94 |
 | `20260720_crm_pipelines_broker_cascade.sql` | aplicada e verificada | corrige exclusão de conta pelo admin (CASCADE em `imf_crm_pipelines`/`imf_crm_pipeline_stages`) — ver seção 6 |
 | `20260720b_crm_security_hardening.sql` | aplicada e verificada | restringe RPCs à `service_role`, valida reorder e torna mutações críticas do CRM transacionais |
+| `20260721e_prepare_native_whatsapp_schema.sql` | aplicada e verificada em 21/07/2026 | adiciona/backfill `source_ticket_id` e cria a RPC exclusiva `claim_due_followups_v2`, preservando o contrato compartilhado da V1 |
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
 | `20260721c_agenda_event_type.sql` | aplicada e verificada | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
 | `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | **aguardando aplicação manual** | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
@@ -1074,12 +1083,10 @@ passaram após as remoções.
   por `@import "tailwindcss"` e pelo plugin `@tailwindcss/vite`;
 - routers do Express: alcançados dinamicamente pelo bootstrap;
 - páginas lazy do React e áreas selecionadas por string;
-- migrations e tabelas históricas;
+- migrations e tabelas históricas ainda necessárias ao schema atual;
 - Dashboard 1.0 e `AISettings.tsx`/`FollowUpSettings.tsx`;
-- campos `zpro_*` ainda existentes no schema/Admin, embora o provisionamento
-  ativo seja UAZAPI nativo;
-- secrets Z-PRO antigos eventualmente presentes no Fly: são inertes no código,
-  mas removê-los é alteração de produção e exige autorização específica.
+- colunas compartilhadas preservadas exclusivamente por compatibilidade com a
+  V1 congelada; o código V2 não as lê nem grava.
 
 ## 17. Fontes de verdade e manutenção deste documento
 
@@ -1088,13 +1095,11 @@ Quando houver divergência, use esta ordem:
 1. código e migrations da branch que será publicada;
 2. schema/secrets efetivamente verificados no ambiente alvo;
 3. este documento de estado atual;
-4. [HISTORICO_DETALHADO.md](./HISTORICO_DETALHADO.md) para contexto e decisões;
-5. demais guias (`README.md`, `HANDOFF.md`, `UX_MASTERPLAN.md` e guias de
-   onboarding/workflows), que podem ter escopo específico ou conteúdo antigo.
+4. `DECISIONS.md` para decisões vigentes;
+5. `README.md` e `UX_MASTERPLAN.md` para visão de produto e experiência.
 
-Após cada mudança funcional, atualize aqui somente a verdade vigente. Registre
-passo a passo, incidentes, commits e releases no histórico detalhado, evitando
-transformar novamente esta referência em um changelog.
+Após cada mudança funcional, atualize aqui somente a verdade vigente e evite
+transformar esta referência em um changelog de integrações desativadas.
 
 ## 18. Prompt padrão e personalização do agente WhatsApp
 

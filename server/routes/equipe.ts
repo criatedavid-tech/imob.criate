@@ -2,7 +2,7 @@ import express from "express";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
-import { APP_URL, MEMBER_WHATSAPP_SLOT_MAX } from "../config";
+import { MEMBER_WHATSAPP_SLOT_MAX, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
 
 export const equipeRouter = express.Router();
@@ -245,7 +245,7 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
       .insert({ broker_id: brokerId, code, expires_at: expiresAt, whatsapp_mode: whatsappMode });
     if (error) throw error;
 
-    res.status(201).json({ code, url: `${APP_URL}/equipe/entrar/${code}`, expires_at: expiresAt, whatsapp_mode: whatsappMode });
+    res.status(201).json({ code, url: `${PUBLIC_APP_URL}/equipe/entrar/${code}`, expires_at: expiresAt, whatsapp_mode: whatsappMode });
   } catch (err: any) {
     console.error("Erro POST /api/equipe/members/invite:", err);
     res.status(500).json({ error: err.message });
@@ -270,7 +270,7 @@ equipeRouter.get("/api/equipe/invites", requireUser, async (req, res) => {
       .order("created_at", { ascending: false });
     if (error) throw error;
 
-    res.json((data || []).map((i: any) => ({ ...i, url: `${APP_URL}/equipe/entrar/${i.code}` })));
+    res.json((data || []).map((i: any) => ({ ...i, url: `${PUBLIC_APP_URL}/equipe/entrar/${i.code}` })));
   } catch (err: any) {
     console.error("Erro GET /api/equipe/invites:", err);
     res.status(500).json({ error: err.message });

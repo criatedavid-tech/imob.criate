@@ -20,7 +20,6 @@ interface Broker {
   created_at: string;
   is_admin: boolean;
   asaas_customer_id: string | null;
-  zpro_tenant_id: string | null;
   uazapi_instance_id: string | null;
 }
 

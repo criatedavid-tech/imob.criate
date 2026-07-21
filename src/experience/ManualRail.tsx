@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Home, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
   Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
@@ -7,6 +7,50 @@ import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { AREAS } from './engine';
 import type { Persona } from './types';
+import { authService } from '../services/auth';
+
+// Sino de Lembretes: conta quantos lembretes pendentes já venceram (não
+// segue o corretor fora do app — só sinaliza enquanto o rail está montado,
+// que é o tempo todo que o /app fica aberto). Falha silenciosa: o badge é
+// um extra, nunca pode travar a navegação.
+function useDueReminderCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const res = await fetch('/api/agenda/visits?event_type=lembrete', { headers: authService.getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const now = Date.now();
+        const due = Array.isArray(data)
+          ? data.filter((r: any) => r.status === 'pendente' && new Date(r.scheduled_at).getTime() <= now).length
+          : 0;
+        if (!cancelled) setCount(due);
+      } catch {
+        // silencioso — ver comentário acima
+      }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+  return count;
+}
+
+function RailIcon({ icon, badge }: { icon: React.ReactNode; badge: number }) {
+  return (
+    <span className="relative inline-flex">
+      {icon}
+      {badge > 0 && (
+        <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500
+          text-white text-[9px] font-bold flex items-center justify-center leading-none">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </span>
+  );
+}
 
 const ICONS: Record<string, React.ReactNode> = {
   hoje: <Home className="w-[18px] h-[18px]" />,
@@ -39,6 +83,7 @@ export function ManualRail({
   onMobileClose?: () => void;
 }) {
   const areas = AREAS.filter((a) => a.personas.includes(persona));
+  const lembretesDue = useDueReminderCount();
 
   return (
     <>
@@ -61,7 +106,7 @@ export function ManualRail({
                 isActive ? 'bg-white/[0.12] text-white' : 'text-white/45 hover:text-white/80 hover:bg-white/[0.05]',
               )}
             >
-              {ICONS[a.key]}
+              <RailIcon icon={ICONS[a.key]} badge={a.key === 'lembretes' ? lembretesDue : 0} />
               <span className="text-[10px] font-medium leading-none">{a.label}</span>
             </button>
           );
@@ -104,7 +149,7 @@ export function ManualRail({
                         isActive ? 'bg-white/[0.12] text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.05]',
                       )}
                     >
-                      {ICONS[a.key]}
+                      <RailIcon icon={ICONS[a.key]} badge={a.key === 'lembretes' ? lembretesDue : 0} />
                       <span className="text-[13px] font-semibold">{a.label}</span>
                     </button>
                   );

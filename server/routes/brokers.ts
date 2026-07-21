@@ -18,13 +18,11 @@ brokersRouter.get("/api/brokers/me", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker profile could not be found or created" });
 
-    // Campos seguros para expor ao frontend — NUNCA incluir:
-    // asaas_credit_card_token (cobra cartão), zpro_password, reset_token, reset_token_expires_at
+    // Campos seguros para expor ao frontend — nunca incluir tokens de cartão,
+    // credenciais de instância, reset_token ou reset_token_expires_at.
     const { data, error } = await supabase.from('imf_brokers').select(
       'id, user_id, name, email, phone, ai_name, broker_address, status, plan, account_type, ' +
       'valid_until, grace_until, is_admin, corretora_id, member_limit, ' +
-      'zpro_tenant_id, zpro_channel_id, zpro_channel_name, zpro_user_email, zpro_username, zpro_qr_code, ' +
-      'zpro_api_url, zpro_api_key, ' +
       'asaas_customer_id, asaas_subscription_id, ' +
       'provisioning_status, provisioning_error, provisioning_completed_at, ' +
       'created_at, updated_at'
@@ -218,7 +216,7 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
   }
 });
 
-// ─── WhatsApp — conexão via QR code (substitui o painel externo do Z-PRO) ──
+// ─── WhatsApp — conexão via QR code dentro do ImobiFlow ───────────────────
 // A instância UAZAPI já é criada no provisionamento (server/services/provisioning.ts);
 // aqui só expomos status/QR pra o corretor parear o número direto no imob.
 
@@ -323,9 +321,8 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
       return res.status(409).json({ error, provisioningStatus });
     }
 
-    // Self-heal do webhook: instâncias criadas na era Z-PRO têm o webhook
-    // apontando pro backend antigo (appback.criate.online) e as mensagens de
-    // entrada nunca chegam no V2. Re-afirma o webhook correto a cada conexão.
+    // Self-heal do webhook: reafirma o endpoint canônico da V2 a cada conexão,
+    // corrigindo qualquer configuração externa divergente.
     // (instanceId só volta preenchido pra instância JÁ existente — a recém
     // provisionada já nasce com o webhook certo.) Best-effort, não bloqueia.
     if (instanceId) await setUazapiWebhook(token, instanceId);

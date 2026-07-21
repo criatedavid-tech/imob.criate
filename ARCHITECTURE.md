@@ -5,8 +5,7 @@
 - Frontend V2: `src/experience/*`, interface única em `/app`.
 - Backend: `server/routes/*.ts` + `server/services/*.ts`; `server.ts` monta os
   routers.
-- `DOCUMENTACAO.md` é a referência técnica completa. `HANDOFF.md` descreve a
-  arquitetura antiga V1/Z-PRO e não é fonte de verdade da V2.
+- `DOCUMENTACAO.md` é a referência técnica completa da V2.
 
 ## Autenticação e multi-tenant
 
@@ -36,7 +35,7 @@
 
 ## WhatsApp e agente externo
 
-- UAZAPI substituiu integralmente Z-PRO na V2.
+- A V2 usa UAZAPI diretamente, sem intermediário de mensagens.
 - Inbound: `POST /api/wpp-shim/inbound/:instanceId`; mensagens privadas de
   texto, PTT e imagem são persistidas e encaminhadas ao N8N.
 - O inbound confirma a UAZAPI somente depois do INSERT em
@@ -94,9 +93,8 @@
   apenas registram e exibem valores/status.
 - Push em `v2` executa GitHub Actions: `npm ci`, TypeScript, Knip, build e
   deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
-- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é versionada no `fly.toml` e
-  prevalece sobre `APP_URL`; evita que secrets legados recriem URLs/webhooks
-  para `appback.criate.online`.
+- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a única origem pública e é
+  versionada no `fly.toml`; links e webhooks não dependem de secret de URL.
 - A topologia inicial mantém uma Machine `web` ativa e uma `worker` ativa,
   ambas `shared-cpu-1x`/1 GB; o Fly pode conservar uma standby parada para o
   worker. A API ainda contém jobs periódicos legados, portanto o workflow usa

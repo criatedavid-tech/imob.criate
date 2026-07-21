@@ -3,19 +3,24 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; base publicada `5ff6b00`.
-- A correção de `PUBLIC_APP_URL` está publicada; permanece fora desse pacote a
-  migration não rastreada criada em outra sessão.
+- Branch: `v2`; base publicada `5700f81`.
+- Working tree contém a limpeza do transporte antigo e a migration aditiva
+  exclusiva da V2 já aplicada e verificada no Supabase.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Correção imediata concluída; falta reteste real
+## Ordem obrigatória para concluir a limpeza
 
-O teste pós-worker das 14:34 não chegou à inbox porque a UAZAPI voltou a
-`appback.criate.online`. A instância está conectada; o self-heal usa o
-`APP_URL` legado do ambiente. A precedência de `PUBLIC_APP_URL` versionada no
-`fly.toml` foi publicada no commit `5ff6b00` (workflow `29853967632`) e a
-instância foi reapontada e relida no endpoint V2. A mensagem antiga não é
-reprocessada retroativamente; repetir agora o teste com uma mensagem nova.
+1. Validar e publicar o código da working tree.
+2. Confirmar produção e o fluxo de uma mensagem real.
+3. Executar a busca global final de resíduos.
+
+A migration só adiciona `source_ticket_id` e `claim_due_followups_v2`. A função
+e as colunas compartilhadas anteriores permanecem intactas para a V1 congelada.
+Aplicada manualmente pelo usuário em 21/07/2026; a inspeção do schema confirmou
+as duas colunas neutras e a nova RPC, sem executar o claim.
+
+Os secrets residuais já foram removidos do Fly; o app permaneceu HTTP 200 e o
+webhook UAZAPI continuou apontando para o domínio V2.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 
@@ -29,15 +34,32 @@ consulta é a própria condição de um `IF` (roda sempre), a função falhava e
 `20260720b_crm_security_hardening.sql` foi aplicada (20/07/2026) — só
 percebido agora por falta de QA autenticado ao vivo da tela.
 
-Correção pronta, ainda não aplicada nem publicada:
+Correção publicada:
 
 - migration `supabase/migrations/20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql`
-  (só qualifica a referência com o alias `stage`; mesma assinatura/RPC);
-- nenhuma mudança de código TypeScript;
-- documentação já atualizada (`DOCUMENTACAO.md`, `DECISIONS.md`, `PROGRESS.md`).
+  aplicada manualmente pelo usuário no Supabase;
+- commit `7f25b31` (só a migration — a documentação já tinha entrado junto
+  no commit anterior do Codex, `5ff6b00`, por causa da mesma árvore
+  compartilhada); GitHub Actions run `29854511196` aprovado;
+- smoke `/`, `/login`, `/app` HTTP 200 após o deploy.
 
-Pendente: aplicar a migration manualmente no Supabase (efeito imediato, sem
-deploy) e autorização do usuário para commit/push da migration + docs.
+## Badge de lembrete vencido no sino; WhatsApp pro corretor adiado (2026-07-21)
+
+Usuário pediu duas formas de alertar sobre lembrete vencido. Implementado só
+o badge (`ManualRail.tsx`, `useDueReminderCount` + `RailIcon`, poll de 60s em
+`GET /api/agenda/visits?event_type=lembrete` já existente — sem rota nova,
+sem migration). `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados.
+
+**Adiado:** alerta por WhatsApp pro número do corretor (`imf_brokers.phone`),
+que reaproveitaria `agentScheduledFollowups.ts`. Adiado porque esse arquivo e
+todo o transporte WhatsApp estão em refatoração ativa e não commitada do
+Codex (seção "Limpeza total do transporte antigo" abaixo) — implementar
+agora seria construir sobre uma abstração prestes a mudar de nome/forma.
+
+Pendente: commit/push do badge (mesma fila do CRM — aguardar o Codex
+publicar a limpeza de transporte primeiro) e, depois que essa limpeza
+publicar, implementar o alerta por WhatsApp reaproveitando o novo
+`server/services/uazapi.ts`.
 
 ## Pacote publicado: inbox/outbox duráveis
 

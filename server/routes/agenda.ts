@@ -177,7 +177,7 @@ agendaRouter.delete("/api/agenda/visits/:id", requireUser, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // AGENDA — Endpoints para N8N (auth: INTERNAL_PROXY_TOKEN, broker_id no body/query)
-// Substituem as tools zpro_api_url/appointment/* do Agente IA Corretor
+// Endpoints internos de agenda consumidos pelo Agente IA Corretor.
 // ─────────────────────────────────────────────────────────────────────────
 
 function requireInternalToken(req: any, res: any): boolean {
@@ -189,7 +189,7 @@ function requireInternalToken(req: any, res: any): boolean {
   return true;
 }
 
-// [N8N] Lista agendamentos de um corretor (substitui GET /appointment/list do ZPro)
+// [N8N] Lista agendamentos de um corretor.
 // Query: broker_id (obrigatório), phone (opcional — filtra por cliente)
 agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
   if (!requireInternalToken(req, res)) return;
@@ -243,7 +243,7 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
   }
 });
 
-// [N8N] Cria agendamento (substitui POST /appointment/create do ZPro)
+// [N8N] Cria agendamento.
 // ⚠️ Contrato de fuso: startAt/endAt são passados direto pro `new Date()` do
 // Node — precisam vir com offset EXPLÍCITO. "-03:00" pra hora de Brasília
 // (ex.: "2026-07-14T16:00:00-03:00" pras 16h daqui), nunca "Z"/UTC nem sem
@@ -296,7 +296,7 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
   }
 });
 
-// [N8N] Atualiza agendamento (substitui /appointment/update do ZPro)
+// [N8N] Atualiza agendamento.
 // Mesmo contrato de fuso do POST /create acima: startAt/endAt precisam de
 // offset explícito ("-03:00" pra Brasília, nunca "Z").
 agendaRouter.patch('/api/agenda/n8n/:id', async (req, res) => {
@@ -334,7 +334,7 @@ agendaRouter.patch('/api/agenda/n8n/:id', async (req, res) => {
   }
 });
 
-// [N8N] Cancela agendamento (substitui /appointment/delete/:id do ZPro)
+// [N8N] Cancela agendamento.
 agendaRouter.delete('/api/agenda/n8n/:id', async (req, res) => {
   if (!requireInternalToken(req, res)) return;
   try {

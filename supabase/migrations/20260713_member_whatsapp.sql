@@ -3,7 +3,7 @@
 -- conta (member_limit, já existe em imf_brokers desde 20260710b). Continua
 -- a preparação daquela migração — agora com as colunas que o código de fato
 -- lê (ver server/services/provisioning.ts, server/routes/equipe.ts,
--- server/routes/auth.ts, server/routes/wppShim.ts).
+-- server/routes/auth.ts, server/routes/conversations.ts).
 
 ALTER TABLE imf_broker_members
   ADD COLUMN IF NOT EXISTS whatsapp_mode text NOT NULL DEFAULT 'shared',
@@ -29,7 +29,7 @@ ALTER TABLE imf_broker_invites
   ADD CONSTRAINT imf_broker_invites_whatsapp_mode_check
   CHECK (whatsapp_mode IN ('shared', 'own'));
 
--- Tabela legada (sem CREATE TABLE neste repo — ver server/routes/wppShim.ts
+-- Tabela legada (sem CREATE TABLE neste repo — ver server/routes/conversations.ts
 -- e followup.ts pros usos reais). NULL = mensagem entrou pela instância
 -- compartilhada da conta (comportamento de hoje); preenchido = entrou pela
 -- instância própria desse membro, e é por ela que a resposta deve sair.

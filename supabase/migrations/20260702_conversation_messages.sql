@@ -1,11 +1,10 @@
--- ─── Migração: mensagens de conversa (base do Conversas real / saída do Z-PRO) ──
+-- ─── Migração: mensagens de conversa nativas ──────────────────────────────
 -- Rodar no Supabase SQL Editor do projeto umvbrahsqvqeondwtikm
 --
 -- Contexto: o ImobiFlow nunca guardou o texto de nenhuma mensagem de WhatsApp
--- em lugar nenhum — o histórico só existia dentro do Z-PRO. Esta tabela é o
+-- em lugar nenhum. Esta tabela é o
 -- primeiro armazenamento de conteúdo real de conversa do ImobiFlow, base tanto
--- da tela "Conversas" quanto da migração pra sair do Z-PRO (ver plano
--- "Eliminar o Z-PRO" — server/routes/wppShim.ts).
+-- da tela "Conversas" e do transporte nativo de WhatsApp.
 
 CREATE TABLE IF NOT EXISTS imf_conversation_messages (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,13 +35,12 @@ CREATE POLICY "broker_own_conversation_messages" ON imf_conversation_messages
   FOR ALL
   USING (broker_id IN (SELECT id FROM imf_brokers WHERE user_id = auth.uid()));
 
--- Substituto do "ticket aberto" do Z-PRO: suspende follow-up sem precisar
--- perguntar pro Z-PRO (checkTicketOpen chamava GET /api/tickets/:id).
+-- Estado local que suspende follow-up quando o atendimento humano assume.
 ALTER TABLE followup_conversations
   ADD COLUMN IF NOT EXISTS conversation_status TEXT NOT NULL DEFAULT 'open'
     CHECK (conversation_status IN ('open', 'closed'));
 
--- Credenciais da instância UAZAPI por corretor — hoje só o canal Z-PRO guarda
+-- Credenciais da instância UAZAPI por corretor.
 -- isso (tokenAPI/wabaId); o ImobiFlow nunca precisou saber até agora.
 ALTER TABLE imf_brokers
   ADD COLUMN IF NOT EXISTS uazapi_instance_id TEXT,

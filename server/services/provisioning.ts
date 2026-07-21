@@ -1,29 +1,24 @@
 import { supabase } from "../supabase";
 import {
-  UAZAPI_HOST, UAZAPI_TOKEN, APP_URL,
+  PUBLIC_APP_URL, UAZAPI_HOST, UAZAPI_TOKEN,
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 
-// ─── Provisionamento nativo (v2) — sem Z-PRO ──────────────────────────────
-// Substitui createZproTenantAndChannel: cria a instância UAZAPI direto (POST
-// /instance/create com admintoken) e aponta o webhook dela pro nosso próprio
-// backend (/api/wpp-shim/inbound/:instanceId — server/routes/wppShim.ts),
-// nunca pro Z-PRO. Sem tenant, sem canal, sem api-config, sem bot Z-PRO —
-// o atendimento roda 100% nativo (backend → n8n → agente).
+// ─── Provisionamento UAZAPI nativo (v2) ───────────────────────────────────
+// Cria a instância direto no provedor (POST /instance/create com admintoken)
+// e aponta o webhook para o backend da V2. O atendimento roda no caminho
+// backend → n8n → agente, sem intermediário de mensagens.
 //
 // Núcleo comum entre provisionar a CONTA (provisionUazapiInstanceNative) e
 // provisionar um MEMBRO com WhatsApp próprio (provisionUazapiInstanceForMember)
 // — cria a instância na UAZAPI e já aponta o webhook nativo pra ela. Quem
 // chama decide em qual tabela/linha persistir o resultado.
 // Aponta (ou RE-aponta) o webhook nativo da instância pro nosso backend atual
-// (`${APP_URL}/api/wpp-shim/inbound/:instanceId`), NUNCA pro Z-PRO. Idempotente
-// de propósito: chamado tanto na criação quanto a cada conexão, pra corrigir
-// instâncias legadas cujo webhook ainda aponta pro backend antigo do Z-PRO
-// (`appback.criate.online/uazapi-webhook/...`) — era exatamente isso que fazia
-// as mensagens de entrada dessas contas nunca chegarem no V2. Best-effort:
-// nunca lança (loga e devolve false), pra não derrubar quem chama.
+// (`${PUBLIC_APP_URL}/api/wpp-shim/inbound/:instanceId`). É idempotente e
+// chamado tanto na criação quanto a cada conexão para corrigir qualquer URL
+// divergente. Best-effort: nunca lança, para não derrubar quem chama.
 export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
-  const inboundUrl = `${APP_URL}/api/wpp-shim/inbound/${instanceId}`;
+  const inboundUrl = `${PUBLIC_APP_URL}/api/wpp-shim/inbound/${instanceId}`;
   try {
     const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
       method: 'POST',
@@ -59,7 +54,7 @@ async function createUazapiInstance(channelName: string): Promise<{ instanceId: 
     throw new Error(`UAZAPI não retornou token/id da instância (status ${res.status}): ${JSON.stringify(json)?.slice(0, 300)}`);
   }
 
-  // Webhook direto pro nosso backend — NUNCA pro Z-PRO.
+  // Webhook direto para o backend canônico da V2.
   await setUazapiWebhook(instanceToken, instanceId);
 
   return { instanceId, instanceToken };

@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { sendUazapiText, resolveOutboundInstanceToken } from "../services/wppShim";
+import { sendUazapiText, resolveOutboundInstanceToken } from "../services/uazapi";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
 import { INTERNAL_PROXY_TOKEN } from "../config";
@@ -13,7 +13,7 @@ import {
 import { resolveNewLeadStage } from "../services/crmPipelines";
 import { enqueueUazapiWebhook } from "../services/inboundWebhookQueue";
 
-export const wppShimRouter = express.Router();
+export const conversationsRouter = express.Router();
 
 // Conversa não tem dono próprio (mensagem chega do cliente, não de um
 // membro) — a visibilidade é derivada casando o telefone com o lead
@@ -41,74 +41,14 @@ async function canAccessTicket(userId: string, brokerId: string, ticketId: strin
     || ticket.assigned_user_id === userId;
 }
 
-// ─── Disfarce do Z-PRO (Fase 2 do plano "Eliminar o Z-PRO") ────────────────
-// Aceita o MESMO formato que o N8N usa pra mandar mensagem pelo Z-PRO —
-// {body, number, externalKey, isClosed} + header "Authorization: Token X".
-// Repontar imf_brokers.zpro_api_url pra esta rota migra o ENVIO de um
-// corretor sem exigir nenhuma mudança no N8N.
-// ⚠️ O cron de follow-up (server/services/followup.ts) NÃO usa mais esta
-// rota — desde 2026-07-13 manda direto via sendUazapiText (nativo). Só o N8N
-// ainda chama esta rota hoje; se isso também for migrado, ela vira candidata
-// a remoção.
-wppShimRouter.post("/api/wpp-shim/external/:brokerKey", async (req, res) => {
-  try {
-    const auth = (req.headers["authorization"] || "").replace("Token ", "").trim();
-    const { body: message, number } = req.body || {};
-    if (!message || !number) {
-      return res.status(400).json({ error: "body e number são obrigatórios." });
-    }
-
-    const { data: broker } = await supabase
-      .from("imf_brokers")
-      .select("id, zpro_api_token, uazapi_instance_token")
-      .eq("zpro_api_key", req.params.brokerKey)
-      .maybeSingle();
-
-    if (!broker || !auth || auth !== broker.zpro_api_token) {
-      return res.status(401).json({ error: "Token inválido." });
-    }
-    if (!broker.uazapi_instance_token) {
-      return res.status(503).json({ error: "Instância UAZAPI não configurada para este corretor ainda." });
-    }
-
-    // ZWSP (zero-width space) marcava msg de sistema pro N8N distinguir de
-    // resposta manual do corretor — aqui já sabemos a origem pelo endpoint
-    // chamado, então só removemos o marcador do texto exibido/persistido.
-    const cleanText = message.replace(/^​/, "");
-
-    const sent = await sendUazapiText(broker.uazapi_instance_token, number, cleanText);
-
-    if (!sent.ok) {
-      console.warn(`[WppShim] envio falhou pra broker ${broker.id}: status=${sent.status}`);
-      return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
-    }
-
-    await recordConversationMessage({
-      brokerId: broker.id,
-      customerPhone: normalizePhoneBR(number),
-      direction: "out",
-      senderType: "ai",
-      body: cleanText,
-      initialStatus: "open",
-    });
-
-    res.json({ ok: true });
-  } catch (err: any) {
-    console.error("[WppShim] erro em /external:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // [N8N] Resposta da IA de atendimento automático — envia via UAZAPI nativo
 // (resolvendo a instância certa, inclusive WhatsApp por membro via
 // resolveOutboundInstanceToken) e grava em imf_conversation_messages pra
-// aparecer no Conversas do app. Substitui, pro fluxo nativo, o que
-// /api/wpp-shim/external/:brokerKey fazia pro Z-PRO (enviar + persistir) —
-// aquela rota exige zpro_api_key, que corretores provisionados nativamente
-// nunca têm. Mesmo padrão de auth de /api/followup/inbound.
+// aparecer no Conversas do app. Usa o mesmo padrão de autenticação interna
+// de /api/followup/inbound e não depende de credenciais de outro sistema.
 // Auth: Bearer INTERNAL_PROXY_TOKEN.
 // Body: { broker_id, customer_phone, text, ticket_id? }.
-wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
+conversationsRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
   const auth = (req.headers["authorization"] || "").replace("Bearer ", "").trim();
   if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
     return res.status(401).json({ error: "Token inválido." });
@@ -144,7 +84,7 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
     const sent = await sendUazapiText(instanceToken, customerPhone, text);
 
     if (!sent.ok) {
-      console.warn(`[WppShim] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
+      console.warn(`[WhatsApp] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
       return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
     }
 
@@ -160,7 +100,7 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err: any) {
-    console.error("[WppShim] erro em /ai-reply:", err.message);
+    console.error("[WhatsApp] erro em /ai-reply:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -169,7 +109,7 @@ wppShimRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 // A rota preserva o payload bruto numa inbox duravel antes do ACK. O parsing,
 // a persistencia da conversa e o repasse ao n8n acontecem nos workers de
 // inboundWebhookQueue.ts, com deduplicacao, lease, retry e DLQ.
-wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
+conversationsRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
   try {
     const result = await enqueueUazapiWebhook(req.params.instanceId, req.body);
 
@@ -179,13 +119,13 @@ wppShimRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
 
   } catch (err: any) {
     // Sem persistencia nao ha ACK: 503 pede que a UAZAPI tente novamente.
-    console.error("[WppShim] falha ao persistir webhook na inbox:", err.message);
+    console.error("[WhatsApp] falha ao persistir webhook na inbox:", err.message);
     res.status(503).json({ error: "Webhook temporariamente indisponivel." });
   }
 });
 
 // ─── Conversas (leitura) — Fase 4 ───────────────────────────────────────────
-wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
+conversationsRouter.get("/api/conversas", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -273,7 +213,7 @@ wppShimRouter.get("/api/conversas", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.get("/api/conversas/:ticketId/messages", requireUser, async (req, res) => {
+conversationsRouter.get("/api/conversas/:ticketId/messages", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -316,7 +256,7 @@ wppShimRouter.get("/api/conversas/:ticketId/messages", requireUser, async (req, 
 // Corretor responde direto pela tela nova. Isso É o handover humano — não
 // precisa mais do truque do ZWSP pra adivinhar quem mandou, porque o
 // ImobiFlow sabe com certeza: quem chama esta rota é o corretor autenticado.
-wppShimRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -365,7 +305,7 @@ wppShimRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, re
 });
 
 // Liga/desliga a IA manualmente pra uma conversa (independe de ter respondido ou não).
-wppShimRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, async (req, res) => {
+conversationsRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -396,8 +336,8 @@ wppShimRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, async (re
   }
 });
 
-// Marca conversa como encerrada/reaberta — substitui a checagem "ticket aberto" do Z-PRO.
-wppShimRouter.patch("/api/conversas/:ticketId/status", requireUser, async (req, res) => {
+// Marca conversa como encerrada ou reaberta.
+conversationsRouter.patch("/api/conversas/:ticketId/status", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -465,10 +405,10 @@ wppShimRouter.patch("/api/conversas/:ticketId/status", requireUser, async (req, 
 });
 
 // Atribui (ou remove, com user_id: null) o atendimento a um membro específico —
-// inspirado no "userId" do SetTicketInfo do Z-PRO. Dá acesso à conversa mesmo
+// Atribui a conversa a um usuário da equipe. Dá acesso à conversa mesmo
 // sem lead casando (ver canAccessTicket), então só o dono ou quem já
 // acessa a conversa pode atribuir — evita um membro "roubar" ticket alheio às cegas.
-wppShimRouter.patch("/api/conversas/:ticketId/assign", requireUser, async (req, res) => {
+conversationsRouter.patch("/api/conversas/:ticketId/assign", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -508,8 +448,8 @@ wppShimRouter.patch("/api/conversas/:ticketId/assign", requireUser, async (req, 
   }
 });
 
-// Move a conversa pra uma fila (ou tira, com queue_id: null) — inspirado no queueId do Z-PRO.
-wppShimRouter.patch("/api/conversas/:ticketId/queue", requireUser, async (req, res) => {
+// Move a conversa para uma fila, ou remove com queue_id: null.
+conversationsRouter.patch("/api/conversas/:ticketId/queue", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -548,7 +488,7 @@ wppShimRouter.patch("/api/conversas/:ticketId/queue", requireUser, async (req, r
 // exclusão de verdade de UM ciclo de atendimento, não é o mesmo que encerrar
 // em /status. Se for o ticket ativo (ponte em followup_conversations), a
 // ponte some junto; a próxima mensagem do cliente cria um ciclo novo normalmente.
-wppShimRouter.delete("/api/conversas/:ticketId", requireUser, async (req, res) => {
+conversationsRouter.delete("/api/conversas/:ticketId", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -575,7 +515,7 @@ wppShimRouter.delete("/api/conversas/:ticketId", requireUser, async (req, res) =
 // (property_id null, escopado direto por broker_id). Idempotente: se já
 // existir um lead com esse telefone nesta conta (desse fluxo ou do
 // tradicional preso a um imóvel), devolve o existente em vez de duplicar.
-wppShimRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -621,7 +561,7 @@ wppShimRouter.post("/api/conversas/:ticketId/create-lead", requireUser, async (r
 });
 
 // ─── Filas ──────────────────────────────────────────────────────────────────
-wppShimRouter.get("/api/conversas/queues", requireUser, async (req, res) => {
+conversationsRouter.get("/api/conversas/queues", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -634,7 +574,7 @@ wppShimRouter.get("/api/conversas/queues", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.post("/api/conversas/queues", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/queues", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -650,7 +590,7 @@ wppShimRouter.post("/api/conversas/queues", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.delete("/api/conversas/queues/:id", requireUser, async (req, res) => {
+conversationsRouter.delete("/api/conversas/queues/:id", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -664,7 +604,7 @@ wppShimRouter.delete("/api/conversas/queues/:id", requireUser, async (req, res) 
 });
 
 // ─── Tags ───────────────────────────────────────────────────────────────────
-wppShimRouter.get("/api/conversas/tags", requireUser, async (req, res) => {
+conversationsRouter.get("/api/conversas/tags", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -677,7 +617,7 @@ wppShimRouter.get("/api/conversas/tags", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.post("/api/conversas/tags", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/tags", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -697,7 +637,7 @@ wppShimRouter.post("/api/conversas/tags", requireUser, async (req, res) => {
   }
 });
 
-wppShimRouter.patch("/api/conversas/tags/:id", requireUser, async (req, res) => {
+conversationsRouter.patch("/api/conversas/tags/:id", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -733,7 +673,7 @@ wppShimRouter.patch("/api/conversas/tags/:id", requireUser, async (req, res) => 
 
 // Apaga a tag pra conta inteira — os vínculos em imf_conversation_tag_links
 // somem em cascata (FK ON DELETE CASCADE), não precisa limpar manualmente.
-wppShimRouter.delete("/api/conversas/tags/:id", requireUser, async (req, res) => {
+conversationsRouter.delete("/api/conversas/tags/:id", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -754,7 +694,7 @@ wppShimRouter.delete("/api/conversas/tags/:id", requireUser, async (req, res) =>
   }
 });
 
-wppShimRouter.post("/api/conversas/:ticketId/tags", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/:ticketId/tags", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -783,7 +723,7 @@ wppShimRouter.post("/api/conversas/:ticketId/tags", requireUser, async (req, res
   }
 });
 
-wppShimRouter.delete("/api/conversas/:ticketId/tags/:tagId", requireUser, async (req, res) => {
+conversationsRouter.delete("/api/conversas/:ticketId/tags/:tagId", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -804,7 +744,7 @@ wppShimRouter.delete("/api/conversas/:ticketId/tags/:tagId", requireUser, async 
 });
 
 // ─── Notas internas ─────────────────────────────────────────────────────────
-wppShimRouter.get("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
+conversationsRouter.get("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -824,7 +764,7 @@ wppShimRouter.get("/api/conversas/:ticketId/notes", requireUser, async (req, res
   }
 });
 
-wppShimRouter.post("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/:ticketId/notes", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
@@ -848,10 +788,10 @@ wppShimRouter.post("/api/conversas/:ticketId/notes", requireUser, async (req, re
 });
 
 // Abre uma conversa nova por iniciativa do corretor (equivalente ao CreateTicket
-// do Z-PRO) — hoje só existia responder o que já chegou. IA começa desligada:
+// de atendimento) — antes só existia responder o que já chegou. IA começa desligada:
 // quem abriu manualmente está assumindo o atendimento, não faz sentido a IA
 // entrar no meio de uma conversa que um humano decidiu começar.
-wppShimRouter.post("/api/conversas/create", requireUser, async (req, res) => {
+conversationsRouter.post("/api/conversas/create", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);

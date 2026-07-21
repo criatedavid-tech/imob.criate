@@ -26,7 +26,7 @@ adminRouter.get("/api/admin/brokers", async (req, res) => {
     }
     const { data, error, count } = await supabase
       .from('imf_brokers')
-      .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, zpro_tenant_id', { count: 'exact' })
+      .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, uazapi_instance_id', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     if (error) throw error;
@@ -134,7 +134,7 @@ adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
 // Disparo manual de provisionamento (admin) — mesma rota do usuário normal
 // pós-pagamento:
 //   1. Garante status=ativo + valid_until (preserva 2099 se já estiver configurado)
-//   2. Chama provisionUazapiInstanceNative (cria a instância UAZAPI direto, sem Z-PRO)
+//   2. Chama provisionUazapiInstanceNative (cria a instância UAZAPI direta)
 adminRouter.post("/api/admin/brokers/:id/provision", async (req, res) => {
   if (!await requireAdmin(req, res)) return;
   try {

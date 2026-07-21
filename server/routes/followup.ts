@@ -91,7 +91,7 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
     const activityAt = new Date().toISOString();
 
     const { data: conv } = await supabase.from('followup_conversations')
-      .select('ai_active, human_takeover_at, zpro_ticket_id')
+      .select('ai_active, human_takeover_at, source_ticket_id')
       .eq('broker_id', broker.id).eq('customer_phone', customerPhone).maybeSingle();
 
     // Reativação automática opcional após handover (config.reactivate_after_minutes; null = nunca)
@@ -112,8 +112,8 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
     // Regra: máximo 3 follows por ticket. O índice (follow_message_index) é o
     // contador absoluto e NÃO reseta quando o cliente responde — só reseta em
     // novo ticket. Assim: Follow 1 → 2 → 3 → para, independente de respostas.
-    const isNewTicket = incomingTicketId && conv?.zpro_ticket_id &&
-                        incomingTicketId !== conv.zpro_ticket_id;
+    const isNewTicket = incomingTicketId && conv?.source_ticket_id &&
+                        incomingTicketId !== conv.source_ticket_id;
 
     // O identificador recebido pode ser o ID legado do provedor. O ticket
     // nativo do ImobiFlow sempre usa UUID próprio: ele permanece enquanto o
@@ -141,19 +141,19 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
       last_customer_message_at: activityAt,
       follow_sent: false, // re-arma o timer (permite próximo follow disparar)
       ai_active: aiActive,
-      ...(incomingTicketId ? { zpro_ticket_id: incomingTicketId } : {}),
+      ...(incomingTicketId ? { source_ticket_id: incomingTicketId } : {}),
       ...(isNewTicket ? { follow_message_index: 0, human_takeover_at: null } : {}),
       updated_at: activityAt
     }, { onConflict: 'broker_id,customer_phone' });
 
     // Contabiliza atendimento: cada ticket_id único = 1 atendimento no ciclo de billing.
-    // ON CONFLICT (broker_id, zpro_ticket_id) DO NOTHING garante idempotência sem try/catch.
+    // ON CONFLICT (broker_id, source_ticket_id) garante idempotência.
     if (incomingTicketId) {
       await supabase.from('imf_ticket_events').upsert({
         broker_id: broker.id,
-        zpro_ticket_id: incomingTicketId,
+        source_ticket_id: incomingTicketId,
         customer_phone: customerPhone,
-      }, { onConflict: 'broker_id,zpro_ticket_id', ignoreDuplicates: true });
+      }, { onConflict: 'broker_id,source_ticket_id', ignoreDuplicates: true });
     }
 
     res.json({ respond: aiActive });

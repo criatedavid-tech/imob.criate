@@ -1,6 +1,5 @@
--- Inspirado na Tickets API do Z-PRO (status/fila/atribuição/tags/notas), mas
--- implementado nativo no ImobiFlow, sem dependência do Z-PRO (Fase 5+ do plano
--- de eliminação). Amplia followup_conversations (o "ticket" do nosso sistema)
+-- Implementa status, fila, atribuição, tags e notas diretamente no ImobiFlow.
+-- Amplia followup_conversations (o "ticket" do nosso sistema)
 -- em vez de criar uma tabela paralela.
 
 -- status ganha o estado intermediário "pending" (aguardando alguém puxar o

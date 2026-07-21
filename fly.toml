@@ -23,7 +23,7 @@ kill_timeout = 30
 [env]
   NODE_ENV = "production"
   PUBLIC_APP_URL = "https://imobiflow-v2.fly.dev"
-  # APP_URL e demais segredos vão via `fly secrets set` (nunca aqui).
+  # Demais segredos vão via `fly secrets set` (nunca aqui).
 
 [processes]
   web = "node --import tsx --max-old-space-size=1024 server.ts"

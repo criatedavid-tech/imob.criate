@@ -1,6 +1,6 @@
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
-import { resolveOutboundInstanceToken, sendUazapiText } from "./wppShim";
+import { resolveOutboundInstanceToken, sendUazapiText } from "./uazapi";
 import { recordConversationMessage } from "./conversationTickets";
 
 // ─────────────────────────────────────────────────────────────────────────

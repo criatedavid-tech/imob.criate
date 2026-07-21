@@ -60,17 +60,24 @@
   `worker` faz polling da inbox/outbox e drena o ciclo ativo no desligamento.
   Isso isola CPU/memória de texto, áudio e imagem e permite escalar os workers
   sem aumentar a API. O n8n não foi alterado nesta etapa.
-- **URL pública versionada prevalece sobre secret legado (2026-07-21).** A V2
-  usa `PUBLIC_APP_URL` antes de `APP_URL`. Isso impede o self-heal da UAZAPI de
-  reapontar instâncias para `appback.criate.online` quando um secret antigo
-  ainda existir no Fly e mantém links/reset/landing pages no domínio V2.
+- **URL pública única e versionada (2026-07-21).** A V2 usa somente
+  `PUBLIC_APP_URL`, definida no `fly.toml`. Links, redirects e webhooks não
+  aceitam fallback para endereço externo armazenado em secret.
 - **`web` singleton enquanto houver scheduler legado (2026-07-21).** O Fly
   criou duas Machines web por alta disponibilidade no primeiro rollout, mas
   isso também duplicaria os jobs periódicos ainda presentes em `server.ts`.
   O deploy usa `--ha=false` e `flyctl scale count web=1`; redundância web só
   volta depois de mover/auditar esses jobs. Worker continua escalável.
 
-- **UAZAPI direta.** Z-PRO está removido da V2; a reconexão reafirma o webhook.
+- **UAZAPI direta.** Não existe intermediário de mensagens; a reconexão
+  reafirma o webhook canônico da V2.
+- **Sem rota externa de compatibilidade.** Respostas automáticas usam
+  `/api/wpp-shim/ai-reply` com `INTERNAL_PROXY_TOKEN`; envios manuais e jobs
+  resolvem a instância UAZAPI diretamente. Endpoints órfãos e autenticação por
+  credencial de terceiro foram removidos.
+- **Política de privacidade atualizada.** A lista de operadores menciona apenas
+  os fornecedores efetivamente usados. `TERMS_VERSION=2026-07-21` exige novo
+  aceite dos usuários depois do deploy.
 - **Mídia convertida no backend.** PTT e imagem privados viram texto antes do
   N8N; base64 não é persistido; falhas geram fallback e mensagens duplicadas são
   rejeitadas por `provider_message_id`.
@@ -108,3 +115,10 @@
   banco (reaproveitando a tabela em vez de criar uma nova — os dois "tipos"
   usam os mesmos campos); a Agenda (calendário) e tudo que conta "visitas"
   passaram a filtrar `event_type='visita'` explicitamente.
+- **Alerta de lembrete: badge agora, WhatsApp adiado (2026-07-21).** Usuário
+  pediu os dois. O badge no sino (`ManualRail.tsx`) entrou porque só toca
+  arquivo isolado do frontend. O envio por WhatsApp pro próprio corretor foi
+  adiado de propósito: dependeria de `agentScheduledFollowups.ts` e do
+  transporte UAZAPI, ambos em refatoração ativa e não commitada do Codex no
+  mesmo momento (limpeza que consolida o transporte em
+  `uazapi.ts`/`conversations.ts`). Retomar depois que essa limpeza publicar.

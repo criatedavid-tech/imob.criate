@@ -1,20 +1,15 @@
 import { supabase } from "../supabase";
-import { resolveOutboundInstanceToken, sendUazapiText } from "./wppShim";
+import { resolveOutboundInstanceToken, sendUazapiText } from "./uazapi";
 import { ensureConversationTicket, recordConversationMessage } from "./conversationTickets";
 
 // ─── Motor do Follow-Up (tick 60s) ──────────────────────────────────────────
-// claim_due_followups() faz o claim ATÔMICO (seleciona+marca+avança numa só
+// claim_due_followups_v2() faz o claim ATÔMICO (seleciona+marca+avança numa só
 // instrução) → multi-máquina safe (Fly roda 2 VMs). Envia via UAZAPI nativo
 // (mesmo caminho de Conversas/agente — resolveOutboundInstanceToken decide
 // entre instância própria de um membro ou compartilhada da conta). Em falha
 // de envio, reverte o claim p/ retry no próximo tick (nada se perde).
 //
-// Corrigido 2026-07-13: antes enviava no formato Z-PRO (row.zpro_api_url/
-// zpro_api_token), campos que o fluxo de provisionamento atual (UAZAPI
-// nativo) nunca preenche — o cron falhava silenciosamente na primeira linha
-// pra qualquer corretor provisionado hoje, sempre revertendo o claim.
-
-// Substitui a antiga checagem de ticket aberto no Z-PRO: se a última
+// Se a última
 // mensagem da conversa foi o corretor respondendo manualmente (não a IA, não
 // o cliente), ele já assumiu o atendimento — não manda follow-up por cima.
 async function wasRepliedManually(brokerId: string, customerPhone: string): Promise<boolean> {
@@ -31,7 +26,7 @@ async function wasRepliedManually(brokerId: string, customerPhone: string): Prom
 
 // Handover humano: pausa a IA e os follow-ups pra uma conversa. Usado tanto
 // pelo endpoint que o N8N chama (POST /api/followup/broker-reply, quando
-// detecta o corretor digitando manual no Z-PRO) quanto pela resposta manual
+// detecta o corretor digitando manual) quanto pela resposta manual
 // direto na tela Conversas — mesma ação, mesmo efeito, um só lugar de verdade.
 export async function pauseAiForHumanTakeover(brokerId: string, customerPhone: string) {
   const updatedAt = new Date().toISOString();
@@ -63,7 +58,7 @@ export async function pauseAiForHumanTakeover(brokerId: string, customerPhone: s
 
 export async function runFollowupTick() {
   try {
-    const { data: due, error } = await supabase.rpc('claim_due_followups');
+    const { data: due, error } = await supabase.rpc('claim_due_followups_v2');
     if (error) { console.error('[Follow-up] claim erro:', error.message); return; }
     if (!due?.length) return;
     for (const row of due as any[]) {
@@ -82,7 +77,7 @@ export async function runFollowupTick() {
             instanceToken,
             row.customer_phone,
             // Prefixo ​ (zero-width space, invisível): marca mensagem do SISTEMA
-            // — mesmo padrão de quando o envio ainda ia pelo Z-PRO.
+            // — marcador invisível reconhecido pelo fluxo de automação.
             String.fromCharCode(0x200B) + row.message
           )
         : null;

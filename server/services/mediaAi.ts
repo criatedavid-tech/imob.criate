@@ -1,4 +1,4 @@
-import { APP_URL, OPENROUTER_API_KEY } from "../config";
+import { OPENROUTER_API_KEY, PUBLIC_APP_URL } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 
 export const MAX_AUDIO_DATA_CHARS = 9 * 1024 * 1024;
@@ -56,7 +56,7 @@ async function callOpenRouter(content: unknown[]): Promise<string> {
     headers: {
       Authorization: `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": APP_URL,
+      "HTTP-Referer": PUBLIC_APP_URL,
       "X-Title": "ImobiFlow",
     },
     body: JSON.stringify({

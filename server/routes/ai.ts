@@ -4,6 +4,7 @@ import { fetchWithTimeout } from "../lib/http";
 import { requireUser } from "../middleware/auth";
 import { aiTextLimiter, aiTranscriptionLimiter } from "../middleware/rateLimits";
 import { validateBody } from "../middleware/validate";
+import { PUBLIC_APP_URL } from "../config";
 import {
   createOpenRouterError,
   extractValidBase64Audio,
@@ -46,7 +47,7 @@ async function enhanceWithOpenRouter(apiKey: string, text: string): Promise<stri
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://imobiflow.fly.dev",
+      "HTTP-Referer": PUBLIC_APP_URL,
       "X-Title": "ImobiFlow",
     },
     body: JSON.stringify({

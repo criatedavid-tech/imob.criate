@@ -201,7 +201,7 @@ billingRouter.get("/api/subscription", requireUser, async (req, res) => {
     if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
     let { data: broker } = await supabase.from('imf_brokers')
-      .select('status, plan, valid_until, grace_until, zpro_tenant_id, zpro_channel_id, zpro_qr_code, is_admin')
+      .select('status, plan, valid_until, grace_until, is_admin')
       .eq('id', brokerId).single();
 
     // Admin tem acesso vitalício — nunca bloquear por assinatura
@@ -235,7 +235,7 @@ billingRouter.get("/api/tickets/recent", requireUser, async (req, res) => {
     if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
     const { data, error } = await supabase
       .from("imf_ticket_events")
-      .select("id, zpro_ticket_id, created_at")
+      .select("id, source_ticket_id, created_at")
       .eq("broker_id", brokerId)
       .order("created_at", { ascending: false })
       .limit(5);
@@ -402,7 +402,7 @@ billingRouter.post("/api/webhooks/asaas", webhookLimiter, async (req, res) => {
     event.event === 'SUBSCRIPTION_INACTIVATED' ||
     event.event === 'SUBSCRIPTION_CANCELED'
   ) {
-    // Assinatura cancelada → desativa o corretor e marca o tenant Z-PRO como desativado.
+    // Assinatura cancelada → desativa o corretor e interrompe o provisionamento.
     const sub = event.subscription || event.payment;
     const subId = sub?.id || sub?.subscription;
     if (subId) {

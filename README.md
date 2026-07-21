@@ -17,7 +17,7 @@ Plataforma B2B SaaS para o mercado imobiliário brasileiro — corretor autônom
 | Storage | Supabase Storage (fotos de imóveis) |
 | IA — agente/texto | Google Gemini (`gemini-2.0-flash-lite`), com fallback automático para OpenRouter (`gpt-4o-mini`) quando a cota falha |
 | IA — voz | Google Gemini (`gemini-2.0-flash`, multimodal) transcreve áudio gravado no navegador |
-| WhatsApp | UAZAPI nativo — provisionamento direto por corretor/membro, sem intermediário (Z-PRO foi eliminado do v2) |
+| WhatsApp | UAZAPI nativa — provisionamento direto por corretor/membro, sem intermediário |
 | Automação do agente do WhatsApp | N8N (`212n8n.criate.online`) — conversa com o cliente final, separado do Assistente interno do app |
 | Pagamentos | Asaas (checkout + assinatura recorrente + cobrança de excedente) |
 | Deploy | Fly.io — app `imobiflow-v2`, região `gru` (São Paulo), deploy manual (`fly deploy --remote-only`) |
@@ -63,17 +63,17 @@ imob.criate/
 ├── server/
 │   ├── config.ts                   # Todas as env vars
 │   ├── supabase.ts                 # Cliente Supabase (service_role)
-│   ├── lib/                        # crypto, http (fetchWithTimeout), zproAuth (legado v1)
+│   ├── lib/                        # crypto, http e infraestrutura compartilhada
 │   ├── middleware/                 # auth (requireUser/getBrokerId/isBrokerOwner), validate (zod)
 │   ├── services/
 │   │   ├── agent.ts                # O "cérebro" do Assistente IA — snapshot da conta + Gemini/OpenRouter
-│   │   ├── wppShim.ts              # Envio/recebimento WhatsApp via UAZAPI, roteamento por instância
+│   │   ├── uazapi.ts                # Envio/recebimento WhatsApp e roteamento por instância
 │   │   ├── billing.ts / rentalBilling.ts
 │   │   ├── followup.ts             # Reengajamento automático de leads silenciosos
 │   │   └── provisioning.ts         # Provisiona instância UAZAPI no signup/convite
 │   └── routes/                     # Um arquivo por domínio: auth, brokers, properties, agent, ai,
 │                                    # agenda, leads, contacts, equipe, locacao, lancamentos,
-│                                    # financeiro, relatorios, vitrine, wppShim, admin, billing...
+│                                    # financeiro, relatorios, vitrine, conversations, admin, billing...
 ├── src/
 │   ├── experience/                 # A UI real (v2): CommandBar, ExperienceShell, *Area.tsx por superfície
 │   ├── components/                 # PropertyForm, MagicWandTextarea (formulário manual + IA de texto)

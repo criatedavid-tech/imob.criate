@@ -1,16 +1,43 @@
 # Estado do projeto
 
-## Correção publicada: webhook UAZAPI revertia para o legado (2026-07-21)
+## Badge de lembrete vencido no sino; alerta por WhatsApp adiado (2026-07-21)
 
-- O teste "teste worker" das 14:34 não chegou à inbox. Leitura confirmou a
-  instância conectada, mas webhook novamente em `appback.criate.online`.
-- Causa: `setUazapiWebhook` usa `APP_URL`, e produção ainda possui valor legado.
-- Correção: `PUBLIC_APP_URL` passa a prevalecer em `server/config.ts` e o
-  `fly.toml` fixa `https://imobiflow-v2.fly.dev`. Sem migration e sem alteração
-  no n8n. Publicada no commit `5ff6b00` pelo workflow `29853967632`; a instância
-  foi reapontada para a V2 e relida com webhook habilitado/evento `messages`.
-  Smoke HTTP retornou 200 e inbox/outbox ficaram sem itens pendentes,
-  processando ou mortos. Falta apenas uma nova mensagem real do usuário.
+- Usuário pediu duas formas de alertar sobre lembrete vencido: badge visual
+  no app e WhatsApp pro próprio corretor. Implementado só o badge por ora.
+- `ManualRail.tsx` ganhou `useDueReminderCount` (poll a cada 60s em
+  `GET /api/agenda/visits?event_type=lembrete`, já existente) e `RailIcon`
+  (badge vermelho sobre o sino quando há lembrete `pendente` com
+  `scheduled_at` no passado). Sem rota nova, sem migration. Falha de rede é
+  silenciosa — badge é cosmético, não pode travar a navegação.
+- Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
+  aprovados. Não deu pra confirmar visualmente no navegador (precisa de
+  sessão autenticada com lembrete real vencido, e a árvore está em meio à
+  limpeza de transporte do Codex abaixo — rodar o dev server agora testaria
+  contra código dela pela metade).
+- **Alerta por WhatsApp pro corretor: adiado de propósito.** Reaproveitaria
+  `agentScheduledFollowups.ts` e o número `imf_brokers.phone`, mas o transporte
+  WhatsApp estava em refatoração ativa. Retomar depois da publicação desta
+  limpeza, usando apenas `uazapi.ts` e `conversations.ts`.
+- Pendente: commit/push (aguardando o Codex publicar a limpeza de transporte
+  primeiro, mesma ordem já combinada com o usuário para o fix do CRM).
+
+## Limpeza total do transporte antigo em andamento (2026-07-21)
+
+- A origem pública agora é exclusivamente `PUBLIC_APP_URL`; o fallback antigo
+  foi removido do código e do `.env.example`.
+- Removidos endpoints órfãos de compatibilidade e campos antigos expostos por
+  broker/admin/assinatura.
+- O cliente do provedor foi renomeado para `server/services/uazapi.ts`; as
+  conversas ficam em `server/routes/conversations.ts`.
+- `source_ticket_id` substitui o identificador antigo em follow-up e billing.
+- Migration `20260721e` aplicada manualmente e verificada no schema em
+  21/07/2026: é aditiva, cria a RPC exclusiva da V2 e preserva
+  função/colunas compartilhadas com a V1. O n8n não foi alterado.
+- Guias obsoletos foram retirados da V2 e preservados localmente em
+  `work/legacy-archive` fora do repositório.
+- Secrets residuais de URL/admin foram removidos do Fly em 21/07/2026. O
+  rolling restart terminou com web/worker saudáveis, HTTP 200 e a leitura da
+  UAZAPI manteve o webhook habilitado em `imobiflow-v2.fly.dev`.
 
 ## Bug crítico encontrado: CRM/Pipelines fora do ar (2026-07-21)
 

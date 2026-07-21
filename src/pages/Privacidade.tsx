@@ -226,7 +226,7 @@ export default function Privacidade() {
                 <strong>Fly.io Inc.</strong> — hospedagem da aplicação (região GRU, São Paulo);
               </li>
               <li>
-                <strong>Z-PRO / UAZAPI</strong> — provisionamento de canal WhatsApp Business e entrega de mensagens;
+                <strong>UAZAPI</strong> — provisionamento de canal WhatsApp Business e entrega de mensagens;
               </li>
               <li>
                 <strong>OpenRouter Inc.</strong> — inferência de modelos de linguagem (recebe apenas o conteúdo das

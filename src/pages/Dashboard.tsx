@@ -627,7 +627,7 @@ export default function Dashboard() {
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-sm text-white truncate">Atendimento via IA</p>
-                            <p className="text-xs text-white/40 truncate">Ticket #{item.zpro_ticket_id}</p>
+                            <p className="text-xs text-white/40 truncate">Ticket #{item.source_ticket_id}</p>
                           </div>
                         </div>
                         <span className="text-xs text-white/40 whitespace-nowrap ml-3">{formatTimeAgo(item.created_at)}</span>
