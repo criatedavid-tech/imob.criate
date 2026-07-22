@@ -223,7 +223,11 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   add-on por slot (`MEMBER_WHATSAPP_SLOT_PRICE`, valor ainda fictício) — não
   se aplica a corretor (não tem Equipe). Selecionável já no checkout
   (`PaymentPending.tsx`) ou depois em Config.
-- **Divulgação:** links e vitrines públicas.
+- **Divulgação:** links e vitrines públicas + **prévia ao vivo da vitrine**
+  (`iframe` da própria página `/vitrine/:brokerId`, same-origin, permitido pela
+  CSP `frameAncestors 'self'`) — o corretor vê exatamente o que o cliente vê ao
+  abrir o link. O card antigo "Ainda não disponível" (portais/campanha em massa)
+  foi removido em favor da prévia.
 - **Relatórios:** métricas determinísticas de 3, 6 ou 12 meses.
 - **Config:** perfil, WhatsApp, plano, uso/excedentes, termos, chave Asaas para
   imobiliária/incorporadora e saída.

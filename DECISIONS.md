@@ -39,6 +39,11 @@
 
 ## Produto e experiência
 
+- **Divulgação mostra a vitrine real, não promessa (2026-07-22).** O card "Ainda
+  não disponível" (portais + campanha em massa) saiu; no lugar, uma prévia ao
+  vivo via `iframe` da própria `/vitrine/:brokerId` (same-origin, CSP
+  `frameAncestors 'self'`). Regra: preferir mostrar o que já funciona a listar o
+  que ainda não existe. Portais/campanha continuam no roadmap, mas fora da tela.
 - **CRM configurável.** As cinco colunas fixas foram substituídas por pipelines
   por broker; membros não administram a estrutura.
 - **DnD mobile.** Kanban usa `@dnd-kit/core`, não HTML5 DnD nativo.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Megaphone, Copy, Check, ExternalLink, Home, Building2 } from 'lucide-react';
+import { Loader2, Megaphone, Copy, Check, ExternalLink, Monitor, Building2 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -95,6 +95,47 @@ export function DivulgacaoArea() {
         </div>
       </GlassCard>
 
+      {/* Prévia ao vivo da vitrine — iframe da própria página pública (/vitrine/:id).
+          Same-origin: CSP frameAncestors 'self' + X-Frame-Options SAMEORIGIN permitem.
+          É a página REAL, então o que o corretor vê aqui é idêntico ao que o cliente vê. */}
+      <GlassCard className="!p-0 overflow-hidden mb-5">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-[var(--hairline)]">
+          <Monitor className="w-4 h-4 text-[var(--text-low)]" />
+          <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Prévia da vitrine</h3>
+          <span className="text-[12px] text-[var(--text-low)] hidden sm:inline">— é isso que seu cliente vê ao abrir o link</span>
+        </div>
+
+        {availableCount === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <p className="text-[14px] text-[var(--text-mid)]">Nenhum imóvel disponível pra mostrar ainda.</p>
+            <p className="text-[13px] text-[var(--text-low)] mt-1">Cadastre imóveis na Carteira e eles aparecem aqui na hora.</p>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-1.5 px-4 py-2.5 bg-[var(--control-fill)] border-b border-[var(--hairline)]">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--danger)' }} />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--warning)' }} />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
+              <div className="flex-1 min-w-0 mx-2 truncate text-center text-[11px] font-mono text-[var(--text-low)] rounded-md px-3 py-1
+                bg-[var(--bg-base)] border border-[var(--hairline)]">
+                {vitrineUrl}
+              </div>
+              <a href={vitrineUrl} target="_blank" rel="noreferrer"
+                className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors">
+                <ExternalLink className="w-3.5 h-3.5" /> Abrir
+              </a>
+            </div>
+            <iframe
+              src={vitrineUrl}
+              title="Prévia da vitrine pública"
+              loading="lazy"
+              className="w-full block bg-[var(--bg-base)]"
+              style={{ height: 540, border: 0 }}
+            />
+          </div>
+        )}
+      </GlassCard>
+
       {developmentsCount !== null && developmentsCount > 0 && (
         <GlassCard className="!p-6 mb-5">
           <div className="flex items-start gap-4">
@@ -130,18 +171,6 @@ export function DivulgacaoArea() {
           </div>
         </GlassCard>
       )}
-
-      <GlassCard className="!p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Home className="w-4 h-4 text-[var(--text-low)]" />
-          <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Ainda não disponível</h3>
-        </div>
-        <p className="text-[13px] text-[var(--text-low)] leading-relaxed">
-          Integração com portais (OLX, ZAP, Viva Real) e disparo de campanha em massa por WhatsApp entram numa próxima
-          rodada — portais exigem integração com cada um deles, e a campanha depende do envio direto por WhatsApp, que
-          está sendo resolvido junto com a migração de mensageria.
-        </p>
-      </GlassCard>
     </div>
   );
 }

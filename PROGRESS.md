@@ -1,5 +1,21 @@
 # Estado do projeto
 
+## Divulgação: prévia ao vivo da vitrine (2026-07-22)
+
+- Pedido do usuário: o card "Ainda não disponível" (portais OLX/ZAP/Viva Real +
+  campanha em massa) estava vago demais; tirar e no lugar mostrar uma **prévia
+  da landing page com os imóveis disponíveis**.
+- `src/experience/DivulgacaoArea.tsx`: removido o card de roadmap; adicionada uma
+  prévia ao vivo — `iframe` da própria página pública `/vitrine/:brokerId`,
+  enquadrada como janela de navegador (barra com URL + botão Abrir). Como é a
+  página REAL, o que o corretor vê é idêntico ao que o cliente vê. Same-origin,
+  liberado pela CSP `frameAncestors 'self'` + `X-Frame-Options: SAMEORIGIN`
+  (helmet, `server.ts`). Estado vazio quando não há imóvel disponível.
+- Checklist: tsc limpo, knip sem apontamentos, build ok, `git diff --check` limpo.
+- Verificação visual em browser NÃO rodada localmente (dev server local usa
+  Supabase de produção — risco de jobs de fundo dispararem WhatsApp real); QA
+  visual fica pra produção após deploy / tela do usuário.
+
 ## Sistema de cores "Cristal" + tema Dia/Noite (2026-07-22)
 
 - Pedido do usuário: trocar SÓ as cores do app pra paleta Cristal (grafite frio
