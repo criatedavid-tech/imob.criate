@@ -122,60 +122,60 @@ export function ConfigArea() {
   }
 
   if (loading) {
-    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
+    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
   }
   if (error && !me) {
     return (
       <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Config</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Config</h2>
         <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
       </div>
     );
   }
 
-  const st = STATUS_LABEL[(me?.status || '').toLowerCase()] || { label: me?.status || '—', cls: 'bg-white/[0.06] text-white/50 border-white/10' };
-  const fieldCls = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+  const st = STATUS_LABEL[(me?.status || '').toLowerCase()] || { label: me?.status || '—', cls: 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]' };
+  const fieldCls = "w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors";
 
   return (
     <div className="max-w-3xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-6">Config</h2>
+      <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Config</h2>
 
       {/* Perfil */}
       <GlassCard className="!p-6 mb-5">
-        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase mb-4">Seu perfil</h3>
+        <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase mb-4">Seu perfil</h3>
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><User size={11} /> Nome</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><User size={11} /> Nome</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={fieldCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Phone size={11} /> Telefone</label>
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Phone size={11} /> Telefone</label>
               <div className="flex items-stretch gap-2">
-                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">+55</span>
                 <input value={phone} onChange={(e) => setPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" className={`${fieldCls} flex-1 min-w-0`} />
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><MapPin size={11} /> Cidade / endereço</label>
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><MapPin size={11} /> Cidade / endereço</label>
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Goiânia, GO" className={fieldCls} />
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Smartphone size={11} /> Número pessoal para alertas</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><Smartphone size={11} /> Número pessoal para alertas</label>
             <div className="flex items-stretch gap-2">
-              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">+55</span>
               <input value={notifPhone} onChange={(e) => setNotifPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" className={`${fieldCls} flex-1 min-w-0`} />
             </div>
-            <p className="text-[11px] text-white/30 mt-1.5">
-              Recebe aviso no WhatsApp quando a IA marca uma visita. Use um número <strong className="text-white/45">diferente</strong> do WhatsApp comercial conectado acima — senão o aviso não chega. Deixe vazio para receber só dentro do app.
+            <p className="text-[11px] text-[var(--text-low)] mt-1.5">
+              Recebe aviso no WhatsApp quando a IA marca uma visita. Use um número <strong className="text-[var(--text-low)]">diferente</strong> do WhatsApp comercial conectado acima — senão o aviso não chega. Deixe vazio para receber só dentro do app.
             </p>
           </div>
-          {me?.email && <p className="text-[12px] text-white/30">E-mail de acesso: {me.email}</p>}
+          {me?.email && <p className="text-[12px] text-[var(--text-low)]">E-mail de acesso: {me.email}</p>}
         </div>
         <div className="flex justify-end mt-5">
           <button onClick={saveProfile} disabled={savingProfile}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
             {savingProfile ? <Loader2 size={15} className="animate-spin" /> : profileSaved ? <Check size={15} /> : null}
             {profileSaved ? 'Salvo' : 'Salvar perfil'}
           </button>
@@ -191,14 +191,14 @@ export function ConfigArea() {
       {/* Plano */}
       <GlassCard className="!p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
-          <CreditCard className="w-4 h-4 text-white/40" />
-          <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Plano</h3>
+          <CreditCard className="w-4 h-4 text-[var(--text-low)]" />
+          <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Plano</h3>
         </div>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-[15px] font-bold text-white capitalize">{me?.plan || 'Assinatura'}</p>
+            <p className="text-[15px] font-bold text-[var(--text-hi)] capitalize">{me?.plan || 'Assinatura'}</p>
             {me?.valid_until && (
-              <p className="text-[12px] text-white/40 mt-0.5">
+              <p className="text-[12px] text-[var(--text-low)] mt-0.5">
                 Válido até {new Date(me.valid_until).toLocaleDateString('pt-BR')}
               </p>
             )}
@@ -207,8 +207,8 @@ export function ConfigArea() {
         </div>
 
         {usage && (
-          <div className="mt-5 pt-5 border-t border-white/10">
-            <p className="text-[12px] text-white/50">
+          <div className="mt-5 pt-5 border-t border-[var(--hairline)]">
+            <p className="text-[12px] text-[var(--text-low)]">
               {usage.current_period.tickets_used} de {usage.current_period.tickets_included} atendimentos usados no ciclo
               {usage.current_period.overage_tickets > 0 && (
                 <> · <span className="text-amber-300 font-semibold">
@@ -227,21 +227,21 @@ export function ConfigArea() {
       {usage && usage.history.length > 0 && (
         <GlassCard className="!p-6 mb-5">
           <div className="flex items-center gap-2 mb-4">
-            <Receipt className="w-4 h-4 text-white/40" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Faturas de excedente</h3>
+            <Receipt className="w-4 h-4 text-[var(--text-low)]" />
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Faturas de excedente</h3>
           </div>
           <div className="space-y-2">
             {usage.history.map((h, i) => (
               <div key={i} className="flex items-center justify-between text-[13px] py-2 border-b border-white/[0.05] last:border-0">
                 <div>
-                  <p className="text-white/70">
+                  <p className="text-[var(--text-mid)]">
                     {new Date(h.billing_period_start).toLocaleDateString('pt-BR')} – {new Date(h.billing_period_end).toLocaleDateString('pt-BR')}
                   </p>
-                  <p className="text-[11px] text-white/35">{h.tickets_overage} atendimento(s) excedente</p>
+                  <p className="text-[11px] text-[var(--text-low)]">{h.tickets_overage} atendimento(s) excedente</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-white">{centsToReais(h.amount_cents)}</p>
-                  <p className={`text-[11px] ${h.status === 'cobrado' || h.status === 'paid' ? 'text-emerald-300' : 'text-white/35'}`}>{h.status}</p>
+                  <p className="font-bold text-[var(--text-hi)]">{centsToReais(h.amount_cents)}</p>
+                  <p className={`text-[11px] ${h.status === 'cobrado' || h.status === 'paid' ? 'text-emerald-300' : 'text-[var(--text-low)]'}`}>{h.status}</p>
                 </div>
               </div>
             ))}
@@ -253,13 +253,13 @@ export function ConfigArea() {
       {terms && (
         <GlassCard className="!p-6 mb-5">
           <div className="flex items-center gap-2 mb-3">
-            <FileText className="w-4 h-4 text-white/40" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Termos de uso</h3>
+            <FileText className="w-4 h-4 text-[var(--text-low)]" />
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Termos de uso</h3>
           </div>
           {terms.needs_acceptance ? (
             <p className="text-[13px] text-amber-300">Há uma versão nova dos Termos aguardando seu aceite (aparece ao navegar no sistema).</p>
           ) : (
-            <p className="text-[13px] text-white/50">
+            <p className="text-[13px] text-[var(--text-low)]">
               Versão {terms.accepted_version} aceita{terms.accepted_at && <> em {new Date(terms.accepted_at).toLocaleDateString('pt-BR')}</>}.
             </p>
           )}
@@ -410,8 +410,8 @@ function WhatsAppConnectCard() {
   return (
     <GlassCard className="!p-6 mb-5">
       <div className="flex items-center gap-2 mb-4">
-        <Smartphone className="w-4 h-4 text-white/40" />
-        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">WhatsApp</h3>
+        <Smartphone className="w-4 h-4 text-[var(--text-low)]" />
+        <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">WhatsApp</h3>
         {status?.ownInstance && (
           <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-violet-400/15 text-violet-200 border-violet-300/20">
             Sua instância própria
@@ -419,7 +419,7 @@ function WhatsAppConnectCard() {
         )}
       </div>
 
-      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
 
       {status && !status.provisioned && status.provisioningStatus === 'failed' && (
         <div className="space-y-3">
@@ -428,7 +428,7 @@ function WhatsAppConnectCard() {
           </p>
           <button
             onClick={() => { setError(null); loadStatus(); }}
-            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors"
+            className="inline-flex items-center gap-2 text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
           </button>
@@ -436,7 +436,7 @@ function WhatsAppConnectCard() {
       )}
 
       {status && !status.provisioned && status.provisioningStatus !== 'failed' && (
-        <div className="flex items-center gap-2 text-[13px] text-white/50">
+        <div className="flex items-center gap-2 text-[13px] text-[var(--text-low)]">
           <Loader2 className="animate-spin w-4 h-4" /> Preparando sua instância de WhatsApp...
         </div>
       )}
@@ -446,14 +446,14 @@ function WhatsAppConnectCard() {
           <div className="flex items-center gap-2 text-emerald-300 text-[13px] font-semibold">
             <Wifi className="w-4 h-4" /> Conectado
           </div>
-          <div className="text-[12px] text-white/40 space-y-1">
-            {status.profileName && <div>Perfil: <span className="text-white/70">{status.profileName}</span></div>}
-            {status.owner && <div>Número: <span className="text-white/70 font-mono">{status.owner}</span></div>}
+          <div className="text-[12px] text-[var(--text-low)] space-y-1">
+            {status.profileName && <div>Perfil: <span className="text-[var(--text-mid)]">{status.profileName}</span></div>}
+            {status.owner && <div>Número: <span className="text-[var(--text-mid)] font-mono">{status.owner}</span></div>}
           </div>
           <button
             onClick={disconnectInstance}
             disabled={disconnecting}
-            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-red-300 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 text-[12px] text-[var(--text-low)] hover:text-red-300 transition-colors disabled:opacity-50"
           >
             {disconnecting ? <Loader2 className="animate-spin w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
             {disconnecting ? 'Desconectando...' : 'Desconectar / trocar número'}
@@ -468,7 +468,7 @@ function WhatsAppConnectCard() {
           </div>
           <button
             onClick={() => startConnecting()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors"
           >
             Conectar WhatsApp
           </button>
@@ -479,26 +479,26 @@ function WhatsAppConnectCard() {
         <div className="space-y-3">
           {paircode ? (
             <div className="flex flex-col items-center gap-3 py-2">
-              <div className="text-3xl font-mono font-bold tracking-[0.2em] text-white bg-white/10 border border-white/15 rounded-xl px-6 py-4">
+              <div className="text-3xl font-mono font-bold tracking-[0.2em] text-[var(--text-hi)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] rounded-xl px-6 py-4">
                 {paircode}
               </div>
-              <p className="text-[12px] text-white/40 text-center">No WhatsApp: Aparelhos conectados → Conectar com número de telefone → digite o código acima. Válido por 5 minutos.</p>
+              <p className="text-[12px] text-[var(--text-low)] text-center">No WhatsApp: Aparelhos conectados → Conectar com número de telefone → digite o código acima. Válido por 5 minutos.</p>
             </div>
           ) : qrcode ? (
             <div className="flex flex-col items-center gap-3 py-2">
               <div className="bg-white p-3 rounded-2xl">
                 <img src={qrcode} alt="QR code do WhatsApp" className="w-48 h-48" />
               </div>
-              <p className="text-[12px] text-white/40 text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
+              <p className="text-[12px] text-[var(--text-low)] text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
             </div>
           ) : (
-            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>
           )}
 
           {!showPairInput && (qrcode || paircode) && (
             <button
               onClick={() => qrcode ? setShowPairInput(true) : switchToQrcode()}
-              className="text-[11px] text-white/30 hover:text-white/60 transition-colors mx-auto block"
+              className="text-[11px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors mx-auto block"
             >
               {qrcode ? 'Não consegue escanear? Usar código em vez do QR' : 'Usar QR code em vez do código'}
             </button>
@@ -511,11 +511,11 @@ function WhatsAppConnectCard() {
                 value={pairPhone}
                 onChange={(e) => setPairPhone(e.target.value)}
                 placeholder="DDD + número"
-                className="flex-1 bg-white/5 border border-white/15 rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-white/30"
+                className="flex-1 bg-[var(--control-fill)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]"
               />
               <button
                 onClick={requestPaircode}
-                className="px-3 py-2 rounded-lg text-[12px] font-semibold text-white bg-white/10 border border-white/15 hover:bg-white/20 transition-colors"
+                className="px-3 py-2 rounded-lg text-[12px] font-semibold text-[var(--text-hi)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors"
               >
                 Gerar código
               </button>
@@ -603,7 +603,7 @@ function TeamWhatsappSlotsCard() {
   if (!status) {
     return (
       <GlassCard className="!p-6 mb-5">
-        <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+        <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>
       </GlassCard>
     );
   }
@@ -613,10 +613,10 @@ function TeamWhatsappSlotsCard() {
   return (
     <GlassCard className="!p-6 mb-5">
       <div className="flex items-center gap-2 mb-1.5">
-        <Users className="w-4 h-4 text-white/40" />
-        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">WhatsApp próprio da equipe</h3>
+        <Users className="w-4 h-4 text-[var(--text-low)]" />
+        <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">WhatsApp próprio da equipe</h3>
       </div>
-      <p className="text-[12px] text-white/40 mb-4">
+      <p className="text-[12px] text-[var(--text-low)] mb-4">
         Por padrão os corretores compartilham o número da conta. Cada um com número próprio custa R$ {slotPriceDisplay}/mês
         {status.in_use > 0 && <> — {status.in_use} membro{status.in_use > 1 ? 's usam' : ' usa'} isso hoje</>}.
       </p>
@@ -624,36 +624,36 @@ function TeamWhatsappSlotsCard() {
       {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
 
       {!status.is_owner ? (
-        <p className="text-[12px] text-white/35">
+        <p className="text-[12px] text-[var(--text-low)]">
           {status.member_limit} slot{status.member_limit === 1 ? '' : 's'} contratado{status.member_limit === 1 ? '' : 's'} — só o titular da conta pode alterar.
         </p>
       ) : !editing ? (
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-[15px] font-bold text-white">
+            <p className="text-[15px] font-bold text-[var(--text-hi)]">
               {status.member_limit} slot{status.member_limit === 1 ? '' : 's'} contratado{status.member_limit === 1 ? '' : 's'}
             </p>
-            <p className="text-[12px] text-white/40 mt-0.5">R$ {status.monthly_value.toFixed(2).replace('.', ',')}/mês no total do plano</p>
+            <p className="text-[12px] text-[var(--text-low)] mt-0.5">R$ {status.monthly_value.toFixed(2).replace('.', ',')}/mês no total do plano</p>
           </div>
           <button onClick={() => setEditing(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
             Alterar
           </button>
         </div>
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-white/50">Quantidade de slots</span>
+            <span className="text-[12px] text-[var(--text-low)]">Quantidade de slots</span>
             <div className="flex items-center gap-3">
               <button type="button" onClick={() => setDraft((v) => Math.max(status.in_use, v - 1))}
                 disabled={draft <= status.in_use}
-                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] disabled:opacity-30 hover:bg-[var(--control-fill-hover)] transition-colors">
                 <Minus className="w-3.5 h-3.5" />
               </button>
-              <span className="w-6 text-center text-white font-bold">{draft}</span>
+              <span className="w-6 text-center text-[var(--text-hi)] font-bold">{draft}</span>
               <button type="button" onClick={() => setDraft((v) => Math.min(status.max_slots, v + 1))}
                 disabled={draft >= status.max_slots}
-                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] disabled:opacity-30 hover:bg-[var(--control-fill-hover)] transition-colors">
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -663,16 +663,16 @@ function TeamWhatsappSlotsCard() {
               Esse é o mínimo — você tem {status.in_use} membro{status.in_use > 1 ? 's' : ''} usando WhatsApp próprio hoje.
             </p>
           )}
-          <p className="text-[11px] text-white/35">
-            Novo valor mensal: <strong className="text-white/60">R$ {previewTotal}</strong> — a mudança de acesso vale já, mas a cobrança só entra no seu próximo ciclo.
+          <p className="text-[11px] text-[var(--text-low)]">
+            Novo valor mensal: <strong className="text-[var(--text-mid)]">R$ {previewTotal}</strong> — a mudança de acesso vale já, mas a cobrança só entra no seu próximo ciclo.
           </p>
           <div className="flex items-center gap-2 pt-1">
             <button onClick={() => { setEditing(false); setDraft(status.member_limit); setError(''); }}
-              className="px-4 py-2 rounded-xl text-[13px] font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              className="px-4 py-2 rounded-xl text-[13px] font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">
               Cancelar
             </button>
             <button onClick={save} disabled={saving || draft === status.member_limit}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
               {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
               {saved ? 'Salvo' : 'Salvar'}
             </button>
@@ -749,21 +749,21 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
   return (
     <GlassCard className="!p-6 mb-5">
       <div className="flex items-center gap-2 mb-1.5">
-        <Landmark className="w-4 h-4 text-white/40" />
-        <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Conta de cobrança (Asaas)</h3>
+        <Landmark className="w-4 h-4 text-[var(--text-low)]" />
+        <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Conta de cobrança (Asaas)</h3>
       </div>
-      <p className="text-[12px] text-white/40 mb-4">
+      <p className="text-[12px] text-[var(--text-low)] mb-4">
         Conecte sua própria conta Asaas para receber aluguéis e sinais direto na sua conta. Sem isso, as cobranças usam a conta da Criate.
       </p>
 
-      {!status && <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+      {!status && <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
 
       {status && status.configured && !editing && (
         <div className="flex flex-wrap items-center gap-3 mb-1">
           <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300">
             <Check className="w-4 h-4" /> Chave conectada
           </span>
-          {status.key_last4 && <span className="text-[12px] text-white/40 font-mono">•••• {status.key_last4}</span>}
+          {status.key_last4 && <span className="text-[12px] text-[var(--text-low)] font-mono">•••• {status.key_last4}</span>}
           <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${
             status.env === 'production'
               ? 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20'
@@ -775,16 +775,16 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
       )}
 
       {status && status.configured && !status.can_manage && (
-        <p className="text-[12px] text-white/35">Gerenciada pelo titular da conta.</p>
+        <p className="text-[12px] text-[var(--text-low)]">Gerenciada pelo titular da conta.</p>
       )}
       {status && !status.configured && !status.can_manage && (
-        <p className="text-[12px] text-white/35">Nenhuma chave própria — usando a conta da Criate. Só o titular pode configurar.</p>
+        <p className="text-[12px] text-[var(--text-low)]">Nenhuma chave própria — usando a conta da Criate. Só o titular pode configurar.</p>
       )}
 
       {showForm && (
         <div className="space-y-3 mt-2">
           <div>
-            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Chave de API do Asaas</label>
+            <label className="block text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5">Chave de API do Asaas</label>
             <input
               type="password"
               value={apiKey}
@@ -795,7 +795,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Ambiente</label>
+            <label className="block text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5">Ambiente</label>
             <div className="flex gap-2">
               {(['production', 'sandbox'] as const).map((opt) => (
                 <button
@@ -803,7 +803,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
                   type="button"
                   onClick={() => setEnv(opt)}
                   className={`px-4 py-2 rounded-xl text-[13px] font-semibold border transition-colors ${
-                    env === opt ? 'bg-white/15 text-white border-white/25' : 'bg-white/5 text-white/45 border-white/12 hover:text-white/70'
+                    env === opt ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline-strong)] hover:text-[var(--text-mid)]'
                   }`}
                 >
                   {opt === 'production' ? 'Produção' : 'Sandbox (teste)'}
@@ -815,14 +815,14 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
             <button
               onClick={save}
               disabled={saving}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
             >
               {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
               {saving ? 'Validando...' : 'Salvar e validar'}
             </button>
             {status.configured && (
               <button onClick={() => { setEditing(false); setApiKey(''); setError(''); }}
-                className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/50 hover:text-white/80 transition-colors">
+                className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors">
                 Cancelar
               </button>
             )}
@@ -833,12 +833,12 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
       {status && status.configured && status.can_manage && !editing && (
         <div className="flex items-center gap-2 mt-4">
           <button onClick={() => { setEditing(true); setError(''); }}
-            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-white/70 transition-colors">
+            className="inline-flex items-center gap-2 text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Trocar chave
           </button>
-          <span className="text-white/15">·</span>
+          <span className="text-[var(--text-low)]">·</span>
           <button onClick={remove} disabled={removing}
-            className="inline-flex items-center gap-2 text-[12px] text-white/40 hover:text-red-300 transition-colors disabled:opacity-50">
+            className="inline-flex items-center gap-2 text-[12px] text-[var(--text-low)] hover:text-red-300 transition-colors disabled:opacity-50">
             {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
             {removing ? 'Removendo...' : 'Remover'}
           </button>

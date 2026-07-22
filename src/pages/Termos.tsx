@@ -16,7 +16,7 @@ export default function Termos() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 py-10 px-4 font-sans relative overflow-hidden">
+    <div className="min-h-screen app-bg py-10 px-4 font-sans relative overflow-hidden">
       <div
         className="absolute inset-0 opacity-[0.03] pointer-events-none"
         style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")' }}
@@ -26,27 +26,27 @@ export default function Termos() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative z-10 max-w-3xl mx-auto rounded-[32px] p-8 md:p-12
-          backdrop-blur-2xl bg-white/10 border border-white/15
+          backdrop-blur-2xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_24px_64px_rgba(0,0,0,0.4)]"
       >
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-sm text-white/60 hover:text-white mb-8 transition-all"
+          className="flex items-center gap-2 text-sm text-[var(--text-mid)] hover:text-[var(--text-hi)] mb-8 transition-all"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar
         </button>
 
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center backdrop-blur-md bg-white/15 border border-white/25">
-            <FileText className="w-5 h-5 text-white" />
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]">
+            <FileText className="w-5 h-5 text-[var(--text-hi)]" />
           </div>
-          <h1 className="text-2xl md:text-3xl font-black text-white">Termos de Uso</h1>
+          <h1 className="text-2xl md:text-3xl font-black text-[var(--text-hi)]">Termos de Uso</h1>
         </div>
-        <p className="text-white/40 text-sm mb-8">
+        <p className="text-[var(--text-low)] text-sm mb-8">
           Vigência: {DATA_VIGENCIA} · Criate · {RAZAO_SOCIAL} · CNPJ {CNPJ}
         </p>
 
-        <div className="space-y-7 text-white/70 text-sm leading-relaxed [&_h2]:text-white [&_h2]:font-bold [&_h2]:text-base [&_h2]:mt-8 [&_h2]:mb-3 [&_strong]:text-white/90 [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:ml-5 [&_li]:list-disc">
+        <div className="space-y-7 text-[var(--text-mid)] text-sm leading-relaxed [&_h2]:text-[var(--text-hi)] [&_h2]:font-bold [&_h2]:text-base [&_h2]:mt-8 [&_h2]:mb-3 [&_strong]:text-[var(--text-hi)] [&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:ml-5 [&_li]:list-disc">
 
           <section>
             <h2>1. Identificação das Partes</h2>
@@ -377,7 +377,7 @@ export default function Termos() {
             </p>
           </section>
 
-          <p className="text-white/40 text-xs pt-4 border-t border-white/10">
+          <p className="text-[var(--text-low)] text-xs pt-4 border-t border-[var(--hairline)]">
             {RAZAO_SOCIAL} · CNPJ {CNPJ} · {ENDERECO} · Contato: {EMAIL_CONTATO}
           </p>
           <Copyright />

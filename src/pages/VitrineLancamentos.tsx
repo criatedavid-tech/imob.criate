@@ -52,34 +52,34 @@ export default function VitrineLancamentos() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
-        <Loader2 className="w-7 h-7 text-white/60 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center app-bg">
+        <Loader2 className="w-7 h-7 text-[var(--text-mid)] animate-spin" />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6">
+      <div className="min-h-screen flex items-center justify-center app-bg px-6">
         <div className="text-center">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-white/[0.06] border border-white/12">
-            <Building2 className="w-6 h-6 text-white/40" />
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
+            <Building2 className="w-6 h-6 text-[var(--text-low)]" />
           </div>
-          <p className="text-white/70">{error || 'Vitrine não encontrada.'}</p>
+          <p className="text-[var(--text-mid)]">{error || 'Vitrine não encontrada.'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
+    <div className="min-h-screen app-bg">
       <div className="absolute -top-40 -left-20 w-[420px] h-[420px] rounded-full bg-violet-600/20 blur-[120px] pointer-events-none" />
       <div className="relative max-w-6xl mx-auto px-6 py-14">
         <header className="text-center mb-12">
           <p className="text-[13px] font-semibold uppercase tracking-[0.2em] text-violet-300/70 mb-3">Empreendimentos</p>
-          <h1 className="text-4xl md:text-5xl font-black text-white">{data.broker.name}</h1>
+          <h1 className="text-4xl md:text-5xl font-black text-[var(--text-hi)]">{data.broker.name}</h1>
           {data.broker.address && (
-            <p className="text-[15px] text-white/50 flex items-center justify-center gap-1.5 mt-3">
+            <p className="text-[15px] text-[var(--text-low)] flex items-center justify-center gap-1.5 mt-3">
               <MapPin className="w-4 h-4" /> {data.broker.address}
             </p>
           )}
@@ -87,7 +87,7 @@ export default function VitrineLancamentos() {
 
         {data.developments.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-white/50">Nenhum empreendimento publicado no momento.</p>
+            <p className="text-[var(--text-low)]">Nenhum empreendimento publicado no momento.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -96,40 +96,40 @@ export default function VitrineLancamentos() {
               const subtipoLabel = d.tipo === 'horizontal' ? (TIPO_LABEL[d.subtipo || 'loteamento']) : TIPO_LABEL.vertical;
               return (
                 <div key={d.id}
-                  className="rounded-[26px] overflow-hidden backdrop-blur-2xl bg-white/[0.06] border border-white/10
+                  className="rounded-[26px] overflow-hidden backdrop-blur-2xl bg-[var(--control-fill)] border border-[var(--hairline)]
                     shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_20px_50px_-24px_rgba(0,0,0,0.6)]">
-                  <div className="h-52 bg-white/5 relative overflow-hidden">
+                  <div className="h-52 bg-[var(--control-fill)] relative overflow-hidden">
                     {d.images?.[0] ? (
                       <img src={d.images[0]} alt={d.name} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-white/20">
+                      <div className="w-full h-full flex items-center justify-center text-[var(--text-low)]">
                         <Building2 className="w-10 h-10" />
                       </div>
                     )}
-                    <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-black/50 text-white/80 backdrop-blur-sm">
+                    <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-black/50 text-[var(--text-hi)] backdrop-blur-sm">
                       {subtipoLabel}
                     </span>
                   </div>
                   <div className="p-5">
-                    <h3 className="text-[17px] font-bold text-white truncate">{d.name}</h3>
+                    <h3 className="text-[17px] font-bold text-[var(--text-hi)] truncate">{d.name}</h3>
                     {d.location && (
-                      <p className="text-[13px] text-white/45 flex items-center gap-1 mt-1 truncate">
+                      <p className="text-[13px] text-[var(--text-low)] flex items-center gap-1 mt-1 truncate">
                         <MapPin className="w-3.5 h-3.5 shrink-0" /> {d.location}
                       </p>
                     )}
                     {d.amenities.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mt-3">
                         {d.amenities.slice(0, 4).map((a) => (
-                          <span key={a} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/[0.06] border border-white/10 text-white/50">{a}</span>
+                          <span key={a} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--control-fill)] border border-[var(--hairline)] text-[var(--text-low)]">{a}</span>
                         ))}
                       </div>
                     )}
                     <div className="mt-4">
-                      <div className="flex items-center justify-between text-[12px] text-white/50 mb-1.5">
+                      <div className="flex items-center justify-between text-[12px] text-[var(--text-low)] mb-1.5">
                         <span>{d.disponivel} unidade{d.disponivel === 1 ? '' : 's'} disponível{d.disponivel === 1 ? '' : 'is'}</span>
                         <span>{pctVendido}% vendido</span>
                       </div>
-                      <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div className="w-full h-1.5 rounded-full bg-[var(--control-fill)] overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-violet-400 to-indigo-400 rounded-full" style={{ width: `${pctVendido}%` }} />
                       </div>
                     </div>

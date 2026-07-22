@@ -315,30 +315,30 @@ export function CommandBar({
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
+    <div className="flex flex-col h-full w-full app-bg">
       {/* Cabeçalho — voltar fecha o chat. Sem backdrop-blur: o fundo do chat é
           um gradiente opaco, então o blur não teria efeito visível e só custaria
           GPU (peso desnecessário no mobile). */}
-      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-white/10 bg-white/[0.03]">
+      <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-[var(--hairline)] bg-[var(--control-fill)]">
         <button
           onClick={onClose}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-mid)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)] transition-colors shrink-0"
           aria-label="Voltar"
         >
           <ArrowLeft className="w-4.5 h-4.5" />
         </button>
         <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
-          bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-white/20">
+          bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-[var(--glass-border)]">
           <Sparkles className="w-4 h-4 text-violet-100" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-bold text-white leading-tight">Assistente IA</p>
-          <p className="text-[11px] text-white/40 leading-tight truncate">{PERSONA_LABEL[persona]}</p>
+          <p className="text-[14px] font-bold text-[var(--text-hi)] leading-tight">Assistente IA</p>
+          <p className="text-[11px] text-[var(--text-low)] leading-tight truncate">{PERSONA_LABEL[persona]}</p>
         </div>
         <button
           onClick={startNewConversation}
           disabled={clearingHistory || busy || (turns.length === 0 && !loadingHistory)}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-mid)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)] transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
           aria-label="Nova conversa"
           title="Nova conversa"
         >
@@ -352,10 +352,10 @@ export function CommandBar({
           <div className="h-full flex items-center justify-center text-center px-6">
             <div>
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
-                bg-white/[0.06] border border-white/12">
+                bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
                 <Sparkles className="w-5 h-5 text-violet-200" />
               </div>
-              <p className="text-[14px] text-white/50 max-w-xs mx-auto">
+              <p className="text-[14px] text-[var(--text-low)] max-w-xs mx-auto">
                 Pergunte qualquer coisa ou peça pra eu fazer algo — ex: <em>"cadastra a Maria 62999998888 no apê centro"</em> ou <em>"quantos leads eu tenho?"</em>
               </p>
             </div>
@@ -365,8 +365,8 @@ export function CommandBar({
           <div key={i} className={t.role === 'user' ? 'text-right' : ''}>
             <div className={`inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-[13px] whitespace-pre-line ${
               t.role === 'user'
-                ? 'bg-violet-500/25 border border-violet-300/25 text-white'
-                : 'bg-white/[0.06] border border-white/10 text-white/85'
+                ? 'bg-violet-500/25 border border-violet-300/25 text-[var(--text-hi)]'
+                : 'bg-[var(--control-fill)] border border-[var(--hairline)] text-[var(--text-hi)]/85'
             }`}>
               {t.text}
             </div>
@@ -375,7 +375,7 @@ export function CommandBar({
                 <button
                   onClick={() => confirmAction(i, t.proposedAction!)}
                   disabled={confirmingIdx === i}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold text-white
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold text-[var(--text-hi)]
                     bg-emerald-500/25 border border-emerald-300/30 hover:bg-emerald-500/40 transition-colors disabled:opacity-50"
                 >
                   {confirmingIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -384,8 +384,8 @@ export function CommandBar({
                 <button
                   onClick={() => dismissAction(i)}
                   disabled={confirmingIdx === i}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/60
-                    bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)]
+                    bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-50"
                 >
                   <X className="w-3.5 h-3.5" /> Cancelar
                 </button>
@@ -394,7 +394,7 @@ export function CommandBar({
           </div>
         ))}
         {busy && (
-          <div className="flex items-center gap-2 text-[13px] text-white/40">
+          <div className="flex items-center gap-2 text-[13px] text-[var(--text-low)]">
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> pensando…
           </div>
         )}
@@ -405,11 +405,11 @@ export function CommandBar({
         {(attachedImages.length > 0 || uploadingCount > 0) && (
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             {attachedImages.map((url, i) => (
-              <div key={url} className="relative w-12 h-12 rounded-lg overflow-hidden border border-white/15 shrink-0">
+              <div key={url} className="relative w-12 h-12 rounded-lg overflow-hidden border border-[var(--glass-border)] shrink-0">
                 <img src={url} alt="" className="w-full h-full object-cover" />
                 <button
                   onClick={() => removeAttachedImage(i)}
-                  className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-black/60 text-white"
+                  className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-black/60 text-[var(--text-hi)]"
                   aria-label="Remover foto"
                 >
                   <X className="w-2.5 h-2.5" />
@@ -417,14 +417,14 @@ export function CommandBar({
               </div>
             ))}
             {uploadingCount > 0 && (
-              <div className="w-12 h-12 rounded-lg flex items-center justify-center border border-white/15 bg-white/[0.05] shrink-0">
-                <Loader2 className="w-4 h-4 text-white/50 animate-spin" />
+              <div className="w-12 h-12 rounded-lg flex items-center justify-center border border-[var(--glass-border)] bg-[var(--control-fill)] shrink-0">
+                <Loader2 className="w-4 h-4 text-[var(--text-low)] animate-spin" />
               </div>
             )}
           </div>
         )}
         <div className="flex items-center gap-2 rounded-[22px] px-3 py-2.5
-          bg-white/[0.09] border border-white/15
+          bg-[var(--control-fill)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_40px_-12px_rgba(0,0,0,0.6)]">
           {/* Anexar foto: o input de arquivo fica TRANSPARENTE POR CIMA do
               ícone (absolute inset-0, opacity-0) — o toque cai direto no
@@ -445,8 +445,8 @@ export function CommandBar({
           <div
             className={`relative overflow-hidden w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
               busy || recording || transcribing
-                ? 'text-white/30'
-                : 'text-white/50 hover:text-white hover:bg-white/10'
+                ? 'text-[var(--text-low)]'
+                : 'text-[var(--text-low)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)]'
             }`}
             title="Anexar foto"
           >
@@ -484,7 +484,7 @@ export function CommandBar({
               // z-index pinta e recebe toque ACIMA do input, mesmo se algum
               // engine ainda vazar hit-area além do overflow-hidden.
               className={`relative z-10 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors disabled:opacity-50 ${
-                recording ? 'text-red-300 bg-red-500/20 animate-pulse' : 'text-white/50 hover:text-white hover:bg-white/10'
+                recording ? 'text-red-300 bg-red-500/20 animate-pulse' : 'text-[var(--text-low)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)]'
               }`}
               aria-label={recording ? 'Parar gravação' : 'Falar por voz'}
             >
@@ -507,12 +507,12 @@ export function CommandBar({
             disabled={busy}
             rows={1}
             placeholder={recording ? 'Gravando… fale sua mensagem' : transcribing ? 'Transcrevendo áudio…' : 'Fale com a IA…  ex: cadastra a Maria 62999998888 no apê centro'}
-            className="flex-1 bg-transparent outline-none resize-none text-[14px] text-white placeholder:text-white/35 disabled:opacity-60 py-1 leading-snug"
+            className="flex-1 bg-transparent outline-none resize-none text-[14px] text-[var(--text-hi)] placeholder:text-[var(--text-low)] disabled:opacity-60 py-1 leading-snug"
             style={{ maxHeight: MAX_INPUT_HEIGHT_PX, overflowY: 'auto' }}
           />
           <button onClick={submit} disabled={busy || uploadingCount > 0 || recording || transcribing}
             title={uploadingCount > 0 ? 'Aguarde as fotos terminarem de enviar' : transcribing ? 'Aguarde a transcrição terminar' : undefined}
-            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-[var(--text-hi)]
               bg-violet-500/40 border border-violet-300/30 hover:bg-violet-500/60 transition-colors disabled:opacity-50">
             {busy || uploadingCount > 0 || transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
           </button>

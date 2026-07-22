@@ -21,6 +21,7 @@ import { RelatoriosArea } from './RelatoriosArea';
 import { DivulgacaoArea } from './DivulgacaoArea';
 import { ConfigArea } from './ConfigArea';
 import { AssistenteIAArea } from './AssistenteIAArea';
+import { ThemeToggle } from './ThemeToggle';
 import type { Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
@@ -33,26 +34,32 @@ const AUTONOMY_LABEL: Record<Autonomy, string> = {
 };
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
 
+// Toggle Dia/Noite temporariamente OCULTO: o modo Noite (padrão) já está
+// recolorido, mas o modo Dia ainda espera a passada de latão + QA visual.
+// Enquanto false, o app fica só em Noite e o modo claro não é exposto ao
+// usuário. Reativar (true) quando o modo Dia estiver aprovado.
+const THEME_TOGGLE_ENABLED = false;
+
 // Estado vazio, elegante e didático, para áreas ainda não construídas (ensina a dupla via IA/manual).
 function AreaEmptyState({ areaKey }: { areaKey: string }) {
   const area = AREAS.find((a) => a.key === areaKey);
   return (
     <div className="max-w-6xl mx-auto w-full flex items-center justify-center min-h-[60vh]">
       <div className="text-center max-w-md">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5
-          bg-white/[0.06] border border-white/12">
-          <Sparkles className="w-6 h-6 text-violet-200" />
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5 border"
+          style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
+          <Sparkles className="w-6 h-6 cr-accent" />
         </div>
-        <h2 className="text-2xl font-black text-white mb-2">{area?.label}</h2>
-        <p className="text-[15px] text-white/55 leading-relaxed">
-          Aqui vive tudo de <strong className="text-white/80">{area?.label}</strong>. Você pode pedir à IA
+        <h2 className="text-2xl font-black cr-text-hi mb-2">{area?.label}</h2>
+        <p className="text-[15px] cr-text-mid leading-relaxed">
+          Aqui vive tudo de <strong className="cr-text-hi">{area?.label}</strong>. Você pode pedir à IA
           (ex.: <em>"me mostra {area?.label.toLowerCase()}"</em>) ou usar o botão abaixo para fazer manualmente.
         </p>
-        <button className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold text-white
-          bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors">
+        <button className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold cr-text-hi border transition-colors hover:border-[var(--glass-border-strong)]"
+          style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
           <Plus className="w-4 h-4" /> Novo em {area?.label}
         </button>
-        <p className="text-[12px] text-white/30 mt-4">Tela manual completa chega na sua etapa do roadmap.</p>
+        <p className="text-[12px] cr-text-low mt-4">Tela manual completa chega na sua etapa do roadmap.</p>
       </div>
     </div>
   );
@@ -60,8 +67,8 @@ function AreaEmptyState({ areaKey }: { areaKey: string }) {
 
 function FullScreenSpinner() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
-      <Loader2 className="w-7 h-7 text-white/60 animate-spin" />
+    <div className="app-bg min-h-screen flex items-center justify-center">
+      <Loader2 className="w-7 h-7 cr-accent animate-spin" />
     </div>
   );
 }
@@ -150,11 +157,13 @@ export function ExperienceShell() {
   if (checkingAuth) return <FullScreenSpinner />;
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden font-sans relative
-      bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
-      {/* brilho de fundo (profundidade de vidro, minimalista) */}
-      <div className="absolute -top-40 -left-20 w-[420px] h-[420px] rounded-full bg-violet-600/20 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[380px] h-[380px] rounded-full bg-indigo-500/15 blur-[120px] pointer-events-none" />
+    <div className="app-bg flex h-[100dvh] overflow-hidden font-sans relative">
+      {/* O mesh gradient do .app-bg já dá a profundidade que o vidro refrata —
+          dois realces de acento pra reforçar o "lensing" azure/aqua. */}
+      <div className="absolute -top-40 -left-20 w-[420px] h-[420px] rounded-full blur-[120px] pointer-events-none"
+        style={{ background: 'var(--accent-soft)' }} />
+      <div className="absolute bottom-0 right-0 w-[380px] h-[380px] rounded-full blur-[120px] pointer-events-none"
+        style={{ background: 'var(--accent-2-soft)' }} />
 
       <ManualRail
         persona={persona}
@@ -165,13 +174,14 @@ export function ExperienceShell() {
       />
 
       <main className="flex-1 relative overflow-y-auto">
-        {/* Barra superior */}
-        <div className="sticky top-0 z-20 backdrop-blur-2xl bg-slate-900/30 border-b border-white/8">
+        {/* Barra superior — vidro translúcido (tier-2) sobre o mesh */}
+        <div className="sticky top-0 z-20 backdrop-blur-2xl border-b"
+          style={{ background: 'var(--scrim-glass)', borderColor: 'var(--hairline)' }}>
           <div className="max-w-6xl mx-auto w-full px-6 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setMobileNavOpen(true)}
-                className="md:hidden shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors"
+                className="md:hidden shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-colors cr-text-mid hover:bg-[var(--accent-soft)]"
                 aria-label="Abrir menu"
               >
                 <Menu className="w-5 h-5" />
@@ -179,18 +189,19 @@ export function ExperienceShell() {
               {isAdmin ? (
                 <>
                   {/* Só admin troca de persona — pra demonstrar/dar suporte */}
-                  <span className="text-[11px] text-white/35 mr-1 hidden sm:inline shrink-0">ver como</span>
+                  <span className="text-[11px] cr-text-low mr-1 hidden sm:inline shrink-0">ver como</span>
                   {/* overflow-x-auto: no mobile as 3 opções (Corretor/Imobiliária/
                       Incorporadora) não cabem lado a lado com o resto da barra —
                       sem isso e sem shrink-0/whitespace-nowrap nos botões, o texto
                       quebrava linha dentro do próprio botão e sobrepunha o botão
                       de autonomia ao lado. */}
-                  <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10 overflow-x-auto max-w-full">
+                  <div className="flex gap-1 p-1 rounded-2xl border overflow-x-auto max-w-full"
+                    style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
                     {PERSONAS.map((p) => (
                       <button key={p} onClick={() => changePersona(p)}
                         className={cn(
                           'px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors shrink-0 whitespace-nowrap',
-                          persona === p ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+                          persona === p ? 'is-selected cr-text-hi' : 'cr-text-low hover:text-[var(--text-mid)]',
                         )}>
                         {PERSONA_LABEL[p]}
                       </button>
@@ -199,25 +210,29 @@ export function ExperienceShell() {
                 </>
               ) : (
                 // Usuário normal: só vê o mundo da própria conta (sem troca).
-                <span className="px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70 bg-white/[0.06] border border-white/10 shrink-0 whitespace-nowrap">
+                <span className="px-3 py-1.5 rounded-xl text-[12px] font-semibold cr-text-mid border shrink-0 whitespace-nowrap"
+                  style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
                   {PERSONA_LABEL[persona]}
                 </span>
               )}
               {/* Aviso honesto: nunca deixar parecer que o mock é dado real da conta */}
               {layout && !layout.isRealData && (
-                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300 bg-amber-400/15 px-2 py-1 rounded-full shrink-0 whitespace-nowrap">
+                <span className="cr-chip cr-chip-warning text-[10px] font-bold uppercase tracking-wide shrink-0 whitespace-nowrap">
                   prévia · dados de demonstração
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Toggle de tema Dia/Noite — oculto até o modo Dia passar no QA */}
+              {THEME_TOGGLE_ENABLED && <ThemeToggle className="shrink-0" />}
+
               {/* Painel admin — só is_admin. Reusa o painel completo do 1.0 (/admin). */}
               {isAdmin && (
                 <button onClick={() => navigate('/admin')}
                   title="Painel administrativo"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-[12px] font-semibold text-amber-200
-                    bg-amber-400/12 border border-amber-300/25 hover:bg-amber-400/20 transition-colors shrink-0 whitespace-nowrap">
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-[12px] font-semibold hover:brightness-105 transition-all shrink-0 whitespace-nowrap"
+                  style={{ background: 'var(--brass-gradient)', color: 'var(--on-brass)' }}>
                   <Shield className="w-3.5 h-3.5 shrink-0" /> Admin
                 </button>
               )}
@@ -226,12 +241,13 @@ export function ExperienceShell() {
               {accountLabel && (
                 <button onClick={() => setArea('config')}
                   title={currentUser?.email || ''}
-                  className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl
-                    bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] transition-colors max-w-[180px]">
-                  <span className="w-5 h-5 rounded-full bg-violet-500/40 border border-white/15 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                  className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl border transition-colors max-w-[180px] hover:border-[var(--glass-border-strong)]"
+                  style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                    style={{ background: 'var(--accent-gradient)', color: 'var(--on-accent)' }}>
                     {accountLabel.charAt(0).toUpperCase()}
                   </span>
-                  <span className="text-[12px] font-semibold text-white/70 truncate">{accountLabel}</span>
+                  <span className="text-[12px] font-semibold cr-text-mid truncate">{accountLabel}</span>
                 </button>
               )}
 
@@ -239,11 +255,11 @@ export function ExperienceShell() {
                   rótulo, "Piloto automático" é longo demais pra caber ao lado
                   do "ver como"/pílulas de persona sem quebrar linha). */}
               <button onClick={cycleAutonomy}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl text-[12px] font-semibold text-white
-                  bg-white/[0.06] border border-white/12 hover:bg-white/[0.12] transition-colors shrink-0 whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-[12px] font-semibold cr-text-hi transition-colors shrink-0 whitespace-nowrap hover:border-[var(--glass-border-strong)]"
+                style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
                 <span className="hidden sm:inline">{AUTONOMY_LABEL[autonomy]}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                <ChevronDown className="w-3.5 h-3.5 cr-text-low shrink-0" />
               </button>
             </div>
           </div>
@@ -284,7 +300,7 @@ export function ExperienceShell() {
             <AreaEmptyState areaKey={area} />
           ) : loadingLayout || !layout ? (
             <div className="flex justify-center pt-24">
-              <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+              <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />
             </div>
           ) : (
             <Canvas layout={layout} onAreaClick={setArea} />
@@ -299,9 +315,13 @@ export function ExperienceShell() {
           onClick={() => setChatOpen(true)}
           aria-label="Falar com a IA"
           className="absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full flex items-center justify-center
-            text-white bg-gradient-to-br from-violet-500/80 to-indigo-600/80 border border-white/25
-            shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_32px_-8px_rgba(76,29,149,0.6)]
-            hover:scale-105 active:scale-95 transition-transform"
+            border hover:scale-105 active:scale-95 transition-transform"
+          style={{
+            background: 'var(--accent-gradient)',
+            color: 'var(--on-accent)',
+            borderColor: 'var(--glass-border-strong)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 12px 32px -6px var(--accent-glow)',
+          }}
         >
           <Sparkles className="w-6 h-6" />
         </button>

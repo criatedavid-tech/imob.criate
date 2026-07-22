@@ -31,7 +31,7 @@ export interface CrmPipeline {
 const STAGE_COLORS = ['#60a5fa', '#a78bfa', '#f472b6', '#fb923c', '#4ade80', '#facc15', '#38bdf8', '#f87171'];
 const STAGE_TYPE_LABEL: Record<CrmStage['stage_type'], string> = { open: 'Em andamento', won: 'Ganho', lost: 'Perdido' };
 const STAGE_TYPE_BADGE: Record<CrmStage['stage_type'], string> = {
-  open: 'bg-white/10 text-white/60',
+  open: 'bg-[var(--control-fill-hover)] text-[var(--text-mid)]',
   won: 'bg-emerald-500/20 text-emerald-300',
   lost: 'bg-red-500/20 text-red-300',
 };
@@ -72,14 +72,14 @@ function ReassignPrompt({
     <div className="mt-2 rounded-xl bg-amber-500/10 border border-amber-400/20 px-3 py-2 flex items-center gap-2 flex-wrap">
       <span className="text-[12px] text-amber-200">{leadsCount} lead(s) aqui — mover para:</span>
       <select value={target} onChange={(e) => setTarget(e.target.value)}
-        className="rounded-lg px-2 py-1 text-[12px] bg-white/10 text-white border border-white/15 [color-scheme:dark]">
+        className="rounded-lg px-2 py-1 text-[12px] bg-[var(--control-fill-hover)] text-[var(--text-hi)] border border-[var(--glass-border)] [color-scheme:dark]">
         {otherStages.map((s) => <option key={s.id} value={s.id} style={{ backgroundColor: '#1e293b' }}>{s.name}</option>)}
       </select>
       <button onClick={() => onConfirm(target)} disabled={busy}
-        className="px-3 py-1 rounded-lg text-[12px] font-bold text-white bg-amber-500/30 hover:bg-amber-500/40 disabled:opacity-40">
+        className="px-3 py-1 rounded-lg text-[12px] font-bold text-[var(--text-hi)] bg-amber-500/30 hover:bg-amber-500/40 disabled:opacity-40">
         {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Mover e continuar'}
       </button>
-      <button onClick={onCancel} className="text-[12px] text-white/40 hover:text-white/70">cancelar</button>
+      <button onClick={onCancel} className="text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)]">cancelar</button>
     </div>
   );
 }
@@ -177,14 +177,14 @@ function StageRow({
   };
 
   return (
-    <div className={`rounded-xl border px-3 py-2.5 ${stage.active ? 'bg-white/[0.03] border-white/10' : 'bg-white/[0.015] border-white/5 opacity-60'}`}>
+    <div className={`rounded-xl border px-3 py-2.5 ${stage.active ? 'bg-[var(--control-fill)] border-[var(--hairline)]' : 'bg-white/[0.015] border-[var(--hairline)] opacity-60'}`}>
       <div className="flex items-center gap-2">
         {canManage && (
           <div className="flex flex-col shrink-0 -my-1">
-            <button onClick={() => move(-1)} disabled={!canMoveUp || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
+            <button onClick={() => move(-1)} disabled={!canMoveUp || busy} className="text-[var(--text-low)] hover:text-[var(--text-mid)] disabled:opacity-20 disabled:hover:text-[var(--text-low)]">
               <ChevronUp className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => move(1)} disabled={!canMoveDown || busy} className="text-white/25 hover:text-white/60 disabled:opacity-20 disabled:hover:text-white/25">
+            <button onClick={() => move(1)} disabled={!canMoveDown || busy} className="text-[var(--text-low)] hover:text-[var(--text-mid)] disabled:opacity-20 disabled:hover:text-[var(--text-low)]">
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -193,17 +193,17 @@ function StageRow({
         {editing ? (
           <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
             <span className="relative group shrink-0">
-              <span className="w-5 h-5 rounded-full block border border-white/20 cursor-pointer" style={{ backgroundColor: color }} />
-              <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-white/15 shadow-xl">
+              <span className="w-5 h-5 rounded-full block border border-[var(--glass-border)] cursor-pointer" style={{ backgroundColor: color }} />
+              <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-[var(--glass-border)] shadow-xl">
                 {STAGE_COLORS.map((c) => (
-                  <button key={c} onClick={() => setColor(c)} className="w-4 h-4 rounded-full border border-white/20 hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
+                  <button key={c} onClick={() => setColor(c)} className="w-4 h-4 rounded-full border border-[var(--glass-border)] hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
                 ))}
               </div>
             </span>
             <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()}
-              autoFocus className="flex-1 min-w-[100px] px-2.5 py-1 rounded-lg text-[13px] bg-white/[0.06] text-white outline-none border border-white/15" />
+              autoFocus className="flex-1 min-w-[100px] px-2.5 py-1 rounded-lg text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] outline-none border border-[var(--glass-border)]" />
             <select value={stageType} onChange={(e) => setStageType(e.target.value as CrmStage['stage_type'])}
-              className="rounded-lg px-2 py-1 text-[12px] bg-white/[0.06] text-white border border-white/15 [color-scheme:dark]">
+              className="rounded-lg px-2 py-1 text-[12px] bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--glass-border)] [color-scheme:dark]">
               <option value="open" style={{ backgroundColor: '#1e293b' }}>Em andamento</option>
               <option value="won" style={{ backgroundColor: '#1e293b' }}>Ganho</option>
               <option value="lost" style={{ backgroundColor: '#1e293b' }}>Perdido</option>
@@ -211,28 +211,28 @@ function StageRow({
             <button onClick={save} disabled={saving} className="p-1.5 rounded-lg text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-40">
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             </button>
-            <button onClick={() => setEditing(false)} className="p-1.5 rounded-lg text-white/40 hover:bg-white/[0.08]">
+            <button onClick={() => setEditing(false)} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)]">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
           <>
-            <span className="w-3 h-3 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: stage.color || '#888' }} />
-            <span className="text-[13px] font-semibold text-white truncate">{stage.name}</span>
+            <span className="w-3 h-3 rounded-full shrink-0 border border-[var(--glass-border)]" style={{ backgroundColor: stage.color || '#888' }} />
+            <span className="text-[13px] font-semibold text-[var(--text-hi)] truncate">{stage.name}</span>
             <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${STAGE_TYPE_BADGE[stage.stage_type]}`}>
               {STAGE_TYPE_LABEL[stage.stage_type]}
             </span>
-            {!stage.active && <span className="text-[10px] text-white/30 shrink-0">arquivada</span>}
+            {!stage.active && <span className="text-[10px] text-[var(--text-low)] shrink-0">arquivada</span>}
             <div className="flex-1" />
             {canManage && (
               <>
-                <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 shrink-0">
+                <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] shrink-0">
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => toggleActive()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 disabled:opacity-40 shrink-0" title={stage.active ? 'Arquivar' : 'Reativar'}>
+                <button onClick={() => toggleActive()} disabled={busy} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] disabled:opacity-40 shrink-0" title={stage.active ? 'Arquivar' : 'Reativar'}>
                   {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : stage.active ? <Archive className="w-3.5 h-3.5" /> : <ArchiveRestore className="w-3.5 h-3.5" />}
                 </button>
-                <button onClick={() => remove()} disabled={busy} className="p-1.5 rounded-lg text-white/30 hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40 shrink-0">
+                <button onClick={() => remove()} disabled={busy} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40 shrink-0">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </>
@@ -341,19 +341,19 @@ function PipelineCard({ pipeline, onReload, canManage }: { pipeline: CrmPipeline
         {editingName ? (
           <div className="flex-1 min-w-[160px] flex items-center gap-2">
             <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveName()}
-              autoFocus className="flex-1 px-3 py-1.5 rounded-lg text-[15px] font-bold bg-white/[0.06] text-white outline-none border border-white/15" />
+              autoFocus className="flex-1 px-3 py-1.5 rounded-lg text-[15px] font-bold bg-[var(--control-fill)] text-[var(--text-hi)] outline-none border border-[var(--glass-border)]" />
             <button onClick={saveName} disabled={saving} className="p-1.5 rounded-lg text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-40">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             </button>
-            <button onClick={() => { setEditingName(false); setName(pipeline.name); }} className="p-1.5 rounded-lg text-white/40 hover:bg-white/[0.08]">
+            <button onClick={() => { setEditingName(false); setName(pipeline.name); }} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)]">
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <>
-            <h3 className="text-[16px] font-bold text-white">{pipeline.name}</h3>
+            <h3 className="text-[16px] font-bold text-[var(--text-hi)]">{pipeline.name}</h3>
             {canManage && (
-              <button onClick={() => setEditingName(true)} className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60">
+              <button onClick={() => setEditingName(true)} className="p-1 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)]">
                 <Pencil className="w-3.5 h-3.5" />
               </button>
             )}
@@ -362,7 +362,7 @@ function PipelineCard({ pipeline, onReload, canManage }: { pipeline: CrmPipeline
                 <Star className="w-2.5 h-2.5 fill-current" /> padrão
               </span>
             )}
-            {!pipeline.active && <span className="text-[11px] text-white/30">arquivado</span>}
+            {!pipeline.active && <span className="text-[11px] text-[var(--text-low)]">arquivado</span>}
           </>
         )}
         <div className="flex-1" />
@@ -370,16 +370,16 @@ function PipelineCard({ pipeline, onReload, canManage }: { pipeline: CrmPipeline
           <div className="flex items-center gap-1 shrink-0">
             {!pipeline.is_default && (
               <button onClick={setDefault} disabled={busy} title="Definir como padrão"
-                className="p-1.5 rounded-lg text-white/30 hover:bg-violet-500/15 hover:text-violet-300 disabled:opacity-40">
+                className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-violet-500/15 hover:text-violet-300 disabled:opacity-40">
                 <Star className="w-3.5 h-3.5" />
               </button>
             )}
             <button onClick={toggleActive} disabled={busy} title={pipeline.active ? 'Arquivar' : 'Reativar'}
-              className="p-1.5 rounded-lg text-white/30 hover:bg-white/[0.08] hover:text-white/70 disabled:opacity-40">
+              className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] disabled:opacity-40">
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : pipeline.active ? <Archive className="w-3.5 h-3.5" /> : <ArchiveRestore className="w-3.5 h-3.5" />}
             </button>
             <button onClick={remove} disabled={busy} title="Excluir"
-              className="p-1.5 rounded-lg text-white/30 hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40">
+              className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -389,17 +389,17 @@ function PipelineCard({ pipeline, onReload, canManage }: { pipeline: CrmPipeline
 
       <div className="space-y-1.5 mt-3">
         {stages.length === 0 ? (
-          <p className="text-[12px] text-white/30 py-2">Nenhuma etapa ainda — crie a primeira abaixo.</p>
+          <p className="text-[12px] text-[var(--text-low)] py-2">Nenhuma etapa ainda — crie a primeira abaixo.</p>
         ) : stages.map((s) => <React.Fragment key={s.id}><StageRow stage={s} allStages={stages} onReload={onReload} canManage={canManage} /></React.Fragment>)}
       </div>
 
       {canManage && (
-        <div className="flex gap-2 pt-3 mt-3 border-t border-white/10">
+        <div className="flex gap-2 pt-3 mt-3 border-t border-[var(--hairline)]">
           <input value={newStageName} onChange={(e) => setNewStageName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createStage()}
             placeholder="Nova etapa…"
-            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-[var(--hairline-strong)]" />
           <button onClick={createStage} disabled={creatingStage || !newStageName.trim()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-bold text-white bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] disabled:opacity-40 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-bold text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] disabled:opacity-40 transition-colors">
             {creatingStage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Etapa
           </button>
         </div>
@@ -437,7 +437,7 @@ export function PipelinesManager() {
   if (pipelines === null) {
     return (
       <div className="flex justify-center pt-16">
-        {error ? <p className="text-[14px] text-red-300">{error}</p> : <Loader2 className="w-6 h-6 text-white/40 animate-spin" />}
+        {error ? <p className="text-[14px] text-red-300">{error}</p> : <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />}
       </div>
     );
   }
@@ -450,24 +450,24 @@ export function PipelinesManager() {
         <div className="flex gap-2">
           <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createPipeline()}
             placeholder="Nome do novo pipeline…"
-            className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+            className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-[var(--hairline-strong)]" />
           <button onClick={createPipeline} disabled={creating || !newName.trim()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors shrink-0">
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)] bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors shrink-0">
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Novo pipeline
           </button>
         </div>
       ) : (
-        <p className="text-[12px] text-white/40">Somente o titular da conta pode alterar pipelines e etapas.</p>
+        <p className="text-[12px] text-[var(--text-low)]">Somente o titular da conta pode alterar pipelines e etapas.</p>
       )}
 
       {error && pipelines !== null && <p className="text-[12px] text-red-300">{error}</p>}
 
       {pipelines.length === 0 ? (
         <GlassCard className="!py-14 text-center">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-white/[0.06] border border-white/12">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
             <GitBranch className="w-5 h-5 text-violet-200" />
           </div>
-          <p className="text-[15px] text-white/60">Nenhum pipeline configurado ainda.</p>
+          <p className="text-[15px] text-[var(--text-mid)]">Nenhum pipeline configurado ainda.</p>
         </GlassCard>
       ) : (
         pipelines.map((p) => <React.Fragment key={p.id}><PipelineCard pipeline={p} onReload={load} canManage={canManage} /></React.Fragment>)

@@ -46,6 +46,20 @@
   clicável; não usar `.click()` programático nem `display:none`.
 - **Escopo financeiro.** O produto registra/exibe valores, mas não cobra
   aluguel, reserva ou pagamentos de clientes. Asaas serve à assinatura SaaS.
+- **Sistema de cores "Cristal" + tema Dia/Noite (2026-07-22).** A pedido do
+  usuário, mudança APENAS de cores (layout/estrutura idênticos): paleta Cristal
+  (grafite frio, acento azure->aqua, latão premium) via tokens CSS em
+  `src/index.css` (`:root` = Noite, `:root[data-theme="light"]` = Dia). Duas
+  alavancas evitam editar 30+ arquivos à mão: (a) `@theme` remapeia as famílias
+  Tailwind antigas (violet/purple/blue->accent, indigo->accent-2, emerald/green/
+  teal->success, amber/yellow->warning, red/rose->danger) pros tokens, que
+  reagem ao tema; (b) um codemod trocou os neutros `text/bg/border-white/x` por
+  tokens. Latão é reservado a dinheiro (R$/VGV) + selo premium, nunca área
+  grande. O toggle (`src/lib/theme.ts` + `ThemeToggle.tsx`, padrão Noite,
+  localStorage) fica OCULTO (`THEME_TOGGLE_ENABLED=false`) até o modo Dia
+  passar por latão + QA visual — não publicar o claro com cantos quebrados.
+  ⚠️ `@theme` do Tailwind v4 não aceita comentário dentro do bloco, e cuidado
+  com `*/` em comentários CSS (fecha cedo).
 
 ## WhatsApp e IA
 

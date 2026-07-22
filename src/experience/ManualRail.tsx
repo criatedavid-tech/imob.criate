@@ -79,8 +79,9 @@ function RailIcon({ icon, badge }: { icon: React.ReactNode; badge: number }) {
     <span className="relative inline-flex">
       {icon}
       {badge > 0 && (
-        <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500
-          text-white text-[9px] font-bold flex items-center justify-center leading-none">
+        <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full
+          text-[var(--text-hi)] text-[9px] font-bold flex items-center justify-center leading-none"
+          style={{ background: 'var(--danger)' }}>
           {badge > 9 ? '9+' : badge}
         </span>
       )}
@@ -128,10 +129,11 @@ export function ManualRail({
     <>
       {/* Desktop — rail fixo lateral */}
       <aside className="hidden md:flex w-[92px] shrink-0 h-full flex-col items-center py-5 gap-1 overflow-y-auto
-        backdrop-blur-2xl bg-white/[0.04] border-r border-white/10">
-        <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 shrink-0
-          bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-white/20">
-          <Home className="w-5 h-5 text-white" />
+        backdrop-blur-2xl border-r"
+        style={{ background: 'var(--scrim-glass)', borderColor: 'var(--hairline)' }}>
+        <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 shrink-0 border"
+          style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
+          <Home className="w-5 h-5" />
         </div>
 
         {areas.map((a) => {
@@ -141,8 +143,8 @@ export function ManualRail({
               key={a.key}
               onClick={() => onSelect(a.key)}
               className={cn(
-                'w-[72px] py-2.5 rounded-2xl flex flex-col items-center gap-1 transition-colors shrink-0',
-                isActive ? 'bg-white/[0.12] text-white' : 'text-white/45 hover:text-white/80 hover:bg-white/[0.05]',
+                'w-[72px] py-2.5 rounded-2xl flex flex-col items-center gap-1 transition-colors shrink-0 border border-transparent',
+                isActive ? 'is-selected cr-text-hi' : 'cr-text-low hover:text-[var(--text-mid)] hover:bg-[var(--accent-soft)]',
               )}
             >
               <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
@@ -164,16 +166,15 @@ export function ManualRail({
             <motion.aside
               initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-              className="absolute left-0 top-0 h-full w-72 flex flex-col p-4
-                backdrop-blur-2xl bg-slate-900/95 border-r border-white/12 overflow-y-auto
-                shadow-[4px_0_32px_rgba(0,0,0,0.5)]"
+              className="absolute left-0 top-0 h-full w-72 flex flex-col p-4 overflow-y-auto border-r"
+              style={{ background: 'var(--bg-elevated)', borderColor: 'var(--hairline-strong)', boxShadow: 'var(--glass-shadow)' }}
             >
               <div className="flex items-center gap-2 mb-6 px-2 pt-1">
-                <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0
-                  bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-white/20">
-                  <Home className="w-4 h-4 text-white" />
+                <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border"
+                  style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
+                  <Home className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-lg text-white">Criate</span>
+                <span className="font-bold text-lg cr-text-hi">Criate</span>
               </div>
 
               <div className="flex flex-col gap-1">
@@ -184,8 +185,8 @@ export function ManualRail({
                       key={a.key}
                       onClick={() => { onSelect(a.key); onMobileClose?.(); }}
                       className={cn(
-                        'w-full px-4 py-3 rounded-2xl flex items-center gap-3 transition-colors',
-                        isActive ? 'bg-white/[0.12] text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.05]',
+                        'w-full px-4 py-3 rounded-2xl flex items-center gap-3 transition-colors border border-transparent',
+                        isActive ? 'is-selected cr-text-hi' : 'cr-text-mid hover:text-[var(--text-hi)] hover:bg-[var(--accent-soft)]',
                       )}
                     >
                       <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />

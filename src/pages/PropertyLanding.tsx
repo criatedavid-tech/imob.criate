@@ -247,7 +247,7 @@ export default function PropertyLanding() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAFA] font-sans text-[#1a1a1a] selection:bg-black selection:text-white overflow-x-hidden">
+    <div className="min-h-screen bg-[#FAFAFA] font-sans text-[#1a1a1a] selection:bg-black selection:text-[var(--text-hi)] overflow-x-hidden">
 
       {/* ── Fixed Nav ── */}
       <motion.nav
@@ -256,19 +256,19 @@ export default function PropertyLanding() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.4, duration: 0.8 }}
       >
-        <span className={`font-serif text-lg tracking-widest uppercase transition-colors duration-500 ${navScrolled ? 'text-[#1a1a1a]' : 'text-white'}`}>
+        <span className={`font-serif text-lg tracking-widest uppercase transition-colors duration-500 ${navScrolled ? 'text-[#1a1a1a]' : 'text-[var(--text-hi)]'}`}>
           Criate
         </span>
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpenSchedule}
-            className={`hidden md:flex items-center gap-2 px-5 py-2.5 rounded-full text-[10px] font-semibold tracking-widest uppercase border transition-all duration-300 ${navScrolled ? 'border-[#1a1a1a] text-[#1a1a1a] hover:bg-black hover:text-white' : 'border-white/50 text-white hover:bg-white hover:text-black'}`}
+            className={`hidden md:flex items-center gap-2 px-5 py-2.5 rounded-full text-[10px] font-semibold tracking-widest uppercase border transition-all duration-300 ${navScrolled ? 'border-[#1a1a1a] text-[#1a1a1a] hover:bg-black hover:text-[var(--text-hi)]' : 'border-white text-[var(--text-hi)] hover:bg-white hover:text-black'}`}
           >
             <Calendar size={13} /> Agendar Visita
           </button>
           <button
             onClick={handleWhatsApp}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[10px] font-semibold tracking-widest uppercase transition-all duration-300 ${navScrolled ? 'bg-black text-white hover:bg-[#333]' : 'bg-white/15 backdrop-blur-sm border border-white/30 text-white hover:bg-white hover:text-black'}`}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[10px] font-semibold tracking-widest uppercase transition-all duration-300 ${navScrolled ? 'bg-black text-[var(--text-hi)] hover:bg-[#333]' : 'bg-[var(--control-fill-hover)] backdrop-blur-sm border border-[var(--glass-border-strong)] text-[var(--text-hi)] hover:bg-white hover:text-black'}`}
           >
             <MessageCircle size={13} /> WhatsApp
           </button>
@@ -298,15 +298,15 @@ export default function PropertyLanding() {
             className="flex items-center gap-2 mb-5"
           >
             <div className="w-6 h-[1px] bg-white/60" />
-            <MapPin size={13} className="text-white/70" />
-            <span className="text-white/70 text-[11px] tracking-[0.25em] uppercase">{displayData.location}</span>
+            <MapPin size={13} className="text-[var(--text-mid)]" />
+            <span className="text-[var(--text-mid)] text-[11px] tracking-[0.25em] uppercase">{displayData.location}</span>
           </motion.div>
 
           <motion.h1
             initial={{ opacity: 0, y: 60 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7, duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-            className="font-serif text-5xl md:text-7xl lg:text-[5.5rem] font-light text-white leading-[0.92] tracking-tight mb-8 max-w-3xl"
+            className="font-serif text-5xl md:text-7xl lg:text-[5.5rem] font-light text-[var(--text-hi)] leading-[0.92] tracking-tight mb-8 max-w-3xl"
           >
             {displayData.title}
           </motion.h1>
@@ -317,7 +317,7 @@ export default function PropertyLanding() {
             transition={{ delay: 1, duration: 0.9 }}
             className="flex flex-col sm:flex-row items-start sm:items-center gap-5"
           >
-            <span className="text-white/90 text-2xl md:text-3xl font-light tracking-tight">
+            <span className="text-[var(--text-hi)] text-2xl md:text-3xl font-light tracking-tight">
               {displayData.price}
             </span>
             <div className="hidden sm:block w-px h-7 bg-white/25" />
@@ -331,7 +331,7 @@ export default function PropertyLanding() {
               </button>
               <button
                 onClick={handleOpenSchedule}
-                className="group flex items-center gap-2 h-13 px-7 py-3.5 border border-white/35 text-white rounded-full text-xs font-bold tracking-widest uppercase backdrop-blur-sm hover:bg-white hover:text-black transition-all duration-300"
+                className="group flex items-center gap-2 h-13 px-7 py-3.5 border border-white/35 text-[var(--text-hi)] rounded-full text-xs font-bold tracking-widest uppercase backdrop-blur-sm hover:bg-white hover:text-black transition-all duration-300"
               >
                 <Calendar size={14} /> Agendar
               </button>
@@ -342,7 +342,7 @@ export default function PropertyLanding() {
         {/* Scroll indicator */}
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.8 }}
-          className="absolute bottom-8 right-10 flex flex-col items-center gap-3 text-white/50"
+          className="absolute bottom-8 right-10 flex flex-col items-center gap-3 text-[var(--text-low)]"
         >
           <motion.div animate={{ y: [0, 7, 0] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}>
             <ChevronDown size={18} />
@@ -415,7 +415,7 @@ export default function PropertyLanding() {
                   referrerPolicy="no-referrer"
                 />
                 {/* Section number badge */}
-                <div className="absolute top-6 left-6 w-10 h-10 bg-white/10 backdrop-blur-md border border-white/25 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                <div className="absolute top-6 left-6 w-10 h-10 bg-[var(--control-fill-hover)] backdrop-blur-md border border-[var(--glass-border-strong)] rounded-full flex items-center justify-center text-[var(--text-hi)] text-xs font-bold">
                   {String(i + 1).padStart(2, '0')}
                 </div>
               </motion.div>
@@ -555,8 +555,8 @@ export default function PropertyLanding() {
                 ) : (
                   // Sem foto configurada: monograma com a inicial, em vez de
                   // foto de banco de imagens de um estranho (ver brokerProfile).
-                  <div className="w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] border border-white/10 flex items-center justify-center">
-                    <span className="font-serif text-8xl font-light text-white/25 select-none">
+                  <div className="w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] border border-[var(--hairline)] flex items-center justify-center">
+                    <span className="font-serif text-8xl font-light text-[var(--text-low)] select-none">
                       {brokerProfile.name.charAt(0).toUpperCase()}
                     </span>
                   </div>
@@ -573,12 +573,12 @@ export default function PropertyLanding() {
                 <span className="w-6 h-px bg-[#555]" />Seu Corretor
               </motion.p>
               <motion.div variants={fadeUp}>
-                <h2 className="font-serif text-4xl md:text-5xl font-light text-white leading-tight">{brokerProfile.name}</h2>
+                <h2 className="font-serif text-4xl md:text-5xl font-light text-[var(--text-hi)] leading-tight">{brokerProfile.name}</h2>
                 <p className="text-[#888] text-xs tracking-widest uppercase mt-2">{brokerProfile.title}</p>
               </motion.div>
 
               {brokerProfile.quote && (
-                <motion.blockquote variants={fadeUp} className="border-l-2 border-white/15 pl-6 text-white/60 font-light italic text-base leading-relaxed">
+                <motion.blockquote variants={fadeUp} className="border-l-2 border-[var(--glass-border)] pl-6 text-[var(--text-mid)] font-light italic text-base leading-relaxed">
                   {brokerProfile.quote}
                 </motion.blockquote>
               )}
@@ -593,19 +593,19 @@ export default function PropertyLanding() {
                 </button>
                 <button
                   onClick={() => setIsPhilosophyModalOpen(true)}
-                  className="flex items-center gap-2 px-7 py-3.5 border border-white/20 text-white rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 transition-all"
+                  className="flex items-center gap-2 px-7 py-3.5 border border-[var(--glass-border)] text-[var(--text-hi)] rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[var(--control-fill-hover)] transition-all"
                 >
                   Saiba Mais
                 </button>
                 <button
                   onClick={handleOpenSchedule}
-                  className="flex items-center gap-2 px-7 py-3.5 border border-white/20 text-white rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 transition-all"
+                  className="flex items-center gap-2 px-7 py-3.5 border border-[var(--glass-border)] text-[var(--text-hi)] rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[var(--control-fill-hover)] transition-all"
                 >
                   <Calendar size={14} /> Agendar Visita
                 </button>
                 <button
                   onClick={() => setIsContactModalOpen(true)}
-                  className="flex items-center gap-2 px-7 py-3.5 border border-white/20 text-white rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 transition-all"
+                  className="flex items-center gap-2 px-7 py-3.5 border border-[var(--glass-border)] text-[var(--text-hi)] rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[var(--control-fill-hover)] transition-all"
                 >
                   <Mail size={14} /> Enviar Mensagem
                 </button>
@@ -647,7 +647,7 @@ export default function PropertyLanding() {
             <a
               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(displayData.location)}`}
               target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 px-10 py-4 border border-[#1a1a1a] rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-all duration-300"
+              className="inline-flex items-center gap-3 px-10 py-4 border border-[#1a1a1a] rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-[var(--text-hi)] transition-all duration-300"
             >
               <MapPin size={13} /> Ver no Mapa
             </a>
@@ -664,7 +664,7 @@ export default function PropertyLanding() {
       <motion.button
         initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 1.5 }}
         onClick={handleWhatsApp}
-        className="fixed bottom-7 right-7 z-[90] w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center text-white shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:scale-110 hover:-translate-y-1 transition-all duration-300 group"
+        className="fixed bottom-7 right-7 z-[90] w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center text-[var(--text-hi)] shadow-[0_8px_30px_rgba(37,211,102,0.4)] hover:scale-110 hover:-translate-y-1 transition-all duration-300 group"
         aria-label="WhatsApp"
       >
         <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" className="group-hover:scale-110 transition-transform">
@@ -734,7 +734,7 @@ export default function PropertyLanding() {
                         />
                       </div>
                     </div>
-                    <button disabled={scheduleLoading} className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
+                    <button disabled={scheduleLoading} className="w-full bg-black text-[var(--text-hi)] py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
                       {scheduleLoading ? <Loader2 className="animate-spin" size={16} /> : 'Confirmar Visita'}
                     </button>
                     <button type="button" onClick={handleWhatsApp} className="w-full text-[#6B6B6B] text-[10px] font-bold tracking-widest uppercase hover:text-black transition-all pt-1">
@@ -750,7 +750,7 @@ export default function PropertyLanding() {
                     </div>
                     <h3 className="font-serif text-3xl font-light mb-3">Solicitação Enviada</h3>
                     <p className="text-[#6B6B6B] mb-8 px-4">Recebemos sua solicitação. O corretor responsável entrará em contato em breve.</p>
-                    <button onClick={() => setIsScheduleModalOpen(false)} className="w-full bg-black text-white py-4 rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all">
+                    <button onClick={() => setIsScheduleModalOpen(false)} className="w-full bg-black text-[var(--text-hi)] py-4 rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all">
                       Entendido
                     </button>
                   </div>
@@ -778,14 +778,14 @@ export default function PropertyLanding() {
                   // Mesmo monograma da seção do corretor — nunca foto de
                   // banco de imagens no lugar do corretor real.
                   <div className="w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#111] flex items-center justify-center">
-                    <span className="font-serif text-8xl font-light text-white/20 select-none">
+                    <span className="font-serif text-8xl font-light text-[var(--text-low)] select-none">
                       {brokerProfile.name.charAt(0).toUpperCase()}
                     </span>
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-8">
-                  <p className="text-white font-serif text-3xl font-light">{brokerProfile.name}</p>
-                  <p className="text-white/60 text-[10px] tracking-[0.2em] uppercase mt-2">{brokerProfile.title}</p>
+                  <p className="text-[var(--text-hi)] font-serif text-3xl font-light">{brokerProfile.name}</p>
+                  <p className="text-[var(--text-mid)] text-[10px] tracking-[0.2em] uppercase mt-2">{brokerProfile.title}</p>
                 </div>
               </div>
               <div className="w-full md:w-3/5 p-8 md:p-12 flex flex-col justify-center relative">
@@ -846,7 +846,7 @@ export default function PropertyLanding() {
                       <MessageCircle size={16} className="absolute left-5 top-5 text-[#9CA3AF]" />
                       <textarea required rows={4} placeholder="Sua Mensagem" value={contactForm.message} onChange={e => setContactForm({ ...contactForm, message: e.target.value })} className="w-full pl-14 pr-5 py-4 bg-white border border-[#E8E4E0] rounded-2xl text-sm focus:ring-1 focus:ring-black outline-none transition-all placeholder:text-[#9CA3AF] resize-none" />
                     </div>
-                    <button disabled={contactLoading} className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
+                    <button disabled={contactLoading} className="w-full bg-black text-[var(--text-hi)] py-4 rounded-2xl text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-2">
                       {contactLoading ? <Loader2 className="animate-spin" size={16} /> : 'Enviar Mensagem'}
                     </button>
                   </form>
@@ -857,7 +857,7 @@ export default function PropertyLanding() {
                     </div>
                     <h3 className="font-serif text-3xl font-light mb-3">Mensagem Enviada</h3>
                     <p className="text-[#6B6B6B] mb-8 px-4">Obrigado pelo contato. Um corretor dedicado retornará em até 24 horas.</p>
-                    <button onClick={() => { setIsContactModalOpen(false); setTimeout(() => setContactStep('form'), 300); }} className="w-full bg-black text-white py-4 rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all">
+                    <button onClick={() => { setIsContactModalOpen(false); setTimeout(() => setContactStep('form'), 300); }} className="w-full bg-black text-[var(--text-hi)] py-4 rounded-full text-[10px] font-bold tracking-widest uppercase hover:bg-[#333] transition-all">
                       Fechar
                     </button>
                   </div>

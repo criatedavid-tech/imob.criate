@@ -7,6 +7,22 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Sistema de cores Cristal — recolor em massa aplicado (2026-07-22)
+
+Todo o frontend recolorido pra paleta Cristal (só cor, estrutura intacta) nos
+2 temas: tokens em `src/index.css`, `@theme` remapeia acentos/semânticos,
+codemod trocou os neutros `white/x`, fundo escuro -> `.app-bg`. Toggle
+Dia/Noite pronto (`theme.ts`/`ThemeToggle.tsx`) mas **travado em Noite**
+(`THEME_TOGGLE_ENABLED=false`). `tsc`/`knip`/`build` OK.
+
+**Próximos passos deste tema:**
+1. Latão (`cr-brass`/`var(--brass)`) nos valores em R$ — Dashboard, Relatórios,
+   Financeiro, Lançamentos (regra: latão = dinheiro + selo premium).
+2. QA visual dos 2 temas (browser pane esteve bloqueado nesta sessão).
+3. Reativar o toggle (`THEME_TOGGLE_ENABLED=true`) só após o Dia aprovado.
+4. Revisar páginas públicas editoriais (PropertyLanding, Vitrine) que também
+   foram tokenizadas — conferir se o look editorial preto/branco seguiu certo.
+
 ## Prompt injection — pacote P0 publicado (2026-07-22)
 
 - `server/security/agentGuardrails.ts` valida resposta/confirmação por Zod

@@ -1,11 +1,245 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+/* Remap dos acentos antigos pros tokens Cristal: recolore as classes das
+   familias violet, purple e blue (azure = var(--accent)) e indigo (aqua =
+   var(--accent-2)) do app inteiro de uma vez, reagindo ao tema. Apenas as
+   faixas usadas como ACENTO; 800/900/950 (fundos) ficam intactas.
+   OBS: @theme (Tailwind v4) nao aceita comentario dentro do bloco. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
+
+  --color-violet-200: var(--accent);
+  --color-violet-300: var(--accent);
+  --color-violet-400: var(--accent);
+  --color-violet-500: var(--accent);
+  --color-violet-600: var(--accent);
+  --color-violet-700: var(--accent);
+  --color-purple-200: var(--accent);
+  --color-purple-300: var(--accent);
+  --color-purple-400: var(--accent);
+  --color-purple-500: var(--accent);
+  --color-purple-600: var(--accent);
+  --color-indigo-200: var(--accent-2);
+  --color-indigo-300: var(--accent-2);
+  --color-indigo-400: var(--accent-2);
+  --color-indigo-500: var(--accent-2);
+  --color-indigo-600: var(--accent-2);
+  --color-blue-400: var(--accent);
+  --color-blue-500: var(--accent);
+  --color-blue-600: var(--accent);
+  --color-blue-700: var(--accent);
+
+  --color-emerald-200: var(--success);
+  --color-emerald-300: var(--success);
+  --color-emerald-400: var(--success);
+  --color-emerald-500: var(--success);
+  --color-green-300: var(--success);
+  --color-green-400: var(--success);
+  --color-green-500: var(--success);
+  --color-teal-300: var(--success);
+  --color-teal-400: var(--success);
+
+  --color-amber-200: var(--warning);
+  --color-amber-300: var(--warning);
+  --color-amber-400: var(--warning);
+  --color-amber-500: var(--warning);
+  --color-yellow-300: var(--warning);
+  --color-yellow-400: var(--warning);
+
+  --color-red-300: var(--danger);
+  --color-red-400: var(--danger);
+  --color-red-500: var(--danger);
+  --color-red-600: var(--danger);
+  --color-rose-300: var(--danger);
+  --color-rose-400: var(--danger);
+  --color-rose-500: var(--danger);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   PALETA "CRISTAL" — só cores. Layout/estrutura do app não muda.
+   Modo Noite = padrão (:root). Modo Dia = :root[data-theme="light"].
+   O tema é trocado escrevendo data-theme no <html> (src/lib/theme.ts).
+   Componentes referenciam os tokens (var(--...)) — nenhum componente novo.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens — MODO NOITE (padrão) ───────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  --bg-base:      #070B14;
+  --bg-elevated:  #0C1322;
+  --bg-sunken:    #04070E;
+  --surface-1:    #0E1626;
+  --surface-2:    #131D30;
+
+  --accent:       #3B9EFF;
+  --accent-hover: #5AACFF;
+  --accent-press: #2E7DFF;
+  --accent-soft:  rgba(59,158,255,.14);
+  --accent-2:     #52E7E8;
+  --accent-2-soft:rgba(82,231,232,.12);
+  --accent-gradient: linear-gradient(135deg,#3B9EFF 0%,#52E7E8 100%);
+  --accent-glow:  rgba(59,158,255,.45);
+
+  --brass:        #EEC07C;
+  --brass-strong: #DCAE64;
+  --brass-deep:   #C9974A;
+  --brass-gradient: linear-gradient(135deg,#EEC07C 0%,#DCAE64 100%);
+  --brass-soft:   rgba(238,192,124,.14);
+  --on-brass:     #2A1C07;
+
+  --success:      #34D399;  --success-soft: rgba(52,211,153,.14);
+  --warning:      #FBBF24;  --warning-soft: rgba(251,191,36,.14);
+  --danger:       #FB6B6B;  --danger-soft:  rgba(251,107,107,.14);
+  --info:         var(--accent);
+
+  --text-hi:      #EAF0FF;
+  --text-mid:     #98A4C0;
+  --text-low:     #5C6787;
+  --on-accent:    #052238;
+
+  --glass-border:      rgba(255,255,255,.12);
+  --glass-border-strong: rgba(255,255,255,.20);
+
+  --scrim-media: linear-gradient(180deg,rgba(4,8,16,0) 0%,rgba(4,8,16,.55) 78%,rgba(4,8,16,.80) 100%);
+  --scrim-glass: rgba(8,14,26,.42);
+
+  --hairline:        rgba(255,255,255,.08);
+  --hairline-strong: rgba(255,255,255,.14);
+
+  /* Fill translúcido p/ superfícies/controles (equivale ao antigo bg-white/x) */
+  --control-fill:       rgba(255,255,255,.06);
+  --control-fill-hover: rgba(255,255,255,.12);
+  --surface-glass:      rgba(255,255,255,.04);
+  --surface-glass-2:    rgba(255,255,255,.08);
+
+  --glass-shadow:  0 24px 60px rgba(0,0,0,.5);
+  --dur-slow:      360ms;
+  --ease-spring:   cubic-bezier(.34,1.56,.64,1);
+
+  /* Preenchimento do card (GlassCard) — no claro vira branco sólido */
+  --card-fill:       rgba(255,255,255,.06);
+  --card-fill-hover: rgba(255,255,255,.10);
+  --card-shadow:     inset 0 1px 0 rgba(255,255,255,.14), 0 20px 50px -24px rgba(0,0,0,.6);
+}
+
+/* ── Tokens — MODO DIA (Vitrine) ────────────────────────────────────── */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-base:      #EDF1FA;
+  --bg-elevated:  #FFFFFF;
+  --bg-sunken:    #E1E7F3;
+  --surface-1:    #FFFFFF;
+  --surface-2:    #F3F6FC;
+
+  --accent:       #1E6FE0;
+  --accent-hover: #2E7DFF;
+  --accent-press: #155BC4;
+  --accent-soft:  rgba(30,111,224,.10);
+  --accent-2:     #12A6BC;
+  --accent-2-soft:rgba(18,166,188,.12);
+  --accent-gradient: linear-gradient(135deg,#2E8BFF 0%,#41D3DB 100%);
+  --accent-glow:  rgba(46,139,255,.35);
+
+  --brass:        #C9974A;
+  --brass-strong: #B8863A;
+  --brass-deep:   #8A6320;
+  --brass-gradient: linear-gradient(135deg,#E9B872 0%,#D4A257 100%);
+  --brass-soft:   rgba(201,151,74,.16);
+  --on-brass:     #3A2A0E;
+
+  --success:      #0B8A60;  --success-soft: rgba(16,168,115,.14);
+  --warning:      #B26A00;  --warning-soft: rgba(201,130,10,.16);
+  --danger:       #D63B3B;  --danger-soft:  rgba(220,76,76,.12);
+  --info:         var(--accent);
+
+  --text-hi:      #141C2E;
+  --text-mid:     #4A5878;
+  --text-low:     #8A97B4;
+  --on-accent:    #052238;
+
+  --glass-border:      rgba(30,50,90,.14);
+  --glass-border-strong: rgba(30,50,90,.22);
+
+  --scrim-media: linear-gradient(180deg,rgba(8,16,30,0) 0%,rgba(8,16,30,.45) 78%,rgba(8,16,30,.72) 100%);
+  --scrim-glass: rgba(255,255,255,.55);
+
+  --hairline:        rgba(20,40,80,.10);
+  --hairline-strong: rgba(20,40,80,.16);
+
+  --control-fill:       rgba(20,40,80,.05);
+  --control-fill-hover: rgba(20,40,80,.10);
+  --surface-glass:      rgba(255,255,255,.70);
+  --surface-glass-2:    rgba(255,255,255,.90);
+
+  --glass-shadow:  0 20px 50px rgba(30,50,100,.14);
+
+  --card-fill:       #FFFFFF;
+  --card-fill-hover: #F3F6FC;
+  --card-shadow:     inset 0 1px 0 rgba(255,255,255,.9), 0 18px 44px -24px rgba(30,50,100,.28);
+}
+
+/* ── Base ───────────────────────────────────────────────────────────── */
+html { background-color: var(--bg-base); }
+body { color: var(--text-mid); }
+
+/* Cross-fade suave ao trocar de tema (classe temporária no <html>, via JS) */
+html.theme-transition,
+html.theme-transition * {
+  transition:
+    background-color var(--dur-slow, 360ms) ease,
+    border-color var(--dur-slow, 360ms) ease,
+    color var(--dur-slow, 360ms) ease,
+    box-shadow var(--dur-slow, 360ms) ease,
+    fill var(--dur-slow, 360ms) ease !important;
+}
+
+/* Fundo do app — mesh na paleta nova (mesma ideia do gradiente anterior) */
+.app-bg {
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(72% 60% at 12% 6%,  rgba(59,158,255,.30), transparent 60%),
+    radial-gradient(60% 55% at 90% 10%, rgba(82,231,232,.20), transparent 60%),
+    radial-gradient(85% 75% at 82% 96%, rgba(46,125,255,.20), transparent 62%),
+    radial-gradient(52% 52% at 18% 92%, rgba(238,192,124,.11), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="light"] .app-bg {
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(70% 60% at 12% 8%,  rgba(59,158,255,.22), transparent 60%),
+    radial-gradient(55% 55% at 92% 12%, rgba(82,231,232,.16), transparent 60%),
+    radial-gradient(65% 60% at 88% 92%, rgba(238,192,124,.20), transparent 62%),
+    radial-gradient(50% 50% at 15% 95%, rgba(46,125,255,.10), transparent 60%);
+}
+
+/* Estado selecionado (aba/pílula ativa) */
+.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Foco visível sempre */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+/* Atalhos de cor por token (para a migração dos componentes) */
+.cr-text-hi  { color: var(--text-hi); }
+.cr-text-mid { color: var(--text-mid); }
+.cr-text-low { color: var(--text-low); }
+.cr-accent   { color: var(--accent); }
+.cr-brass    { color: var(--brass); }
+.cr-num      { font-variant-numeric: tabular-nums; }
+.cr-solid    { background: var(--surface-1); }
+.cr-solid-2  { background: var(--surface-2); }
+
+/* ── Acessibilidade ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition, html.theme-transition * { transition-duration: .01ms !important; }
+}
+
+/* ── Keyframes legados (mantidos) ───────────────────────────────────── */
 @keyframes slowZoom {
   0% { transform: scale(1); }
   100% { transform: scale(1.05); }
@@ -20,4 +254,3 @@
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
-

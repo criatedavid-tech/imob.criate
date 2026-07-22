@@ -27,7 +27,7 @@ const FOLLOWUP_STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: 'Aguardando envio', cls: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/20' },
   sent: { label: 'Enviado', cls: 'bg-green-500/20 text-green-300 border-green-400/20' },
   failed: { label: 'Falhou', cls: 'bg-red-500/20 text-red-300 border-red-400/20' },
-  cancelled: { label: 'Cancelado', cls: 'bg-white/10 text-white/40 border-white/10' },
+  cancelled: { label: 'Cancelado', cls: 'bg-[var(--control-fill-hover)] text-[var(--text-low)] border-[var(--hairline)]' },
 };
 
 function formatWhen(iso: string) {
@@ -110,15 +110,15 @@ export function LembretesArea() {
   if (loading) {
     return (
       <div className="flex justify-center pt-24">
-        <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+        <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="max-w-3xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-1">Lembretes</h2>
-      <p className="text-[13px] text-white/40 mb-6">
+      <h2 className="text-2xl font-black text-[var(--text-hi)] mb-1">Lembretes</h2>
+      <p className="text-[13px] text-[var(--text-low)] mb-6">
         Lembretes que você pediu pro Assistente IA guardar, e follow-ups agendados pra sair sozinhos no WhatsApp.
       </p>
 
@@ -129,9 +129,9 @@ export function LembretesArea() {
       )}
 
       <section className="mb-8">
-        <h3 className="text-[13px] font-bold text-white/60 uppercase tracking-wide mb-3">Lembretes</h3>
+        <h3 className="text-[13px] font-bold text-[var(--text-mid)] uppercase tracking-wide mb-3">Lembretes</h3>
         {pendingReminders.length === 0 ? (
-          <GlassCard className="!p-5 text-[13px] text-white/40">
+          <GlassCard className="!p-5 text-[13px] text-[var(--text-low)]">
             Nenhum lembrete pendente. Peça pro Assistente IA: "me lembra de ligar pro fulano em 2 dias".
           </GlassCard>
         ) : (
@@ -142,8 +142,8 @@ export function LembretesArea() {
                   <div className="min-w-0 flex items-center gap-3">
                     <Bell className="w-4 h-4 text-purple-300 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-[14px] font-bold text-white truncate">{r.title || 'Lembrete'}</p>
-                      <p className="text-[12px] text-white/45 mt-0.5 truncate">
+                      <p className="text-[14px] font-bold text-[var(--text-hi)] truncate">{r.title || 'Lembrete'}</p>
+                      <p className="text-[12px] text-[var(--text-low)] mt-0.5 truncate">
                         {r.client_name}{r.client_phone ? ` · ${r.client_phone}` : ''} · {formatWhen(r.scheduled_at)}
                       </p>
                     </div>
@@ -159,7 +159,7 @@ export function LembretesArea() {
                     <button
                       onClick={() => deleteReminder(r.id)}
                       disabled={busyId === r.id}
-                      className="p-2 rounded-xl text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
                     >
                       {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                     </button>
@@ -175,8 +175,8 @@ export function LembretesArea() {
             {doneReminders.map((r) => (
               <div key={r.id}>
                 <GlassCard className="!p-3 flex items-center gap-3">
-                  <Bell className="w-3.5 h-3.5 text-white/30 shrink-0" />
-                  <p className="text-[12px] text-white/40 truncate">
+                  <Bell className="w-3.5 h-3.5 text-[var(--text-low)] shrink-0" />
+                  <p className="text-[12px] text-[var(--text-low)] truncate">
                     {r.title || 'Lembrete'} — {r.client_name} · {formatWhen(r.scheduled_at)} ·{' '}
                     {r.status === 'realizado' ? 'concluído' : 'cancelado'}
                   </p>
@@ -188,9 +188,9 @@ export function LembretesArea() {
       </section>
 
       <section>
-        <h3 className="text-[13px] font-bold text-white/60 uppercase tracking-wide mb-3">Follow-ups agendados</h3>
+        <h3 className="text-[13px] font-bold text-[var(--text-mid)] uppercase tracking-wide mb-3">Follow-ups agendados</h3>
         {followups.length === 0 ? (
-          <GlassCard className="!p-5 text-[13px] text-white/40">
+          <GlassCard className="!p-5 text-[13px] text-[var(--text-low)]">
             Nenhum follow-up agendado. Peça pro Assistente IA: "envie em 24h um follow-up pro fulano".
           </GlassCard>
         ) : (
@@ -204,10 +204,10 @@ export function LembretesArea() {
                       <div className="min-w-0 flex items-center gap-3">
                         <Send className="w-4 h-4 text-blue-300 shrink-0" />
                         <div className="min-w-0">
-                          <p className="text-[14px] font-bold text-white truncate">
-                            {f.contact_name} <span className="text-white/40 font-normal">· {f.contact_phone}</span>
+                          <p className="text-[14px] font-bold text-[var(--text-hi)] truncate">
+                            {f.contact_name} <span className="text-[var(--text-low)] font-normal">· {f.contact_phone}</span>
                           </p>
-                          <p className="text-[12px] text-white/45 mt-0.5 truncate">{f.message}</p>
+                          <p className="text-[12px] text-[var(--text-low)] mt-0.5 truncate">{f.message}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -216,14 +216,14 @@ export function LembretesArea() {
                           <button
                             onClick={() => cancelFollowup(f.id)}
                             disabled={busyId === f.id}
-                            className="p-2 rounded-xl text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
+                            className="p-2 rounded-xl text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
                           >
                             {busyId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className="text-[11px] text-white/30 mt-2 pl-7">
+                    <p className="text-[11px] text-[var(--text-low)] mt-2 pl-7">
                       {f.status === 'sent' && f.sent_at ? `Enviado em ${formatWhen(f.sent_at)}` : `Previsto para ${formatWhen(f.due_at)}`}
                       {f.status === 'failed' && f.last_error ? ` · ${f.last_error}` : ''}
                     </p>

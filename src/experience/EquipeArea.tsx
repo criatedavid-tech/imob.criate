@@ -75,40 +75,40 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-6">
-        <h3 className="text-lg font-bold text-white mb-2">Convidar pra equipe</h3>
+        <h3 className="text-lg font-bold text-[var(--text-hi)] mb-2">Convidar pra equipe</h3>
 
         {!mode ? (
           <>
-            <p className="text-[13px] text-white/50 mb-4">Esse corretor vai ter WhatsApp próprio ou vai compartilhar o número da conta?</p>
+            <p className="text-[13px] text-[var(--text-low)] mb-4">Esse corretor vai ter WhatsApp próprio ou vai compartilhar o número da conta?</p>
             <div className="space-y-2">
               <button onClick={() => generate('shared')}
-                className="w-full text-left px-4 py-3 rounded-xl bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
-                <p className="text-sm font-semibold text-white">Compartilhado</p>
-                <p className="text-[12px] text-white/40 mt-0.5">Usa o mesmo número já conectado na conta.</p>
+                className="w-full text-left px-4 py-3 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                <p className="text-sm font-semibold text-[var(--text-hi)]">Compartilhado</p>
+                <p className="text-[12px] text-[var(--text-low)] mt-0.5">Usa o mesmo número já conectado na conta.</p>
               </button>
               <button onClick={() => generate('own')}
-                className="w-full text-left px-4 py-3 rounded-xl bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
-                <p className="text-sm font-semibold text-white">WhatsApp próprio</p>
-                <p className="text-[12px] text-white/40 mt-0.5">Ele conecta o próprio número, dentro do limite do seu plano.</p>
+                className="w-full text-left px-4 py-3 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                <p className="text-sm font-semibold text-[var(--text-hi)]">WhatsApp próprio</p>
+                <p className="text-[12px] text-[var(--text-low)] mt-0.5">Ele conecta o próprio número, dentro do limite do seu plano.</p>
               </button>
             </div>
           </>
         ) : loading ? (
-          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
         ) : error ? (
           <>
             <p className="text-sm text-red-300 mb-3">{error}</p>
-            <button onClick={() => setMode(null)} className="text-[12px] text-white/40 hover:text-white/70 transition-colors">
+            <button onClick={() => setMode(null)} className="text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
               ← Escolher outra opção
             </button>
           </>
         ) : (
           <>
-            <p className="text-[13px] text-white/50 mb-4">Envie este link pra pessoa — ele vale por 48h e só pode ser usado uma vez.</p>
+            <p className="text-[13px] text-[var(--text-low)] mb-4">Envie este link pra pessoa — ele vale por 48h e só pode ser usado uma vez.</p>
             <div className="flex items-stretch gap-2 mb-2">
-              <input readOnly value={url} className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-xs text-white/70 bg-white/8 border border-white/12" />
+              <input readOnly value={url} className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-xs text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]" />
               <button onClick={copy} className="px-3 rounded-xl bg-violet-500/20 border border-violet-300/30 text-violet-100 hover:bg-violet-500/30 transition-colors">
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -116,7 +116,7 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           </>
         )}
 
-        <button onClick={onClose} className="w-full mt-4 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+        <button onClick={onClose} className="w-full mt-4 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">
           Fechar
         </button>
       </div>
@@ -156,18 +156,18 @@ function GoalEditor({ current, onClose, onSaved }: { current: number | null; onC
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-6">
-        <h3 className="text-lg font-bold text-white mb-4">Meta de negócios do mês</h3>
+        <h3 className="text-lg font-bold text-[var(--text-hi)] mb-4">Meta de negócios do mês</h3>
         {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2 mb-4">{error}</div>}
-        <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Quantos negócios fechar</label>
+        <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Quantos negócios fechar</label>
         <input value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="5"
-          className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-            focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors mb-5" />
+          className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+            focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors mb-5" />
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Cancelar</button>
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : null} Salvar
           </button>
         </div>
@@ -284,13 +284,13 @@ export function EquipeArea() {
   }
 
   if (loading) {
-    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
+    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
   }
 
   if (error) {
     return (
       <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Equipe</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Equipe</h2>
         <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
       </div>
     );
@@ -300,45 +300,45 @@ export function EquipeArea() {
 
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-6">Equipe</h2>
+      <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Equipe</h2>
 
       <GlassCard className="!p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-violet-200" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Meta do mês</h3>
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Meta do mês</h3>
           </div>
           <button onClick={() => setEditing(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70
-              bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)]
+              bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
             <Pencil className="w-3.5 h-3.5" /> {goal?.goal ? 'Editar' : 'Definir meta'}
           </button>
         </div>
 
         {goal?.goal ? (
           <>
-            <p className="text-3xl font-black text-white leading-none">
-              {goal.progress} <span className="text-white/30 text-xl">/ {goal.goal} negócios fechados</span>
+            <p className="text-3xl font-black text-[var(--text-hi)] leading-none">
+              {goal.progress} <span className="text-[var(--text-low)] text-xl">/ {goal.goal} negócios fechados</span>
             </p>
-            <div className="w-full h-2 rounded-full bg-white/[0.06] mt-4 overflow-hidden">
+            <div className="w-full h-2 rounded-full bg-[var(--control-fill)] mt-4 overflow-hidden">
               <div className="h-full bg-gradient-to-r from-violet-400 to-indigo-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
             </div>
           </>
         ) : (
-          <p className="text-[14px] text-white/50">Nenhuma meta definida pra este mês ainda.</p>
+          <p className="text-[14px] text-[var(--text-low)]">Nenhuma meta definida pra este mês ainda.</p>
         )}
       </GlassCard>
 
       <GlassCard className="!p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-white/40" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Membros da conta</h3>
+            <Users className="w-4 h-4 text-[var(--text-low)]" />
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Membros da conta</h3>
           </div>
           {iAmOwner && (
             <button onClick={() => setInviting(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70
-                bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)]
+                bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
               <UserPlus className="w-3.5 h-3.5" /> Convidar
             </button>
           )}
@@ -347,21 +347,21 @@ export function EquipeArea() {
         {membersError ? (
           <p className="text-[13px] text-red-300">{membersError}</p>
         ) : !members ? (
-          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
         ) : (
           <div className="space-y-2">
             {members.map((m) => (
-              <div key={m.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+              <div key={m.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-semibold text-white truncate">{m.name}</p>
+                    <p className="text-sm font-semibold text-[var(--text-hi)] truncate">{m.name}</p>
                     {m.is_owner && <span title="Dono da conta"><Crown className="w-3.5 h-3.5 text-amber-300 shrink-0" /></span>}
                   </div>
-                  <p className="text-[12px] text-white/40 truncate">{m.email}</p>
+                  <p className="text-[12px] text-[var(--text-low)] truncate">{m.email}</p>
                 </div>
                 {iAmOwner && !m.is_owner && (
                   <button onClick={() => handleRemove(m)} disabled={removingId === m.user_id}
-                    className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.03] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
+                    className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-[var(--control-fill)] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
                     {removingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </button>
                 )}
@@ -370,7 +370,7 @@ export function EquipeArea() {
           </div>
         )}
 
-        <p className="text-[11px] text-white/30 mt-4 leading-relaxed">
+        <p className="text-[11px] text-[var(--text-low)] mt-4 leading-relaxed">
           Todo membro vê e edita os mesmos dados dele, sem hierarquia nem permissões diferentes ainda — isso é o
           próximo passo, ainda em decisão de produto.
         </p>
@@ -379,22 +379,22 @@ export function EquipeArea() {
       {iAmOwner && invites && invites.length > 0 && (
         <GlassCard className="!p-6 mb-6">
           <div className="flex items-center gap-2 mb-4">
-            <Mail className="w-4 h-4 text-white/40" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Convites pendentes</h3>
+            <Mail className="w-4 h-4 text-[var(--text-low)]" />
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Convites pendentes</h3>
           </div>
           <div className="space-y-2">
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+              <div key={inv.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">
+                  <p className="text-sm font-semibold text-[var(--text-hi)] truncate">
                     {inv.whatsapp_mode === 'own' ? 'WhatsApp próprio' : 'Compartilhado'}
                   </p>
-                  <p className="text-[12px] text-white/40 truncate">
+                  <p className="text-[12px] text-[var(--text-low)] truncate">
                     Expira em {new Date(inv.expires_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
                 <button onClick={() => handleRevoke(inv)} disabled={revokingId === inv.id}
-                  className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.03] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
+                  className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-[var(--control-fill)] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
                   {revokingId === inv.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 </button>
               </div>
@@ -407,25 +407,25 @@ export function EquipeArea() {
         <GlassCard className="!p-6 mt-6">
           <div className="flex items-center gap-2 mb-4">
             <Trophy className="w-4 h-4 text-amber-300" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Ranking (só você vê)</h3>
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Ranking (só você vê)</h3>
           </div>
           <div className="space-y-2">
             {ranking.map((r, i) => (
-              <div key={r.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10">
+              <div key={r.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-6 h-6 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[11px] font-bold text-white/60 shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-[var(--control-fill-hover)] border border-[var(--glass-border)] flex items-center justify-center text-[11px] font-bold text-[var(--text-mid)] shrink-0">
                     {i + 1}
                   </span>
-                  <p className="text-sm font-semibold text-white truncate">{r.name}{r.is_owner ? ' (você)' : ''}</p>
+                  <p className="text-sm font-semibold text-[var(--text-hi)] truncate">{r.name}{r.is_owner ? ' (você)' : ''}</p>
                 </div>
-                <div className="flex items-center gap-4 text-[12px] text-white/50 shrink-0">
+                <div className="flex items-center gap-4 text-[12px] text-[var(--text-low)] shrink-0">
                   <span>{r.closed_leads_month} lead{r.closed_leads_month === 1 ? '' : 's'} fechado{r.closed_leads_month === 1 ? '' : 's'} (mês)</span>
-                  <span className="text-white/80 font-semibold">{centsToReais(r.sales_total_cents)}</span>
+                  <span className="text-[var(--text-hi)] font-semibold">{centsToReais(r.sales_total_cents)}</span>
                 </div>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-white/30 mt-4">Vendas somam todo o histórico de Lançamentos; leads fechados são só do mês corrente.</p>
+          <p className="text-[11px] text-[var(--text-low)] mt-4">Vendas somam todo o histórico de Lançamentos; leads fechados são só do mês corrente.</p>
         </GlassCard>
       )}
 

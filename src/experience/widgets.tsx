@@ -22,12 +22,12 @@ function Briefing({ spec }: { spec: WidgetSpec }) {
     <GlassCard className="!p-7">
       <div className="flex items-start gap-4">
         <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
-          bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-white/20">
-          <Sparkles className="w-5 h-5 text-violet-200" />
+          bg-[var(--accent-soft)] border border-[var(--glass-border)]">
+          <Sparkles className="w-5 h-5 text-[var(--accent)]" />
         </div>
         <div>
-          <h2 className="text-2xl font-black text-white leading-tight">{greeting}</h2>
-          <p className="text-[15px] text-white/60 leading-relaxed mt-1 max-w-2xl">{subtitle}</p>
+          <h2 className="text-2xl font-black text-[var(--text-hi)] leading-tight">{greeting}</h2>
+          <p className="text-[15px] text-[var(--text-mid)] leading-relaxed mt-1 max-w-2xl">{subtitle}</p>
         </div>
       </div>
     </GlassCard>
@@ -36,10 +36,10 @@ function Briefing({ spec }: { spec: WidgetSpec }) {
 
 // ── KPIs: pulso do dia em tiles ──
 const toneColor: Record<string, string> = {
-  up: 'text-emerald-300',
-  down: 'text-rose-300',
-  hot: 'text-amber-300',
-  neutral: 'text-white/40',
+  up: 'text-[var(--success)]',
+  down: 'text-[var(--danger)]',
+  hot: 'text-[var(--warning)]',
+  neutral: 'text-[var(--text-low)]',
 };
 function Kpis({ spec }: { spec: WidgetSpec }) {
   const items = spec.data as any[];
@@ -48,9 +48,9 @@ function Kpis({ spec }: { spec: WidgetSpec }) {
       {items.map((k, i) => (
         <div key={i}>
           <GlassCard className="!p-5">
-            <p className="text-[12px] font-medium text-white/45">{k.label}</p>
-            <p className="text-3xl font-black text-white mt-2 leading-none">{k.value}</p>
-            <p className={`text-[11px] font-semibold mt-2 ${toneColor[k.tone] || 'text-white/40'}`}>{k.delta}</p>
+            <p className="text-[12px] font-medium text-[var(--text-low)]">{k.label}</p>
+            <p className="text-3xl font-black text-[var(--text-hi)] mt-2 leading-none">{k.value}</p>
+            <p className={`text-[11px] font-semibold mt-2 ${toneColor[k.tone] || 'text-[var(--text-low)]'}`}>{k.delta}</p>
           </GlassCard>
         </div>
       ))}
@@ -77,24 +77,24 @@ function Decisions({ spec }: { spec: WidgetSpec }) {
       <WidgetHeader title={spec.title} />
       <div className="space-y-3">
         {items.map((d, i) => (
-          <div key={i} className="rounded-2xl bg-white/[0.05] border border-white/10 p-4">
+          <div key={i} className="rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] p-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
-                bg-white/10 border border-white/15 text-violet-200">
+                bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--accent)]">
                 {iconMap[d.icon] || <Sparkles className="w-4 h-4" />}
               </div>
-              <p className="text-[14px] text-white/80 leading-snug flex-1">{d.text}</p>
+              <p className="text-[14px] text-[var(--text-hi)] leading-snug flex-1">{d.text}</p>
             </div>
             <div className="flex gap-2 mt-3 pl-11">
               <button onClick={() => run(i, d.onPrimary)} disabled={busyIdx !== null}
-                className="px-4 py-2 rounded-xl text-[13px] font-bold text-white
-                bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/45 transition-colors
+                className="px-4 py-2 rounded-xl text-[13px] font-bold text-[var(--text-hi)]
+                bg-[var(--accent-soft)] border border-[var(--accent)] hover:brightness-110 transition-all
                 flex items-center gap-1.5 disabled:opacity-50">
                 {busyIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} {d.primary}
               </button>
               <button onClick={() => run(i, d.onGhost)} disabled={busyIdx !== null}
-                className="px-4 py-2 rounded-xl text-[13px] font-semibold text-white/60
-                hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50">
+                className="px-4 py-2 rounded-xl text-[13px] font-semibold text-[var(--text-mid)]
+                hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-50">
                 {d.ghost}
               </button>
             </div>
@@ -113,20 +113,20 @@ function Conversations({ spec }: { spec: WidgetSpec }) {
       <WidgetHeader title={spec.title} />
       <div className="space-y-2">
         {items.map((c, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors cursor-pointer">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-white
-              bg-gradient-to-br from-slate-500/40 to-slate-700/40 border border-white/15">
+          <div key={i} className="flex items-center gap-3 rounded-2xl p-3 hover:bg-[var(--control-fill)] transition-colors cursor-pointer">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill-hover)] border border-[var(--glass-border)]">
               {c.name.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-semibold text-white truncate">{c.name}</span>
-                {c.tag === 'quente' && <span className="text-[9px] font-bold uppercase tracking-wide text-amber-300 bg-amber-400/15 px-1.5 py-0.5 rounded">quente</span>}
+                <span className="text-[14px] font-semibold text-[var(--text-hi)] truncate">{c.name}</span>
+                {c.tag === 'quente' && <span className="text-[9px] font-bold uppercase tracking-wide text-[var(--warning)] bg-[var(--warning-soft)] px-1.5 py-0.5 rounded">quente</span>}
               </div>
-              <p className="text-[12px] text-white/45 truncate">{c.last}</p>
+              <p className="text-[12px] text-[var(--text-low)] truncate">{c.last}</p>
             </div>
             <span className={`text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 ${
-              c.status === 'ia' ? 'text-violet-200 bg-violet-500/15' : 'text-white/50 bg-white/10'
+              c.status === 'ia' ? 'text-[var(--accent)] bg-[var(--accent-soft)]' : 'text-[var(--text-low)] bg-[var(--control-fill-hover)]'
             }`}>
               {c.status === 'ia' ? 'IA atendendo' : 'aguarda você'}
             </span>
@@ -146,16 +146,16 @@ function LeadsList({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (are
       <div className="space-y-2">
         {items.map((l, i) => (
           <div key={i} onClick={() => onAreaClick?.('negocios')}
-            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors cursor-pointer">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-white
-              bg-gradient-to-br from-slate-500/40 to-slate-700/40 border border-white/15">
+            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-[var(--control-fill)] transition-colors cursor-pointer">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill-hover)] border border-[var(--glass-border)]">
               {(l.name || '?').charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-[14px] font-semibold text-white truncate block">{l.name}</span>
-              <p className="text-[12px] text-white/45 truncate">{l.property}</p>
+              <span className="text-[14px] font-semibold text-[var(--text-hi)] truncate block">{l.name}</span>
+              <p className="text-[12px] text-[var(--text-low)] truncate">{l.property}</p>
             </div>
-            <span className="text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 text-white/50 bg-white/10">
+            <span className="text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 text-[var(--text-low)] bg-[var(--control-fill-hover)]">
               {l.status}
             </span>
           </div>
@@ -170,10 +170,10 @@ function EmptyState({ spec }: { spec: WidgetSpec }) {
   return (
     <GlassCard className="!py-10 text-center">
       <div className="w-11 h-11 rounded-2xl flex items-center justify-center mx-auto mb-4
-        bg-white/[0.06] border border-white/12">
-        <UserPlus className="w-5 h-5 text-violet-200" />
+        bg-[var(--control-fill)] border border-[var(--hairline)]">
+        <UserPlus className="w-5 h-5 text-[var(--accent)]" />
       </div>
-      <p className="text-[14px] text-white/60 max-w-sm mx-auto">{spec.data.text}</p>
+      <p className="text-[14px] text-[var(--text-mid)] max-w-sm mx-auto">{spec.data.text}</p>
     </GlassCard>
   );
 }
@@ -189,12 +189,12 @@ function Funnel({ spec }: { spec: WidgetSpec }) {
         {items.map((s, i) => (
           <div key={i}>
             <div className="flex justify-between text-[12px] mb-1">
-              <span className="text-white/60">{s.stage}</span>
-              <span className="text-white/80 font-semibold">{s.count}</span>
+              <span className="text-[var(--text-mid)]">{s.stage}</span>
+              <span className="text-[var(--text-hi)] font-semibold">{s.count}</span>
             </div>
-            <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-violet-400/70 to-indigo-400/70"
-                style={{ width: `${(s.count / max) * 100}%` }} />
+            <div className="h-2 rounded-full bg-[var(--control-fill)] overflow-hidden">
+              <div className="h-full rounded-full"
+                style={{ background: 'var(--accent-gradient)', width: `${(s.count / max) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -213,15 +213,15 @@ function AiTeam({ spec }: { spec: WidgetSpec }) {
         {items.map((m, i) => (
           <div key={i} className="flex items-center gap-3">
             <div className="relative w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-              bg-white/10 border border-white/15">
-              <Bot className="w-4 h-4 text-violet-200" />
-              {m.on && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900" />}
+              bg-[var(--control-fill-hover)] border border-[var(--glass-border)]">
+              <Bot className="w-4 h-4 text-[var(--accent)]" />
+              {m.on && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--bg-elevated)]" style={{ background: 'var(--success)' }} />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[14px] font-semibold text-white leading-tight">{m.role}</p>
-              <p className="text-[12px] text-white/45 truncate">{m.doing}</p>
+              <p className="text-[14px] font-semibold text-[var(--text-hi)] leading-tight">{m.role}</p>
+              <p className="text-[12px] text-[var(--text-low)] truncate">{m.doing}</p>
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-300">ativo</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--success)]">ativo</span>
           </div>
         ))}
       </div>
@@ -237,15 +237,15 @@ function Team({ spec }: { spec: WidgetSpec }) {
       <WidgetHeader title={spec.title} />
       <div className="space-y-2">
         {items.map((m, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-2xl p-2.5 hover:bg-white/[0.05] transition-colors">
-            <div className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-white
-              bg-gradient-to-br from-indigo-500/40 to-violet-600/40 border border-white/15">
+          <div key={i} className="flex items-center gap-3 rounded-2xl p-2.5 hover:bg-[var(--control-fill)] transition-colors">
+            <div className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold text-[var(--text-hi)]
+              bg-[var(--accent-soft)] border border-[var(--glass-border)]">
               {m.name.charAt(0)}
-              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${m.on ? 'bg-emerald-400' : 'bg-white/30'}`} />
+              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--bg-elevated)] ${m.on ? 'bg-[var(--success)]' : 'bg-[var(--text-low)]'}`} />
             </div>
-            <span className="text-[14px] font-semibold text-white flex-1">{m.name}</span>
-            <span className="text-[12px] text-white/45">{m.leads} leads</span>
-            <span className="text-[12px] font-bold text-emerald-300 w-12 text-right">{m.conv}</span>
+            <span className="text-[14px] font-semibold text-[var(--text-hi)] flex-1">{m.name}</span>
+            <span className="text-[12px] text-[var(--text-low)]">{m.leads} leads</span>
+            <span className="text-[12px] font-bold text-[var(--success)] w-12 text-right">{m.conv}</span>
           </div>
         ))}
       </div>
@@ -259,17 +259,17 @@ function Ranking({ spec }: { spec: WidgetSpec }) {
   const max = Math.max(...items.map((s) => s.value));
   return (
     <GlassCard>
-      <WidgetHeader title={spec.title} action={<TrendingUp className="w-4 h-4 text-emerald-300" />} />
+      <WidgetHeader title={spec.title} action={<TrendingUp className="w-4 h-4 text-[var(--success)]" />} />
       <div className="space-y-3">
         {items.map((s, i) => (
           <div key={i}>
             <div className="flex justify-between text-[12px] mb-1">
-              <span className="text-white/60">{i + 1}. {s.name}</span>
-              <span className="text-white/80 font-semibold">{s.value}%</span>
+              <span className="text-[var(--text-mid)]">{i + 1}. {s.name}</span>
+              <span className="text-[var(--text-hi)] font-semibold">{s.value}%</span>
             </div>
-            <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400/70 to-teal-400/70"
-                style={{ width: `${(s.value / max) * 100}%` }} />
+            <div className="h-2 rounded-full bg-[var(--control-fill)] overflow-hidden">
+              <div className="h-full rounded-full"
+                style={{ background: 'var(--success)', width: `${(s.value / max) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -280,9 +280,9 @@ function Ranking({ spec }: { spec: WidgetSpec }) {
 
 // ── Espelho de vendas (incorporadora) ──
 const mirrorColor: Record<string, string> = {
-  disponivel: 'bg-emerald-400/25 border-emerald-300/30 text-emerald-100',
-  reservado: 'bg-amber-400/25 border-amber-300/30 text-amber-100',
-  vendido: 'bg-white/[0.04] border-white/10 text-white/30',
+  disponivel: 'bg-[var(--success-soft)] border-[var(--success)] text-[var(--success)]',
+  reservado: 'bg-[var(--warning-soft)] border-[var(--warning)] text-[var(--warning)]',
+  vendido: 'bg-[var(--control-fill)] border-[var(--hairline)] text-[var(--text-low)]',
 };
 function SalesMirror({ spec }: { spec: WidgetSpec }) {
   const units = spec.data.units as any[];
@@ -290,9 +290,9 @@ function SalesMirror({ spec }: { spec: WidgetSpec }) {
     <GlassCard>
       <WidgetHeader title={spec.title} action={
         <div className="flex gap-3 text-[10px]">
-          <span className="text-emerald-200">● disponível</span>
-          <span className="text-amber-200">● reservado</span>
-          <span className="text-white/30">● vendido</span>
+          <span className="text-[var(--success)]">● disponível</span>
+          <span className="text-[var(--warning)]">● reservado</span>
+          <span className="text-[var(--text-low)]">● vendido</span>
         </div>
       } />
       <div className="grid grid-cols-8 sm:grid-cols-10 gap-2">
@@ -316,16 +316,16 @@ function Agenda({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (area: 
       <div className="space-y-2">
         {items.map((v, i) => (
           <div key={i} onClick={() => onAreaClick?.('agenda')}
-            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-white/[0.05] transition-colors cursor-pointer">
+            className="flex items-center gap-3 rounded-2xl p-3 hover:bg-[var(--control-fill)] transition-colors cursor-pointer">
             <div className="text-center shrink-0 w-12">
-              <p className="text-[15px] font-black text-white leading-none">{v.time}</p>
+              <p className="text-[15px] font-black text-[var(--text-hi)] leading-none">{v.time}</p>
             </div>
-            <div className="w-px h-8 bg-white/10" />
+            <div className="w-px h-8 bg-[var(--hairline-strong)]" />
             <div className="flex-1 min-w-0">
-              <p className="text-[14px] font-semibold text-white truncate">{v.who}</p>
-              <p className="text-[12px] text-white/45 truncate">{v.unit}</p>
+              <p className="text-[14px] font-semibold text-[var(--text-hi)] truncate">{v.who}</p>
+              <p className="text-[12px] text-[var(--text-low)] truncate">{v.unit}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-white/30" />
+            <ChevronRight className="w-4 h-4 text-[var(--text-low)]" />
           </div>
         ))}
       </div>

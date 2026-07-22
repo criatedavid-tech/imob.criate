@@ -44,13 +44,13 @@ export function DivulgacaoArea() {
   };
 
   if (loading) {
-    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
+    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
   }
 
   if (error) {
     return (
       <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Divulgação</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Divulgação</h2>
         <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
       </div>
     );
@@ -58,36 +58,36 @@ export function DivulgacaoArea() {
 
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-6">Divulgação</h2>
+      <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Divulgação</h2>
 
       <GlassCard className="!p-6 mb-5">
         <div className="flex items-start gap-4">
           <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
-            bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-white/20">
+            bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-[var(--glass-border)]">
             <Megaphone className="w-5 h-5 text-violet-200" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-[16px] font-bold text-white">Sua vitrine pública</h3>
-            <p className="text-[13px] text-white/55 mt-1">
+            <h3 className="text-[16px] font-bold text-[var(--text-hi)]">Sua vitrine pública</h3>
+            <p className="text-[13px] text-[var(--text-mid)] mt-1">
               Um link único com todos os seus imóveis disponíveis
-              {availableCount !== null && <> — <span className="text-white/80 font-semibold">{availableCount} no ar</span></>}.
+              {availableCount !== null && <> — <span className="text-[var(--text-hi)] font-semibold">{availableCount} no ar</span></>}.
               Mande no WhatsApp, coloque na bio do Instagram, use onde quiser.
             </p>
 
             <div className="flex items-center gap-2 mt-4 flex-wrap">
-              <div className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-[13px] text-white/70 font-mono truncate
-                bg-white/[0.05] border border-white/12">
+              <div className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-[13px] text-[var(--text-mid)] font-mono truncate
+                bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
                 {vitrineUrl}
               </div>
               <button onClick={() => copy(vitrineUrl, 'vitrine')}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)]
                   bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/50 transition-colors">
                 {copied === 'vitrine' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 {copied === 'vitrine' ? 'Copiado' : 'Copiar'}
               </button>
               <a href={vitrineUrl} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/70
-                  bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[var(--text-mid)]
+                  bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors">
                 <ExternalLink className="w-4 h-4" /> Abrir
               </a>
             </div>
@@ -99,30 +99,30 @@ export function DivulgacaoArea() {
         <GlassCard className="!p-6 mb-5">
           <div className="flex items-start gap-4">
             <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
-              bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-white/20">
+              bg-gradient-to-br from-violet-400/30 to-indigo-500/30 border border-[var(--glass-border)]">
               <Building2 className="w-5 h-5 text-violet-200" />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-[16px] font-bold text-white">Vitrine de Lançamentos</h3>
-              <p className="text-[13px] text-white/55 mt-1">
-                Um link único com seus <span className="text-white/80 font-semibold">{developmentsCount} empreendimento{developmentsCount === 1 ? '' : 's'}</span>,
+              <h3 className="text-[16px] font-bold text-[var(--text-hi)]">Vitrine de Lançamentos</h3>
+              <p className="text-[13px] text-[var(--text-mid)] mt-1">
+                Um link único com seus <span className="text-[var(--text-hi)] font-semibold">{developmentsCount} empreendimento{developmentsCount === 1 ? '' : 's'}</span>,
                 com foto, benefícios e % vendido — sem expor dado de comprador.
               </p>
 
               <div className="flex items-center gap-2 mt-4 flex-wrap">
-                <div className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-[13px] text-white/70 font-mono truncate
-                  bg-white/[0.05] border border-white/12">
+                <div className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-[13px] text-[var(--text-mid)] font-mono truncate
+                  bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
                   {lancamentosVitrineUrl}
                 </div>
                 <button onClick={() => copy(lancamentosVitrineUrl, 'lancamentos')}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)]
                     bg-violet-500/30 border border-violet-300/30 hover:bg-violet-500/50 transition-colors">
                   {copied === 'lancamentos' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   {copied === 'lancamentos' ? 'Copiado' : 'Copiar'}
                 </button>
                 <a href={lancamentosVitrineUrl} target="_blank" rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white/70
-                    bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] transition-colors">
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[var(--text-mid)]
+                    bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors">
                   <ExternalLink className="w-4 h-4" /> Abrir
                 </a>
               </div>
@@ -133,10 +133,10 @@ export function DivulgacaoArea() {
 
       <GlassCard className="!p-6">
         <div className="flex items-center gap-2 mb-3">
-          <Home className="w-4 h-4 text-white/40" />
-          <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Ainda não disponível</h3>
+          <Home className="w-4 h-4 text-[var(--text-low)]" />
+          <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Ainda não disponível</h3>
         </div>
-        <p className="text-[13px] text-white/40 leading-relaxed">
+        <p className="text-[13px] text-[var(--text-low)] leading-relaxed">
           Integração com portais (OLX, ZAP, Viva Real) e disparo de campanha em massa por WhatsApp entram numa próxima
           rodada — portais exigem integração com cada um deles, e a campanha depende do envio direto por WhatsApp, que
           está sendo resolvido junto com a migração de mensageria.

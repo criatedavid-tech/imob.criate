@@ -15,9 +15,8 @@ export function GlassCard({
     <div
       onClick={onClick}
       className={cn(
-        'rounded-[26px] p-6 backdrop-blur-2xl bg-white/[0.06] border border-white/10',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_20px_50px_-24px_rgba(0,0,0,0.6)]',
-        onClick && 'cursor-pointer hover:bg-white/[0.09] transition-colors',
+        'rounded-[26px] p-6 backdrop-blur-2xl border bg-[var(--card-fill)] border-[var(--hairline)] shadow-[var(--card-shadow)]',
+        onClick && 'cursor-pointer hover:bg-[var(--card-fill-hover)] transition-colors',
         className,
       )}
     >
@@ -31,7 +30,7 @@ export function WidgetHeader({ title, action }: { title?: string; action?: React
   if (!title && !action) return null;
   return (
     <div className="flex items-center justify-between mb-4">
-      {title && <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">{title}</h3>}
+      {title && <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">{title}</h3>}
       {action}
     </div>
   );

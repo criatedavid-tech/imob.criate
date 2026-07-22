@@ -14,7 +14,7 @@ interface AgentSettings {
 
 // Design system do /app (mesmos tokens da Personalidade da IA / ConfigArea).
 const fieldCls =
-  'w-full rounded-xl px-4 py-3 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors';
+  'w-full rounded-xl px-4 py-3 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors';
 
 async function readError(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -93,14 +93,14 @@ export function AssistenteIAArea() {
   }
 
   if (loading) {
-    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
+    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
   }
 
   return (
     <div className="max-w-3xl mx-auto w-full">
       <div className="mb-6">
-        <h2 className="text-2xl font-black text-white">Assistente IA</h2>
-        <p className="text-[13px] text-white/45 mt-1">Defina como sua assistente se apresenta, atende e retoma conversas.</p>
+        <h2 className="text-2xl font-black text-[var(--text-hi)]">Assistente IA</h2>
+        <p className="text-[13px] text-[var(--text-low)] mt-1">Defina como sua assistente se apresenta, atende e retoma conversas.</p>
       </div>
 
       {error && (
@@ -111,24 +111,24 @@ export function AssistenteIAArea() {
 
       <GlassCard className="!p-6">
         <div className="flex items-center gap-2 mb-5">
-          <Bot className="w-4 h-4 text-white/45" />
-          <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Personalidade da sua IA</h3>
+          <Bot className="w-4 h-4 text-[var(--text-low)]" />
+          <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Personalidade da sua IA</h3>
         </div>
 
         <div className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Nome da sua IA</label>
+            <label className="block text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5">Nome da sua IA</label>
             <input
               value={aiName}
               onChange={(e) => setAiName(e.target.value)}
               placeholder="Ex.: Sofia"
               className={fieldCls}
             />
-            <p className="text-[11px] text-white/30 mt-2">Esse nome é usado pela IA ao interagir com seus leads.</p>
+            <p className="text-[11px] text-[var(--text-low)] mt-2">Esse nome é usado pela IA ao interagir com seus leads.</p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5">Instruções personalizadas para a IA</label>
+            <label className="block text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5">Instruções personalizadas para a IA</label>
             <textarea
               value={agentPrompt}
               onChange={(e) => setAgentPrompt(e.target.value)}
@@ -136,7 +136,7 @@ export function AssistenteIAArea() {
               placeholder={'Ex.: Atenda com simpatia e sempre ofereça agendar uma visita.\nNão informe preços sem antes entender o orçamento do cliente.'}
               className={`${fieldCls} resize-none`}
             />
-            <p className="text-[11px] text-white/30 mt-2">Essas instruções orientam todos os atendimentos da sua IA.</p>
+            <p className="text-[11px] text-[var(--text-low)] mt-2">Essas instruções orientam todos os atendimentos da sua IA.</p>
           </div>
         </div>
 
@@ -145,7 +145,7 @@ export function AssistenteIAArea() {
             type="button"
             onClick={saveAISettings}
             disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
             {saved ? 'Configurações salvas' : 'Salvar configurações'}
@@ -267,7 +267,7 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
   if (loading) {
     return (
       <GlassCard className="!p-6 mt-5">
-        <div className="flex justify-center py-4"><Loader2 className="animate-spin text-white/30 w-5 h-5" /></div>
+        <div className="flex justify-center py-4"><Loader2 className="animate-spin text-[var(--text-low)] w-5 h-5" /></div>
       </GlassCard>
     );
   }
@@ -277,10 +277,10 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
       <div className="flex items-start justify-between gap-4 mb-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-white/45" />
-            <h3 className="text-[13px] font-semibold text-white/50 tracking-wide uppercase">Follow-Up Inteligente</h3>
+            <Zap className="w-4 h-4 text-[var(--text-low)]" />
+            <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Follow-Up Inteligente</h3>
           </div>
-          <p className="text-[12px] text-white/40 mt-1.5">
+          <p className="text-[12px] text-[var(--text-low)] mt-1.5">
             Reativa automaticamente o lead que parou de responder — envia 1 mensagem por vez (Follow 1 → 2 → 3).
           </p>
         </div>
@@ -289,7 +289,7 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
           onClick={() => { const next = { ...cfg, enabled: !cfg.enabled }; setCfg(next); save(next); }}
           aria-label="Ativar follow-up"
           className={`relative shrink-0 w-12 h-7 rounded-full transition-colors mt-0.5 border ${
-            cfg.enabled ? 'bg-emerald-500/70 border-emerald-300/40' : 'bg-white/10 border-white/20'
+            cfg.enabled ? 'bg-emerald-500/70 border-emerald-300/40' : 'bg-[var(--control-fill-hover)] border-[var(--glass-border)]'
           }`}
         >
           <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${cfg.enabled ? 'left-6' : 'left-1'}`} />
@@ -304,17 +304,17 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
 
       <div className={`space-y-4 transition-opacity ${cfg.enabled ? '' : 'opacity-50 pointer-events-none select-none'}`}>
         {FOLLOWS.map((f) => (
-          <div key={f.msgKey} className="rounded-2xl bg-white/[0.04] border border-white/10 p-5 space-y-3">
+          <div key={f.msgKey} className="rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] p-5 space-y-3">
             <div className="flex items-center gap-2">
-              <MessageSquare size={13} className="text-white/40" />
-              <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">{f.label}</span>
+              <MessageSquare size={13} className="text-[var(--text-low)]" />
+              <span className="text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest">{f.label}</span>
             </div>
 
             <div>
-              <label className="block text-[10px] text-white/35 mb-1.5 uppercase tracking-wider">{f.delayLabel}</label>
+              <label className="block text-[10px] text-[var(--text-low)] mb-1.5 uppercase tracking-wider">{f.delayLabel}</label>
               <div className="flex items-center gap-3">
                 <div className="relative w-40">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" size={14} />
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-low)] pointer-events-none" size={14} />
                   <input
                     type="number"
                     min={1}
@@ -323,13 +323,13 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
                     className={`${fieldCls} !pl-9 !py-2.5`}
                   />
                 </div>
-                <span className="text-[11px] text-white/35">≈ {hms(cfg[f.delayKey])}</span>
+                <span className="text-[11px] text-[var(--text-low)]">≈ {hms(cfg[f.delayKey])}</span>
               </div>
-              <p className="text-[10px] text-white/25 mt-1">{f.delayHint}</p>
+              <p className="text-[10px] text-[var(--text-low)] mt-1">{f.delayHint}</p>
             </div>
 
             <div>
-              <label className="block text-[10px] text-white/35 mb-1.5 uppercase tracking-wider">Mensagem</label>
+              <label className="block text-[10px] text-[var(--text-low)] mb-1.5 uppercase tracking-wider">Mensagem</label>
               <textarea
                 rows={2}
                 value={cfg[f.msgKey]}
@@ -341,7 +341,7 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
           </div>
         ))}
 
-        <p className="text-[11px] text-white/30">
+        <p className="text-[11px] text-[var(--text-low)]">
           Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow 3, para.
           Se você responder manualmente, o agente é interrompido naquela conversa.
         </p>
@@ -351,7 +351,7 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
             type="button"
             onClick={() => save()}
             disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
             {saved ? 'Follow-Up salvo' : 'Salvar Follow-Up'}

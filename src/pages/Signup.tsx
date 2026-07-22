@@ -17,18 +17,18 @@ const ACCOUNT_TYPES = [
 
 const inputClass =
   'block w-full py-3.5 rounded-2xl outline-none transition-all text-sm font-medium ' +
-  'text-white placeholder:text-white/30 bg-white/10 border border-white/15 ' +
-  'focus:ring-2 focus:ring-white/25 focus:bg-white/15 [color-scheme:dark]';
+  'text-[var(--text-hi)] placeholder:text-[var(--text-low)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] ' +
+  'focus:ring-2 focus:ring-white/25 focus:bg-[var(--control-fill-hover)] [color-scheme:dark]';
 
 const btnPrimary =
-  'flex-1 h-14 flex items-center justify-center gap-2 rounded-2xl text-base font-bold text-white ' +
+  'flex-1 h-14 flex items-center justify-center gap-2 rounded-2xl text-base font-bold text-[var(--text-hi)] ' +
   'transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed group ' +
-  'backdrop-blur-md bg-white/15 border border-white/25 ' +
+  'backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] ' +
   'shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)] hover:bg-white/25';
 
 const btnBack =
-  'h-14 px-6 rounded-2xl text-sm font-semibold text-white/60 ' +
-  'bg-white/8 border border-white/15 hover:bg-white/15 hover:text-white transition-all';
+  'h-14 px-6 rounded-2xl text-sm font-semibold text-[var(--text-mid)] ' +
+  'bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all';
 
 export default function Signup() {
   const [step, setStep] = useState(1);
@@ -97,19 +97,19 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col items-center justify-center py-12 px-4 font-sans relative overflow-hidden">
+    <div className="min-h-screen app-bg flex flex-col items-center justify-center py-12 px-4 font-sans relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage:'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
 
       {/* Logo */}
       <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
         className="relative z-10 mb-8 text-center">
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4
-          backdrop-blur-md bg-white/15 border border-white/25
+          backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_rgba(0,0,0,0.3)]">
-          <Home className="text-white w-7 h-7" />
+          <Home className="text-[var(--text-hi)] w-7 h-7" />
         </div>
-        <h1 className="text-2xl font-black text-white">Crie sua conta</h1>
-        <p className="text-sm text-white/50 mt-1">
+        <h1 className="text-2xl font-black text-[var(--text-hi)]">Crie sua conta</h1>
+        <p className="text-sm text-[var(--text-low)] mt-1">
           Já tem cadastro?{' '}
           <Link to="/login" className="font-semibold text-violet-300 hover:text-violet-200 transition-colors">Entrar</Link>
         </p>
@@ -120,12 +120,12 @@ export default function Signup() {
         <div className="mb-6 px-1">
           <div className="flex justify-between mb-2">
             {STEPS.map((label, i) => (
-              <span key={i} className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${i + 1 <= step ? 'text-white' : 'text-white/20'}`}>
+              <span key={i} className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${i + 1 <= step ? 'text-[var(--text-hi)]' : 'text-[var(--text-low)]'}`}>
                 {label}
               </span>
             ))}
           </div>
-          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden border border-white/10">
+          <div className="h-1.5 bg-[var(--control-fill-hover)] rounded-full overflow-hidden border border-[var(--hairline)]">
             <motion.div
               className="h-full bg-gradient-to-r from-violet-500 to-blue-400 rounded-full"
               initial={{ width: 0 }}
@@ -137,7 +137,7 @@ export default function Signup() {
 
         {/* Card */}
         <div className="rounded-[32px] px-8 py-10
-          backdrop-blur-xl bg-white/10 border border-white/15
+          backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.3)]">
 
           {error && (
@@ -153,7 +153,7 @@ export default function Signup() {
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
                 transition={{ duration: 0.2 }} onSubmit={handleStep1} className="space-y-5">
                 <div>
-                  <label className="block text-[10px] font-bold text-white/40 mb-2 uppercase tracking-widest pl-1">Você é</label>
+                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-2 uppercase tracking-widest pl-1">Você é</label>
                   <div className="space-y-2">
                     {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon }) => {
                       const selected = formData.account_type === value;
@@ -162,26 +162,26 @@ export default function Signup() {
                           onClick={() => setFormData({ ...formData, account_type: value })}
                           className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
                             selected
-                              ? 'bg-white/20 border-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
-                              : 'bg-white/8 border-white/12 hover:bg-white/12'
+                              ? 'bg-[var(--control-fill-hover)] border-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
+                              : 'bg-[var(--control-fill)] border-[var(--hairline-strong)] hover:bg-white/12'
                           }`}>
-                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-violet-500/40' : 'bg-white/10'}`}>
-                            <Icon className="w-4.5 h-4.5 text-white" />
+                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-violet-500/40' : 'bg-[var(--control-fill-hover)]'}`}>
+                            <Icon className="w-4.5 h-4.5 text-[var(--text-hi)]" />
                           </span>
                           <span className="min-w-0">
-                            <span className="block text-sm font-bold text-white">{label}</span>
-                            <span className="block text-[11px] text-white/45 truncate">{desc}</span>
+                            <span className="block text-sm font-bold text-[var(--text-hi)]">{label}</span>
+                            <span className="block text-[11px] text-[var(--text-low)] truncate">{desc}</span>
                           </span>
-                          <span className={`ml-auto w-4 h-4 rounded-full border shrink-0 ${selected ? 'bg-violet-400 border-violet-300' : 'border-white/30'}`} />
+                          <span className={`ml-auto w-4 h-4 rounded-full border shrink-0 ${selected ? 'bg-violet-400 border-violet-300' : 'border-[var(--glass-border-strong)]'}`} />
                         </button>
                       );
                     })}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nome Completo</label>
+                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Nome Completo</label>
                   <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
                     <input required value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       className={`${inputClass} pl-11 pr-4`}
@@ -200,12 +200,12 @@ export default function Signup() {
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
                 transition={{ duration: 0.2 }} onSubmit={handleStep2} className="space-y-5">
                 <div>
-                  <p className="text-sm text-white/50 mb-4">
-                    Olá, <strong className="text-white">{formData.name.split(' ')[0]}</strong>! Qual é o seu WhatsApp?
+                  <p className="text-sm text-[var(--text-low)] mb-4">
+                    Olá, <strong className="text-[var(--text-hi)]">{formData.name.split(' ')[0]}</strong>! Qual é o seu WhatsApp?
                   </p>
-                  <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Telefone / WhatsApp</label>
+                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Telefone / WhatsApp</label>
                   <div className="relative">
-                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
                     <input autoFocus required type="tel" value={formData.phone}
                       onChange={e => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
                       className={`${inputClass} pl-11 pr-4`}
@@ -229,9 +229,9 @@ export default function Signup() {
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
                 transition={{ duration: 0.2 }} onSubmit={handleStep3} className="space-y-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">E-mail</label>
+                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">E-mail</label>
                   <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
                     <input autoFocus type="email" required value={formData.email}
                       onChange={e => setFormData({ ...formData, email: e.target.value })}
                       className={`${inputClass} pl-11 pr-4`}
@@ -240,29 +240,29 @@ export default function Signup() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Senha</label>
+                    <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Senha</label>
                     <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
                       <input type={showPwd ? 'text' : 'password'} required minLength={6} value={formData.password}
                         onChange={e => setFormData({ ...formData, password: e.target.value })}
                         className={`${inputClass} pl-11 pr-10`}
                         placeholder="••••••••" />
                       <button type="button" onClick={() => setShowPwd(v => !v)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/30 hover:text-white/70 transition-colors">
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
                         {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Confirmar</label>
+                    <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Confirmar</label>
                     <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
                       <input type={showConfirm ? 'text' : 'password'} required value={formData.confirmPassword}
                         onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
                         className={`${inputClass} pl-11 pr-10`}
                         placeholder="••••••••" />
                       <button type="button" onClick={() => setShowConfirm(v => !v)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/30 hover:text-white/70 transition-colors">
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
                         {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
@@ -275,7 +275,7 @@ export default function Signup() {
                     onChange={e => setAcceptedTerms(e.target.checked)}
                     className="mt-0.5 w-4 h-4 rounded accent-violet-500 shrink-0"
                   />
-                  <span className="text-xs text-white/55 leading-relaxed">
+                  <span className="text-xs text-[var(--text-mid)] leading-relaxed">
                     Li e aceito os{' '}
                     <a href="/termos" target="_blank" rel="noopener noreferrer" className="font-semibold text-violet-300 hover:text-violet-200 underline">Termos de Uso</a>
                     {' '}e a{' '}

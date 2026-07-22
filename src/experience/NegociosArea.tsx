@@ -86,12 +86,12 @@ function NewLeadModal({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden
-        backdrop-blur-2xl bg-white/12 border border-white/25
+        backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
 
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
-          <h3 className="text-lg font-bold text-white">{isEdit ? 'Editar lead' : 'Novo lead'}</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline)]">
+          <h3 className="text-lg font-bold text-[var(--text-hi)]">{isEdit ? 'Editar lead' : 'Novo lead'}</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -104,31 +104,31 @@ function NewLeadModal({
           )}
 
           {properties.length === 0 && !isEdit ? (
-            <p className="text-sm text-white/50">
+            <p className="text-sm text-[var(--text-low)]">
               Cadastre um imóvel na Carteira primeiro — todo lead precisa estar ligado a um.
             </p>
           ) : (
             <>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <User size={11} /> Nome
                 </label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Nome completo"
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                    bg-white/8 border border-white/12 placeholder-white/25
-                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                    bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                    focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <Phone size={11} /> Telefone
                 </label>
                 <div className="flex items-stretch gap-2">
-                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50
-                    bg-white/5 border border-white/12">
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)]
+                    bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
                     +55
                   </span>
                   <input
@@ -137,22 +137,22 @@ function NewLeadModal({
                     inputMode="numeric"
                     maxLength={11}
                     placeholder="62994381279 (DDD + número)"
-                    className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white
-                      bg-white/8 border border-white/12 placeholder-white/25
-                      focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+                    className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                      bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                      focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <HomeIcon size={11} /> Imóvel
                 </label>
                 <select
                   value={propertyId}
                   onChange={(e) => setPropertyId(e.target.value)}
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                    bg-white/8 border border-white/12
-                    focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                    bg-[var(--control-fill)] border border-[var(--hairline-strong)]
+                    focus:outline-none focus:border-[var(--glass-border-strong)] transition-colors [color-scheme:dark]"
                 >
                   {properties.map((p) => (
                     <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b', color: '#fff' }}>{p.title}</option>
@@ -160,7 +160,7 @@ function NewLeadModal({
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">
                   Observações (opcional)
                 </label>
                 <textarea
@@ -168,20 +168,20 @@ function NewLeadModal({
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
                   placeholder="Detalhes adicionais..."
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                    bg-white/8 border border-white/12 placeholder-white/25
-                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors resize-none"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                    bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                    focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors resize-none"
                 />
               </div>
             </>
           )}
         </div>
 
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10">
+        <div className="flex gap-3 px-6 py-4 border-t border-[var(--hairline)]">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50
-              bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)]
+              bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors"
           >
             Cancelar
           </button>
@@ -189,7 +189,7 @@ function NewLeadModal({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white
+              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)]
                 bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors
                 disabled:opacity-50 flex items-center justify-center gap-2"
             >
@@ -232,37 +232,37 @@ function LeadCardBody({
   return (
     <GlassCard className="!p-3 !rounded-2xl">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
+        <p className="text-[13px] font-bold text-[var(--text-hi)] truncate">{lead.name}</p>
         <div className="flex items-center gap-0.5 shrink-0">
           <button onClick={() => onEdit(lead)}
-            className="p-1 rounded-lg text-white/25 hover:bg-white/[0.08] hover:text-white/60 transition-colors">
+            className="p-1 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors">
             <Pencil className="w-3 h-3" />
           </button>
           <button onClick={() => onDelete(lead)} disabled={deletingId === lead.id}
-            className="p-1 rounded-lg text-white/25 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+            className="p-1 rounded-lg text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
             {deletingId === lead.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
           </button>
         </div>
       </div>
       {lead.property && (
-        <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5 truncate">
+        <p className="text-[10px] text-[var(--text-low)] flex items-center gap-1 mt-0.5 truncate">
           <HomeIcon className="w-2.5 h-2.5 shrink-0" /> {lead.property}
         </p>
       )}
       {lead.phone && (
-        <p className="text-[10px] text-white/45 flex items-center gap-1 mt-0.5">
+        <p className="text-[10px] text-[var(--text-low)] flex items-center gap-1 mt-0.5">
           <Phone className="w-2.5 h-2.5 shrink-0" /> {lead.phone}
         </p>
       )}
       <div className="flex items-center gap-1 mt-2">
-        <span className="text-[9px] text-white/25 mr-auto">{timeAgo(lead.created_at)}</span>
+        <span className="text-[9px] text-[var(--text-low)] mr-auto">{timeAgo(lead.created_at)}</span>
         {prev && (
           <button
             onClick={() => onMove(lead, prev)}
             disabled={movingId === lead.id}
             title={`Voltar pra ${prev.name}`}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-white/30
-              hover:bg-white/[0.08] hover:text-white/60 transition-colors disabled:opacity-40"
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-[var(--text-low)]
+              hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40"
           >
             <ChevronLeft className="w-3 h-3" />
           </button>
@@ -272,8 +272,8 @@ function LeadCardBody({
             onClick={() => onMove(lead, next)}
             disabled={movingId === lead.id}
             title={`Avançar pra ${next.name}`}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-white/60
-              bg-white/[0.05] hover:bg-white/[0.1] transition-colors disabled:opacity-40 max-w-[110px]"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-[var(--text-mid)]
+              bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-40 max-w-[110px]"
           >
             {movingId === lead.id ? <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" /> : <ChevronRight className="w-2.5 h-2.5 shrink-0" />}
             <span className="truncate">{next.name}</span>
@@ -318,7 +318,7 @@ function DraggableLead({ lead, children }: { lead: Lead; children: React.ReactNo
 function DroppableStage({ stageId, className, children }: { stageId: string; className?: string; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: stageId });
   return (
-    <div ref={setNodeRef} className={cn(className, isOver && 'bg-white/[0.05] ring-2 ring-violet-400/40')}>
+    <div ref={setNodeRef} className={cn(className, isOver && 'bg-[var(--control-fill)] ring-2 ring-violet-400/40')}>
       {children}
     </div>
   );
@@ -489,7 +489,7 @@ function KanbanBoard() {
             <select
               value={selectedPipelineId}
               onChange={(e) => { setSelectedPipelineId(e.target.value); setLeads(null); }}
-              className="rounded-xl px-3 py-2 text-[13px] font-semibold bg-white/[0.06] text-white border border-white/12 [color-scheme:dark]"
+              className="rounded-xl px-3 py-2 text-[13px] font-semibold bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--hairline-strong)] [color-scheme:dark]"
             >
               {pipelines.filter((p) => p.active || p.id === selectedPipelineId).map((p) => (
                 <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b' }}>
@@ -499,7 +499,7 @@ function KanbanBoard() {
             </select>
           )}
           {leads && (
-            <span className="text-[12px] text-white/40">
+            <span className="text-[12px] text-[var(--text-low)]">
               {leads.length}{totalLeads > leads.length ? ` de ${totalLeads}` : ''} no funil
             </span>
           )}
@@ -507,8 +507,8 @@ function KanbanBoard() {
         <button
           onClick={() => setShowCreate(true)}
           disabled={!selectedPipelineId}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
-            bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] disabled:opacity-40 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+            bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] disabled:opacity-40 transition-colors"
         >
           <Plus className="w-4 h-4" /> Novo lead
         </button>
@@ -520,33 +520,33 @@ function KanbanBoard() {
 
       {!selectedPipelineId ? (
         pipelines === null ? (
-          <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>
+          <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>
         ) : (
           <GlassCard className="!py-14 text-center">
-            <p className="text-[15px] text-white/60">Nenhum pipeline ativo. Crie um na aba Pipelines.</p>
+            <p className="text-[15px] text-[var(--text-mid)]">Nenhum pipeline ativo. Crie um na aba Pipelines.</p>
           </GlassCard>
         )
       ) : loading ? (
-        <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>
+        <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>
       ) : error ? (
         <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
       ) : stages.length === 0 ? (
         <GlassCard className="!py-14 text-center">
-          <p className="text-[15px] text-white/60">Este pipeline ainda não tem etapas. Crie a primeira na aba Pipelines.</p>
+          <p className="text-[15px] text-[var(--text-mid)]">Este pipeline ainda não tem etapas. Crie a primeira na aba Pipelines.</p>
         </GlassCard>
       ) : isEmpty ? (
         <GlassCard className="!py-14 text-center">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
-            bg-white/[0.06] border border-white/12">
+            bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
             <Briefcase className="w-5 h-5 text-violet-200" />
           </div>
-          <p className="text-[15px] text-white/60 mb-6">
+          <p className="text-[15px] text-[var(--text-mid)] mb-6">
             Nenhum lead ainda neste pipeline. Assim que alguém entrar em contato pela landing page de um imóvel, aparece aqui.
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold text-white
-              bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors"
           >
             <Plus className="w-4 h-4" /> Cadastrar o primeiro
           </button>
@@ -565,20 +565,20 @@ function KanbanBoard() {
               const prev = stages[idx - 1];
               const next = stages[idx + 1];
               return (
-                <div key={stage.id} className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-white/[0.03] border border-white/[0.06] p-2.5">
+                <div key={stage.id} className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-[var(--control-fill)] border border-white/[0.06] p-2.5">
                   <div className="flex items-center justify-between mb-2 px-1">
-                    <h3 className="text-[11px] font-bold text-white/60 uppercase tracking-wide flex items-center gap-1.5 truncate">
+                    <h3 className="text-[11px] font-bold text-[var(--text-mid)] uppercase tracking-wide flex items-center gap-1.5 truncate">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: stage.color || '#888' }} />
                       <span className="truncate">{stage.name}</span>
                     </h3>
-                    <span className="text-[11px] text-white/30 shrink-0">{stageLeads.length}</span>
+                    <span className="text-[11px] text-[var(--text-low)] shrink-0">{stageLeads.length}</span>
                   </div>
                   {/* Zona de drop = a lane inteira (inclui o vão vazio embaixo) —
                       soltar em qualquer lugar da coluna funciona. */}
                   <DroppableStage stageId={stage.id} className="flex-1 space-y-2 rounded-xl transition-colors min-h-[380px]">
                     {stageLeads.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-white/[0.07] py-5 text-center">
-                        <p className="text-[11px] text-white/20">vazio</p>
+                        <p className="text-[11px] text-[var(--text-low)]">vazio</p>
                       </div>
                     ) : (
                       stageLeads.map((lead) => (
@@ -601,19 +601,19 @@ function KanbanBoard() {
               <div className="flex-1 min-w-[200px] flex flex-col rounded-2xl bg-amber-500/[0.04] border border-amber-300/10 p-2.5">
                 <div className="flex items-center justify-between mb-2 px-1">
                   <h3 className="text-[11px] font-bold text-amber-300/70 uppercase tracking-wide">Sem etapa</h3>
-                  <span className="text-[11px] text-white/30">{unassigned.length}</span>
+                  <span className="text-[11px] text-[var(--text-low)]">{unassigned.length}</span>
                 </div>
                 <div className="flex-1 space-y-2 min-h-[380px]">
                   {unassigned.map((lead) => (
                     <React.Fragment key={lead.id}>
                       <DraggableLead lead={lead}>
                         <GlassCard className="!p-3 !rounded-2xl">
-                          <p className="text-[13px] font-bold text-white truncate">{lead.name}</p>
+                          <p className="text-[13px] font-bold text-[var(--text-hi)] truncate">{lead.name}</p>
                           <p className="text-[10px] text-amber-300/60 mt-1">Etapa antiga não existe mais neste pipeline — arraste ou:</p>
                           {stages[0] && (
                             <button
                               onClick={() => moveTo(lead, stages[0])}
-                              className="mt-2 w-full py-1 rounded-lg text-[10px] font-semibold text-white/60 bg-white/[0.05] hover:bg-white/[0.1] transition-colors"
+                              className="mt-2 w-full py-1 rounded-lg text-[10px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors"
                             >
                               Mover pra {stages[0].name}
                             </button>
@@ -653,8 +653,8 @@ function KanbanBoard() {
           <button
             onClick={() => load(true)}
             disabled={loadingMore}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[13px] font-bold text-white/70
-              bg-white/[0.07] border border-white/12 hover:bg-white/[0.12] disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-mid)]
+              bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] disabled:opacity-50 transition-colors"
           >
             {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
             Carregar mais leads
@@ -692,13 +692,13 @@ export function NegociosArea() {
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h2 className="text-2xl font-black text-white">CRM</h2>
-        <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10">
+        <h2 className="text-2xl font-black text-[var(--text-hi)]">CRM</h2>
+        <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
           <button
             onClick={() => setTab('kanban')}
             className={cn(
               'px-4 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
-              tab === 'kanban' ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+              tab === 'kanban' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)]',
             )}
           >
             Kanban
@@ -707,7 +707,7 @@ export function NegociosArea() {
             onClick={() => setTab('pipelines')}
             className={cn(
               'px-4 py-1.5 rounded-xl text-[12px] font-semibold transition-colors',
-              tab === 'pipelines' ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+              tab === 'pipelines' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)]',
             )}
           >
             Pipelines

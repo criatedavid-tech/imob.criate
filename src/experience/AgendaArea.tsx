@@ -7,7 +7,7 @@ import AgendaCalendar from '../components/AgendaCalendar';
 export function AgendaArea() {
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <h2 className="text-2xl font-black text-white mb-6">Agenda</h2>
+      <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Agenda</h2>
       <AgendaCalendar />
     </div>
   );

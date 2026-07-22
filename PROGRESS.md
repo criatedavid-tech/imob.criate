@@ -1,5 +1,29 @@
 # Estado do projeto
 
+## Sistema de cores "Cristal" + tema Dia/Noite (2026-07-22)
+
+- Pedido do usuário: trocar SÓ as cores do app pra paleta Cristal (grafite frio
+  + acento azure->aqua + latao premium) e ter alternancia Dia/Noite. Layout e
+  estrutura ficam idênticos — nada de vidro/componentes novos.
+- Fundação em `src/index.css`: tokens de cor Noite (`:root`) e Dia
+  (`:root[data-theme="light"]`), `.app-bg` (mesh), transição de tema. Toggle:
+  `src/lib/theme.ts` + `src/experience/ThemeToggle.tsx` (localStorage, padrão
+  Noite), `initTheme()` no `main.tsx`.
+- Recolor em massa (só cor, estrutura intacta): neutros `text/bg/border-white/x`
+  -> tokens via codemod (1.832 trocas em 33 arquivos); acentos (violet/purple/
+  indigo/blue) e semânticos (emerald/green/teal, amber/yellow, red/rose)
+  remapeados no `@theme` pros tokens `--accent`/`--accent-2`/`--success`/
+  `--warning`/`--danger` (reagem ao tema, zero edição por arquivo); fundo escuro
+  `from-slate-900 via-blue-950 to-indigo-900` -> `.app-bg` (19x/14 arquivos).
+  `GlassCard` (`ui.tsx`) recolorido cascateia todos os cards.
+- `tsc`/`knip`/`build` verdes. **Toggle travado em Noite** por ora
+  (`THEME_TOGGLE_ENABLED=false` em ExperienceShell) — modo Dia só é exposto
+  após passada de latão nos valores R$ + QA visual.
+- Pendências: latão nos valores em R$ (Dashboard/Relatórios/Financeiro/
+  Lançamentos); QA visual dos 2 temas; reativar o toggle; revisar páginas
+  públicas editoriais (landing/vitrine) que também foram tokenizadas.
+
+
 ## Hardening contra prompt injection publicado (2026-07-22)
 
 - Auditoria encontrou risco indireto no Assistente interno: últimas mensagens

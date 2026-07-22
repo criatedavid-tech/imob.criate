@@ -148,28 +148,28 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[16px] font-bold text-white flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Gerenciar tags</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X className="w-5 h-5" /></button>
+          <h3 className="text-[16px] font-bold text-[var(--text-hi)] flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Gerenciar tags</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
         </div>
 
         {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
 
         <div className="flex-1 overflow-y-auto space-y-1.5 mb-4">
           {tags === null ? (
-            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
           ) : tags.length === 0 ? (
-            <p className="text-[12px] text-white/35 text-center py-4">Nenhuma tag criada ainda.</p>
+            <p className="text-[12px] text-[var(--text-low)] text-center py-4">Nenhuma tag criada ainda.</p>
           ) : (
             tags.map((tag) => (
-              <div key={tag.id} className="flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/10 px-3 py-2">
+              <div key={tag.id} className="flex items-center gap-2 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline)] px-3 py-2">
                 <div className="relative group shrink-0">
-                  <span className="w-4 h-4 rounded-full block border border-white/20" style={{ backgroundColor: tag.color || '#888' }} />
-                  <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-white/15 shadow-xl">
+                  <span className="w-4 h-4 rounded-full block border border-[var(--glass-border)]" style={{ backgroundColor: tag.color || '#888' }} />
+                  <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-[var(--glass-border)] shadow-xl">
                     {TAG_COLORS.map((c) => (
                       <button key={c} onClick={() => setColor(tag, c)}
-                        className="w-4 h-4 rounded-full border border-white/20 hover:scale-110 transition-transform"
+                        className="w-4 h-4 rounded-full border border-[var(--glass-border)] hover:scale-110 transition-transform"
                         style={{ backgroundColor: c }} />
                     ))}
                   </div>
@@ -178,9 +178,9 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
                   <input value={editName} onChange={(e) => setEditName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && saveEdit(tag)}
                     autoFocus
-                    className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[13px] bg-white/[0.06] text-white outline-none border border-white/15" />
+                    className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] outline-none border border-[var(--glass-border)]" />
                 ) : (
-                  <span className="flex-1 min-w-0 text-[13px] text-white truncate">{tag.name}</span>
+                  <span className="flex-1 min-w-0 text-[13px] text-[var(--text-hi)] truncate">{tag.name}</span>
                 )}
                 <div className="flex items-center gap-1 shrink-0">
                   {editingId === tag.id ? (
@@ -189,12 +189,12 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
                       {savingId === tag.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                     </button>
                   ) : (
-                    <button onClick={() => startEdit(tag)} className="p-1.5 rounded-lg text-white/40 hover:bg-white/[0.08] hover:text-white/70 transition-colors">
+                    <button onClick={() => startEdit(tag)} className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                   )}
                   <button onClick={() => remove(tag)} disabled={deletingId === tag.id}
-                    className="p-1.5 rounded-lg text-white/40 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                    className="p-1.5 rounded-lg text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
                     {deletingId === tag.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                   </button>
                 </div>
@@ -203,13 +203,13 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
           )}
         </div>
 
-        <div className="flex gap-2 pt-3 border-t border-white/10">
+        <div className="flex gap-2 pt-3 border-t border-[var(--hairline)]">
           <input value={newName} onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && create()}
             placeholder="Nova tag…"
-            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none border border-white/12" />
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-[var(--hairline-strong)]" />
           <button onClick={create} disabled={creating || !newName.trim()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 transition-colors">
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Criar
           </button>
         </div>
@@ -527,19 +527,19 @@ export function ConversasArea() {
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-black text-white">Conversas</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)]">Conversas</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTagsManager(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white/70
-              bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] hover:text-white transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-mid)]
+              bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors"
           >
             <TagsIcon className="w-4 h-4" /> Gerenciar tags
           </button>
           <button
             onClick={() => setShowNewConvo(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
-              bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors"
           >
             <Plus className="w-4 h-4" /> Nova conversa
           </button>
@@ -549,32 +549,32 @@ export function ConversasArea() {
       {error ? (
         <GlassCard className="!py-14 text-center border-red-400/20">
           <p className="text-[15px] text-red-300 font-semibold mb-1">Não deu pra carregar as conversas.</p>
-          <p className="text-[13px] text-white/40">{error}</p>
+          <p className="text-[13px] text-[var(--text-low)]">{error}</p>
         </GlassCard>
       ) : conversations === null ? (
         <div className="flex justify-center pt-20">
-          <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+          <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />
         </div>
       ) : conversations.length === 0 ? (
         <GlassCard className="!py-14 text-center">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
-            bg-white/[0.06] border border-white/12">
+            bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
             <MessageCircle className="w-5 h-5 text-violet-200" />
           </div>
-          <p className="text-[15px] text-white/60">Nenhuma conversa ainda.</p>
+          <p className="text-[15px] text-[var(--text-mid)]">Nenhuma conversa ainda.</p>
         </GlassCard>
       ) : (
         <>
-          <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.05] border border-white/10 w-fit mb-4">
+          <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-4">
             {(['aguardando', 'ia', 'encerrado'] as Category[]).map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategory(cat)}
                 className={`px-3.5 py-2 rounded-xl text-[12px] font-semibold transition-colors ${
-                  category === cat ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75'
+                  category === cat ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)]'
                 }`}
               >
-                {CATEGORY_LABEL[cat]} <span className="text-white/35">({counts[cat]})</span>
+                {CATEGORY_LABEL[cat]} <span className="text-[var(--text-low)]">({counts[cat]})</span>
               </button>
             ))}
           </div>
@@ -582,7 +582,7 @@ export function ConversasArea() {
           <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5">
             <GlassCard className="!p-2 h-[640px] overflow-y-auto">
               {filtered.length === 0 ? (
-                <p className="text-[13px] text-white/40 text-center py-8">Nada por aqui.</p>
+                <p className="text-[13px] text-[var(--text-low)] text-center py-8">Nada por aqui.</p>
               ) : (
                 <div className="space-y-1">
                   {filtered.map((c) => (
@@ -590,17 +590,17 @@ export function ConversasArea() {
                       key={c.id}
                       onClick={() => setSelected(c.id)}
                       className={`w-full flex items-center gap-3 rounded-2xl p-3 text-left transition-colors ${
-                        selected === c.id ? 'bg-white/[0.1]' : 'hover:bg-white/[0.05]'
+                        selected === c.id ? 'bg-[var(--control-fill-hover)]' : 'hover:bg-[var(--control-fill)]'
                       }`}
                     >
                       <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0
-                        bg-gradient-to-br from-slate-500/40 to-slate-700/40 border border-white/15">
-                        <User className="w-4 h-4 text-white/70" />
+                        bg-gradient-to-br from-slate-500/40 to-slate-700/40 border border-[var(--glass-border)]">
+                        <User className="w-4 h-4 text-[var(--text-mid)]" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[14px] font-semibold text-white truncate block">{c.contact_name || c.customer_phone}</span>
-                        {c.contact_name && <span className="text-[11px] text-white/40 truncate block">{c.customer_phone}</span>}
-                        <p className="text-[12px] text-white/45 truncate">{c.last_message || 'sem mensagens'}</p>
+                        <span className="text-[14px] font-semibold text-[var(--text-hi)] truncate block">{c.contact_name || c.customer_phone}</span>
+                        {c.contact_name && <span className="text-[11px] text-[var(--text-low)] truncate block">{c.customer_phone}</span>}
+                        <p className="text-[12px] text-[var(--text-low)] truncate">{c.last_message || 'sem mensagens'}</p>
                         {c.tags.length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
                             {c.tags.map((t) => (
@@ -620,18 +620,18 @@ export function ConversasArea() {
 
             <GlassCard className="!p-0 h-[640px] flex flex-col overflow-hidden">
               {!selected || !selectedConv ? (
-                <div className="h-full flex-1 flex items-center justify-center text-white/40 text-[14px]">
+                <div className="h-full flex-1 flex items-center justify-center text-[var(--text-low)] text-[14px]">
                   Selecione uma conversa
                 </div>
               ) : (
                 <>
-                  <div className="px-5 py-3.5 border-b border-white/8 space-y-2.5">
+                  <div className="px-5 py-3.5 border-b border-[var(--hairline)] space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
-                        <span className="text-[14px] font-semibold text-white block truncate">{selectedConv.contact_name || selectedConv.customer_phone}</span>
-                        <span className="text-[11px] text-white/40 truncate block">
+                        <span className="text-[14px] font-semibold text-[var(--text-hi)] block truncate">{selectedConv.contact_name || selectedConv.customer_phone}</span>
+                        <span className="text-[11px] text-[var(--text-low)] truncate block">
                           {selectedConv.contact_name ? selectedConv.customer_phone + ' · ' : ''}
-                          <span className="font-mono text-white/30" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
+                          <span className="font-mono text-[var(--text-low)]" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -642,8 +642,8 @@ export function ConversasArea() {
                         ) : (
                           <button onClick={createLead} disabled={creatingLead}
                             title="Cadastrar este contato como lead"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white/70
-                              bg-white/[0.05] border border-white/12 hover:bg-white/[0.1] hover:text-white transition-colors disabled:opacity-40">
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
+                              bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-40">
                             {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar lead
                           </button>
                         )}
@@ -655,7 +655,7 @@ export function ConversasArea() {
                         </button>
                         <button onClick={deleteConversation} disabled={deletingConvo}
                           title="Apagar este ciclo de atendimento"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-xl text-white/40 hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40">
                           {deletingConvo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>
                       </div>
@@ -666,8 +666,8 @@ export function ConversasArea() {
                         <button key={s} onClick={() => setStatus(s)} disabled={selectedConv.conversation_status === 'closed'}
                           className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
                             selectedConv.conversation_status === s
-                              ? 'bg-white/[0.16] text-white'
-                              : 'text-white/40 hover:text-white/70 bg-white/[0.04]'
+                              ? 'bg-white/[0.16] text-[var(--text-hi)]'
+                              : 'text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]'
                           } disabled:cursor-not-allowed`}>
                           {STATUS_LABEL[s]}
                         </button>
@@ -675,18 +675,18 @@ export function ConversasArea() {
 
                       <div className="relative ml-1">
                         <button onClick={() => { setAssignPickerOpen((v) => !v); setQueuePickerOpen(false); setTagPickerOpen(false); }}
-                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white/[0.04] text-white/70 hover:bg-white/[0.08] transition-colors">
+                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-[var(--control-fill)] text-[var(--text-mid)] hover:bg-[var(--control-fill)] transition-colors">
                           {memberName(selectedConv.assigned_user_id) || 'Sem responsável'}
                         </button>
                         {assignPickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-white/15 p-1 shadow-xl">
+                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
                             <button onClick={() => { setAssign(''); setAssignPickerOpen(false); }}
-                              className="w-full text-left text-[11px] text-white/60 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                              className="w-full text-left text-[11px] text-[var(--text-mid)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
                               Sem responsável
                             </button>
                             {members.map((m) => (
                               <button key={m.user_id} onClick={() => { setAssign(m.user_id); setAssignPickerOpen(false); }}
-                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
                                 {m.name}
                               </button>
                             ))}
@@ -696,18 +696,18 @@ export function ConversasArea() {
 
                       <div className="relative">
                         <button onClick={() => { setQueuePickerOpen((v) => !v); setAssignPickerOpen(false); setTagPickerOpen(false); }}
-                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white/[0.04] text-white/70 hover:bg-white/[0.08] transition-colors">
+                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-[var(--control-fill)] text-[var(--text-mid)] hover:bg-[var(--control-fill)] transition-colors">
                           {queues.find((q) => q.id === selectedConv.queue_id)?.name || 'Sem fila'}
                         </button>
                         {queuePickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-white/15 p-1 shadow-xl">
+                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
                             <button onClick={() => { setQueue(''); setQueuePickerOpen(false); }}
-                              className="w-full text-left text-[11px] text-white/60 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                              className="w-full text-left text-[11px] text-[var(--text-mid)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
                               Sem fila
                             </button>
                             {queues.map((q) => (
                               <button key={q.id} onClick={() => { setQueue(q.id); setQueuePickerOpen(false); }}
-                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1.5">
+                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
                                 {q.name}
                               </button>
                             ))}
@@ -717,7 +717,7 @@ export function ConversasArea() {
 
                       <button onClick={() => setShowNotes((v) => !v)}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
-                          showNotes ? 'bg-white/[0.16] text-white' : 'text-white/40 hover:text-white/70 bg-white/[0.04]'
+                          showNotes ? 'bg-white/[0.16] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]'
                         }`}>
                         <StickyNote className="w-3 h-3" /> Notas {notes && notes.length > 0 ? `(${notes.length})` : ''}
                       </button>
@@ -733,14 +733,14 @@ export function ConversasArea() {
                       ))}
                       <div className="relative">
                         <button onClick={() => setTagPickerOpen((v) => !v)}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full text-white/40 hover:text-white/70 bg-white/[0.04]">
+                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]">
                           <Plus className="w-2.5 h-2.5" /> Tag
                         </button>
                         {tagPickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-48 rounded-xl bg-slate-900 border border-white/15 p-2 space-y-1 shadow-xl">
+                          <div className="absolute z-10 top-6 left-0 w-48 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-2 space-y-1 shadow-xl">
                             {tags.filter((t) => !selectedConv.tags.some((st) => st.id === t.id)).map((t) => (
                               <button key={t.id} onClick={() => addTagToConvo(t.id)}
-                                className="w-full text-left text-[11px] text-white/80 hover:bg-white/[0.08] rounded-lg px-2 py-1">
+                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1">
                                 {t.name}
                               </button>
                             ))}
@@ -748,7 +748,7 @@ export function ConversasArea() {
                               <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && createTag()}
                                 placeholder="Nova tag…"
-                                className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[11px] bg-white/[0.06] text-white outline-none" />
+                                className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[11px] bg-[var(--control-fill)] text-[var(--text-hi)] outline-none" />
                               <button onClick={createTag} className="text-[11px] text-violet-300 font-bold px-1">+</button>
                             </div>
                           </div>
@@ -758,16 +758,16 @@ export function ConversasArea() {
                   </div>
 
                   {showNotes && (
-                    <div className="px-5 py-3 border-b border-white/8 bg-white/[0.02] space-y-2 max-h-40 overflow-y-auto">
+                    <div className="px-5 py-3 border-b border-[var(--hairline)] bg-[var(--control-fill)] space-y-2 max-h-40 overflow-y-auto">
                       {notes === null ? (
-                        <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
+                        <Loader2 className="w-4 h-4 text-[var(--text-low)] animate-spin" />
                       ) : notes.length === 0 ? (
-                        <p className="text-[11px] text-white/35">Nenhuma nota ainda — visível só pro time.</p>
+                        <p className="text-[11px] text-[var(--text-low)]">Nenhuma nota ainda — visível só pro time.</p>
                       ) : (
                         notes.map((n) => (
-                          <div key={n.id} className="text-[12px] text-white/70 bg-white/[0.04] rounded-xl px-3 py-2">
+                          <div key={n.id} className="text-[12px] text-[var(--text-mid)] bg-[var(--control-fill)] rounded-xl px-3 py-2">
                             {n.body}
-                            <div className="text-[10px] text-white/30 mt-0.5">{memberName(n.user_id) || 'Você'}</div>
+                            <div className="text-[10px] text-[var(--text-low)] mt-0.5">{memberName(n.user_id) || 'Você'}</div>
                           </div>
                         ))
                       )}
@@ -775,7 +775,7 @@ export function ConversasArea() {
                         <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && addNote()}
                           placeholder="Anotar algo pro time…"
-                          className="flex-1 px-3 py-1.5 rounded-xl text-[12px] bg-white/[0.06] text-white placeholder:text-white/30 outline-none" />
+                          className="flex-1 px-3 py-1.5 rounded-xl text-[12px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none" />
                         <button onClick={addNote} className="text-[11px] font-bold text-violet-300 px-2">Salvar</button>
                       </div>
                     </div>
@@ -784,10 +784,10 @@ export function ConversasArea() {
                   <div className="flex-1 p-5 overflow-y-auto">
                     {loadingMessages || !messages ? (
                       <div className="flex justify-center pt-16">
-                        <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+                        <Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" />
                       </div>
                     ) : messages.length === 0 ? (
-                      <p className="text-white/40 text-[14px] text-center pt-16">Sem mensagens registradas.</p>
+                      <p className="text-[var(--text-low)] text-[14px] text-center pt-16">Sem mensagens registradas.</p>
                     ) : (
                       <div className="space-y-3">
                         {hasOlderMessages && (
@@ -796,7 +796,7 @@ export function ConversasArea() {
                               onClick={() => selected && loadMessages(selected, 'older')}
                               disabled={loadingOlderMessages}
                               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold
-                                text-white/55 bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] disabled:opacity-50"
+                                text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] disabled:opacity-50"
                             >
                               {loadingOlderMessages && <Loader2 className="w-3 h-3 animate-spin" />}
                               Carregar mensagens anteriores
@@ -806,10 +806,10 @@ export function ConversasArea() {
                         {messages.map((m) => (
                           <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[13px] ${
-                              m.direction === 'out' ? 'bg-violet-500/20 text-white' : 'bg-white/[0.07] text-white/85'
+                              m.direction === 'out' ? 'bg-violet-500/20 text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-hi)]/85'
                             }`}>
                               {m.body}
-                              <div className="text-[10px] text-white/35 mt-1">
+                              <div className="text-[10px] text-[var(--text-low)] mt-1">
                                 {m.sender_type === 'ai' ? 'IA' : m.sender_type === 'broker_manual' ? 'Você' : 'Cliente'}
                                 {' · '}
                                 {new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -825,18 +825,18 @@ export function ConversasArea() {
                   {actionError && (
                     <p className="px-5 pb-1 text-[12px] text-red-300">{actionError}</p>
                   )}
-                  <div className="flex items-center gap-2 p-3 border-t border-white/8">
+                  <div className="flex items-center gap-2 p-3 border-t border-[var(--hairline)]">
                     <input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                       placeholder={selectedConv.conversation_status === 'closed' ? 'Ticket encerrado' : 'Responder como você…'}
                       disabled={selectedConv.conversation_status === 'closed'}
-                      className="flex-1 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30
-                        bg-white/[0.06] border border-white/12 outline-none focus:border-white/25"
+                      className="flex-1 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]
+                        bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)]"
                     />
                     <button onClick={handleSend} disabled={sending || !draft.trim() || selectedConv.conversation_status === 'closed'}
-                      className="w-10 h-10 flex items-center justify-center rounded-2xl bg-violet-500/25 text-white
+                      className="w-10 h-10 flex items-center justify-center rounded-2xl bg-violet-500/25 text-[var(--text-hi)]
                         hover:bg-violet-500/35 disabled:opacity-40 transition-colors">
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
@@ -851,21 +851,21 @@ export function ConversasArea() {
       {showNewConvo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => setShowNewConvo(false)}>
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[16px] font-bold text-white mb-4">Nova conversa</h3>
-            <label className="text-[12px] text-white/50 font-semibold">Número (WhatsApp)</label>
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[16px] font-bold text-[var(--text-hi)] mb-4">Nova conversa</h3>
+            <label className="text-[12px] text-[var(--text-low)] font-semibold">Número (WhatsApp)</label>
             <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
               placeholder="55 62 99999-9999"
-              className="w-full mt-1 mb-3 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30 bg-white/[0.06] border border-white/12 outline-none focus:border-white/25" />
-            <label className="text-[12px] text-white/50 font-semibold">Primeira mensagem</label>
+              className="w-full mt-1 mb-3 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)]" />
+            <label className="text-[12px] text-[var(--text-low)] font-semibold">Primeira mensagem</label>
             <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} rows={3}
               placeholder="Olá! Aqui é..."
-              className="w-full mt-1 mb-4 px-4 py-2.5 rounded-2xl text-[13px] text-white placeholder:text-white/30 bg-white/[0.06] border border-white/12 outline-none focus:border-white/25 resize-none" />
+              className="w-full mt-1 mb-4 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)] resize-none" />
             {actionError && <p className="text-[12px] text-red-300 mb-3">{actionError}</p>}
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowNewConvo(false)} className="px-4 py-2 rounded-2xl text-[13px] font-semibold text-white/60 hover:text-white/90">Cancelar</button>
+              <button onClick={() => setShowNewConvo(false)} className="px-4 py-2 rounded-2xl text-[13px] font-semibold text-[var(--text-mid)] hover:text-[var(--text-hi)]">Cancelar</button>
               <button onClick={createConversation} disabled={creatingConvo || !newPhone.trim() || !newMessage.trim()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-[13px] font-bold text-white bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40">
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-[13px] font-bold text-[var(--text-hi)] bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40">
                 {creatingConvo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Enviar e abrir
               </button>
             </div>

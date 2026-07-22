@@ -134,7 +134,7 @@ function unitDetails(u: Unit): string {
 const mirrorColor: Record<string, string> = {
   disponivel: 'bg-emerald-400/25 border-emerald-300/30 text-emerald-100',
   reservado: 'bg-amber-400/25 border-amber-300/30 text-amber-100',
-  vendido: 'bg-white/[0.04] border-white/10 text-white/30',
+  vendido: 'bg-[var(--control-fill)] border-[var(--hairline)] text-[var(--text-low)]',
 };
 
 function hoursLeft(iso?: string): string {
@@ -225,41 +225,41 @@ function NewDevelopmentModal({ initial, onClose, onCreated }: { initial?: Develo
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+      <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-          <h3 className="text-lg font-bold text-white">{isEdit ? 'Editar empreendimento' : 'Novo empreendimento'}</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline)] shrink-0">
+          <h3 className="text-lg font-bold text-[var(--text-hi)]">{isEdit ? 'Editar empreendimento' : 'Novo empreendimento'}</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Nome</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Nome</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Residencial Jardins"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Localização (opcional)</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Localização (opcional)</label>
             <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Bairro, cidade"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Fotos/renders (opcional)</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Fotos/renders (opcional)</label>
             <div className="grid grid-cols-4 gap-2">
               {images.map((url, idx) => (
-                <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-white/12 group">
+                <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-[var(--hairline-strong)] group">
                   <img src={url} alt="" className="w-full h-full object-cover" />
                   <button type="button" onClick={() => removeImage(idx)}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-[var(--text-hi)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={12} />
                   </button>
                 </div>
               ))}
               {images.length + uploadingCount < 15 && (
                 <button type="button" onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square rounded-xl border border-dashed border-white/20 flex items-center justify-center text-white/40 hover:text-white/70 hover:border-white/40 transition-colors">
+                  className="aspect-square rounded-xl border border-dashed border-[var(--glass-border)] flex items-center justify-center text-[var(--text-low)] hover:text-[var(--text-mid)] hover:border-white/40 transition-colors">
                   {uploadingCount > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 </button>
               )}
@@ -267,52 +267,52 @@ function NewDevelopmentModal({ initial, onClose, onCreated }: { initial?: Develo
             <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Tipo</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Tipo</label>
             <div className="flex gap-2">
               <button type="button" onClick={() => setTipo('vertical')}
                 className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                  tipo === 'vertical' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                  tipo === 'vertical' ? 'bg-white/[0.16] text-[var(--text-hi)] border border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border border-[var(--hairline)] hover:text-[var(--text-mid)]'
                 }`}>Prédio (vertical)</button>
               <button type="button" onClick={() => setTipo('horizontal')}
                 className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                  tipo === 'horizontal' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                  tipo === 'horizontal' ? 'bg-white/[0.16] text-[var(--text-hi)] border border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border border-[var(--hairline)] hover:text-[var(--text-mid)]'
                 }`}>Horizontal (lote/casas)</button>
             </div>
           </div>
           {tipo === 'horizontal' && (
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Qual tipo de horizontal?</label>
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Qual tipo de horizontal?</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setSubtipo('loteamento')}
                   className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                    subtipo === 'loteamento' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                    subtipo === 'loteamento' ? 'bg-white/[0.16] text-[var(--text-hi)] border border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border border-[var(--hairline)] hover:text-[var(--text-mid)]'
                   }`}>Loteamento (lote vazio)</button>
                 <button type="button" onClick={() => setSubtipo('condominio_casas')}
                   className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                    subtipo === 'condominio_casas' ? 'bg-white/[0.16] text-white border border-white/25' : 'bg-white/[0.04] text-white/45 border border-white/10 hover:text-white/70'
+                    subtipo === 'condominio_casas' ? 'bg-white/[0.16] text-[var(--text-hi)] border border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border border-[var(--hairline)] hover:text-[var(--text-mid)]'
                   }`}>Condomínio de casas prontas</button>
               </div>
             </div>
           )}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Benefícios (opcional)</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Benefícios (opcional)</label>
             <div className="grid grid-cols-2 gap-2">
               {AMENITY_OPTIONS.map((a) => (
                 <button key={a} type="button" onClick={() => toggleAmenity(a)}
                   className={`px-3 py-2 rounded-xl text-[12px] font-semibold text-left transition-colors border ${
-                    amenities.has(a) ? 'bg-violet-500/20 border-violet-300/30 text-violet-100' : 'bg-white/[0.04] border-white/10 text-white/50 hover:text-white/75'
+                    amenities.has(a) ? 'bg-violet-500/20 border-violet-300/30 text-violet-100' : 'bg-[var(--control-fill)] border-[var(--hairline)] text-[var(--text-low)] hover:text-[var(--text-mid)]'
                   }`}>{a}</button>
               ))}
             </div>
             <input value={otherAmenity} onChange={(e) => setOtherAmenity(e.target.value)} placeholder="Outro benefício (opcional)"
-              className="w-full mt-2 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+              className="w-full mt-2 rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
           </div>
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10 shrink-0">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Cancelar</button>
+        <div className="flex gap-3 px-6 py-4 border-t border-[var(--hairline)] shrink-0">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : null} {isEdit ? 'Salvar' : 'Criar'}
           </button>
         </div>
@@ -378,54 +378,54 @@ function NewUnitModal({ developmentId, developmentTipo, developmentSubtipo, onCl
     }
   }
 
-  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors";
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-          <h3 className="text-lg font-bold text-white">Nova unidade</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline)] shrink-0">
+          <h3 className="text-lg font-bold text-[var(--text-hi)]">Nova unidade</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Código</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Código</label>
             <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex.: 801 ou Cobertura 1201"
               className={numInputClass} />
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Preço (opcional)</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Preço (opcional)</label>
             <div className="flex items-stretch gap-2">
-              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+              <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">R$</span>
               <input value={maskFromCents(priceCents)} onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
                 placeholder="0,00" inputMode="numeric"
-                className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
             </div>
           </div>
           {!isLoteamento ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Quartos</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Quartos</label>
                 <input value={quartos} onChange={(e) => setQuartos(e.target.value.replace(/\D/g, '').slice(0, 2))}
                   inputMode="numeric" placeholder="0" className={numInputClass} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
                 <input value={vagas} onChange={(e) => setVagas(e.target.value.replace(/\D/g, '').slice(0, 2))}
                   inputMode="numeric" placeholder="0" className={numInputClass} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
                 <input value={areaM2} onChange={(e) => setAreaM2(e.target.value.replace(/[^\d,]/g, ''))}
                   inputMode="decimal" placeholder="0" className={numInputClass} />
               </div>
               {isVertical && (
                 <div>
-                  <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Andar</label>
+                  <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Andar</label>
                   <input value={andar} onChange={(e) => setAndar(e.target.value.replace(/\D/g, '').slice(0, 3))}
                     inputMode="numeric" placeholder="0" className={numInputClass} />
                 </div>
@@ -434,33 +434,33 @@ function NewUnitModal({ developmentId, developmentTipo, developmentSubtipo, onCl
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
                 <input value={areaLoteM2} onChange={(e) => setAreaLoteM2(e.target.value.replace(/[^\d,]/g, ''))}
                   inputMode="decimal" placeholder="0" className={numInputClass} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Testada (m)</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Testada (m)</label>
                 <input value={testadaM} onChange={(e) => setTestadaM(e.target.value.replace(/[^\d,]/g, ''))}
                   inputMode="decimal" placeholder="0" className={numInputClass} />
               </div>
             </div>
           )}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Orientação solar (opcional)</label>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Orientação solar (opcional)</label>
             <div className="flex gap-2">
               {(['nascente', 'poente'] as const).map((o) => (
                 <button key={o} type="button" onClick={() => setOrientacao(orientacao === o ? '' : o)}
                   className={`flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-colors border ${
-                    orientacao === o ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                    orientacao === o ? 'bg-white/[0.16] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)] hover:text-[var(--text-mid)]'
                   }`}>{ORIENTACAO_LABEL[o]}</button>
               ))}
             </div>
           </div>
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10 shrink-0">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Cancelar</button>
+        <div className="flex gap-3 px-6 py-4 border-t border-[var(--hairline)] shrink-0">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : null} Criar
           </button>
         </div>
@@ -804,7 +804,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
     }
   }
 
-  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors";
+  const numInputClass = "w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors";
   const effectiveStatus = reservation ? 'reservado' : unit.status;
   const canRetryPix = reservation?.status === 'creating' || reservation?.status === 'payment_failed';
   const reservationStatusLabel: Record<string, string> = {
@@ -834,17 +834,17 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-white/25
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-          <h3 className="text-lg font-bold text-white">Unidade {unit.code}</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline)] shrink-0">
+          <h3 className="text-lg font-bold text-[var(--text-hi)]">Unidade {unit.code}</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
           {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">{error}</div>}
 
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[13px] text-white/50">
+            <p className="text-[13px] text-[var(--text-low)]">
               {centsToReais(unit.price_cents)} · status atual: <span className="font-semibold">{effectiveStatus}</span>
             </p>
             <button onClick={() => setEditing(e => !e)} className="text-[12px] font-semibold text-violet-200 hover:text-violet-100 transition-colors shrink-0">
@@ -852,15 +852,15 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </button>
           </div>
           {!editing && unitDetails(unit) && (
-            <p className="text-[12px] text-white/40">{unitDetails(unit)}</p>
+            <p className="text-[12px] text-[var(--text-low)]">{unitDetails(unit)}</p>
           )}
 
           <div className="space-y-3 p-3 rounded-xl bg-violet-500/[0.06] border border-violet-300/15">
             <div className="flex items-center gap-2">
               <Calculator size={14} className="text-violet-200" />
               <div>
-                <p className="text-[12px] font-bold text-white/80">Simulador de financiamento</p>
-                <p className="text-[10px] text-white/35">Cálculo simples, sem juros e sem salvar proposta.</p>
+                <p className="text-[12px] font-bold text-[var(--text-hi)]">Simulador de financiamento</p>
+                <p className="text-[10px] text-[var(--text-low)]">Cálculo simples, sem juros e sem salvar proposta.</p>
               </div>
             </div>
 
@@ -870,29 +870,29 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               <>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setEntryMode('percent')}
-                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'percent' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-white/[0.03] text-white/40 border-white/10'}`}>
+                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'percent' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>
                     Entrada em %
                   </button>
                   <button type="button" onClick={() => setEntryMode('amount')}
-                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'amount' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-white/[0.03] text-white/40 border-white/10'}`}>
+                    className={`py-2 rounded-xl text-[11px] font-semibold border transition-colors ${entryMode === 'amount' ? 'bg-violet-400/15 text-violet-100 border-violet-300/25' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>
                     Entrada em R$
                   </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1 block">Entrada</label>
+                    <label className="text-[10px] font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1 block">Entrada</label>
                     {entryMode === 'percent' ? (
                       <div className="flex items-stretch gap-1.5">
                         <input value={entryPercent}
                           onChange={(e) => setEntryPercent(e.target.value.replace(/[^\d,]/g, '').slice(0, 6))}
                           inputMode="decimal" aria-label="Percentual de entrada"
                           className={numInputClass} />
-                        <span className="flex items-center px-3 rounded-xl text-sm text-white/45 bg-white/5 border border-white/12">%</span>
+                        <span className="flex items-center px-3 rounded-xl text-sm text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">%</span>
                       </div>
                     ) : (
                       <div className="flex items-stretch gap-1.5">
-                        <span className="flex items-center px-2.5 rounded-xl text-xs text-white/45 bg-white/5 border border-white/12">R$</span>
+                        <span className="flex items-center px-2.5 rounded-xl text-xs text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">R$</span>
                         <input value={maskFromCents(entryAmountCents)}
                           onChange={(e) => setEntryAmountCents(centsFromMaskInput(e.target.value))}
                           inputMode="numeric" aria-label="Valor da entrada"
@@ -901,7 +901,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                     )}
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider mb-1 block">Parcelas</label>
+                    <label className="text-[10px] font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1 block">Parcelas</label>
                     <input value={installmentCount}
                       onChange={(e) => setInstallmentCount(e.target.value.replace(/\D/g, '').slice(0, 3))}
                       inputMode="numeric" min={1} max={120} aria-label="Quantidade de parcelas"
@@ -910,10 +910,10 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 </div>
 
                 {simulation ? (
-                  <div className="rounded-xl bg-black/15 border border-white/8 px-3 py-2.5 space-y-1.5 text-[11px]">
-                    <div className="flex justify-between text-white/50"><span>Entrada</span><strong className="text-white/75">{formatCentsBR(simulation.entryCents)}</strong></div>
-                    <div className="flex justify-between text-white/50"><span>Saldo sem juros</span><strong className="text-white/75">{formatCentsBR(simulation.financedCents)}</strong></div>
-                    <div className="pt-1.5 border-t border-white/8 text-violet-100">
+                  <div className="rounded-xl bg-black/15 border border-[var(--hairline)] px-3 py-2.5 space-y-1.5 text-[11px]">
+                    <div className="flex justify-between text-[var(--text-low)]"><span>Entrada</span><strong className="text-[var(--text-mid)]">{formatCentsBR(simulation.entryCents)}</strong></div>
+                    <div className="flex justify-between text-[var(--text-low)]"><span>Saldo sem juros</span><strong className="text-[var(--text-mid)]">{formatCentsBR(simulation.financedCents)}</strong></div>
+                    <div className="pt-1.5 border-t border-[var(--hairline)] text-violet-100">
                       {simulation.installmentCount === 1 ? (
                         <strong>1 parcela de {formatCentsBR(simulation.finalInstallmentCents)}</strong>
                       ) : simulation.regularInstallmentCents === simulation.finalInstallmentCents ? (
@@ -922,7 +922,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                         <strong>{simulation.installmentCount - 1} parcelas de {formatCentsBR(simulation.regularInstallmentCents)} + última de {formatCentsBR(simulation.finalInstallmentCents)}</strong>
                       )}
                     </div>
-                    <p className="text-[9px] leading-relaxed text-white/30">Fórmula: (preço − entrada) ÷ parcelas. Diferença de centavos fica na última parcela.</p>
+                    <p className="text-[9px] leading-relaxed text-[var(--text-low)]">Fórmula: (preço − entrada) ÷ parcelas. Diferença de centavos fica na última parcela.</p>
                   </div>
                 ) : (
                   <p className="text-[11px] text-red-300">Use entrada entre 0% e 100% (ou até o preço) e de 1 a 120 parcelas.</p>
@@ -932,11 +932,11 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           </div>
 
           {editing && (
-            <div className="space-y-3 p-3 rounded-xl bg-white/[0.03] border border-white/10">
+            <div className="space-y-3 p-3 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline)]">
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Preço</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Preço</label>
                 <div className="flex items-stretch gap-2">
-                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">R$</span>
                   <input value={maskFromCents(priceCents)} onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
                     placeholder="0,00" inputMode="numeric" className={numInputClass} />
                 </div>
@@ -944,49 +944,49 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               {isLoteamento ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
+                    <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Área do lote (m²)</label>
                     <input value={areaLoteM2} onChange={(e) => setAreaLoteM2(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Testada (m)</label>
+                    <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Testada (m)</label>
                     <input value={testadaM} onChange={(e) => setTestadaM(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Quartos</label>
+                    <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Quartos</label>
                     <input value={quartos} onChange={(e) => setQuartos(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="0" className={numInputClass} />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
+                    <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Vagas garagem</label>
                     <input value={vagas} onChange={(e) => setVagas(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" placeholder="0" className={numInputClass} />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
+                    <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Área construída (m²)</label>
                     <input value={areaM2} onChange={(e) => setAreaM2(e.target.value.replace(/[^\d,]/g, ''))} inputMode="decimal" placeholder="0" className={numInputClass} />
                   </div>
                   {isVertical && (
                     <div>
-                      <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Andar</label>
+                      <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Andar</label>
                       <input value={andar} onChange={(e) => setAndar(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="0" className={numInputClass} />
                     </div>
                   )}
                 </div>
               )}
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Orientação solar</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Orientação solar</label>
                 <div className="flex gap-2">
                   {(['nascente', 'poente'] as const).map((o) => (
                     <button key={o} type="button" onClick={() => setOrientacao(orientacao === o ? '' : o)}
                       className={`flex-1 py-2 rounded-xl text-[12px] font-semibold transition-colors border ${
-                        orientacao === o ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                        orientacao === o ? 'bg-white/[0.16] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)] hover:text-[var(--text-mid)]'
                       }`}>{ORIENTACAO_LABEL[o]}</button>
                   ))}
                 </div>
               </div>
               <button onClick={saveEdits} disabled={!!saving}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
                 {saving === 'editar' ? 'Salvando...' : 'Salvar alterações'}
               </button>
             </div>
@@ -1004,24 +1004,24 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 <div className="flex items-center gap-2 min-w-0">
                   <QrCode size={16} className="text-emerald-200 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[12px] font-bold text-white/80">Sinal da reserva</p>
-                    <p className="text-[10px] text-white/40">Documento final •••• {reservation.buyer_document_last4}</p>
+                    <p className="text-[12px] font-bold text-[var(--text-hi)]">Sinal da reserva</p>
+                    <p className="text-[10px] text-[var(--text-low)]">Documento final •••• {reservation.buyer_document_last4}</p>
                   </div>
                 </div>
                 <span className="text-[10px] font-semibold text-emerald-100 text-right">
                   {reservationStatusLabel[reservation.status] || reservation.status}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-[12px] text-white/55">
+              <div className="flex items-center justify-between text-[12px] text-[var(--text-mid)]">
                 <span>Valor do sinal</span>
-                <strong className="text-white/85">{formatCentsBR(reservation.signal_amount_cents)}</strong>
+                <strong className="text-[var(--text-hi)]/85">{formatCentsBR(reservation.signal_amount_cents)}</strong>
               </div>
               {qrCodeSource && (
                 <img src={qrCodeSource} alt="QR Code PIX da reserva" className="w-44 h-44 mx-auto rounded-xl bg-white p-2" />
               )}
               {reservation.pix_copy_paste && (
                 <div className="space-y-2">
-                  <p className="text-[10px] text-white/35 break-all line-clamp-2">{reservation.pix_copy_paste}</p>
+                  <p className="text-[10px] text-[var(--text-low)] break-all line-clamp-2">{reservation.pix_copy_paste}</p>
                   <button type="button" onClick={copyPixCode}
                     className="w-full py-2 rounded-xl text-[12px] font-semibold text-emerald-100 bg-emerald-500/10 border border-emerald-300/20 hover:bg-emerald-500/20 flex items-center justify-center gap-2">
                     {copiedPix ? <Check size={14} /> : <Copy size={14} />}
@@ -1046,15 +1046,15 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               <div className="flex items-start gap-2">
                 <FileText size={15} className="text-blue-200 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-[12px] font-bold text-white/80">Documentos da reserva</p>
-                  <p className="text-[10px] text-white/35">Arquivos privados; o link de visualização expira em 5 minutos.</p>
+                  <p className="text-[12px] font-bold text-[var(--text-hi)]">Documentos da reserva</p>
+                  <p className="text-[10px] text-[var(--text-low)]">Arquivos privados; o link de visualização expira em 5 minutos.</p>
                 </div>
               </div>
 
               {documentsLoading ? (
-                <div className="flex items-center justify-center py-3"><Loader2 size={16} className="animate-spin text-white/40" /></div>
+                <div className="flex items-center justify-center py-3"><Loader2 size={16} className="animate-spin text-[var(--text-low)]" /></div>
               ) : documents.length === 0 ? (
-                <p className="text-[11px] text-white/40 rounded-lg bg-black/10 px-3 py-2">
+                <p className="text-[11px] text-[var(--text-low)] rounded-lg bg-black/10 px-3 py-2">
                   Nenhum documento solicitado. Sem itens, esta etapa não bloqueia a venda.
                 </p>
               ) : (
@@ -1063,12 +1063,12 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                     const busy = documentAction?.endsWith(`:${item.id}`) === true;
                     const hasFile = !!item.uploaded_at;
                     return (
-                      <div key={item.id} className="rounded-xl bg-black/10 border border-white/8 p-3 space-y-2">
+                      <div key={item.id} className="rounded-xl bg-black/10 border border-[var(--hairline)] p-3 space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-[12px] font-semibold text-white/75 break-words">{item.label}</p>
+                            <p className="text-[12px] font-semibold text-[var(--text-mid)] break-words">{item.label}</p>
                             {hasFile && (
-                              <p className="text-[9px] text-white/30">
+                              <p className="text-[9px] text-[var(--text-low)]">
                                 {item.file_mime_type === 'application/pdf' ? 'PDF' : 'Imagem'}
                                 {item.file_size_bytes ? ` · ${(item.file_size_bytes / 1024 / 1024).toFixed(1)} MB` : ''}
                               </p>
@@ -1104,7 +1104,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
 
                           {hasFile && (
                             <button type="button" onClick={() => openDocument(item.id)} disabled={!!documentAction}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50">
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] disabled:opacity-50">
                               {documentAction === `view:${item.id}` ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />}
                               Visualizar
                             </button>
@@ -1132,14 +1132,14 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                           <div className="space-y-2 pt-1">
                             <textarea value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value.slice(0, 500))}
                               placeholder="Motivo da rejeição" rows={2}
-                              className="w-full rounded-lg px-3 py-2 text-[11px] text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-red-300/30 resize-none" />
+                              className="w-full rounded-lg px-3 py-2 text-[11px] text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-red-300/30 resize-none" />
                             <div className="flex gap-2">
                               <button type="button" onClick={() => reviewDocument(item.id, 'rejeitado')} disabled={!!documentAction || rejectionReason.trim().length < 2}
                                 className="flex-1 py-1.5 rounded-lg text-[10px] font-semibold text-red-100 bg-red-500/20 border border-red-300/20 disabled:opacity-40">
                                 Confirmar rejeição
                               </button>
                               <button type="button" onClick={() => { setRejectingDocumentId(null); setRejectionReason(''); }} disabled={!!documentAction}
-                                className="px-3 py-1.5 rounded-lg text-[10px] font-semibold text-white/50 bg-white/5 border border-white/10 disabled:opacity-40">
+                                className="px-3 py-1.5 rounded-lg text-[10px] font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] disabled:opacity-40">
                                 Cancelar
                               </button>
                             </div>
@@ -1155,7 +1155,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 <input value={documentLabel} onChange={(event) => setDocumentLabel(event.target.value.slice(0, 120))}
                   onKeyDown={(event) => { if (event.key === 'Enter') void requestDocument(); }}
                   placeholder="Ex.: RG do comprador" disabled={!!documentAction}
-                  className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[11px] text-white bg-white/8 border border-white/12 placeholder-white/25 focus:outline-none focus:border-blue-300/30 disabled:opacity-50" />
+                  className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[11px] text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] focus:outline-none focus:border-blue-300/30 disabled:opacity-50" />
                 <button type="button" onClick={requestDocument} disabled={!!documentAction || documentLabel.trim().length < 2}
                   className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-semibold text-blue-100 bg-blue-500/15 border border-blue-300/20 hover:bg-blue-500/25 disabled:opacity-40">
                   {documentAction === 'request' ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
@@ -1168,22 +1168,22 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           {effectiveStatus !== 'vendido' && (
             <>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <User size={11} /> Interessado/comprador
                 </label>
                 <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="Nome" disabled={!!reservation && !canRetryPix}
-                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                    focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                   <Phone size={11} /> Telefone
                 </label>
                 <div className="flex items-stretch gap-2">
-                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">+55</span>
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">+55</span>
                   <input value={buyerPhone} onChange={(e) => setBuyerPhone(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" disabled={!!reservation && !canRetryPix}
-                    className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                      focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                    className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                      focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
                 </div>
               </div>
             </>
@@ -1191,25 +1191,25 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
 
           {(unit.status === 'disponivel' && !reservation) && (
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Reservar por quantas horas?</label>
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Reservar por quantas horas?</label>
               <input value={holdHours} onChange={(e) => setHoldHours(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="1"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors" />
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors" />
             </div>
           )}
 
           {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
             <div className="space-y-3 p-3 rounded-xl bg-emerald-500/[0.05] border border-emerald-300/15">
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
                 <input value={buyerDocument} onChange={(e) => setBuyerDocument(maskCpfCnpj(e.target.value))}
                   inputMode="numeric" maxLength={18} placeholder="000.000.000-00" className={numInputClass} />
-                <p className="text-[9px] text-white/30 mt-1">O documento completo vai direto para a Asaas e não fica salvo no ImobiFlow.</p>
+                <p className="text-[9px] text-[var(--text-low)] mt-1">O documento completo vai direto para a Asaas e não fica salvo no ImobiFlow.</p>
               </div>
               <div>
-                <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">Valor do sinal</label>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Valor do sinal</label>
                 <div className="flex items-stretch gap-2">
-                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50 bg-white/5 border border-white/12">R$</span>
+                  <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">R$</span>
                   <input value={maskFromCents(signalAmountCents)} onChange={(e) => setSignalAmountCents(centsFromMaskInput(e.target.value))}
                     inputMode="numeric" placeholder="0,00" className={numInputClass} />
                 </div>
@@ -1217,7 +1217,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-2 px-6 py-4 border-t border-white/10">
+        <div className="flex flex-col gap-2 px-6 py-4 border-t border-[var(--hairline)]">
           {unit.status === 'disponivel' && !reservation && (
             <>
               {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && (
@@ -1232,7 +1232,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 {saving === 'reservar' ? 'Reservando...' : CLIENT_FINANCIAL_OPERATIONS_ENABLED ? 'Reservar sem cobrança' : 'Reservar unidade'}
               </button>
               <button onClick={() => act('vender')} disabled={!!saving}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
                 {saving === 'vender' ? 'Vendendo...' : 'Marcar como vendida'}
               </button>
             </>
@@ -1247,7 +1247,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           {effectiveStatus === 'reservado' && (
             <>
               <button onClick={() => act('vender')} disabled={!!saving || documentsLoading || unapprovedDocumentCount > 0}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50">
                 {saving === 'vender'
                   ? 'Vendendo...'
                   : documentsLoading
@@ -1257,14 +1257,14 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                       : 'Confirmar venda'}
               </button>
               <button onClick={() => act('liberar')} disabled={!!saving}
-                className="w-full py-2.5 rounded-xl text-sm font-bold text-white/60 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-50">
+                className="w-full py-2.5 rounded-xl text-sm font-bold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-50">
                 {saving === 'liberar' ? 'Liberando...' : 'Liberar reserva'}
               </button>
             </>
           )}
           {unit.status === 'vendido' && (
             <button onClick={() => act('liberar')} disabled={!!saving}
-              className="w-full py-2.5 rounded-xl text-sm font-bold text-white/60 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-50">
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-50">
               {saving === 'liberar' ? 'Desfazendo...' : 'Desfazer venda (voltar a disponível)'}
             </button>
           )}
@@ -1351,13 +1351,13 @@ export function LancamentosArea() {
   };
 
   if (loading) {
-    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-white/40 animate-spin" /></div>;
+    return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
   }
 
   if (error) {
     return (
       <div className="max-w-6xl mx-auto w-full">
-        <h2 className="text-2xl font-black text-white mb-6">Lançamentos</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)] mb-6">Lançamentos</h2>
         <GlassCard className="!py-10 text-center"><p className="text-[14px] text-red-300">{error}</p></GlassCard>
       </div>
     );
@@ -1369,23 +1369,23 @@ export function LancamentosArea() {
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-black text-white">Lançamentos</h2>
+        <h2 className="text-2xl font-black text-[var(--text-hi)]">Lançamentos</h2>
         <button onClick={() => setShowNewDev(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-white
-            bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors">
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+            bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
           <Plus className="w-4 h-4" /> Novo empreendimento
         </button>
       </div>
 
       {isEmpty ? (
         <GlassCard className="!py-14 text-center">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-white/[0.06] border border-white/12">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
             <Building2 className="w-5 h-5 text-violet-200" />
           </div>
-          <p className="text-[15px] text-white/60 mb-6">Nenhum empreendimento cadastrado ainda.</p>
+          <p className="text-[15px] text-[var(--text-mid)] mb-6">Nenhum empreendimento cadastrado ainda.</p>
           <button onClick={() => setShowNewDev(true)}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold text-white
-              bg-white/[0.08] border border-white/15 hover:bg-white/[0.14] transition-colors">
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-[14px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
             <Plus className="w-4 h-4" /> Cadastrar o primeiro
           </button>
         </GlassCard>
@@ -1395,13 +1395,13 @@ export function LancamentosArea() {
             {developments!.map((d) => (
               <button key={d.id} onClick={() => setSelectedId(d.id)}
                 className={`inline-flex items-center gap-2 pl-2 pr-4 py-2 rounded-2xl text-[13px] font-semibold transition-colors ${
-                  selectedId === d.id ? 'bg-white/[0.14] text-white' : 'bg-white/[0.04] text-white/45 hover:text-white/75'
+                  selectedId === d.id ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] hover:text-[var(--text-mid)]'
                 }`}>
                 {d.images && d.images[0] ? (
-                  <img src={d.images[0]} alt="" className="w-6 h-6 rounded-full object-cover border border-white/15" />
+                  <img src={d.images[0]} alt="" className="w-6 h-6 rounded-full object-cover border border-[var(--glass-border)]" />
                 ) : (
-                  <span className="w-6 h-6 rounded-full bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-                    <Building2 className="w-3 h-3 text-white/40" />
+                  <span className="w-6 h-6 rounded-full bg-[var(--control-fill-hover)] border border-[var(--glass-border)] flex items-center justify-center shrink-0">
+                    <Building2 className="w-3 h-3 text-[var(--text-low)]" />
                   </span>
                 )}
                 {d.name}
@@ -1414,39 +1414,39 @@ export function LancamentosArea() {
               {selected.images && selected.images.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto mb-4 -mx-1 px-1">
                   {selected.images.map((url) => (
-                    <img key={url} src={url} alt="" className="h-24 w-32 object-cover rounded-xl border border-white/12 shrink-0" />
+                    <img key={url} src={url} alt="" className="h-24 w-32 object-cover rounded-xl border border-[var(--hairline-strong)] shrink-0" />
                   ))}
                 </div>
               )}
               <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[15px] font-bold text-white">{selected.name}</h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/[0.06] border border-white/12 text-white/50">
+                    <h3 className="text-[15px] font-bold text-[var(--text-hi)]">{selected.name}</h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--control-fill)] border border-[var(--hairline-strong)] text-[var(--text-low)]">
                       {selected.tipo === 'horizontal'
                         ? (selected.subtipo === 'condominio_casas' ? 'Condomínio de casas' : 'Loteamento')
                         : 'Vertical'}
                     </span>
                   </div>
-                  {selected.location && <p className="text-[12px] text-white/40">{selected.location}</p>}
+                  {selected.location && <p className="text-[12px] text-[var(--text-low)]">{selected.location}</p>}
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex gap-3 text-[11px]">
                     <span className="text-emerald-200">● {selected.disponivel} disponível</span>
                     <span className="text-amber-200">● {selected.reservado} reservado</span>
-                    <span className="text-white/30">● {selected.vendido} vendido</span>
+                    <span className="text-[var(--text-low)]">● {selected.vendido} vendido</span>
                   </div>
                   <button onClick={() => setShowNewUnit(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-white/70
-                      bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)]
+                      bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
                     <Plus className="w-3.5 h-3.5" /> Unidade
                   </button>
                   <button onClick={() => setEditingDev(true)} title="Editar empreendimento"
-                    className="p-1.5 rounded-xl text-white/50 hover:text-white/80 bg-white/[0.05] hover:bg-white/[0.1] transition-colors">
+                    className="p-1.5 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handleDeleteDevelopment(selected)} disabled={deletingDev} title="Excluir empreendimento"
-                    className="p-1.5 rounded-xl text-red-300/70 hover:text-red-300 bg-white/[0.05] hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                    className="p-1.5 rounded-xl text-red-300/70 hover:text-red-300 bg-[var(--control-fill)] hover:bg-red-500/10 transition-colors disabled:opacity-50">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1455,15 +1455,15 @@ export function LancamentosArea() {
               {selected.amenities && selected.amenities.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-4">
                   {selected.amenities.map((a) => (
-                    <span key={a} className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-white/[0.04] border border-white/10 text-white/50">{a}</span>
+                    <span key={a} className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[var(--control-fill)] border border-[var(--hairline)] text-[var(--text-low)]">{a}</span>
                   ))}
                 </div>
               )}
 
               {loadingUnits ? (
-                <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-white/40 animate-spin" /></div>
+                <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
               ) : !units || units.length === 0 ? (
-                <p className="text-[13px] text-white/40 text-center py-8">Nenhuma unidade cadastrada neste empreendimento ainda.</p>
+                <p className="text-[13px] text-[var(--text-low)] text-center py-8">Nenhuma unidade cadastrada neste empreendimento ainda.</p>
               ) : (
                 <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-10 gap-2">
                   {units.map((u) => (

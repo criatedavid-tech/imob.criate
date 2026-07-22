@@ -87,13 +87,13 @@ function validateFields(form: CardForm): FieldErrors {
 // ── Helpers de estilo ───────────────────────────────────────────────────────
 
 const baseInput =
-  'w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder:text-white/30 ' +
-  'bg-white/10 border focus:ring-2 focus:bg-white/15 [color-scheme:dark]';
+  'w-full py-3 rounded-2xl outline-none transition-all text-sm font-medium text-[var(--text-hi)] placeholder:text-[var(--text-low)] ' +
+  'bg-[var(--control-fill-hover)] border focus:ring-2 focus:bg-[var(--control-fill-hover)] [color-scheme:dark]';
 
 function inputCls(err?: string) {
   return `${baseInput} ${err
     ? 'border-red-400/60 focus:ring-red-400/30'
-    : 'border-white/15 focus:ring-white/25'}`;
+    : 'border-[var(--glass-border)] focus:ring-white/25'}`;
 }
 
 function FieldError({ msg }: { msg?: string }) {
@@ -231,7 +231,7 @@ export default function PaymentPending() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 flex flex-col items-center justify-start py-10 px-4 font-sans relative overflow-hidden">
+    <div className="min-h-screen app-bg flex flex-col items-center justify-start py-10 px-4 font-sans relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
 
       <motion.div
@@ -243,24 +243,24 @@ export default function PaymentPending() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4
-            backdrop-blur-md bg-white/15 border border-white/25
+            backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
             shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_rgba(0,0,0,0.3)]">
-            <Home className="text-white w-7 h-7" />
+            <Home className="text-[var(--text-hi)] w-7 h-7" />
           </div>
-          <h1 className="text-2xl font-black text-white">Ative seu plano</h1>
-          <p className="text-white/50 text-sm mt-1">Preencha os dados do cartão para começar</p>
+          <h1 className="text-2xl font-black text-[var(--text-hi)]">Ative seu plano</h1>
+          <p className="text-[var(--text-low)] text-sm mt-1">Preencha os dados do cartão para começar</p>
         </div>
 
         {/* Preço + benefícios */}
         <div className="rounded-3xl p-6 mb-5
-          backdrop-blur-xl bg-white/10 border border-white/15
+          backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <span className="text-3xl font-black text-white">R$ {totalPriceDisplay}</span>
-              <span className="text-white/50 text-sm">/mês</span>
+              <span className="text-3xl font-black text-[var(--text-hi)]">R$ {totalPriceDisplay}</span>
+              <span className="text-[var(--text-low)] text-sm">/mês</span>
             </div>
-            <span className="text-xs text-white/50 bg-white/10 border border-white/15 px-3 py-1.5 rounded-full">
+            <span className="text-xs text-[var(--text-low)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] px-3 py-1.5 rounded-full">
               Cancele quando quiser
             </span>
           </div>
@@ -268,40 +268,40 @@ export default function PaymentPending() {
             {BENEFITS.map(b => (
               <div key={b} className="flex items-center gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="text-sm text-white/70">{b}</span>
+                <span className="text-sm text-[var(--text-mid)]">{b}</span>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-white/40 leading-relaxed mt-4 pt-4 border-t border-white/10">
+          <p className="text-[11px] text-[var(--text-low)] leading-relaxed mt-4 pt-4 border-t border-[var(--hairline)]">
             Caso ultrapasse os 100 atendimentos inclusos no mês, cada atendimento adicional custará{' '}
-            <strong className="text-white/60">R$ 3,00</strong>. Você acompanha o uso em tempo real no seu painel para manter o controle total.
+            <strong className="text-[var(--text-mid)]">R$ 3,00</strong>. Você acompanha o uso em tempo real no seu painel para manter o controle total.
           </p>
         </div>
 
         {/* WhatsApp próprio de equipe — só imobiliária/incorporadora */}
         {showTeamSlots && (
           <div className="rounded-3xl p-6 mb-5
-            backdrop-blur-xl bg-white/10 border border-white/15
+            backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
             shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
             <div className="flex items-center gap-2 mb-1">
-              <Users className="w-4 h-4 text-white/40" />
-              <span className="text-sm font-bold text-white">WhatsApp próprio para a equipe</span>
+              <Users className="w-4 h-4 text-[var(--text-low)]" />
+              <span className="text-sm font-bold text-[var(--text-hi)]">WhatsApp próprio para a equipe</span>
             </div>
-            <p className="text-[12px] text-white/40 mb-4">
-              Cada corretor com número próprio custa <strong className="text-white/60">R$ {slotPriceDisplay}/mês</strong>. Por padrão todos compartilham o número da conta — sem custo extra. Dá pra ajustar depois em Config.
+            <p className="text-[12px] text-[var(--text-low)] mb-4">
+              Cada corretor com número próprio custa <strong className="text-[var(--text-mid)]">R$ {slotPriceDisplay}/mês</strong>. Por padrão todos compartilham o número da conta — sem custo extra. Dá pra ajustar depois em Config.
             </p>
             <div className="flex items-center justify-between">
-              <span className="text-[12px] text-white/50">Quantos corretores vão ter número próprio?</span>
+              <span className="text-[12px] text-[var(--text-low)]">Quantos corretores vão ter número próprio?</span>
               <div className="flex items-center gap-3">
                 <button type="button" onClick={() => setMemberSlots(v => Math.max(0, v - 1))}
                   disabled={memberSlots <= 0}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] disabled:opacity-30 hover:bg-[var(--control-fill-hover)] transition-colors">
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <span className="w-6 text-center text-white font-bold">{memberSlots}</span>
+                <span className="w-6 text-center text-[var(--text-hi)] font-bold">{memberSlots}</span>
                 <button type="button" onClick={() => setMemberSlots(v => Math.min(slotMax, v + 1))}
                   disabled={memberSlots >= slotMax}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/10 border border-white/15 text-white disabled:opacity-30 hover:bg-white/15 transition-colors">
+                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] disabled:opacity-30 hover:bg-[var(--control-fill-hover)] transition-colors">
                   <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -311,12 +311,12 @@ export default function PaymentPending() {
 
         {/* Formulário */}
         <form onSubmit={handleSubmit} noValidate className="rounded-3xl p-6 space-y-4
-          backdrop-blur-xl bg-white/10 border border-white/15
+          backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
 
           <div className="flex items-center gap-2 mb-1">
-            <Lock className="w-4 h-4 text-white/30" />
-            <span className="text-xs text-white/40 font-medium">Pagamento seguro — seus dados são criptografados</span>
+            <Lock className="w-4 h-4 text-[var(--text-low)]" />
+            <span className="text-xs text-[var(--text-low)] font-medium">Pagamento seguro — seus dados são criptografados</span>
           </div>
 
           {globalError && (
@@ -327,9 +327,9 @@ export default function PaymentPending() {
 
           {/* CPF/CNPJ */}
           <div>
-            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">CPF / CNPJ</label>
+            <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">CPF / CNPJ</label>
             <div className="relative">
-              <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)]" />
               <input
                 value={form.cpfCnpj}
                 onChange={e => setField('cpfCnpj', formatCpfCnpj(e.target.value))}
@@ -343,9 +343,9 @@ export default function PaymentPending() {
 
           {/* Nome no cartão */}
           <div>
-            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Nome no Cartão</label>
+            <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Nome no Cartão</label>
             <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)]" />
               <input
                 value={form.cardHolder}
                 onChange={e => setField('cardHolder', e.target.value)}
@@ -359,9 +359,9 @@ export default function PaymentPending() {
 
           {/* Número do cartão */}
           <div>
-            <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Número do Cartão</label>
+            <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Número do Cartão</label>
             <div className="relative">
-              <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+              <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)]" />
               <input
                 value={form.cardNumber}
                 onChange={e => setField('cardNumber', formatCard(e.target.value))}
@@ -377,7 +377,7 @@ export default function PaymentPending() {
           {/* Validade + CVV */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Mês</label>
+              <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Mês</label>
               <input
                 value={form.expiryMonth}
                 onChange={e => setField('expiryMonth', e.target.value.replace(/\D/g, '').slice(0, 2))}
@@ -389,7 +389,7 @@ export default function PaymentPending() {
               <FieldError msg={fieldErrors.expiryMonth} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">Ano</label>
+              <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Ano</label>
               <input
                 value={form.expiryYear}
                 onChange={e => setField('expiryYear', e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -401,7 +401,7 @@ export default function PaymentPending() {
               <FieldError msg={fieldErrors.expiryYear} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-white/40 mb-1.5 uppercase tracking-widest pl-1">CVV</label>
+              <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">CVV</label>
               <div className="relative">
                 <input
                   value={form.cvv}
@@ -413,7 +413,7 @@ export default function PaymentPending() {
                   placeholder="•••"
                 />
                 <button type="button" onClick={() => setShowCvv(v => !v)}
-                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-white/30 hover:text-white/70 transition-colors">
+                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
                   {showCvv ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
               </div>
@@ -426,15 +426,15 @@ export default function PaymentPending() {
             <label className="flex items-start gap-3 cursor-pointer group">
               <input type="checkbox" checked={acceptedRecurring} onChange={e => setAcceptedRecurring(e.target.checked)}
                 className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]" />
-              <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
-                Autorizo a cobrança recorrente de <strong className="text-white/70">R$ {totalPriceDisplay}/mês</strong>
-                {memberSlots > 0 && <> (inclui {memberSlots} WhatsApp próprio{memberSlots > 1 ? 's' : ''} de equipe)</>} e o valor de <strong className="text-white/70">R$ 3,00 por atendimento adicional</strong> (acima de 100/mês), se houver. Posso cancelar a qualquer momento.
+              <span className="text-[10px] text-[var(--text-low)] leading-relaxed group-hover:text-[var(--text-mid)] transition-colors">
+                Autorizo a cobrança recorrente de <strong className="text-[var(--text-mid)]">R$ {totalPriceDisplay}/mês</strong>
+                {memberSlots > 0 && <> (inclui {memberSlots} WhatsApp próprio{memberSlots > 1 ? 's' : ''} de equipe)</>} e o valor de <strong className="text-[var(--text-mid)]">R$ 3,00 por atendimento adicional</strong> (acima de 100/mês), se houver. Posso cancelar a qualquer momento.
               </span>
             </label>
             <label className="flex items-start gap-3 cursor-pointer group">
               <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)}
                 className="mt-0.5 w-4 h-4 shrink-0 accent-violet-400 cursor-pointer [color-scheme:dark]" />
-              <span className="text-[10px] text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
+              <span className="text-[10px] text-[var(--text-low)] leading-relaxed group-hover:text-[var(--text-mid)] transition-colors">
                 Li e aceito os{' '}
                 <a href="/termos" target="_blank" rel="noopener noreferrer" className="text-violet-300 font-semibold hover:text-violet-200 transition-colors">Termos de Uso</a>
                 {' '}e a{' '}
@@ -449,7 +449,7 @@ export default function PaymentPending() {
             disabled={loading || !acceptedRecurring || !acceptedTerms}
             className="w-full h-14 flex items-center justify-center gap-2 rounded-2xl text-base font-bold mt-2
               transition-all active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed
-              backdrop-blur-md bg-white/15 border border-white/25 text-white
+              backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)]
               shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.25)]
               hover:bg-white/25 enabled:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_8px_24px_rgba(0,0,0,0.35)]"
           >
@@ -462,7 +462,7 @@ export default function PaymentPending() {
 
         <button
           onClick={() => authService.logout()}
-          className="mt-5 w-full text-center text-sm text-white/30 hover:text-white/60 transition-colors"
+          className="mt-5 w-full text-center text-sm text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"
         >
           Sair da conta
         </button>

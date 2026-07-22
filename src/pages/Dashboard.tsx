@@ -457,23 +457,23 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen font-sans relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900">
+    <div className="flex h-screen font-sans relative overflow-hidden app-bg">
       {/* Noise texture overlay */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
 
       {/* ── SIDEBAR DESKTOP (md+) ── */}
       <aside className="hidden md:flex relative z-10 w-64 flex-col p-6
-        backdrop-blur-2xl bg-white/8 border-r border-white/12
+        backdrop-blur-2xl bg-[var(--control-fill)] border-r border-[var(--hairline-strong)]
         shadow-[inset_1px_0_0_rgba(255,255,255,0.08),4px_0_24px_rgba(0,0,0,0.3)]"
       >
         <div className="flex items-center gap-2 mb-10">
           <div onClick={handleSafeReload}
             className="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity
-              backdrop-blur-md bg-white/15 border border-white/25
+              backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
               shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.25)]">
-            <Home className="text-white w-5 h-5" />
+            <Home className="text-[var(--text-hi)] w-5 h-5" />
           </div>
-          <span onClick={handleSafeReload} className="font-bold text-xl tracking-tight text-white cursor-pointer hover:opacity-80 transition-opacity">
+          <span onClick={handleSafeReload} className="font-bold text-xl tracking-tight text-[var(--text-hi)] cursor-pointer hover:opacity-80 transition-opacity">
             Criate
           </span>
         </div>
@@ -488,7 +488,7 @@ export default function Dashboard() {
           <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => handleTabChange('subscription')} />
         </nav>
 
-        <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
+        <div className="mt-auto pt-6 border-t border-[var(--hairline)] space-y-1">
           <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
           <NavItem icon={<Settings size={20} />} label="Meu Perfil" active={activeTab === 'profile'}     onClick={() => handleTabChange('profile')} />
           {brokerProfile.is_admin && (
@@ -511,17 +511,17 @@ export default function Dashboard() {
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 260 }}
             className="absolute left-0 top-0 h-full w-72 flex flex-col p-6
-              backdrop-blur-2xl bg-slate-900/95 border-r border-white/12
+              backdrop-blur-2xl bg-slate-900/95 border-r border-[var(--hairline-strong)]
               shadow-[4px_0_32px_rgba(0,0,0,0.5)]"
           >
             <div className="flex items-center justify-between mb-10">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md bg-white/15 border border-white/25">
-                  <Home className="text-white w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]">
+                  <Home className="text-[var(--text-hi)] w-5 h-5" />
                 </div>
-                <span className="font-bold text-xl tracking-tight text-white">Criate</span>
+                <span className="font-bold text-xl tracking-tight text-[var(--text-hi)]">Criate</span>
               </div>
-              <button onClick={() => setSidebarOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+              <button onClick={() => setSidebarOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all">
                 <XIcon size={20} />
               </button>
             </div>
@@ -536,7 +536,7 @@ export default function Dashboard() {
               <NavItem icon={<Activity size={20} />}    label="Status"    active={false} onClick={() => { handleTabChange('subscription'); setSidebarOpen(false); }} />
             </nav>
 
-            <div className="mt-auto pt-6 border-t border-white/10 space-y-1">
+            <div className="mt-auto pt-6 border-t border-[var(--hairline)] space-y-1">
               <NavItem icon={<Crown size={20} />}    label="Assinatura" active={activeTab === 'subscription'} onClick={() => handleTabChange('subscription')} />
               <NavItem icon={<Settings size={20} />} label="Meu Perfil" active={activeTab === 'profile'}     onClick={() => handleTabChange('profile')} />
               {brokerProfile.is_admin && (
@@ -553,14 +553,14 @@ export default function Dashboard() {
       <main className="relative z-10 flex-1 overflow-y-auto min-w-0">
         {/* Header */}
         <header className="sticky top-0 z-20 flex items-center justify-between px-4 md:px-10 h-16 md:h-20
-          backdrop-blur-2xl bg-white/8 border-b border-white/10
+          backdrop-blur-2xl bg-[var(--control-fill)] border-b border-[var(--hairline)]
           shadow-[0_1px_0_rgba(255,255,255,0.1),0_4px_24px_rgba(0,0,0,0.2)]"
         >
           <div className="flex items-center gap-3">
             {/* Hamburger — só mobile */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-all"
+              className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all"
             >
               <Menu size={22} />
             </button>
@@ -568,9 +568,9 @@ export default function Dashboard() {
 
           <button
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 font-semibold text-white text-sm transition-all
+            className="flex items-center gap-2 font-semibold text-[var(--text-hi)] text-sm transition-all
               px-4 py-2 md:px-6 md:py-2.5 rounded-full
-              backdrop-blur-md bg-white/15 border border-white/25
+              backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
               shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.2)]
               hover:bg-white/25 active:scale-95"
           >
@@ -583,7 +583,7 @@ export default function Dashboard() {
         <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto">
           {activeTab === 'overview' && (
             <div className="space-y-6 md:space-y-8">
-              <h1 className="text-xl md:text-2xl font-bold text-white">Visão Geral</h1>
+              <h1 className="text-xl md:text-2xl font-bold text-[var(--text-hi)]">Visão Geral</h1>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                 <StatCard
                   label="Total de Imóveis"
@@ -601,44 +601,44 @@ export default function Dashboard() {
 
               {/* Últimos Atendimentos via IA */}
               <div className="p-5 md:p-8 rounded-3xl flex flex-col
-                backdrop-blur-xl bg-white/10 border border-white/15
+                backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
                 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-white">Últimos Atendimentos</h2>
+                  <h2 className="text-xl font-bold text-[var(--text-hi)]">Últimos Atendimentos</h2>
                   <button
                     onClick={() => setActiveTab('subscription')}
-                    className="text-sm font-semibold flex items-center gap-1 text-white/60 hover:text-white transition-colors"
+                    className="text-sm font-semibold flex items-center gap-1 text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors"
                   >
                     Ver consumo <ChevronRight size={16} />
                   </button>
                 </div>
                 {loadingAtendimentos ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-white/40">
+                  <div className="flex flex-col items-center justify-center py-16 text-[var(--text-low)]">
                     <Loader2 className="animate-spin mb-2" size={24} />
                     <span className="text-sm">Carregando atendimentos...</span>
                   </div>
                 ) : atendimentosRecentes.length > 0 ? (
                   <div className="space-y-3">
                     {atendimentosRecentes.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
+                      <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 backdrop-blur-sm bg-indigo-500/20 border border-indigo-400/30">
                             <Bot size={16} className="text-indigo-300" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold text-sm text-white truncate">Atendimento via IA</p>
-                            <p className="text-xs text-white/40 truncate">Ticket #{item.source_ticket_id}</p>
+                            <p className="font-semibold text-sm text-[var(--text-hi)] truncate">Atendimento via IA</p>
+                            <p className="text-xs text-[var(--text-low)] truncate">Ticket #{item.source_ticket_id}</p>
                           </div>
                         </div>
-                        <span className="text-xs text-white/40 whitespace-nowrap ml-3">{formatTimeAgo(item.created_at)}</span>
+                        <span className="text-xs text-[var(--text-low)] whitespace-nowrap ml-3">{formatTimeAgo(item.created_at)}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center text-white/40">
-                    <Bot size={32} className="mb-2 text-white/20" />
+                  <div className="flex flex-col items-center justify-center py-16 text-center text-[var(--text-low)]">
+                    <Bot size={32} className="mb-2 text-[var(--text-low)]" />
                     <span className="text-sm">Nenhum atendimento ainda</span>
-                    <span className="text-xs text-white/30 mt-1 max-w-xs">Os atendimentos aparecem aqui conforme a IA conversa com seus clientes pelo WhatsApp.</span>
+                    <span className="text-xs text-[var(--text-low)] mt-1 max-w-xs">Os atendimentos aparecem aqui conforme a IA conversa com seus clientes pelo WhatsApp.</span>
                   </div>
                 )}
               </div>
@@ -647,9 +647,9 @@ export default function Dashboard() {
 
           {activeTab === 'properties' && (
             <div>
-              <h2 className="text-xl md:text-2xl font-bold mb-4 md:mb-6 text-white">Seus Imóveis</h2>
-              {loading && <p className="text-white/50">Carregando imóveis...</p>}
-              {!loading && properties.length === 0 && <p className="text-white/50">Nenhum imóvel cadastrado ainda.</p>}
+              <h2 className="text-xl md:text-2xl font-bold mb-4 md:mb-6 text-[var(--text-hi)]">Seus Imóveis</h2>
+              {loading && <p className="text-[var(--text-low)]">Carregando imóveis...</p>}
+              {!loading && properties.length === 0 && <p className="text-[var(--text-low)]">Nenhum imóvel cadastrado ainda.</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {properties.map((prop) => (
                   <PropertyCard
@@ -673,44 +673,44 @@ export default function Dashboard() {
 
           {activeTab === 'profile' && (
             <div className="max-w-3xl mx-auto space-y-6 md:space-y-8">
-              <h2 className="text-xl md:text-2xl font-bold mb-4 md:mb-6 text-white">Meu Perfil Profissional</h2>
-              <div className="p-5 md:p-8 rounded-3xl backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
+              <h2 className="text-xl md:text-2xl font-bold mb-4 md:mb-6 text-[var(--text-hi)]">Meu Perfil Profissional</h2>
+              <div className="p-5 md:p-8 rounded-3xl backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]">
                 <form onSubmit={saveBrokerProfile} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-white/70">Nome Completo</label>
+                      <label className="block text-sm font-semibold text-[var(--text-mid)]">Nome Completo</label>
                       <input
                         type="text"
                         value={brokerProfile.name || ''}
                         onChange={e => setBrokerProfile({...brokerProfile, name: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-white/25"
                         required
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-white/70">Telefone / WhatsApp</label>
+                      <label className="block text-sm font-semibold text-[var(--text-mid)]">Telefone / WhatsApp</label>
                       <input
                         type="tel"
                         value={brokerProfile.phone || ''}
                         onChange={e => setBrokerProfile({...brokerProfile, phone: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-white/25"
                         placeholder="(00) 00000-0000"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-semibold text-white/70">Título Profissional</label>
+                      <label className="block text-sm font-semibold text-[var(--text-mid)]">Título Profissional</label>
                       <input
                         type="text"
                         value={brokerProfile.title || ''}
                         onChange={e => setBrokerProfile({...brokerProfile, title: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                        className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-white/25"
                         placeholder="Ex: Principal Broker"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label className="block text-sm font-semibold text-white/70">Foto de Perfil</label>
+                    <label className="block text-sm font-semibold text-[var(--text-mid)]">Foto de Perfil</label>
                     <input
                       ref={photoInputRef}
                       type="file"
@@ -720,11 +720,11 @@ export default function Dashboard() {
                     />
                     <div className="flex items-center gap-5">
                       <div className="relative shrink-0">
-                        <div className="w-20 h-20 rounded-full overflow-hidden bg-white/10 border-2 border-white/20 flex items-center justify-center">
+                        <div className="w-20 h-20 rounded-full overflow-hidden bg-[var(--control-fill-hover)] border-2 border-[var(--glass-border)] flex items-center justify-center">
                           {brokerProfile.photoUrl ? (
                             <img src={brokerProfile.photoUrl} alt="Foto de perfil" className="w-full h-full object-cover" />
                           ) : (
-                            <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-8 h-8 text-[var(--text-low)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                           )}
@@ -735,7 +735,7 @@ export default function Dashboard() {
                           type="button"
                           onClick={() => photoInputRef.current?.click()}
                           disabled={uploadingPhoto}
-                          className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-60 flex items-center gap-2 backdrop-blur-md bg-white/15 border border-white/25 text-white hover:bg-white/25"
+                          className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all disabled:opacity-60 flex items-center gap-2 backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)] hover:bg-white/25"
                         >
                           {uploadingPhoto && <Loader2 size={14} className="animate-spin" />}
                           {uploadingPhoto ? 'Enviando...' : brokerProfile.photoUrl ? 'Trocar Foto' : 'Carregar Foto'}
@@ -749,19 +749,19 @@ export default function Dashboard() {
                             Remover
                           </button>
                         )}
-                        <p className="text-xs text-white/40">JPG, PNG ou WEBP · Máx. 5MB</p>
+                        <p className="text-xs text-[var(--text-low)]">JPG, PNG ou WEBP · Máx. 5MB</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-white/70">Trajetória</label>
+                    <label className="block text-sm font-semibold text-[var(--text-mid)]">Trajetória</label>
                     <MagicWandTextarea
                       value={brokerProfile.quote}
                       onChange={e => setBrokerProfile({...brokerProfile, quote: e.target.value})}
                       onApply={(text) => setBrokerProfile({...brokerProfile, quote: text})}
                       rows={2}
-                      className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 resize-none"
+                      className="w-full px-4 py-3 rounded-xl outline-none transition-all bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-white/25 resize-none"
                     />
                   </div>
 
@@ -769,7 +769,7 @@ export default function Dashboard() {
                     type="submit"
                     disabled={isSavingProfile}
                     className="w-full py-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-all mt-4
-                      backdrop-blur-md bg-white/15 border border-white/25 text-white
+                      backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)]
                       shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_16px_rgba(0,0,0,0.2)]
                       hover:bg-white/25 active:scale-[0.99] disabled:opacity-50"
                   >
@@ -794,8 +794,8 @@ export default function Dashboard() {
           {/* ─── ABA WHATSAPP ─── */}
           {activeTab === 'whatsapp' && (
             <div className="max-w-2xl mx-auto">
-              <h2 className="text-xl md:text-2xl font-bold mb-2 text-white">WhatsApp</h2>
-              <p className="text-white/55 mb-8">Conecte o número que vai atender seus clientes pelo WhatsApp.</p>
+              <h2 className="text-xl md:text-2xl font-bold mb-2 text-[var(--text-hi)]">WhatsApp</h2>
+              <p className="text-[var(--text-mid)] mb-8">Conecte o número que vai atender seus clientes pelo WhatsApp.</p>
               <WhatsAppConnectCard />
             </div>
           )}
@@ -803,8 +803,8 @@ export default function Dashboard() {
           {/* ─── ABA CORRETORA ─── */}
           {activeTab === 'corretora' && (
             <div className="max-w-2xl mx-auto">
-              <h2 className="text-xl md:text-2xl font-bold mb-2 text-white">Corretora</h2>
-              <p className="text-white/55 mb-8">Cadastre a imobiliária que você representa e gerencie os corretores vinculados.</p>
+              <h2 className="text-xl md:text-2xl font-bold mb-2 text-[var(--text-hi)]">Corretora</h2>
+              <p className="text-[var(--text-mid)] mb-8">Cadastre a imobiliária que você representa e gerencie os corretores vinculados.</p>
               <CorretoraSettings />
             </div>
           )}
@@ -833,7 +833,7 @@ export default function Dashboard() {
             initial={{ opacity: 0, scale: 0.92, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden
-              backdrop-blur-2xl bg-white/15 border border-white/30
+              backdrop-blur-2xl bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
               shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_24px_64px_rgba(0,0,0,0.45)]"
           >
             <div className="p-8 text-center">
@@ -841,19 +841,19 @@ export default function Dashboard() {
                 backdrop-blur-md bg-red-500/20 border border-red-400/30 text-red-300">
                 <Trash2 size={32} />
               </div>
-              <h3 className="text-xl font-bold mb-2 text-white">Excluir item?</h3>
-              <p className="text-white/60">Tem certeza que deseja excluir? Essa ação não pode ser desfeita.</p>
+              <h3 className="text-xl font-bold mb-2 text-[var(--text-hi)]">Excluir item?</h3>
+              <p className="text-[var(--text-mid)]">Tem certeza que deseja excluir? Essa ação não pode ser desfeita.</p>
             </div>
-            <div className="flex border-t border-white/15">
+            <div className="flex border-t border-[var(--glass-border)]">
               <button
                 onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 px-6 py-4 font-bold text-white/60 hover:bg-white/10 transition-colors"
+                className="flex-1 px-6 py-4 font-bold text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 px-6 py-4 font-bold text-red-300 hover:bg-red-500/15 transition-colors border-l border-white/15"
+                className="flex-1 px-6 py-4 font-bold text-red-300 hover:bg-red-500/15 transition-colors border-l border-[var(--glass-border)]"
               >
                 Excluir
               </button>
@@ -870,7 +870,7 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             className={cn(
-              "px-6 py-3 rounded-2xl flex items-center gap-3 font-medium text-white backdrop-blur-xl border",
+              "px-6 py-3 rounded-2xl flex items-center gap-3 font-medium text-[var(--text-hi)] backdrop-blur-xl border",
               "shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_32px_rgba(0,0,0,0.3)]",
               toast.type === 'success'
                 ? "bg-emerald-500/30 border-emerald-400/30"
@@ -904,7 +904,7 @@ function SubscriptionTab() {
       .catch(() => {});
   }, []);
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-white/40" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>;
 
   const broker = data?.broker;
   const sub = data?.lastSubscription;
@@ -913,7 +913,7 @@ function SubscriptionTab() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <h2 className="text-2xl font-bold text-white">Assinatura</h2>
+      <h2 className="text-2xl font-bold text-[var(--text-hi)]">Assinatura</h2>
 
       {/* Status card */}
       <div className={`rounded-3xl p-8 backdrop-blur-xl border
@@ -923,15 +923,15 @@ function SubscriptionTab() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Crown className={`w-6 h-6 ${isActive ? 'text-violet-300' : 'text-amber-300'}`} />
-            <span className="text-lg font-bold text-white">{isActive ? 'Plano Ativo' : 'Aguardando Pagamento'}</span>
+            <span className="text-lg font-bold text-[var(--text-hi)]">{isActive ? 'Plano Ativo' : 'Aguardando Pagamento'}</span>
           </div>
-          <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/15 text-white border border-white/20">
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-[var(--control-fill-hover)] text-[var(--text-hi)] border border-[var(--glass-border)]">
             {broker?.plan || 'mensal'}
           </span>
         </div>
-        {isActive && validUntil && <p className="text-sm text-white/60">Válido até {validUntil}</p>}
+        {isActive && validUntil && <p className="text-sm text-[var(--text-mid)]">Válido até {validUntil}</p>}
         {!isActive && (
-          <a href="/payment" className="mt-4 inline-flex items-center gap-2 backdrop-blur-md bg-white/15 border border-white/25 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-white/25 transition-all">
+          <a href="/payment" className="mt-4 inline-flex items-center gap-2 backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)] px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-white/25 transition-all">
             <CreditCard className="w-4 h-4" /> Ativar assinatura
           </a>
         )}
@@ -945,21 +945,21 @@ function SubscriptionTab() {
         const isWarning = !isOver && pct >= 80;
         const barColor = isOver ? 'bg-red-400' : isWarning ? 'bg-amber-400' : 'bg-violet-400';
         return (
-          <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
-            <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Activity className="w-4 h-4" /> Status</h3>
+          <div className="rounded-3xl p-6 backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
+            <h3 className="font-bold text-[var(--text-hi)] mb-4 flex items-center gap-2"><Activity className="w-4 h-4" /> Status</h3>
 
             <div className="flex items-end justify-between mb-3">
-              <span className={`text-3xl font-extrabold ${isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-white'}`}>
+              <span className={`text-3xl font-extrabold ${isOver ? 'text-red-300' : isWarning ? 'text-amber-300' : 'text-[var(--text-hi)]'}`}>
                 {tickets_used}
               </span>
-              <span className="text-sm text-white/50">/ {tickets_included} atendimentos inclusos</span>
+              <span className="text-sm text-[var(--text-low)]">/ {tickets_included} atendimentos inclusos</span>
             </div>
 
-            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mb-3">
+            <div className="w-full h-2 rounded-full bg-[var(--control-fill-hover)] overflow-hidden mb-3">
               <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
             </div>
 
-            <div className="flex items-center justify-between text-xs text-white/50">
+            <div className="flex items-center justify-between text-xs text-[var(--text-low)]">
               <span>{isOver ? `${overage_tickets} excedente${overage_tickets > 1 ? 's' : ''}` : `${tickets_remaining} restante${tickets_remaining !== 1 ? 's' : ''}`}</span>
               <span>{pct}% usado</span>
             </div>
@@ -975,8 +975,8 @@ function SubscriptionTab() {
 
       {/* Último pagamento */}
       {sub && (
-        <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
-          <h3 className="font-bold text-white mb-4">Último pagamento</h3>
+        <div className="rounded-3xl p-6 backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
+          <h3 className="font-bold text-[var(--text-hi)] mb-4">Último pagamento</h3>
           <div className="space-y-1 text-sm">
             {[
               ['Status', <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 rounded-full text-xs font-bold">{sub.status}</span>],
@@ -985,9 +985,9 @@ function SubscriptionTab() {
               ['Pago em', sub.paid_at ? new Date(sub.paid_at).toLocaleDateString('pt-BR') : '—'],
               ['Válido até', sub.valid_until ? new Date(sub.valid_until).toLocaleDateString('pt-BR') : '—'],
             ].map(([label, value]: any) => (
-              <div key={label} className="flex justify-between items-center py-2.5 border-b border-white/8 last:border-0">
-                <span className="text-white/50">{label}</span>
-                <span className="font-medium text-white">{value}</span>
+              <div key={label} className="flex justify-between items-center py-2.5 border-b border-[var(--hairline)] last:border-0">
+                <span className="text-[var(--text-low)]">{label}</span>
+                <span className="font-medium text-[var(--text-hi)]">{value}</span>
               </div>
             ))}
           </div>
@@ -1122,10 +1122,10 @@ function WhatsAppConnectCard() {
   }, []);
 
   return (
-    <div className="rounded-3xl p-6 backdrop-blur-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
-      <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Smartphone className="w-4 h-4" /> WhatsApp</h3>
+    <div className="rounded-3xl p-6 backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.2)]">
+      <h3 className="font-bold text-[var(--text-hi)] mb-4 flex items-center gap-2"><Smartphone className="w-4 h-4" /> WhatsApp</h3>
 
-      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>}
+      {!status && <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
 
       {status && !status.provisioned && status.provisioningStatus === 'failed' && (
         <div className="space-y-3">
@@ -1134,7 +1134,7 @@ function WhatsAppConnectCard() {
           </p>
           <button
             onClick={() => { setError(null); loadStatus(); }}
-            className="inline-flex items-center gap-2 text-xs text-white/60 hover:text-white transition-colors"
+            className="inline-flex items-center gap-2 text-xs text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
           </button>
@@ -1142,7 +1142,7 @@ function WhatsAppConnectCard() {
       )}
 
       {status && !status.provisioned && status.provisioningStatus !== 'failed' && (
-        <div className="flex items-center gap-2 text-sm text-white/50">
+        <div className="flex items-center gap-2 text-sm text-[var(--text-low)]">
           <Loader2 className="animate-spin w-4 h-4" /> Preparando sua instância de WhatsApp...
         </div>
       )}
@@ -1152,14 +1152,14 @@ function WhatsAppConnectCard() {
           <div className="flex items-center gap-2 text-emerald-300 text-sm font-medium">
             <Wifi className="w-4 h-4" /> Conectado
           </div>
-          <div className="text-xs text-white/50 space-y-1">
-            {status.profileName && <div>Perfil: <span className="text-white/80">{status.profileName}</span></div>}
-            {status.owner && <div>Número: <span className="text-white/80 font-mono">{status.owner}</span></div>}
+          <div className="text-xs text-[var(--text-low)] space-y-1">
+            {status.profileName && <div>Perfil: <span className="text-[var(--text-hi)]">{status.profileName}</span></div>}
+            {status.owner && <div>Número: <span className="text-[var(--text-hi)] font-mono">{status.owner}</span></div>}
           </div>
           <button
             onClick={disconnectInstance}
             disabled={disconnecting}
-            className="inline-flex items-center gap-2 text-xs text-white/60 hover:text-red-300 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 text-xs text-[var(--text-mid)] hover:text-red-300 transition-colors disabled:opacity-50"
           >
             {disconnecting ? <Loader2 className="animate-spin w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
             {disconnecting ? 'Desconectando...' : 'Desconectar / trocar número'}
@@ -1174,7 +1174,7 @@ function WhatsAppConnectCard() {
           </div>
           <button
             onClick={() => startConnecting()}
-            className="inline-flex items-center gap-2 backdrop-blur-md bg-white/15 border border-white/25 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-white/25 transition-all"
+            className="inline-flex items-center gap-2 backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)] px-4 py-2 rounded-xl text-sm font-bold hover:bg-white/25 transition-all"
           >
             Conectar WhatsApp
           </button>
@@ -1185,26 +1185,26 @@ function WhatsAppConnectCard() {
         <div className="space-y-3">
           {paircode ? (
             <div className="flex flex-col items-center gap-3 py-2">
-              <div className="text-3xl font-mono font-bold tracking-[0.2em] text-white bg-white/10 border border-white/20 rounded-xl px-6 py-4">
+              <div className="text-3xl font-mono font-bold tracking-[0.2em] text-[var(--text-hi)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] rounded-xl px-6 py-4">
                 {paircode}
               </div>
-              <p className="text-xs text-white/50 text-center">No WhatsApp: Aparelhos conectados → Conectar com número de telefone → digite o código acima. Válido por 5 minutos.</p>
+              <p className="text-xs text-[var(--text-low)] text-center">No WhatsApp: Aparelhos conectados → Conectar com número de telefone → digite o código acima. Válido por 5 minutos.</p>
             </div>
           ) : qrcode ? (
             <div className="flex flex-col items-center gap-3 py-2">
               <div className="bg-white p-3 rounded-2xl">
                 <img src={qrcode} alt="QR code do WhatsApp" className="w-48 h-48" />
               </div>
-              <p className="text-xs text-white/50 text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
+              <p className="text-xs text-[var(--text-low)] text-center">Abra o WhatsApp no celular, vá em Aparelhos conectados e escaneie o código.</p>
             </div>
           ) : (
-            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-white/40" /></div>
+            <div className="flex justify-center py-6"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>
           )}
 
           {!showPairInput && (qrcode || paircode) && (
             <button
               onClick={() => qrcode ? setShowPairInput(true) : switchToQrcode()}
-              className="text-[11px] text-white/40 hover:text-white/70 transition-colors mx-auto block"
+              className="text-[11px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors mx-auto block"
             >
               {qrcode ? 'Não consegue escanear? Usar código em vez do QR' : 'Usar QR code em vez do código'}
             </button>
@@ -1217,11 +1217,11 @@ function WhatsAppConnectCard() {
                 value={pairPhone}
                 onChange={(e) => setPairPhone(e.target.value)}
                 placeholder="DDD + número"
-                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/40"
+                className="flex-1 bg-[var(--control-fill-hover)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-hi)] placeholder:text-[var(--text-low)]"
               />
               <button
                 onClick={requestPaircode}
-                className="px-3 py-2 rounded-lg text-xs font-bold text-white bg-white/15 border border-white/25 hover:bg-white/25 transition-colors"
+                className="px-3 py-2 rounded-lg text-xs font-bold text-[var(--text-hi)] bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] hover:bg-white/25 transition-colors"
               >
                 Gerar código
               </button>
@@ -1242,8 +1242,8 @@ function NavItem({ icon, label, active, onClick, className }: any) {
       className={cn(
         "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-medium",
         active
-          ? "backdrop-blur-md bg-white/20 text-white border border-white/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_2px_8px_rgba(0,0,0,0.2)]"
-          : "text-white/55 hover:bg-white/10 hover:text-white/80",
+          ? "backdrop-blur-md bg-[var(--control-fill-hover)] text-[var(--text-hi)] border border-[var(--glass-border-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_2px_8px_rgba(0,0,0,0.2)]"
+          : "text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)]",
         className
       )}
     >
@@ -1259,28 +1259,28 @@ function StatCard({ label, value, icon, onClick }: any) {
       onClick={onClick}
       className={cn(
         "p-6 rounded-3xl transition-all",
-        "backdrop-blur-xl bg-white/10 border border-white/15",
+        "backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]",
         "shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_32px_rgba(0,0,0,0.2)]",
-        onClick && "cursor-pointer hover:bg-white/15 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_40px_rgba(0,0,0,0.28)] active:scale-[0.98]"
+        onClick && "cursor-pointer hover:bg-[var(--control-fill-hover)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_40px_rgba(0,0,0,0.28)] active:scale-[0.98]"
       )}
     >
       <div className="flex items-center gap-3 mb-4">
-        <div className="backdrop-blur-sm bg-white/10 border border-white/15 p-2.5 rounded-xl">{icon}</div>
-        <span className="text-sm text-white/60 font-medium">{label}</span>
+        <div className="backdrop-blur-sm bg-[var(--control-fill-hover)] border border-[var(--glass-border)] p-2.5 rounded-xl">{icon}</div>
+        <span className="text-sm text-[var(--text-mid)] font-medium">{label}</span>
       </div>
-      <div className="text-3xl font-bold text-white">{value}</div>
+      <div className="text-3xl font-bold text-[var(--text-hi)]">{value}</div>
     </div>
   );
 }
 
 function LeadItem({ name, property, time }: any) {
   return (
-    <div className="flex items-start justify-between py-2 border-b border-white/10 last:border-b-0">
+    <div className="flex items-start justify-between py-2 border-b border-[var(--hairline)] last:border-b-0">
       <div>
-        <div className="font-bold text-sm text-white">{name}</div>
-        <div className="text-xs text-white/50">{property}</div>
+        <div className="font-bold text-sm text-[var(--text-hi)]">{name}</div>
+        <div className="text-xs text-[var(--text-low)]">{property}</div>
       </div>
-      <div className="text-[10px] text-white/35 uppercase font-bold">{time}</div>
+      <div className="text-[10px] text-[var(--text-low)] uppercase font-bold">{time}</div>
     </div>
   );
 }
@@ -1298,9 +1298,9 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
     <motion.div
       whileHover={{ y: -6 }}
       className="rounded-3xl overflow-hidden group flex flex-col
-        backdrop-blur-xl bg-white/10 border border-white/15
+        backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.25)]
-        hover:bg-white/15 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_16px_48px_rgba(0,0,0,0.35)] transition-all"
+        hover:bg-[var(--control-fill-hover)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_16px_48px_rgba(0,0,0,0.35)] transition-all"
     >
       <div className="h-48 relative overflow-hidden cursor-pointer" onClick={onEdit}>
         <img
@@ -1309,7 +1309,7 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           referrerPolicy="no-referrer"
         />
-        <div className="absolute top-4 left-4 backdrop-blur-md bg-black/40 border border-white/20 px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg">
+        <div className="absolute top-4 left-4 backdrop-blur-md bg-black/40 border border-[var(--glass-border)] px-3 py-1 rounded-full text-xs font-bold text-[var(--text-hi)] shadow-lg">
           {price}
         </div>
         <div className={cn("absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide shadow-sm", s.className)}>
@@ -1318,8 +1318,8 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
       </div>
 
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-bold text-base mb-1 leading-tight cursor-pointer text-white" onClick={onEdit}>{title}</h3>
-        <p className="text-sm text-white/55 flex items-center gap-1 mb-4 truncate">
+        <h3 className="font-bold text-base mb-1 leading-tight cursor-pointer text-[var(--text-hi)]" onClick={onEdit}>{title}</h3>
+        <p className="text-sm text-[var(--text-mid)] flex items-center gap-1 mb-4 truncate">
           <TrendingUp size={13} className="shrink-0" /> {location}
         </p>
 
@@ -1334,21 +1334,21 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
           <option value="alugado">Alugado</option>
         </select>
 
-        <div className="flex items-center justify-between mt-auto pt-3 border-t border-white/10">
+        <div className="flex items-center justify-between mt-auto pt-3 border-t border-[var(--hairline)]">
           <div className="flex items-center gap-1">
             <a
               href={`/p/${slug}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:bg-white/15 hover:text-white transition-all"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all"
               title="Abrir landing page"
             >
               <ExternalLink size={16} />
             </a>
             <button
               onClick={e => { e.stopPropagation(); onCopyLink(); }}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:bg-white/15 hover:text-white transition-all"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all"
               title="Copiar link"
             >
               <Copy size={16} />
@@ -1360,7 +1360,7 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
               onClick={e => { e.stopPropagation(); onDelete(); }}
               className={cn(
                 "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                isDeleting ? "bg-white/5 text-white/25" : "text-white/40 hover:bg-red-500/15 hover:text-red-300"
+                isDeleting ? "bg-[var(--control-fill)] text-[var(--text-low)]" : "text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300"
               )}
               title="Excluir"
             >
@@ -1368,7 +1368,7 @@ function PropertyCard({ title, location, price, image, slug, status, onEdit, onD
             </button>
             <button
               onClick={e => { e.stopPropagation(); onEdit(); }}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:bg-white/15 hover:text-white transition-all"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all"
               title="Editar"
             >
               <Settings size={16} />
