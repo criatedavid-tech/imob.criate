@@ -55,3 +55,6 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 - A URL pública canônica da V2 é exclusivamente `PUBLIC_APP_URL`, versionada
   no `fly.toml`; não existe fallback para endereço externo em secret.
 - Toda mudança funcional atualiza `DOCUMENTACAO.md` e os cinco arquivos PMP.
+- Conteúdo de clientes, CRM, áudio e imagem é sempre dado não confiável para
+  IA. Saídas do modelo passam por schema estrito e nenhuma mutação é
+  executada sem confirmação humana.

@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Hardening contra prompt injection em validação (2026-07-22)
+
+- Auditoria encontrou risco indireto no Assistente interno: últimas mensagens
+  de clientes eram interpoladas no `system prompt` e mutações podiam ser
+  autoexecutadas no modo piloto.
+- Novo `server/security/agentGuardrails.ts`: contrato Zod discriminado para 14
+  tipos de ação, rejeição de campos extras, limites de tamanho/formato e
+  separação do snapshot em `UNTRUSTED_ACCOUNT_CONTEXT`.
+- Toda mutação agora retorna proposta para confirmação humana; apenas
+  `answer`, `navigate` e `query_agenda` seguem sem confirmação. Fallback de
+  autonomia mudou de `piloto` para `copiloto`.
+- Suíte ampliada de 8 para 15 testes. Testes, TypeScript, Knip, diff-check e
+  build completo passaram numa cópia temporária limpa do commit publicado,
+  sem incluir nem alterar os oito arquivos visuais inacabados do Claude.
+- N8N não foi acessado ou alterado. Pendente: confirmação server-side por ID
+  de uso único, policy gateway do proxy N8N e red-team em staging isolado.
+
 ## Escala: testes e scheduler dedicado publicados (2026-07-22)
 
 - Auditoria confirmou a branch `v2` limpa e sincronizada em `853aff0`; os dez

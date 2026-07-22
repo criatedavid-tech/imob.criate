@@ -15,7 +15,7 @@ Plataforma B2B SaaS para o mercado imobiliário brasileiro — corretor autônom
 | Banco de dados | Supabase (PostgreSQL) — instância compartilhada com outros produtos da Criate, tabelas núcleo com prefixo `imf_` |
 | Autenticação | Supabase Auth (JWT real — nunca confia em header de identidade) |
 | Storage | Supabase Storage (fotos de imóveis) |
-| IA — agente/texto | Google Gemini (`gemini-2.0-flash-lite`), com fallback automático para OpenRouter (`gpt-4o-mini`) quando a cota falha |
+| IA — agente/texto | OpenRouter (`gpt-4o-mini`) |
 | IA — voz | Google Gemini (`gemini-2.0-flash`, multimodal) transcreve áudio gravado no navegador |
 | WhatsApp | UAZAPI nativa — provisionamento direto por corretor/membro, sem intermediário |
 | Automação do agente do WhatsApp | N8N (`212n8n.criate.online`) — conversa com o cliente final, separado do Assistente interno do app |
@@ -28,8 +28,9 @@ Plataforma B2B SaaS para o mercado imobiliário brasileiro — corretor autônom
 
 O diferencial do produto é a **Assistente IA** (`src/experience/CommandBar.tsx` + `server/services/agent.ts`) — uma barra de comando em linguagem natural que substitui boa parte da navegação por telas. O corretor fala (digitando, colando ou **por voz**) e o agente decide e executa: cadastra imóvel, agenda/cancela/remarca visita (avisando o cliente por WhatsApp se pedido), manda mensagem, cadastra lead, consulta a agenda, navega pra qualquer área do sistema. Cada resposta pode:
 
-- **Executar direto** (modo *piloto*),
-- **Propor e esperar confirmação** (modo *copiloto*/*manual* — o corretor escolhe o nível de autonomia),
+- **Responder, navegar e consultar diretamente** em qualquer modo,
+- **Propor e esperar confirmação** para toda mutação, inclusive no modo
+  *piloto* (proteção contra prompt injection),
 - Ou simplesmente responder, sem ação nenhuma.
 
 Fotos podem ser anexadas na própria conversa (sobem pro Storage antes de qualquer coisa; o modelo nunca "vê" a imagem, só sabe que existe um anexo). O histórico da conversa é persistido por usuário (`imf_agent_log`) e sobrevive a fechar o chat ou recarregar a página — com um botão "Nova conversa" pra recomeçar do zero quando quiser.

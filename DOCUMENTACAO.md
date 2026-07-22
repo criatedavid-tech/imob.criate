@@ -1050,6 +1050,12 @@ Controles existentes:
 - Redis opcional para rate limit distribuído; sem `REDIS_URL`, o contador é
   local por VM;
 - validação Zod em fluxos críticos;
+- Assistente interno com dados variáveis fora do `system prompt`, encapsulados
+  em `UNTRUSTED_ACCOUNT_CONTEXT`; saída do modelo e confirmação passam por
+  schema Zod discriminado/estrito em `server/security/agentGuardrails.ts`;
+- nenhuma mutação proposta pela IA é autoexecutada: mesmo o modo piloto exige
+  confirmação humana; leitura, navegação e consulta de agenda continuam
+  automáticas;
 - criptografia AES-256-GCM para chaves OpenRouter/Asaas por tenant;
 - Storage privado e URL assinada para documentos de reserva;
 - idempotência e reconciliação nos fluxos de cobrança;
@@ -1069,6 +1075,10 @@ Pendências de segurança/infraestrutura:
 - ampliar a suíte automatizada recém-criada para rotas, isolamento multi-tenant
   e integrações; o gate inicial cobre concorrência/lifecycle dos jobs e
   invariantes de topologia.
+- persistir propostas de ação no servidor e confirmar por ID de uso único/TTL,
+  em vez de confiar no objeto devolvido pelo navegador;
+- restringir o proxy LLM do N8N por rota/modelo/campos e executar corpus de
+  prompt injection em staging com OpenRouter, UAZAPI e N8N simulados.
 
 ## 12. Jobs em background
 

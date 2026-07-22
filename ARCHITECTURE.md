@@ -63,8 +63,13 @@
 
 - `server/services/agent.ts` atende comandos do corretor dentro do ImobiFlow,
   separado do agente externo de WhatsApp.
-- Usa OpenRouter, snapshot autorizado do tenant e ações estruturadas. A
-  autonomia do app controla mutações; IDs nunca são inventados.
+- Usa OpenRouter e snapshot autorizado do tenant. Regras fixas ficam no
+  `system`; snapshot, mensagens de clientes e demais textos variáveis seguem
+  num bloco JSON `UNTRUSTED_ACCOUNT_CONTEXT`, separado e limitado.
+- A saída do modelo passa por `server/security/agentGuardrails.ts` (Zod
+  estrito, sem campos extras). `answer`, `navigate` e `query_agenda` podem
+  seguir direto; toda criação, alteração, cancelamento ou envio exige
+  confirmação humana, inclusive quando a interface está em modo piloto.
 - Duas ações agendadas: `create_reminder` (lembrete em `imf_agenda`, sem
   enviar nada) e `schedule_followup` (grava em `imf_agent_scheduled_followups`
   e um job de 60s em `server/services/agentScheduledFollowups.ts` manda o

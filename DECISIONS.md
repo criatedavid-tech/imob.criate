@@ -72,6 +72,10 @@
   `imobiflow-v2.fly.dev` por padrão. Testes realistas usam staging/conta de
   teste com provedores isolados; produção recebe apenas smoke curto e
   controlado. Critérios estão em `SCALABILITY_TEST_PLAN.md`.
+- **Modelo não autoriza mutação (2026-07-22).** Dados do snapshot e mensagens
+  de clientes são contexto não confiável fora do `system`; JSON do OpenRouter
+  passa por schema Zod estrito. Toda ação mutável exige confirmação humana,
+  mesmo no modo piloto. O modo ausente/inválido falha para `copiloto`.
 
 - **UAZAPI direta.** Não existe intermediário de mensagens; a reconexão
   reafirma o webhook canônico da V2.

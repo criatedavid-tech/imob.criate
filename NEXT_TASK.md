@@ -7,6 +7,18 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
+## Prompt injection — pacote P0 em validação (2026-07-22)
+
+- `server/security/agentGuardrails.ts` valida resposta/confirmação por Zod
+  estrito e encapsula o snapshot como contexto não confiável.
+- `server/services/agent.ts` não coloca mais nomes/mensagens do banco no
+  `system` e nunca autoexecuta mutação apenas por decisão do modelo.
+- `server/routes/agent.ts` falha para `copiloto` e revalida a ação confirmada.
+- 15 testes, TypeScript, Knip, diff-check e build isolado aprovados. Nenhuma
+  feature visual do Claude foi tocada.
+- Próximo P1: confirmation ID server-side, consumo atômico/TTL e gateway
+  restrito do proxy; depois red-team em staging com provedores simulados.
+
 ## Escala: scheduler dedicado e testes (2026-07-22) — publicada
 
 - Linha de base: 8 contas, 4 tickets ativos, 49 mensagens/24h; inbox p95

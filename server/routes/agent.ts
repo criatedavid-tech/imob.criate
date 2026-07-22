@@ -2,6 +2,7 @@ import express from "express";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { runAgent, executeAction, type Autonomy, type AgentAction } from "../services/agent";
 import { supabase } from "../supabase";
+import { parseConfirmedAgentAction } from "../security/agentGuardrails";
 
 export const agentRouter = express.Router();
 
@@ -92,7 +93,8 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
       userId,
       message: String(message).slice(0, 1000),
       persona: typeof persona === "string" ? persona : "corretor",
-      autonomy: (["piloto", "copiloto", "manual"].includes(autonomy) ? autonomy : "piloto") as Autonomy,
+      // Falha segura: valor ausente/inválido nunca habilita execução automática.
+      autonomy: (["piloto", "copiloto", "manual"].includes(autonomy) ? autonomy : "copiloto") as Autonomy,
       history: cleanHistory,
       imageUrls: cleanImageUrls,
     });
@@ -115,8 +117,7 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
 
-    const action = req.body?.action as AgentAction;
-    if (!action || !action.type) return res.status(400).json({ error: "Ação inválida." });
+    const action = parseConfirmedAgentAction(req.body?.action) as AgentAction;
     // Whitelist de tudo que passa por executeAction (mutações reais) — ficou
     // desatualizada quando as ações 4-12 foram adicionadas (só create_lead/
     // create_visit/send_message estavam aqui), então confirmar qualquer uma
