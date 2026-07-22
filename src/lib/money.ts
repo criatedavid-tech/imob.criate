@@ -28,3 +28,22 @@ export function formatCentsBR(cents: number): string {
     maximumFractionDigits: 2,
   });
 }
+
+// Exibição de preço "legado": imóveis antigos guardaram o preço como texto
+// livre (ex.: "5,000,000", "400000", "1.200.000"). Normaliza pra R$ pt-BR na
+// hora de mostrar. Preços já formatados (contêm "R$") passam direto.
+export function formatPriceDisplay(raw?: string): string {
+  const s = (raw || '').trim();
+  if (!s) return '—';
+  if (/r\$/i.test(s)) return s;                          // já formatado (máscara/IA)
+  const hasCents = /,\d{2}$/.test(s.replace(/\s/g, '')); // vírgula decimal no fim = centavos
+  const digits = s.replace(/[^\d]/g, '');
+  if (!digits) return s;
+  const value = hasCents ? parseInt(digits, 10) / 100 : parseInt(digits, 10);
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: hasCents ? 2 : 0,
+  });
+}

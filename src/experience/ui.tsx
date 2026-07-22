@@ -15,7 +15,7 @@ export function GlassCard({
     <div
       onClick={onClick}
       className={cn(
-        'rounded-[26px] p-6 backdrop-blur-2xl border bg-[var(--card-fill)] border-[var(--hairline)] shadow-[var(--card-shadow)]',
+        'rounded-[26px] p-6 backdrop-blur-2xl backdrop-saturate-150 border bg-[var(--card-fill)] border-[var(--hairline)] shadow-[var(--card-shadow)]',
         onClick && 'cursor-pointer hover:bg-[var(--card-fill-hover)] transition-colors',
         className,
       )}

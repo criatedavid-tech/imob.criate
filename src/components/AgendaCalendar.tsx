@@ -51,7 +51,7 @@ const DOT_COLORS: Record<AppointmentStatus, string> = {
   pendente:   'bg-amber-400',
   confirmado: 'bg-blue-400',
   realizado:  'bg-green-400',
-  cancelado:  'bg-white/20',
+  cancelado:  'bg-[var(--control-fill-hover)]',
 };
 
 function isoDate(d: Date) {
@@ -149,15 +149,15 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden
-        backdrop-blur-2xl bg-white/12 border border-white/25
+        backdrop-blur-2xl bg-[var(--bg-elevated)] border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
-          <h3 className="text-lg font-bold text-white">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline-strong)]">
+          <h3 className="text-lg font-bold text-[var(--text-hi)]">
             {isEdit ? 'Editar agendamento' : 'Novo agendamento'}
           </h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors">
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -172,28 +172,28 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
 
           {/* Client name */}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <User size={11} /> Nome do cliente
             </label>
             <input
               value={form.client_name}
               onChange={e => set('client_name', e.target.value)}
               placeholder="Nome completo"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                bg-[var(--control-fill)] border border-[var(--glass-border)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors"
             />
           </div>
 
           {/* Phone + Email */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Phone size={11} /> Telefone
               </label>
               <div className="flex items-stretch gap-2">
-                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-white/50
-                  bg-white/5 border border-white/12">
+                <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)]">
                   +55
                 </span>
                 <input
@@ -202,23 +202,23 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
                   inputMode="numeric"
                   maxLength={11}
                   placeholder="62994381279"
-                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-white
-                    bg-white/8 border border-white/12 placeholder-white/25
-                    focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+                  className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                    bg-[var(--control-fill)] border border-[var(--glass-border)] placeholder-[var(--text-low)]
+                    focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors"
                 />
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Mail size={11} /> E-mail
               </label>
               <input
                 value={form.client_email}
                 onChange={e => set('client_email', e.target.value)}
                 placeholder="email@exemplo.com"
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12 placeholder-white/25
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)] placeholder-[var(--text-low)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors"
               />
             </div>
           </div>
@@ -226,30 +226,30 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
           {/* Date + Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Calendar size={11} /> Data
               </label>
               <input
                 type="date"
                 value={form.date}
                 onChange={e => set('date', e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors
                   [color-scheme:dark]"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Clock size={11} /> Horário
               </label>
               <input
                 type="time"
                 value={form.time}
                 onChange={e => set('time', e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12
-                  focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors
                   [color-scheme:dark]"
               />
             </div>
@@ -258,15 +258,15 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
           {/* Duration + Property */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Clock size={11} /> Duração
               </label>
               <select
                 value={form.duration_minutes}
                 onChange={e => set('duration_minutes', Number(e.target.value))}
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12
-                  focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] transition-colors [color-scheme:dark]"
               >
                 <option value={30} style={{ backgroundColor: '#1e293b', color: '#fff' }}>30 min</option>
                 <option value={60} style={{ backgroundColor: '#1e293b', color: '#fff' }}>1 hora</option>
@@ -275,15 +275,15 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                 <Home size={11} /> Imóvel
               </label>
               <select
                 value={form.property_id}
                 onChange={e => set('property_id', e.target.value)}
-                className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                  bg-white/8 border border-white/12
-                  focus:outline-none focus:border-white/30 transition-colors [color-scheme:dark]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                  bg-[var(--control-fill)] border border-[var(--glass-border)]
+                  focus:outline-none focus:border-[var(--glass-border-strong)] transition-colors [color-scheme:dark]"
               >
                 <option value="" style={{ backgroundColor: '#1e293b', color: '#fff' }}>— nenhum —</option>
                 {properties.map(p => (
@@ -296,7 +296,7 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
           {/* Status (edit only) */}
           {isEdit && (
             <div>
-              <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+              <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">
                 Status
               </label>
               <div className="flex gap-2 flex-wrap">
@@ -307,7 +307,7 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
                     className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
                       form.status === s
                         ? STATUS_STYLES[s]
-                        : 'bg-white/5 text-white/30 border-white/10 hover:bg-white/10'
+                        : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline-strong)] hover:bg-[var(--control-fill)]'
                     }`}
                   >
                     {STATUS_CONFIG[s].label}
@@ -319,20 +319,20 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
 
           {/* Title + Notes */}
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">
               Assunto (opcional)
             </label>
             <input
               value={form.title}
               onChange={e => set('title', e.target.value)}
               placeholder="Ex.: Visita ao apartamento"
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors"
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                bg-[var(--control-fill)] border border-[var(--glass-border)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors"
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-1.5 block">
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">
               Observações
             </label>
             <textarea
@@ -340,26 +340,26 @@ function AppointmentModal({ initial, properties, onClose, onSaved }: ModalProps)
               onChange={e => set('notes', e.target.value)}
               rows={3}
               placeholder="Detalhes adicionais..."
-              className="w-full rounded-xl px-4 py-2.5 text-sm text-white
-                bg-white/8 border border-white/12 placeholder-white/25
-                focus:outline-none focus:border-white/30 focus:bg-white/12 transition-colors resize-none"
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)]
+                bg-[var(--control-fill)] border border-[var(--glass-border)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-[var(--control-fill-hover)] transition-colors resize-none"
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 px-6 py-4 border-t border-white/10">
+        <div className="flex gap-3 px-6 py-4 border-t border-[var(--hairline-strong)]">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white/50
-              bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)]
+              bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill)] transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)]
               bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors
               disabled:opacity-50 flex items-center justify-center gap-2"
           >
@@ -384,14 +384,14 @@ interface CardProps {
 const AppointmentCard: React.FC<CardProps> = ({ appt, onEdit, onDelete, onStatusChange }) => {
   const cfg = STATUS_CONFIG[appt.status];
   return (
-    <div className="rounded-2xl backdrop-blur-md bg-white/8 border border-white/12
+    <div className="rounded-2xl backdrop-blur-md bg-[var(--control-fill)] border border-[var(--glass-border)]
       shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] p-4 space-y-3">
 
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-white truncate">{appt.client_name}</p>
-          <p className="text-xs text-white/40 mt-0.5">
+          <p className="text-sm font-bold text-[var(--text-hi)] truncate">{appt.client_name}</p>
+          <p className="text-xs text-[var(--text-low)] mt-0.5">
             {formatTime(appt.scheduled_at)} · {appt.duration_minutes}min
           </p>
         </div>
@@ -405,24 +405,24 @@ const AppointmentCard: React.FC<CardProps> = ({ appt, onEdit, onDelete, onStatus
       {/* Details */}
       <div className="space-y-1">
         {appt.client_phone && (
-          <div className="flex items-center gap-2 text-xs text-white/50">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-low)]">
             <Phone size={11} className="shrink-0" />
             <span className="font-mono">{appt.client_phone}</span>
           </div>
         )}
         {appt.property && (
-          <div className="flex items-center gap-2 text-xs text-white/50">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-low)]">
             <Home size={11} className="shrink-0" />
             <span className="truncate">{appt.property}</span>
           </div>
         )}
         {appt.title && (
-          <p className="text-xs text-white/40 italic truncate">{appt.title}</p>
+          <p className="text-xs text-[var(--text-low)] italic truncate">{appt.title}</p>
         )}
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-1 border-t border-white/8">
+      <div className="flex items-center gap-2 pt-1 border-t border-[var(--hairline)]">
         {appt.status === 'pendente' && (
           <button
             onClick={() => onStatusChange('confirmado')}
@@ -443,7 +443,7 @@ const AppointmentCard: React.FC<CardProps> = ({ appt, onEdit, onDelete, onStatus
         )}
         <button
           onClick={onEdit}
-          className="p-1.5 rounded-xl bg-white/5 text-white/40 border border-white/10 hover:bg-white/10 hover:text-white/70 transition-colors"
+          className="p-1.5 rounded-xl bg-[var(--control-fill)] text-[var(--text-low)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors"
         >
           <Edit3 size={14} />
         </button>
@@ -591,27 +591,27 @@ export default function AgendaCalendar() {
       <div className="flex-1 min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between mb-4 md:mb-6">
-          <h2 className="text-xl md:text-2xl font-bold text-white capitalize">{monthLabel}</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-[var(--text-hi)] first-letter:uppercase">{monthLabel}</h2>
           <div className="flex items-center gap-2">
-            {loading && <Loader2 size={16} className="animate-spin text-white/40" />}
+            {loading && <Loader2 size={16} className="animate-spin text-[var(--text-low)]" />}
             <button
               onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}
-              className="p-2 rounded-xl bg-white/8 border border-white/12 text-white/60
-                hover:bg-white/12 hover:text-white transition-colors"
+              className="p-2 rounded-xl bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-mid)]
+                hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors"
             >
               <ChevronLeft size={18} />
             </button>
             <button
               onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}
-              className="p-2 rounded-xl bg-white/8 border border-white/12 text-white/60
-                hover:bg-white/12 hover:text-white transition-colors"
+              className="p-2 rounded-xl bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-mid)]
+                hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors"
             >
               <ChevronRight size={18} />
             </button>
             <button
               onClick={() => openNewModal(selectedDay)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl
-                bg-blue-600/80 border border-blue-400/30 text-white text-sm font-bold
+                bg-blue-600/80 border border-blue-400/30 text-[var(--text-hi)] text-sm font-bold
                 hover:bg-blue-600 transition-colors"
             >
               <Plus size={16} /> Agendar
@@ -620,13 +620,13 @@ export default function AgendaCalendar() {
         </div>
 
         {/* Grid */}
-        <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-white/8 border border-white/12
+        <div className="rounded-3xl overflow-hidden backdrop-blur-xl bg-[var(--control-fill)] border border-[var(--glass-border)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.25)]">
 
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 border-b border-white/10">
+          <div className="grid grid-cols-7 border-b border-[var(--hairline-strong)]">
             {WEEKDAYS.map(d => (
-              <div key={d} className="py-3 text-center text-[11px] font-bold text-white/30 uppercase tracking-wider">
+              <div key={d} className="py-3 text-center text-[11px] font-bold text-[var(--text-low)] uppercase tracking-wider">
                 {d}
               </div>
             ))}
@@ -636,7 +636,7 @@ export default function AgendaCalendar() {
           <div className="grid grid-cols-7">
             {cells.map((day, idx) => {
               if (day === null) {
-                return <div key={`e-${idx}`} className="border-b border-r border-white/5 min-h-[72px] last:border-r-0" />;
+                return <div key={`e-${idx}`} className="border-b border-r border-[var(--hairline)] min-h-[72px] last:border-r-0" />;
               }
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayAppts = byDay.get(dateStr) || [];
@@ -648,22 +648,22 @@ export default function AgendaCalendar() {
                 <div
                   key={dateStr}
                   onClick={() => setSelectedDay(dateStr)}
-                  className={`relative min-h-[72px] p-2 border-b border-r border-white/5 cursor-pointer transition-colors
+                  className={`relative min-h-[72px] p-2 border-b border-r border-[var(--hairline)] cursor-pointer transition-colors
                     ${idx % 7 === 6 ? 'border-r-0' : ''}
                     ${isSelected
                       ? 'bg-blue-600/20 border-blue-400/20'
                       : isWeekend
-                      ? 'bg-white/3 hover:bg-white/6'
-                      : 'hover:bg-white/5'
+                      ? 'bg-[var(--control-fill)] hover:bg-[var(--control-fill)]'
+                      : 'hover:bg-[var(--control-fill)]'
                     }`}
                 >
                   {/* Day number */}
                   <span className={`inline-flex w-6 h-6 items-center justify-center rounded-full text-xs font-bold
                     ${isToday
-                      ? 'bg-blue-500 text-white'
+                      ? 'bg-blue-500 text-[var(--text-hi)]'
                       : isSelected
                       ? 'text-blue-300'
-                      : 'text-white/60'
+                      : 'text-[var(--text-mid)]'
                     }`}
                   >
                     {day}
@@ -679,7 +679,7 @@ export default function AgendaCalendar() {
                         />
                       ))}
                       {dayAppts.length > 3 && (
-                        <span className="text-[9px] text-white/30 leading-none mt-0.5">
+                        <span className="text-[9px] text-[var(--text-low)] leading-none mt-0.5">
                           +{dayAppts.length - 3}
                         </span>
                       )}
@@ -692,7 +692,7 @@ export default function AgendaCalendar() {
                       onClick={e => { e.stopPropagation(); openNewModal(dateStr); }}
                       className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100
                         w-5 h-5 rounded-lg flex items-center justify-center
-                        bg-white/10 text-white/40 hover:bg-white/20 hover:text-white/70 transition-all"
+                        bg-[var(--control-fill)] text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-mid)] transition-all"
                     >
                       <Plus size={10} />
                     </button>
@@ -708,16 +708,16 @@ export default function AgendaCalendar() {
       <div className="xl:w-72 2xl:w-80">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm font-bold text-white capitalize">
+            <p className="text-sm font-bold text-[var(--text-hi)] first-letter:uppercase">
               {formatDateLabel(selectedDay + 'T12:00:00')}
             </p>
-            <p className="text-xs text-white/40">
+            <p className="text-xs text-[var(--text-low)]">
               {selectedAppts.length} {selectedAppts.length === 1 ? 'agendamento' : 'agendamentos'}
             </p>
           </div>
           <button
             onClick={() => openNewModal(selectedDay)}
-            className="p-2 rounded-xl bg-white/8 border border-white/12 text-white/60
+            className="p-2 rounded-xl bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-mid)]
               hover:bg-blue-600/40 hover:text-blue-300 hover:border-blue-400/30 transition-colors"
           >
             <Plus size={16} />
@@ -726,10 +726,10 @@ export default function AgendaCalendar() {
 
         <div className="space-y-3">
           {selectedAppts.length === 0 ? (
-            <div className="rounded-2xl backdrop-blur-md bg-white/5 border border-white/8
+            <div className="rounded-2xl backdrop-blur-md bg-[var(--control-fill)] border border-[var(--hairline)]
               flex flex-col items-center justify-center py-10 text-center px-4">
-              <Calendar size={24} className="text-white/20 mb-3" />
-              <p className="text-sm text-white/30">Nenhum agendamento neste dia.</p>
+              <Calendar size={24} className="text-[var(--text-low)] mb-3" />
+              <p className="text-sm text-[var(--text-low)]">Nenhum agendamento neste dia.</p>
               <button
                 onClick={() => openNewModal(selectedDay)}
                 className="mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors"
@@ -768,21 +768,21 @@ export default function AgendaCalendar() {
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
           <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden
-            backdrop-blur-2xl bg-white/12 border border-white/25
+            backdrop-blur-2xl bg-[var(--bg-elevated)] border border-[var(--glass-border-strong)]
             shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-8 text-center">
             <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4
               bg-red-500/20 border border-red-400/30 text-red-300">
               <Trash2 size={24} />
             </div>
-            <h3 className="text-lg font-bold text-white mb-1">Excluir agendamento?</h3>
-            <p className="text-sm text-white/50 mb-6">
-              Agendamento com <strong className="text-white/70">{deleteTarget.client_name}</strong> será removido.
+            <h3 className="text-lg font-bold text-[var(--text-hi)] mb-1">Excluir agendamento?</h3>
+            <p className="text-sm text-[var(--text-low)] mb-6">
+              Agendamento com <strong className="text-[var(--text-mid)]">{deleteTarget.client_name}</strong> será removido.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white/50
-                  bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)]
+                  bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill)] transition-colors"
               >
                 Cancelar
               </button>
