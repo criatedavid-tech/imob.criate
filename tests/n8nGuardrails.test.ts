@@ -155,10 +155,13 @@ test("banco possui garantia atômica contra visitas sobrepostas", async () => {
     new URL("../supabase/migrations/20260722a_n8n_agenda_guardrails.sql", import.meta.url),
     "utf8",
   );
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.imf_agenda_visit_range/);
+  assert.match(migration, /LANGUAGE sql\s+IMMUTABLE\s+PARALLEL SAFE/);
   assert.match(migration, /EXCLUDE USING gist/);
-  assert.match(migration, /tstzrange/);
+  assert.match(migration, /public\.imf_agenda_visit_range\(\s*scheduled_at,\s*duration_minutes\s*\) WITH &&/);
   assert.match(migration, /event_type = 'visita'/);
   assert.match(migration, /status <> 'cancelado'/);
+  assert.doesNotMatch(migration, /tstzrange\(\s*scheduled_at,\s*scheduled_at \+ make_interval/);
 });
 
 test("catálogo do n8n não usa SELECT star e limita descrições", async () => {

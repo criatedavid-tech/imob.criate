@@ -11,6 +11,26 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
+-- O PostgreSQL exige que toda funcao usada em uma constraint EXCLUDE seja
+-- IMMUTABLE. Para duracoes em minutos, o fim da visita e deterministico para
+-- os mesmos argumentos (nao depende de calendario ou fuso horario).
+CREATE OR REPLACE FUNCTION public.imf_agenda_visit_range(
+  p_scheduled_at TIMESTAMPTZ,
+  p_duration_minutes INTEGER
+)
+RETURNS TSTZRANGE
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $function$
+  SELECT tstzrange(
+    p_scheduled_at,
+    p_scheduled_at
+      + greatest(coalesce(p_duration_minutes, 60), 1) * interval '1 minute',
+    '[)'
+  );
+$function$;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -23,10 +43,9 @@ BEGIN
       ADD CONSTRAINT imf_agenda_no_overlapping_visits
       EXCLUDE USING gist (
         broker_id WITH =,
-        tstzrange(
+        public.imf_agenda_visit_range(
           scheduled_at,
-          scheduled_at + make_interval(mins => greatest(coalesce(duration_minutes, 60), 1)),
-          '[)'
+          duration_minutes
         ) WITH &&
       )
       WHERE (event_type = 'visita' AND status <> 'cancelado');
