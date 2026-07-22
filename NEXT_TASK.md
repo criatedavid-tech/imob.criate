@@ -3,11 +3,11 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; última base publicada `1b928a7` (scheduler dedicado e testes de escala).
+- Branch: `v2`; última base publicada `eb5bd99` (hardening P0 contra prompt injection).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Prompt injection — pacote P0 em validação (2026-07-22)
+## Prompt injection — pacote P0 publicado (2026-07-22)
 
 - `server/security/agentGuardrails.ts` valida resposta/confirmação por Zod
   estrito e encapsula o snapshot como contexto não confiável.
@@ -16,6 +16,8 @@
 - `server/routes/agent.ts` falha para `copiloto` e revalida a ação confirmada.
 - 15 testes, TypeScript, Knip, diff-check e build isolado aprovados. Nenhuma
   feature visual do Claude foi tocada.
+- Commit `eb5bd99`, GitHub Actions run `29929111553` e release Fly `v142`
+  aprovados; smoke HTTP saudável e rotas do agente protegidas por autenticação.
 - Próximo P1: confirmation ID server-side, consumo atômico/TTL e gateway
   restrito do proxy; depois red-team em staging com provedores simulados.
 

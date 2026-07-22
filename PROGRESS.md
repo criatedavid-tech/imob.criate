@@ -1,6 +1,6 @@
 # Estado do projeto
 
-## Hardening contra prompt injection em validação (2026-07-22)
+## Hardening contra prompt injection publicado (2026-07-22)
 
 - Auditoria encontrou risco indireto no Assistente interno: últimas mensagens
   de clientes eram interpoladas no `system prompt` e mutações podiam ser
@@ -14,6 +14,9 @@
 - Suíte ampliada de 8 para 15 testes. Testes, TypeScript, Knip, diff-check e
   build completo passaram numa cópia temporária limpa do commit publicado,
   sem incluir nem alterar os oito arquivos visuais inacabados do Claude.
+- Publicado no commit `eb5bd99`; GitHub Actions run `29929111553` aprovado e
+  release Fly `v142` saudável. Smoke HTTP 200 nas quatro páginas principais;
+  `/api/agent/command` e `/api/agent/execute` responderam 401 sem autenticação.
 - N8N não foi acessado ou alterado. Pendente: confirmação server-side por ID
   de uso único, policy gateway do proxy N8N e red-team em staging isolado.
 
