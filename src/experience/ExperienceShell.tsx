@@ -34,11 +34,11 @@ const AUTONOMY_LABEL: Record<Autonomy, string> = {
 };
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
 
-// Toggle Dia/Noite temporariamente OCULTO: o modo Noite (padrão) já está
-// recolorido, mas o modo Dia ainda espera a passada de latão + QA visual.
-// Enquanto false, o app fica só em Noite e o modo claro não é exposto ao
-// usuário. Reativar (true) quando o modo Dia estiver aprovado.
-const THEME_TOGGLE_ENABLED = false;
+// Toggle Dia/Noite. Liberado a pedido do usuário pra QA ao vivo do modo Dia.
+// O modo Noite é o padrão; o Dia já é funcional (neutros/acentos/semânticos
+// são theme-aware), faltando só polimento (latão nos valores R$ e cantos que
+// o QA visual revelar).
+const THEME_TOGGLE_ENABLED = true;
 
 // Estado vazio, elegante e didático, para áreas ainda não construídas (ensina a dupla via IA/manual).
 function AreaEmptyState({ areaKey }: { areaKey: string }) {

@@ -12,15 +12,15 @@
 Todo o frontend recolorido pra paleta Cristal (só cor, estrutura intacta) nos
 2 temas: tokens em `src/index.css`, `@theme` remapeia acentos/semânticos,
 codemod trocou os neutros `white/x`, fundo escuro -> `.app-bg`. Toggle
-Dia/Noite pronto (`theme.ts`/`ThemeToggle.tsx`) mas **travado em Noite**
-(`THEME_TOGGLE_ENABLED=false`). `tsc`/`knip`/`build` OK.
+Dia/Noite (`theme.ts`/`ThemeToggle.tsx`) **liberado** a pedido do usuário
+(`THEME_TOGGLE_ENABLED=true`) pra QA ao vivo do modo Dia. `tsc`/`knip`/`build` OK.
 
 **Próximos passos deste tema:**
 1. Latão (`cr-brass`/`var(--brass)`) nos valores em R$ — Dashboard, Relatórios,
    Financeiro, Lançamentos (regra: latão = dinheiro + selo premium).
-2. QA visual dos 2 temas (browser pane esteve bloqueado nesta sessão).
-3. Reativar o toggle (`THEME_TOGGLE_ENABLED=true`) só após o Dia aprovado.
-4. Revisar páginas públicas editoriais (PropertyLanding, Vitrine) que também
+2. QA do modo Dia com o usuário ao vivo (corrigir cantos que aparecerem;
+   suspeitos: hex fixos, `bg-white`/`text-black` soltos).
+3. Revisar páginas públicas editoriais (PropertyLanding, Vitrine) que também
    foram tokenizadas — conferir se o look editorial preto/branco seguiu certo.
 
 ## Prompt injection — pacote P0 publicado (2026-07-22)
