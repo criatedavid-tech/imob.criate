@@ -3,11 +3,11 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; última base publicada `853aff0` (alerta de visita marcada pela IA).
+- Branch: `v2`; última base publicada `1b928a7` (scheduler dedicado e testes de escala).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Escala: scheduler dedicado e testes (2026-07-22) — em validação local
+## Escala: scheduler dedicado e testes (2026-07-22) — publicada
 
 - Linha de base: 8 contas, 4 tickets ativos, 49 mensagens/24h; inbox p95
   4.101ms, outbox p95 1.371ms e zero backlog. Carga insuficiente para inferir
@@ -22,9 +22,15 @@
   req/s, p95 36,8ms, p99 54,8ms e zero erro.
 - `scripts/load-smoke.mjs` bloqueia produção por padrão. Plano completo em
   `SCALABILITY_TEST_PLAN.md`.
-- Próximo: concluir lint/Knip/build, publicar somente em `v2`, verificar os
-  três process groups e fazer smoke curto de `/api/health`. Não executar carga
-  pesada em produção.
+- Publicado no commit `1b928a7`; GitHub Actions run `29920550228` aprovado,
+  release Fly `v140`, três process groups saudáveis e smoke HTTP 200 em
+  `/api/health`, `/`, `/login` e `/app`. Filas sem backlog ou DLQ.
+- A única instância auditada da UAZAPI foi reapontada de
+  `appback.criate.online` para o endpoint nativo da V2. O n8n não foi acessado
+  nem alterado.
+- Próximo: preparar staging/fixtures, medir APIs autenticadas e webhooks,
+  configurar Redis e repetir com `web=2`. Não executar carga pesada em
+  produção.
 
 ## Feature: notificar corretor de visita marcada pela IA (2026-07-21) — publicada (`853aff0`)
 

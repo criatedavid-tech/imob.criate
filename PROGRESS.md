@@ -1,6 +1,6 @@
 # Estado do projeto
 
-## Escala: testes e scheduler dedicado em validação local (2026-07-22)
+## Escala: testes e scheduler dedicado publicados (2026-07-22)
 
 - Auditoria confirmou a branch `v2` limpa e sincronizada em `853aff0`; os dez
   commits posteriores a `4ffe30e` tiveram GitHub Actions aprovado.
@@ -15,8 +15,18 @@
   p95 36,8ms, p99 54,8ms, 100% HTTP 200 e zero erro.
 - O scheduler impede execução sobreposta, sobrevive a falha de tick e drena no
   SIGTERM. `server.ts` não registra mais jobs recorrentes.
-- Ainda não publicado. Próximo gate: lint, Knip, build, diff-check, commit/push
-  somente em `v2` e verificação dos três process groups.
+- Publicado no commit `1b928a7`; GitHub Actions run `29920550228` aprovado e
+  release Fly `v140` saudável com `web` (1 GB), `worker` (1 GB) e `scheduler`
+  (512 MB). Lint, Knip, build, diff-check e os oito testes passaram.
+- Smoke pós-deploy: `/api/health`, `/`, `/login` e `/app` responderam HTTP 200;
+  inbox/outbox permaneceram sem `pending`, `processing` ou `dead`.
+- A auditoria encontrou uma instância UAZAPI ainda apontada para o ingresso
+  legado `appback.criate.online`. Ela foi reapontada e confirmada em
+  `https://imobiflow-v2.fly.dev/api/wpp-shim/inbound/:instanceId`, sem acessar
+  nem alterar o n8n.
+- Próximo gate de escala: criar staging/conta sintética, executar o mix
+  autenticado e webhooks sob carga, configurar Redis e só então testar
+  `web=2`. Nenhuma carga pesada foi executada em produção.
 
 ## Feature: notificar corretor quando a IA de atendimento marca visita (2026-07-21)
 

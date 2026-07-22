@@ -11,10 +11,13 @@ mensagens simultâneas. Nenhum teste de carga destrutivo deve usar dados reais.
 - 8 contas, 4 tickets ativos, 7 tickets totais e 49 mensagens nas últimas 24h;
 - inbox: 137 eventos/24h, zero backlog, p50 656ms, p95 4.101ms, p99 8.348ms;
 - outbox: 20 eventos/24h, todos concluídos, p50 954ms, p95 1.371ms;
-- Fly: uma `web` e uma `worker` ativas, 1 GB cada;
+- Fly antes desta etapa: uma `web` e uma `worker` ativas, 1 GB cada; depois da
+  publicação, uma `scheduler` singleton de 512 MB foi adicionada;
 - Redis e Sentry ainda não configurados;
 - smoke HTTP local do novo `/api/health`: 1.000 requisições, concorrência 25,
   1.307,94 req/s, p95 36,8ms, p99 54,8ms e zero erro;
+- smoke pós-deploy: `/api/health`, `/`, `/login` e `/app` com HTTP 200; filas
+  sem `pending`, `processing` ou `dead`;
 - esses números comprovam saúde em carga baixa, não capacidade para 100
   corretores.
 
