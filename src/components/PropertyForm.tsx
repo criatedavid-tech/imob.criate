@@ -301,28 +301,28 @@ export default function PropertyForm({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="relative w-full max-w-2xl my-auto rounded-[32px] overflow-hidden
-          backdrop-blur-2xl bg-white/12 border border-white/20
+          backdrop-blur-2xl bg-[var(--bg-elevated)] border border-[var(--glass-border-strong)]
           shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]"
       >
         {/* Header sticky — sempre visível */}
         <div className="sticky top-0 z-20 flex items-center justify-between px-8 py-5
-          backdrop-blur-xl bg-white/8 border-b border-white/10">
+          backdrop-blur-xl bg-[var(--control-fill)] border-b border-[var(--hairline-strong)]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center
-              backdrop-blur-md bg-white/15 border border-white/20">
-              <Home className="text-white w-5 h-5" />
+              backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]">
+              <Home className="text-[var(--text-hi)] w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white leading-tight">
+              <h2 className="text-lg font-bold text-[var(--text-hi)] leading-tight">
                 {initialData ? 'Editar Imóvel' : 'Novo Imóvel'}
               </h2>
-              <p className="text-white/50 text-xs">Preencha os dados e gere a landing page automaticamente.</p>
+              <p className="text-[var(--text-low)] text-xs">Preencha os dados e gere a landing page automaticamente.</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="w-9 h-9 rounded-xl flex items-center justify-center
-              text-white/50 hover:text-white hover:bg-white/15 transition-all"
+              text-[var(--text-low)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)] transition-all"
             title="Fechar"
           >
             <X size={20} />
@@ -340,20 +340,20 @@ export default function PropertyForm({
                 backdrop-blur-md bg-emerald-500/20 border border-emerald-400/30">
                 <Check className="text-emerald-300 w-10 h-10" />
               </div>
-              <h2 className="text-3xl font-bold text-white">Sucesso!</h2>
-              <p className="text-white/60 text-lg max-w-md">
+              <h2 className="text-3xl font-bold text-[var(--text-hi)]">Sucesso!</h2>
+              <p className="text-[var(--text-mid)] text-lg max-w-md">
                 Imóvel {successData.isEdit ? 'atualizado' : 'cadastrado'} com sucesso. Sua landing page já está no ar!
               </p>
 
               <div className="w-full p-4 rounded-2xl flex items-center justify-between mt-4
-                backdrop-blur-md bg-white/10 border border-white/15">
-                <span className="text-sm text-white/70 truncate mr-4">{successData.url}</span>
+                backdrop-blur-md bg-[var(--control-fill)] border border-[var(--glass-border)]">
+                <span className="text-sm text-[var(--text-mid)] truncate mr-4">{successData.url}</span>
                 <a
                   href={successData.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap text-white transition-all
-                    backdrop-blur-md bg-white/15 border border-white/25 hover:bg-white/25"
+                  className="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap text-[var(--text-hi)] transition-all
+                    backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] hover:bg-[var(--control-fill-hover)]"
                 >
                   Abrir
                 </a>
@@ -362,8 +362,8 @@ export default function PropertyForm({
               <div className="w-full pt-4">
                 <button
                   onClick={onClose}
-                  className="w-full py-4 rounded-2xl font-bold text-lg text-white transition-all
-                    backdrop-blur-md bg-white/10 border border-white/15 hover:bg-white/20"
+                  className="w-full py-4 rounded-2xl font-bold text-lg text-[var(--text-hi)] transition-all
+                    backdrop-blur-md bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)]"
                 >
                   Fechar
                 </button>
@@ -380,63 +380,63 @@ export default function PropertyForm({
                 )}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Título do Anúncio</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Título do Anúncio</label>
                   <input 
                     type="text" 
                     value={formData.title || ''}
                     onChange={(e) => setFormData({...formData, title: e.target.value})}
                     placeholder="Ex: Casa de Luxo no Jardins" 
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)]"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Preço (R$)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Preço (R$)</label>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={maskFromCents(priceCents)}
                     onChange={(e) => setPriceCents(centsFromMaskInput(e.target.value))}
                     placeholder="0,00"
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)]"
                     required
                   />
                 </div>
              </div>
 
              <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Localização</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Localização</label>
               <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-low)]" size={18} />
                 <input
                   type="text"
                   value={formData.location || ''}
                   onChange={(e) => setFormData({...formData, location: e.target.value})}
                   placeholder="Cidade, UF ou Endereço"
-                  className="w-full pl-12 pr-5 py-3 rounded-2xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25"
+                  className="w-full pl-12 pr-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)]"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Tipo de imóvel</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Tipo de imóvel</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setFormData({...formData, tipo_imovel: 'residencial'})}
                   className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
                     (formData.tipo_imovel || 'residencial') === 'residencial'
-                      ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                      ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline-strong)] hover:text-[var(--text-mid)]'
                   }`}>Residencial (casa/apê)</button>
                 <button type="button" onClick={() => setFormData({...formData, tipo_imovel: 'comercial'})}
                   className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
                     formData.tipo_imovel === 'comercial'
-                      ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                      ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline-strong)] hover:text-[var(--text-mid)]'
                   }`}>Comercial (sala/galpão/loja)</button>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Finalidade</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Finalidade</label>
               <div className="flex gap-2">
                 {([
                   ['venda', 'Venda'],
@@ -446,7 +446,7 @@ export default function PropertyForm({
                   <button key={value} type="button" onClick={() => setFormData({...formData, finalidade: value})}
                     className={`flex-1 py-2.5 rounded-2xl text-[13px] font-semibold transition-colors border ${
                       (formData.finalidade || 'venda') === value
-                        ? 'bg-white/[0.16] text-white border-white/25' : 'bg-white/[0.04] text-white/45 border-white/10 hover:text-white/70'
+                        ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] border-[var(--glass-border-strong)]' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline-strong)] hover:text-[var(--text-mid)]'
                     }`}>{label}</button>
                 ))}
               </div>
@@ -455,96 +455,96 @@ export default function PropertyForm({
             {formData.tipo_imovel === 'comercial' ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Tipo de espaço</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Tipo de espaço</label>
                   <select
                     value={formData.tipo_comercial}
                     onChange={(e) => setFormData({...formData, tipo_comercial: e.target.value})}
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                   >
                     {TIPO_COMERCIAL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Área (m²)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Área (m²)</label>
                   <input
                     type="number"
                     value={formData.area || ''}
                     onChange={(e) => setFormData({...formData, area: parseInt(e.target.value) || 0})}
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Banheiros</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Banheiros</label>
                   <input
                     type="number"
                     value={formData.banheiros || ''}
                     onChange={(e) => setFormData({...formData, banheiros: parseInt(e.target.value) || 0})}
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/50">Vagas de garagem</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Vagas de garagem</label>
                   <input
                     type="number"
                     value={formData.vagas_garagem || ''}
                     onChange={(e) => setFormData({...formData, vagas_garagem: parseInt(e.target.value) || 0})}
-                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                    className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                   />
                 </div>
               </div>
             ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Quartos</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Quartos</label>
                 <input
                   type="number"
                   value={formData.quartos || ''}
                   onChange={(e) => setFormData({...formData, quartos: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Banheiros</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Banheiros</label>
                 <input
                   type="number"
                   value={formData.banheiros || ''}
                   onChange={(e) => setFormData({...formData, banheiros: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Área (m²)</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Área (m²)</label>
                 <input
                   type="number"
                   value={formData.area || ''}
                   onChange={(e) => setFormData({...formData, area: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Salas</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Salas</label>
                 <input
                   type="number"
                   value={formData.sala || ''}
                   onChange={(e) => setFormData({...formData, sala: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Cozinhas</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Cozinhas</label>
                 <input
                   type="number"
                   value={formData.cozinha || ''}
                   onChange={(e) => setFormData({...formData, cozinha: parseInt(e.target.value) || 0})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Piscina</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Piscina</label>
                 <select
                   value={formData.piscina}
                   onChange={(e) => setFormData({...formData, piscina: e.target.value})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 >
                   <option value="Não">Não</option>
                   <option value="Sim">Sim</option>
@@ -553,11 +553,11 @@ export default function PropertyForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-white/50">Varanda Gourmet</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Varanda Gourmet</label>
                 <select
                   value={formData.varanda_gourmet}
                   onChange={(e) => setFormData({...formData, varanda_gourmet: e.target.value})}
-                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-slate-800/90 border border-white/15 text-white focus:ring-2 focus:ring-white/25 [color-scheme:dark]"
+                  className="w-full px-5 py-3 rounded-2xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] focus:ring-2 focus:ring-[var(--glass-border-strong)] [color-scheme:dark]"
                 >
                   <option value="Não">Não</option>
                   <option value="Sim">Sim</option>
@@ -567,7 +567,7 @@ export default function PropertyForm({
             )}
 
             <div className="space-y-2 relative">
-              <label className="text-xs font-bold uppercase tracking-wider text-white/50 flex justify-between items-center">
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)] flex justify-between items-center">
                 <span>Descrição Detalhada</span>
               </label>
               <MagicWandTextarea
@@ -575,13 +575,13 @@ export default function PropertyForm({
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 onApply={(text) => setFormData({...formData, description: text})}
                 placeholder="Descreva os pontos fortes, acabamentos e diferenciais do imóvel..." 
-                className="w-full px-5 py-4 rounded-3xl outline-none transition-all bg-white/10 border border-white/15 text-white placeholder:text-white/30 focus:ring-2 focus:ring-white/25 min-h-[120px] resize-none"
+                className="w-full px-5 py-4 rounded-3xl outline-none transition-all bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] focus:ring-2 focus:ring-[var(--glass-border-strong)] min-h-[120px] resize-none"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-white/50">Fotos (Máx 15)</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-low)]">Fotos (Máx 15)</label>
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -592,7 +592,7 @@ export default function PropertyForm({
               />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {(formData.images || []).map((img, idx) => (
-                  <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border border-white/20">
+                  <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border border-[var(--glass-border-strong)]">
                     <img src={img} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
                     <button 
                       type="button"
@@ -605,7 +605,7 @@ export default function PropertyForm({
                 ))}
                 
                 {Array.from({ length: uploadingCount }).map((_, i) => (
-                  <div key={`up-${i}`} className="rounded-xl flex flex-col items-center justify-center gap-2 text-white/50 aspect-square bg-white/5 border border-white/15">
+                  <div key={`up-${i}`} className="rounded-xl flex flex-col items-center justify-center gap-2 text-[var(--text-low)] aspect-square bg-[var(--control-fill)] border border-[var(--glass-border)]">
                     <Loader2 size={22} className="animate-spin" />
                     <span className="font-semibold text-[10px] uppercase tracking-wider">Enviando…</span>
                   </div>
@@ -614,24 +614,24 @@ export default function PropertyForm({
                 {(!formData.images || formData.images.length < 15) && (
                   <div
                     onClick={handleImageClick}
-                    className="border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center gap-2 text-white/40 hover:border-white/50 hover:text-white/70 transition-all cursor-pointer aspect-square bg-white/5"
+                    className="border-2 border-dashed border-[var(--glass-border-strong)] rounded-xl flex flex-col items-center justify-center gap-2 text-[var(--text-low)] hover:border-[var(--hairline)]0 hover:text-[var(--text-mid)] transition-all cursor-pointer aspect-square bg-[var(--control-fill)]"
                   >
                     <Camera size={24} />
                     <span className="font-semibold text-[10px] uppercase tracking-wider">Adicionar</span>
                   </div>
                 )}
               </div>
-              <p className="text-[11px] text-white/40 italic mt-1">{(formData.images?.length || 0)} / 15 fotos adicionadas.</p>
+              <p className="text-[11px] text-[var(--text-low)] italic mt-1">{(formData.images?.length || 0)} / 15 fotos adicionadas.</p>
             </div>
 
             <div className="pt-4">
               <button
                 type="submit"
                 disabled={loading || uploadingCount > 0}
-                className="w-full py-4 rounded-2xl font-bold text-lg text-white transition-all flex items-center justify-center gap-2
-                  backdrop-blur-md bg-white/15 border border-white/25
+                className="w-full py-4 rounded-2xl font-bold text-lg text-[var(--text-hi)] transition-all flex items-center justify-center gap-2
+                  backdrop-blur-md bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)]
                   shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_4px_16px_rgba(0,0,0,0.25)]
-                  hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]"
+                  hover:bg-[var(--control-fill-hover)] disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]"
               >
                 {uploadingCount > 0
                   ? <><Loader2 className="animate-spin" /> Enviando fotos…</>
