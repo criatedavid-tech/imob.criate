@@ -6,15 +6,18 @@
 - Branch: `v2`; última base publicada `eb5bd99` (hardening P0 contra prompt injection).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
-- **Uncommitted (2026-07-22):** `DivulgacaoArea.tsx` — trocou o card "Ainda não
-  disponível" pela prévia ao vivo da vitrine (iframe same-origin). Checklist
-  passou (tsc/knip/build/diff). Aguardando autorização de commit+deploy.
-- **Pendências de melhoria da Divulgação/assistente** (diagnosticadas, não feitas):
-  (A) ensinar o link da vitrine ao assistente IA + (C) compor mensagem-convite
-  com o link quando o corretor pede "divulgar meus imóveis"; (B) ação de enviar
-  pra vários contatos com confirmação obrigatória (prévia + contagem). Problema 2:
-  atendimento N8N repete "posso enviar mais detalhes?" em loop (lógica no
-  workflow N8N, fora deste repo).
+- **Prévia da vitrine (DivulgacaoArea.tsx):** publicado (commit `59049de`).
+- **Uncommitted (2026-07-22):** A/B/C do assistente feitos — `agent.ts`,
+  `agentGuardrails.ts`, `routes/agent.ts`, `tests/agentGuardrails.test.ts`.
+  (A) `vitrineUrl` no snapshot; (C) regra de divulgação no prompt; (B) ação
+  `broadcast_message` (todos os contatos, trava 50, confirmação com contagem
+  real, não pausa IA). Checklist passou (8/8 testes, tsc/knip/build/diff).
+  Aguardando autorização de commit+deploy.
+- **QA pós-deploy do broadcast:** testar em `autonomy=manual`/`copiloto` (ação
+  só proposta, não envia) pra ver a contagem + prévia; depois um envio real
+  controlado pra poucos contatos.
+- **Pendente — problema 2:** atendimento N8N repete "posso enviar mais
+  detalhes?" em loop (lógica no workflow N8N, fora deste repo).
 
 ## Sistema de cores Cristal — recolor em massa aplicado (2026-07-22)
 

@@ -654,6 +654,35 @@ Estou passando aqui pra saber se você precisa de alguma informação ou se
 tem alguma dúvida sobre os imóveis. Estou à disposição!" — sem
 metacomentário.
 
+### Divulgação pelo Assistente IA: link da vitrine + envio pra vários contatos
+
+**Implementado em 2026-07-22.** Resolve o caso "envie a minha divulgação/imóveis
+pros meus contatos", que antes saía errado (mandava pra 1 contato só, com texto
+sem sentido — "minha área de divulgação" — e sem link).
+
+- **Link da vitrine no contexto do assistente (`vitrineUrl`).** `buildSnapshot`
+  passou a incluir `vitrineUrl = PUBLIC_APP_URL/vitrine/:brokerId` (mesma URL da
+  aba Divulgação) no `Snapshot`. Uma **regra de divulgação** no system prompt
+  manda o modelo, quando o corretor pede pra divulgar/compartilhar os imóveis,
+  compor uma mensagem-convite ao cliente que **inclui esse link** — e proíbe
+  explicitamente falar "minha área de divulgação" ou descrever telas internas.
+- **Ação `broadcast_message`** (`server/services/agent.ts` + schema em
+  `agentGuardrails.ts`, nas duas uniões). Envia UMA mensagem pra TODOS os
+  contatos salvos da conta de uma vez. Sem `phone` no contrato: o destino é
+  resolvido no servidor (re-busca `imf_contacts` por `broker_id`), o modelo
+  nunca fornece números. Trava anti-abuso: recusa acima de **50 contatos**
+  (envio em massa de verdade continua no roadmap, depende do transporte nativo).
+- **Confirmação com contagem real.** A UI de confirmação (CommandBar) só mostra
+  o `reply`, então para `broadcast_message` o backend **sobrescreve o `reply`**
+  em `runAgent` com a contagem verdadeira de contatos (do snapshot) + a prévia
+  do texto — o corretor sempre vê pra quantos vai e o quê antes de confirmar.
+  Registrada em `CONFIRMABLE_ACTIONS` (`server/routes/agent.ts`).
+- **Não pausa a IA.** Diferente de `send_message` (que faz handover), o
+  broadcast grava cada envio com `senderType:"ai"` e **não** chama
+  `pauseAiForHumanTakeover` — divulgação é disparo proativo; se o contato
+  responder, a IA de atendimento continua trabalhando o lead (mesmo espírito do
+  follow-up agendado), em vez de jogar todo retorno na fila "aguardando você".
+
 ### Ações agendadas do Assistente IA interno (lembrete e follow-up ad-hoc)
 
 **Implementado e publicado em 2026-07-21.**

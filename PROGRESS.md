@@ -1,5 +1,29 @@
 # Estado do projeto
 
+## Assistente IA: link da vitrine + broadcast pra contatos (2026-07-22)
+
+- Problema (mostrado pelo usuário): "envie a minha divulgação pros meus contatos"
+  saía errado — 1 contato só, texto "minha área de divulgação" sem sentido, sem
+  link. Diagnóstico A/B/C aprovado pelo usuário ("abc").
+- **A** — `buildSnapshot` inclui `vitrineUrl` (=`PUBLIC_APP_URL/vitrine/:id`) no
+  Snapshot; o assistente passa a conhecer o link real.
+- **C** — regra de divulgação no system prompt: pedido de divulgar/compartilhar
+  imóveis → mensagem-convite ao cliente COM o link; proíbe "minha área de
+  divulgação"/telas internas.
+- **B** — nova ação `broadcast_message` (envia pra TODOS os contatos salvos;
+  sem phone, destino resolvido no servidor por `broker_id`; trava de 50).
+  Confirmável: `runAgent` sobrescreve o `reply` com a contagem REAL + prévia
+  (a UI só mostra o reply). Não pausa a IA (senderType "ai", sem
+  `pauseAiForHumanTakeover`) — replies seguem atendidos. Registrada em
+  `CONFIRMABLE_ACTIONS` e no schema zod (2 uniões) + `JSON_SHAPE_HINT`.
+- Arquivos: `server/services/agent.ts`, `server/security/agentGuardrails.ts`,
+  `server/routes/agent.ts`, `tests/agentGuardrails.test.ts` (+2 casos).
+- Checklist: 8/8 testes, tsc limpo, knip ok, build ok, diff --check limpo.
+- Verificação ao vivo NÃO feita (envio real de WhatsApp em produção) — QA fica
+  pra depois do deploy, com autonomia=manual/copiloto (ação só proposta).
+- Pendente: problema 2 (loop "posso enviar mais detalhes?" no atendimento N8N)
+  — fora deste repo.
+
 ## Divulgação: prévia ao vivo da vitrine (2026-07-22)
 
 - Pedido do usuário: o card "Ainda não disponível" (portais OLX/ZAP/Viva Real +

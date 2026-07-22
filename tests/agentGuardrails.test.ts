@@ -83,9 +83,28 @@ test("rejeita identificador, telefone e horário fora do formato permitido", () 
   );
 });
 
+test("broadcast_message aceita só o texto e rejeita phone (destino é a lista inteira)", () => {
+  const parsed = parseAgentModelResponse({
+    reply: "Vou enviar sua vitrine para seus contatos.",
+    action: { type: "broadcast_message", message: "Oi! Veja meus imóveis: https://app.test/vitrine/abc" },
+  });
+  assert.equal(parsed.action.type, "broadcast_message");
+  // phone não faz parte do contrato do broadcast — o destino é resolvido no
+  // servidor a partir dos contatos salvos, nunca fornecido pelo modelo.
+  assert.throws(
+    () => parseAgentModelResponse({
+      reply: "ok",
+      action: { type: "broadcast_message", message: "oi", phone: "+5562999999999" },
+    }),
+    AgentOutputValidationError,
+  );
+  const confirmed = parseConfirmedAgentAction({ type: "broadcast_message", message: "oi" });
+  assert.equal(confirmed.type, "broadcast_message");
+});
+
 test("toda mutação exige confirmação humana", () => {
   for (const type of [
-    "create_lead", "create_visit", "send_message", "create_property",
+    "create_lead", "create_visit", "send_message", "broadcast_message", "create_property",
     "update_property", "cancel_visit", "update_visit", "end_rental_contract",
     "update_unit", "create_reminder", "schedule_followup",
   ]) {

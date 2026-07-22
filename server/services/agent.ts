@@ -88,6 +88,7 @@ function resolveDueAt(action: { date?: string; time?: string; delay_value?: stri
 
 export interface AgentAction {
   type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "send_message"
+      | "broadcast_message"
       | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
       | "create_reminder" | "schedule_followup";
   area?: string;
@@ -104,7 +105,8 @@ export interface AgentAction {
   // (data específica ou intervalo, passado ou futuro).
   date_from?: string; // YYYY-MM-DD
   date_to?: string;   // YYYY-MM-DD, opcional — omitido = mesmo dia de date_from
-  // send_message — manda uma mensagem REAL pelo WhatsApp (usa phone acima).
+  // send_message (usa phone acima) e broadcast_message (envia pra TODOS os
+  // contatos salvos, sem phone) — o texto REAL da mensagem pelo WhatsApp.
   message?: string;
   // create_property / update_property — cadastra ou edita um imóvel.
   // create_property usa location/description/quartos/banheiros/area_m2/piscina/
@@ -181,6 +183,10 @@ const AREAS_BY_PERSONA: Record<string, string[]> = {
 
 interface Snapshot {
   brokerName: string;
+  // Link público da vitrine de imóveis disponíveis (mesma URL da aba Divulgação).
+  // Alimenta o assistente pra ele mandar o link REAL quando o corretor pede pra
+  // "divulgar/compartilhar meus imóveis" — sem isso ele compunha texto sem link.
+  vitrineUrl: string;
   properties: { id: string; title: string; price: string; status: string }[];
   leadCounts: Record<string, number>;
   leadsTotal: number;
@@ -338,6 +344,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
 
   return {
     brokerName: broker?.name || "corretor",
+    vitrineUrl: `${PUBLIC_APP_URL}/vitrine/${brokerId}`,
     properties: (props || []).map((p: any) => ({ id: p.id, title: p.title, price: p.price, status: p.status || "disponivel" })),
     leadCounts,
     leadsTotal,
@@ -414,6 +421,7 @@ function buildSystemPrompt(persona: string): string {
 
   let actionNum = 6;
   const extraActions: string[] = [];
+  extraActions.push(`${++actionNum}. "broadcast_message" — enviar UMA mensagem de WhatsApp pra TODOS os seus contatos salvos de uma vez. Use quando o corretor falar no plural/coletivo: "manda pros meus contatos", "avisa todo mundo", "divulga meus imóveis pra minha lista/base". Precisa SÓ de message (o texto que você compõe; NUNCA phone — o sistema envia pra cada contato salvo sozinho). Se for divulgação de imóveis, siga a REGRA DE DIVULGAÇÃO abaixo (mensagem-convite + link da vitrine). É diferente de "send_message", que é pra UM contato específico (aí sim tem phone). O sistema mostra pra você confirmar (com a contagem real de contatos) antes de disparar qualquer coisa.`);
   extraActions.push(`${++actionNum}. "create_property" — cadastrar um imóvel NOVO na carteira (o corretor está descrevendo um imóvel que ainda não existe na lista acima, não editando um existente). Precisa de price e location (bairro/cidade/endereço). title é opcional (se não vier, gere um curto a partir do tipo+localização, ex.: "Apartamento no Setor Oeste"). description é opcional mas recomendado: escreva um texto de venda natural e atraente com TUDO que não couber nos campos estruturados abaixo (andar, detalhes do prédio/condomínio, etc.).
    CAMPOS ESTRUTURADOS — isto NÃO é opcional: sempre que o corretor mencionar qualquer um destes, você TEM que preencher o campo correspondente, MESMO que a mesma informação também apareça em texto na description. Nunca deixe um campo vazio só porque "já está na descrição" — description e os campos estruturados são preenchidos JUNTOS, o campo estruturado é o que alimenta o formulário de verdade, a descrição é só o texto de venda.
    - quartos: quantidade total de quartos/dormitórios.
@@ -463,7 +471,8 @@ Regras:
 - O campo reply é SEMPRE preenchido, em linguagem natural, confirmando o que você entendeu ou respondendo (exceto em query_agenda, onde reply pode ser um placeholder curto tipo "Deixa eu ver..." — a resposta final vem da consulta real).
 - Para ações de criar/editar/enviar/cancelar/remarcar, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro." / "Vou cancelar a visita com o João.").
 - phone: pode vir como o corretor falar, ou resolvido a partir de um nome da lista de Contatos; não precisa formatar.
-- "enviar/mandar mensagem" é SEMPRE send_message, nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
+- "enviar/mandar mensagem" é SEMPRE send_message (um contato) ou broadcast_message (todos os contatos), nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
+- REGRA DE DIVULGAÇÃO: quando o corretor pedir pra DIVULGAR / COMPARTILHAR / MOSTRAR / MANDAR os imóveis dele pra um contato ou pra todos os contatos, a mensagem que você compõe (em send_message ou broadcast_message) DEVE convidar o cliente a ver os imóveis e INCLUIR o link da vitrine pública — o valor exato está no campo "vitrineUrl" do contexto (UNTRUSTED_ACCOUNT_CONTEXT); copie-o como está, nunca invente uma URL. NUNCA escreva "minha área de divulgação" nem descreva ferramentas/telas internas do corretor: o cliente não tem área nenhuma, ele só quer ver imóvel. Ex. de mensagem boa: "Oi! Reuni meus imóveis disponíveis num link só, dá uma olhada quando puder: {vitrineUrl} — se algum te interessar, me chama que agendo uma visita." Um contato só = send_message; todos os contatos = broadcast_message.
 - Só use uma ação de mutação (create/update/cancel/send) quando o pedido for claramente isso. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).
 - NUNCA invente um id (property_id, visit_id, contract_id, unit_id) — use sempre um id exato que apareça nas listas acima. Se não souber o id de algo que o corretor descreveu (ex.: "cancela minha visita de sexta" mas sexta não está nas próximas 5), diga isso com honestidade e oriente a fazer direto na tela correspondente, em vez de adivinhar.
 - Pra cancel_visit/update_visit/end_rental_contract: o id escolhido tem que corresponder ao NOME (cliente ou inquilino) que a pessoa mencionou, comparando com a lista correspondente acima. Se o nome mencionado não bater com nenhum item da lista, NÃO escolha nenhum id só porque existe um — use "answer" e diga que não achou esse registro na lista visível. NUNCA escolha um id "pelo menos parecido" ou o primeiro da lista só pra cumprir o pedido.
@@ -608,6 +617,64 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     await pauseAiForHumanTakeover(brokerId, customerPhone).catch(() => {});
 
     return { summary: `Mensagem enviada para ${customerPhone}.`, navigate: "conversas" };
+  }
+
+  if (action.type === "broadcast_message") {
+    const message = action.message?.trim();
+    if (!message) throw new Error("Preciso do texto da mensagem pra enviar.");
+
+    // Contatos salvos da conta — SEMPRE re-buscados no servidor (nunca confia
+    // numa lista vinda do cliente). Mesmo escopo do snapshot (por broker_id).
+    const { data: contacts, error: contactsErr } = await supabase
+      .from("imf_contacts")
+      .select("name, phone")
+      .eq("broker_id", brokerId);
+    if (contactsErr) throw new Error("Não consegui carregar seus contatos agora.");
+    const recipients = (contacts || []).filter((c: any) => c.phone && String(c.phone).trim());
+    if (recipients.length === 0) throw new Error("Você ainda não tem contatos salvos pra enviar.");
+
+    // Trava anti-abuso: isto é o envio pra base de contatos salvos, NÃO campanha
+    // em massa (essa depende do transporte nativo e continua no roadmap).
+    const MAX_BROADCAST = 50;
+    if (recipients.length > MAX_BROADCAST) {
+      throw new Error(`Você tem ${recipients.length} contatos — envio em massa acima de ${MAX_BROADCAST} ainda não está liberado. Faça em grupos menores por enquanto.`);
+    }
+
+    let sentCount = 0;
+    const failed: string[] = [];
+    for (const c of recipients) {
+      const customerPhone = normalizePhoneBR(c.phone);
+      try {
+        const instanceToken = await resolveOutboundInstanceToken(brokerId, customerPhone);
+        if (!instanceToken) { failed.push(c.name || customerPhone); continue; }
+        const sent = await sendUazapiText(instanceToken, customerPhone, message);
+        if (!sent.ok) { failed.push(c.name || customerPhone); continue; }
+        // senderType "ai" e SEM pauseAiForHumanTakeover (ao contrário de
+        // send_message): divulgação é disparo proativo — se o contato
+        // responder, a IA de atendimento deve continuar trabalhando o lead,
+        // não jogar todos os retornos na fila "aguardando você". Mesmo
+        // espírito do follow-up agendado (agentScheduledFollowups.ts).
+        await recordConversationMessage({
+          brokerId,
+          customerPhone,
+          direction: "out",
+          senderType: "ai",
+          body: message,
+          initialStatus: "open",
+        }).catch((err: any) => console.error(`[Broadcast] enviado, nao persistido (${customerPhone}): ${err.message}`));
+        sentCount++;
+      } catch {
+        failed.push(c.name || customerPhone);
+      }
+    }
+
+    if (sentCount === 0) {
+      throw new Error("Não consegui enviar pra nenhum contato — WhatsApp não configurado ou falha de envio. Nada saiu.");
+    }
+    const falharam = failed.length
+      ? ` (${failed.length} não recebeu: ${failed.slice(0, 5).join(", ")}${failed.length > 5 ? "…" : ""})`
+      : "";
+    return { summary: `Mensagem enviada para ${sentCount} contato${sentCount > 1 ? "s" : ""}${falharam}.`, navigate: "conversas" };
   }
 
   if (action.type === "create_property") {
@@ -848,7 +915,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 // garante JSON válido) — reforçado em texto no fim do system prompt também
 // (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|send_message|broadcast_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
@@ -954,6 +1021,21 @@ export async function runAgent(opts: {
   // Defesa contra prompt injection: nenhuma mutação é executada apenas pela
   // decisão do modelo. Mesmo no modo piloto, o corretor precisa confirmar na
   // interface. answer/navigate/query_agenda já retornaram nos branches acima.
-  if (requiresHumanConfirmation(action)) return { reply, proposedAction: action };
+  if (requiresHumanConfirmation(action)) {
+    // Broadcast: a UI de confirmação só exibe o `reply`, então ele passa a ser
+    // AUTORITATIVO — reescrito aqui com a contagem REAL de contatos (do
+    // snapshot, não do que o modelo eventualmente chute) + a prévia do texto
+    // que vai sair. Assim o corretor sempre vê pra quantos vai e o quê antes
+    // de confirmar.
+    if (action.type === "broadcast_message") {
+      const recipients = snap.contacts.filter((c) => c.phone && String(c.phone).trim());
+      const preview = (action.message || "").trim();
+      const confirmReply = recipients.length === 0
+        ? "Você ainda não tem contatos salvos pra enviar."
+        : `Vou enviar esta mensagem para os seus ${recipients.length} contato${recipients.length > 1 ? "s" : ""}:\n\n"${preview}"`;
+      return { reply: confirmReply, proposedAction: action };
+    }
+    return { reply, proposedAction: action };
+  }
   return { reply };
 }

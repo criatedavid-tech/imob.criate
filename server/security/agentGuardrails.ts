@@ -37,6 +37,12 @@ const sendMessageAction = z.object({
   phone,
   message: shortText(2_000),
 }).strict();
+const broadcastMessageAction = z.object({
+  type: z.literal("broadcast_message"),
+  // Sem phone: o destino é a lista inteira de contatos salvos, resolvida no
+  // servidor (executeAction) — o modelo nunca fornece números aqui.
+  message: shortText(2_000),
+}).strict();
 const createPropertyAction = z.object({
   type: z.literal("create_property"),
   price: shortText(64),
@@ -116,6 +122,7 @@ const agentActionSchema = z.discriminatedUnion("type", [
   createVisitAction,
   queryAgendaAction,
   sendMessageAction,
+  broadcastMessageAction,
   createPropertyAction,
   updatePropertyAction,
   cancelVisitAction,
@@ -133,6 +140,7 @@ const confirmedAgentActionSchema = z.discriminatedUnion("type", [
   createVisitAction,
   queryAgendaAction,
   sendMessageAction,
+  broadcastMessageAction,
   confirmedCreatePropertyAction,
   updatePropertyAction,
   cancelVisitAction,

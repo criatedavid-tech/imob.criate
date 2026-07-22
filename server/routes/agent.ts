@@ -125,7 +125,7 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     // confirmação", mesmo precisando. Achado lendo o código, não relatado
     // pelo usuário — não confirmado ao vivo ainda.
     const CONFIRMABLE_ACTIONS = [
-      "create_lead", "create_visit", "send_message", "create_property",
+      "create_lead", "create_visit", "send_message", "broadcast_message", "create_property",
       "update_property", "cancel_visit", "update_visit", "end_rental_contract", "update_unit",
       "create_reminder", "schedule_followup",
     ];

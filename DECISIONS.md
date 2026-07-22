@@ -39,6 +39,15 @@
 
 ## Produto e experiência
 
+- **Broadcast do assistente não pausa a IA + trava de 50 (2026-07-22).** A ação
+  `broadcast_message` (enviar pra todos os contatos salvos) grava como
+  `senderType:"ai"` e NÃO faz handover — divulgação é proativa, a IA deve
+  continuar atendendo quem responder (ao contrário de `send_message`, que pausa).
+  Destino sempre resolvido no servidor (nunca o modelo manda números); teto de
+  50 contatos por vez — envio em massa real continua no roadmap (transporte
+  nativo). Confirmação mostra contagem real + prévia porque o backend reescreve
+  o `reply` (a UI só exibe o reply). Mensagem de divulgação SEMPRE inclui o
+  `vitrineUrl` do contexto e nunca cita "área de divulgação"/telas internas.
 - **Divulgação mostra a vitrine real, não promessa (2026-07-22).** O card "Ainda
   não disponível" (portais + campanha em massa) saiu; no lugar, uma prévia ao
   vivo via `iframe` da própria `/vitrine/:brokerId` (same-origin, CSP
