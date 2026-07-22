@@ -42,10 +42,11 @@
   `imf_webhook_inbox`. Claims atômicos com lease processam cada conversa em
   ordem; `imf_webhook_outbox` repassa ao N8N com retry e DLQ. O contrato é
   at-least-once e inclui `event_id` estável para deduplicação no workflow.
-- O Fly usa process groups separados: `web` executa `server.ts`, recebe HTTP e
-  apenas enfileira; `worker` executa `webhook-worker.ts`, processa inbox/outbox
-  e faz a conversão de áudio/imagem. O serviço HTTP é ligado somente a `web`.
-  Os claims com `SKIP LOCKED` permitem aumentar apenas o grupo `worker`.
+- O Fly usa três process groups: `web` executa `server.ts` e recebe HTTP;
+  `worker` executa `webhook-worker.ts`, processa inbox/outbox e converte
+  áudio/imagem; `scheduler` executa `scheduler-worker.ts` e concentra os jobs
+  periódicos. O serviço HTTP é ligado somente a `web`. Claims com
+  `SKIP LOCKED` permitem aumentar `worker`; `scheduler` permanece singleton.
 - Áudio e imagem são baixados em base64 pela UAZAPI e convertidos em texto pelo
   OpenRouter antes do N8N. Base64/URLs temporárias não são persistidos. Vídeo,
   documento, sticker e mídia de grupos permanecem fora do escopo.
@@ -91,12 +92,14 @@
 - Operações financeiras dos clientes ficam desligadas por
   `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e flag Vite equivalente; telas
   apenas registram e exibem valores/status.
-- Push em `v2` executa GitHub Actions: `npm ci`, TypeScript, Knip, build e
+- Push em `v2` executa GitHub Actions: `npm ci`, testes automatizados,
+  TypeScript, Knip, build e
   deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
 - `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a única origem pública e é
   versionada no `fly.toml`; links e webhooks não dependem de secret de URL.
-- A topologia inicial mantém uma Machine `web` ativa e uma `worker` ativa,
-  ambas `shared-cpu-1x`/1 GB; o Fly pode conservar uma standby parada para o
-  worker. A API ainda contém jobs periódicos legados, portanto o workflow usa
-  `--ha=false` e reafirma `web=1` até esses jobs serem isolados ou
-  comprovadamente idempotentes.
+- A topologia de transição mantém uma Machine `web` (1 GB), uma `worker`
+  (1 GB) e uma `scheduler` (512 MB) ativas. O workflow reafirma
+  `scheduler=1`. A web permanece em uma instância até teste de carga e Redis
+  distribuído; os jobs já não impedem escala horizontal da API.
+- `SCALABILITY_TEST_PLAN.md` define baseline, proteção contra carga acidental
+  em produção, cenários e critérios para subir de 100 a milhares de contas.

@@ -3,23 +3,41 @@
 ## Ponto exato de retomada
 
 - Checkout: `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- Branch: `v2`; última base publicada `fdd8f93` (datetime-local no Agendar Visita).
+- Branch: `v2`; última base publicada `853aff0` (alerta de visita marcada pela IA).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 
-## Feature: notificar corretor de visita marcada pela IA (2026-07-21) — aguardando autorização
+## Escala: scheduler dedicado e testes (2026-07-22) — em validação local
+
+- Linha de base: 8 contas, 4 tickets ativos, 49 mensagens/24h; inbox p95
+  4.101ms, outbox p95 1.371ms e zero backlog. Carga insuficiente para inferir
+  capacidade de 100 corretores.
+- Oito jobs recorrentes saíram de `server.ts` e foram centralizados em
+  `scheduler-worker.ts`; `webhook-worker.ts` permanece exclusivo da fila.
+- Novo runner impede sobreposição, continua após erro e drena no SIGTERM.
+- Fly ganha process group `scheduler` singleton com 512 MB; `web` continua em
+  uma instância até Redis e teste de carga controlado.
+- `npm test` possui 8 testes; o CI passa a executá-los antes do build/deploy.
+- Smoke local de `/api/health`: 1.000 requests, concorrência 25, 1.307,94
+  req/s, p95 36,8ms, p99 54,8ms e zero erro.
+- `scripts/load-smoke.mjs` bloqueia produção por padrão. Plano completo em
+  `SCALABILITY_TEST_PLAN.md`.
+- Próximo: concluir lint/Knip/build, publicar somente em `v2`, verificar os
+  três process groups e fazer smoke curto de `/api/health`. Não executar carga
+  pesada em produção.
+
+## Feature: notificar corretor de visita marcada pela IA (2026-07-21) — publicada (`853aff0`)
 
 Quando a IA de atendimento marca visita (`POST /api/agenda/n8n/create`), o
 corretor passa a ser avisado por badge na Agenda + WhatsApp num número
 pessoal (`imf_brokers.notification_phone`). Arquivos: migration
-`20260721g_visit_broker_notification.sql` (**aplicar manual no Supabase antes
-de funcionar**), `server/routes/agenda.ts` (flag + endpoint mark-chatbot-seen),
+`20260721g_visit_broker_notification.sql` (aplicada e verificada),
+`server/routes/agenda.ts` (flag + endpoint mark-chatbot-seen),
 `server/services/visitAlerts.ts` (job novo), `server.ts` (registro),
 `server/routes/brokers.ts` (notification_phone), `src/experience/ManualRail.tsx`
 (badge), `src/experience/ConfigArea.tsx` (campo). `tsc`/`knip`/`build`/
 `git diff --check` OK.
-- **Pendências:** aplicar a migration; verificar o badge/campo ao vivo (o
-  browser pane esteve indisponível nesta sessão); testar ponta a ponta com uma
+- **QA pendente:** verificar o badge/campo ao vivo e testar ponta a ponta com uma
   visita real vinda do N8N. Número pessoal precisa ser diferente do comercial.
 
 ## Melhoria: seletor de data/hora no Agendar Visita (2026-07-21) — publicado (fdd8f93)
@@ -31,7 +49,7 @@ pra pt-BR antes de gravar na nota do lead. Continua opcional e sem agendar
 nada em imf_agenda. `PropertyLanding.tsx`, `tsc`/`knip`/`build` aprovados,
 sem migration.
 
-## Fix: foto falsa de corretor na landing (2026-07-21) — aguardando autorização
+## Fix: foto falsa de corretor na landing (2026-07-21) — publicado (`457418a`)
 
 Seção "Seu Corretor" e modal "Saiba Mais" usavam foto de banco de imagens
 (Unsplash) como fallback quando o corretor não tinha foto no perfil —
@@ -40,7 +58,7 @@ monograma com a inicial do nome (`PropertyLanding.tsx`, dois pontos de
 render). Foto real do perfil (Dashboard 1.0) continua aparecendo quando
 existe. `tsc`/`knip`/`build` aprovados. Sem migration.
 
-## Bug: dados cadastrados sumidos da landing (2026-07-21) — aguardando autorização
+## Bug: dados cadastrados sumidos da landing (2026-07-21) — publicado (`9a4436f`)
 
 Landing pública não mostrava quartos/banheiros/piscina/etc. (faixa de
 specs, tags e mini-stats sumidos) apesar do formulário de edição exibir
@@ -52,10 +70,9 @@ fallback. Verificado contra payload real de produção (details com
 quartos:4, banheiros:4, piscina/varanda "Sim") — a extração estruturada do
 ditado pelo agente já funcionava; só a exibição estava quebrada.
 
-`tsc`/`knip`/`build` aprovados. Sem migration. Pendente: autorização para
-commit/push; depois recarregar a landing e conferir specs/tags/mini-stats.
+`tsc`/`knip`/`build` aprovados. Sem migration. QA visual da landing pendente.
 
-## Bug: microfone abre a galeria no iOS (2026-07-21) — 2ª correção aguardando autorização
+## Bug: microfone abre a galeria no iOS (2026-07-21) — publicado (`2383308`)
 
 iPhone 11: tocar no mic do Assistente IA abria o seletor de foto, ~6 de 7
 toques. A 1ª correção (`4c60a45`, remount do input via `key` — hipótese de
@@ -73,10 +90,9 @@ extra). Padrão Android intacto.
 
 `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
 
-Pendente: autorização do usuário para commit/push; depois do deploy, QA no
-iPhone (vários toques seguidos no mic, com e sem foto anexada).
+QA pendente no iPhone: vários toques seguidos no mic, com e sem foto anexada.
 
-## Bug: texto repetido na landing page de imóvel (2026-07-21) — aguardando autorização
+## Bug: texto repetido na landing page de imóvel (2026-07-21) — publicado (`865f592`)
 
 Print do usuário: a mesma descrição aparecia em todas as seções da página
 pública do imóvel. `src/pages/PropertyLanding.tsx` divide a descrição em
@@ -91,10 +107,9 @@ simulando a transformação com o texto real do print (fora do repo) — não
 consegui abrir o Browser pane nesta sessão pra QA visual ao vivo. Sem
 migration, sem mudança de backend.
 
-Pendente: autorização do usuário para commit/push; confirmação visual real
-fica por conta do usuário.
+QA visual real pendente.
 
-## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21) — aguardando autorização
+## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21) — publicado (`060b507`)
 
 Usuário pediu follow-up pro Hiago "às 16:00", sistema agendou 19:39.
 `create_reminder`/`schedule_followup` só aceitavam prazo relativo
@@ -106,12 +121,9 @@ valida resultado no futuro (recusa honesto se já passou).
 
 `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
 
-Pendente: autorização do usuário para commit/push. O follow-up errado do
-Hiago (19:39, `imf_agent_scheduled_followups`) continua pendente em
-produção — cancelar pela aba Lembretes (lixeira, "Aguardando envio") e
-pedir de novo depois do deploy.
+QA funcional com um novo horário absoluto continua recomendado.
 
-## Dois bugs de UI relatados pelo usuário (2026-07-21) — aguardando autorização
+## Dois bugs de UI relatados pelo usuário (2026-07-21) — publicados (`320ad1d`)
 
 Print do usuário: barra superior mobile (admin) com "Corretor/Admin" e
 "Piloto automático" sobrepostos, e campo de mensagem do Assistente IA de uma
@@ -128,9 +140,7 @@ Corrigido:
 
 `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
 
-Pendente: autorização do usuário para commit/push; confirmação visual real
-(mobile, sessão admin) fica por conta do usuário — não reproduzo login nem
-visão de admin sem credenciais.
+QA visual mobile com sessão admin continua pendente.
 
 ## Limpeza publicada e verificada (2026-07-21)
 
@@ -178,7 +188,7 @@ Usuário pediu duas formas de alertar sobre lembrete vencido. Badge
 `GET /api/agenda/visits?event_type=lembrete` já existente) publicado no
 commit `67aa90d`. WhatsApp pro corretor implementado logo em seguida, já
 sobre o transporte novo do Codex: `server/services/reminderAlerts.ts`
-(`runReminderWhatsappAlertTick`, job de 60s em `server.ts`, mesmo padrão de
+(`runReminderWhatsappAlertTick`, job de 60s, mesmo padrão de
 lock de `agentScheduledFollowups.ts`) + migration
 `20260721f_reminder_whatsapp_alert.sql` (coluna
 `imf_agenda.whatsapp_alert_sent_at`). `npx tsc --noEmit`, `npx knip`,
@@ -188,12 +198,9 @@ Limitação conhecida: o alerta sempre usa `imf_brokers.phone`/
 `uazapi_instance_token` (a conta), nunca a instância própria de um membro em
 modo "own" — não existe telefone do membro salvo no schema.
 
-Pendente:
-
-1. aplicar `20260721f_reminder_whatsapp_alert.sql` manualmente no Supabase;
-2. autorização do usuário para commit/push;
-3. validar com sessão autenticada: lembrete vencido mostra badge no sino e
-   chega mensagem de WhatsApp no número do corretor.
+Migration `20260721f_reminder_whatsapp_alert.sql` aplicada e código publicado
+em `30ef784`. QA pendente: sessão autenticada com lembrete vencido deve mostrar
+badge no sino e entregar WhatsApp no número do corretor.
 
 ## Pacote publicado: inbox/outbox duráveis
 
@@ -293,12 +300,14 @@ pendente e confirmar que a Agenda não mostra lembretes.
 
 Depois de validar esta entrega:
 
-1. repetir o smoke com uma nova mensagem real após a separação do worker;
-2. implementar métricas e alertas de idade da fila/DLQ;
-3. substituir polling da tela Conversas por Realtime/SSE;
-4. configurar n8n em queue mode e dimensionar workers com teste de carga;
-5. executar cenários de 2, 10 e 50 mensagens por segundo;
-6. retirar os schedulers restantes de `server.ts` antes de escalar `web`.
+1. **Concluído:** smoke real após a separação do worker e fila zerada;
+2. **Em andamento:** testes automatizados, baseline e scheduler dedicado;
+3. implementar métricas/alertas externos de idade da fila/DLQ;
+4. substituir polling da tela Conversas e dos badges por Realtime/SSE;
+5. configurar n8n em queue mode e dimensionar workers em ambiente controlado;
+6. executar cenários de 2, 10 e 50 mensagens por segundo conforme
+   `SCALABILITY_TEST_PLAN.md`;
+7. configurar Redis antes de aumentar `web` para duas ou mais Machines.
 
 ## Pendências anteriores que permanecem
 

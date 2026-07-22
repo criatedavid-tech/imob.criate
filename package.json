@@ -9,9 +9,12 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "node --import tsx --test tests/recurringJobs.test.ts tests/schedulerArchitecture.test.ts tests/loadHarness.test.ts",
+    "test:load": "node scripts/load-smoke.mjs",
     "start": "npm run start:web",
     "start:web": "tsx --max-old-space-size=1024 server.ts",
-    "start:worker": "tsx --max-old-space-size=1024 webhook-worker.ts"
+    "start:worker": "tsx --max-old-space-size=1024 webhook-worker.ts",
+    "start:scheduler": "tsx --max-old-space-size=384 scheduler-worker.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

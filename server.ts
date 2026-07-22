@@ -6,13 +6,6 @@ import helmet from "helmet";
 
 import { SUPABASE_URL } from "./server/config";
 import "./server/lib/infra"; // side-effect: inicializa Sentry/Redis se configurados
-import { prepareOverageBilling, reconcilePendingBillingActions } from "./server/services/billing";
-import { runFollowupTick } from "./server/services/followup";
-import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduledFollowups";
-import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
-import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
-import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
-import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
@@ -103,6 +96,13 @@ async function startServer() {
     next();
   });
 
+  // Liveness barata e sem dependências externas. Usada pelo Fly e pelo
+  // harness de carga para medir apenas a capacidade HTTP do process group
+  // `web`, sem criar ou alterar dados de clientes.
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, service: "web" });
+  });
+
   // Permissions-Policy: helmet não seta esse header sozinho. Nega por padrão
   // as APIs de hardware/privacidade sensíveis que o app não usa — exceto
   // microphone=(self), liberado pro botão de voz do Assistente
@@ -147,54 +147,9 @@ async function startServer() {
   app.use(vitrineRouter);
   app.use(contactsRouter);
 
-  // --- Jobs em background (ver server/services/) ---
-  // A inbox/outbox do WhatsApp roda exclusivamente no process group `worker`
-  // (webhook-worker.ts). O processo web apenas persiste o evento antes do ACK.
-  setInterval(runFollowupTick, 60_000);
-  console.log('[Follow-up] scheduler ativo (tick 60s)');
-
-  // Follow-up agendado ad-hoc pelo Assistente IA interno (ação
-  // "schedule_followup" em server/services/agent.ts) — distinto do
-  // Follow-Up Inteligente acima (régua automática por status de conversa).
-  setInterval(runScheduledAgentFollowupsTick, 60_000);
-  runScheduledAgentFollowupsTick();
-  console.log('[Agent Follow-up] scheduler ativo (tick 60s)');
-
-  // Alerta por WhatsApp pro próprio corretor quando um lembrete
-  // (create_reminder) vence — complementa o badge visual do sino
-  // (ManualRail.tsx, useDueReminderCount).
-  setInterval(runReminderWhatsappAlertTick, 60_000);
-  runReminderWhatsappAlertTick();
-  console.log('[Reminder Alert] scheduler ativo (tick 60s)');
-
-  // Alerta por WhatsApp pro corretor quando a IA de atendimento (N8N) marca
-  // uma visita (booked_by_chatbot) — complementa o badge visual na Agenda.
-  setInterval(runVisitWhatsappAlertTick, 60_000);
-  runVisitWhatsappAlertTick();
-  console.log('[Visit Alert] scheduler ativo (tick 60s)');
-
-  // Verifica a cada hora se algum corretor tem renovação amanhã e emite o
-  // valor combinado (mensalidade + excedente) na assinatura do Asaas.
-  setInterval(prepareOverageBilling, 60 * 60 * 1000);
-  prepareOverageBilling(); // executa uma vez ao subir (cobre restarts próximos ao billing)
-  console.log('[Billing Prep] scheduler ativo (tick 1h)');
-
-  // Corrige operações monetárias que o Asaas não confirmou na primeira
-  // tentativa (por exemplo, restaurar o valor-base após cobrar excedentes).
-  setInterval(reconcilePendingBillingActions, 5 * 60 * 1000);
-  reconcilePendingBillingActions();
-  console.log('[Billing Reconciliation] scheduler ativo (tick 5min)');
-
-  // Expiração de reservas PIX roda fora do GET de unidades. Assim a listagem
-  // não espera uma sequência de chamadas de cancelamento ao Asaas.
-  setInterval(expireDueUnitReservations, 60 * 1000);
-  expireDueUnitReservations();
-  console.log('[Reserva PIX] scheduler de expiração ativo (tick 60s)');
-
-  // Retenção de auditoria operacional: mantém 90 dias de webhook_logs.
-  setInterval(purgeExpiredWebhookLogs, 24 * 60 * 60 * 1000);
-  purgeExpiredWebhookLogs();
-  console.log('[Maintenance] purge de webhook_logs ativo (tick 24h, retenção 90d)');
+  // Jobs recorrentes não rodam na API. O process group singleton `scheduler`
+  // executa scheduler-worker.ts; assim o grupo `web` pode ser escalado sem
+  // duplicar follow-ups, alertas, billing ou manutenção.
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

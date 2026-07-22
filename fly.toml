@@ -28,6 +28,7 @@ kill_timeout = 30
 [processes]
   web = "node --import tsx --max-old-space-size=1024 server.ts"
   worker = "node --import tsx --max-old-space-size=1024 webhook-worker.ts"
+  scheduler = "node --import tsx --max-old-space-size=384 scheduler-worker.ts"
 
 [http_service]
   processes = ["web"]
@@ -44,16 +45,22 @@ kill_timeout = 30
     soft_limit = 200
     hard_limit = 250
 
-# Health check: a SPA responde 200 em "/"
+# Health check: liveness barata do processo Express, sem tocar banco/provedores.
 [[http_service.checks]]
   interval = "30s"
   timeout = "5s"
   grace_period = "20s"
   method = "GET"
-  path = "/"
+  path = "/api/health"
 
 [[vm]]
+  processes = ["web", "worker"]
   size = "shared-cpu-1x"
   # App ficou enxuto após mover imagens para o Storage (uso real ~150-300MB).
   # 1GB é folgado; suba para "2gb" se for escalar muito verticalmente.
   memory = "1gb"
+
+[[vm]]
+  processes = ["scheduler"]
+  size = "shared-cpu-1x"
+  memory = "512mb"

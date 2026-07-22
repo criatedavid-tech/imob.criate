@@ -62,9 +62,10 @@ Navegador
   React 19 + React Router + Tailwind CSS 4 + Vite
        │ HTTPS / JSON
        ▼
-Servidor único Node.js
-  Express 4 + TypeScript/tsx
-  autenticação, autorização, domínio, jobs e SPA estática
+Fly.io / Node.js em três process groups
+  web: Express, autenticação, domínio e SPA estática
+  worker: inbox/outbox e processamento de mídia
+  scheduler: jobs periódicos singleton
        │ service_role somente no backend
        ▼
 Supabase
@@ -85,7 +86,8 @@ Supabase
 - backend: Express 4, Zod, Helmet e `express-rate-limit`;
 - dados/autenticação: Supabase Auth, PostgreSQL e Supabase Storage;
 - infraestrutura opcional: Redis/ioredis e Sentry;
-- produção: container Docker no Fly.io, porta interna 3000.
+- produção: container Docker no Fly.io; HTTP na porta interna 3000 apenas no
+  process group `web`.
 
 ### Entradas e organização
 
@@ -1064,7 +1066,9 @@ Pendências de segurança/infraestrutura:
   explicitamente rate limit por VM;
 - confirmar rotação, mínimo privilégio e presença de todos os secrets no Fly;
 - fazer testes de isolamento com dois tenants reais e titular/membro;
-- adicionar uma suíte automatizada de regressão; hoje não há script `test`.
+- ampliar a suíte automatizada recém-criada para rotas, isolamento multi-tenant
+  e integrações; o gate inicial cobre concorrência/lifecycle dos jobs e
+  invariantes de topologia.
 
 ## 12. Jobs em background
 
@@ -1073,18 +1077,19 @@ Pendências de segurança/infraestrutura:
 | Inbox/outbox do WhatsApp | 1 s (configurável) | processa mensagens e entrega eventos ao N8N no process group `worker` |
 | Follow-Up | 60 s | dispara a sequência configurada |
 | Follow-up agendado (Assistente IA) | 60 s | manda o WhatsApp de `schedule_followup` cujo prazo já venceu |
+| Alerta de lembrete | 60 s | notifica o corretor sobre lembrete vencido |
+| Alerta de visita da IA | 60 s | notifica o corretor sobre visita marcada pelo chatbot |
 | Preparação de excedentes | 1 h + boot | prepara cobrança do próximo ciclo |
 | Reconciliação financeira | 5 min + boot | reprocessa intenções monetárias pendentes |
 | Expiração de reserva PIX | 60 s + boot | libera reservas vencidas e cancela cobrança |
 | Retenção de webhook logs | 24 h + boot | remove logs com mais de 90 dias |
 
-A inbox/outbox é a exceção: roda exclusivamente em `webhook-worker.ts`, fora
-do Express, e pode usar múltiplas Machines porque os claims usam
-`FOR UPDATE SKIP LOCKED`, lease e partição por conversa. Os demais jobs ainda
-rodam dentro de cada processo Express. Antes de aumentar o grupo `web`, revisar
-as garantias de idempotência e concorrência desses jobs ou movê-los para um
-scheduler singleton. Até lá, o workflow publica com `--ha=false` e executa
-`flyctl scale count web=1` depois de cada deploy.
+A inbox/outbox roda exclusivamente em `webhook-worker.ts` e pode usar múltiplas
+Machines porque os claims usam `FOR UPDATE SKIP LOCKED`, lease e partição por
+conversa. Os demais jobs rodam em `scheduler-worker.ts`, numa Machine singleton,
+com prevenção local de sobreposição e drenagem no SIGTERM. `server.ts` não
+registra schedulers. A web permanece em uma instância até Redis e teste de
+carga, não por risco de duplicar jobs. Ver `SCALABILITY_TEST_PLAN.md`.
 
 ## 13. Variáveis de ambiente
 
@@ -1136,7 +1141,8 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260721_agent_scheduled_followups.sql` | aplicada e verificada | tabela `imf_agent_scheduled_followups` do follow-up ad-hoc agendado (ação `schedule_followup` do Assistente IA interno) |
 | `20260721c_agenda_event_type.sql` | aplicada e verificada | coluna `imf_agenda.event_type` (`'visita'|'lembrete'`) — separa lembrete de visita real pra não contaminar contagens (ver seção "Ações agendadas do Assistente IA interno") |
 | `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | aplicada e verificada | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
-| `20260721f_reminder_whatsapp_alert.sql` | **aguardando aplicação manual** | coluna `imf_agenda.whatsapp_alert_sent_at` — marca lembrete já alertado por WhatsApp (ver seção "Ações agendadas do Assistente IA interno") |
+| `20260721f_reminder_whatsapp_alert.sql` | aplicada e verificada em 22/07/2026 | coluna `imf_agenda.whatsapp_alert_sent_at` — marca lembrete já alertado por WhatsApp |
+| `20260721g_visit_broker_notification.sql` | aplicada e verificada em 22/07/2026 | flags de visita do chatbot, one-shot do WhatsApp e telefone pessoal de notificação |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

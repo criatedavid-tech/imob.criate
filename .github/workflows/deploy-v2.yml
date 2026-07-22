@@ -40,6 +40,9 @@ jobs:
       - name: TypeScript
         run: npm run lint
 
+      - name: Automated tests
+        run: npm test
+
       - name: Dead code
         run: npx knip
 
@@ -64,11 +67,10 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}
 
-      # Enquanto os schedulers legados ainda rodam dentro de server.ts, duas
-      # Machines web executariam follow-ups/billing em paralelo. O worker da
-      # inbox/outbox pode escalar horizontalmente; o web permanece singleton
-      # até esses jobs serem movidos para um scheduler dedicado.
-      - name: Keep web scheduler singleton
-        run: flyctl scale count web=1 --app imobiflow-v2 --yes
+      # O scheduler é obrigatoriamente singleton. A web permanece em uma
+      # Machine até o teste de carga e a ativação do Redis distribuído; depois
+      # disso pode aumentar sem duplicar jobs recorrentes.
+      - name: Keep scheduler singleton
+        run: flyctl scale count web=1 scheduler=1 --app imobiflow-v2 --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}

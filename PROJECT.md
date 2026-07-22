@@ -34,12 +34,12 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 | Camada | Tecnologia |
 |---|---|
 | Frontend | React 19, Vite, TypeScript, Tailwind, design Liquid Glass |
-| Backend | Express + TypeScript (`server.ts`) e worker de webhooks (`webhook-worker.ts`) |
+| Backend | Express (`server.ts`), worker de webhooks (`webhook-worker.ts`) e scheduler singleton (`scheduler-worker.ts`) |
 | Banco/Auth | Supabase Postgres; backend com `service_role` |
 | WhatsApp | UAZAPI direta |
 | IA | OpenRouter; N8N orquestra o atendimento externo |
 | Assinatura SaaS | Asaas |
-| Deploy | Fly.io `gru`, process groups `web`/`worker`, via GitHub Actions |
+| Deploy | Fly.io `gru`, process groups `web`/`worker`/`scheduler`, via GitHub Actions |
 
 ## Regras permanentes
 
@@ -49,7 +49,7 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
   outros projetos.
 - Migrations são executadas manualmente pelo usuário no SQL Editor; nunca pelo
   deploy.
-- Antes de commit: `npm run lint`, `npx knip`, `npm run build` e
+- Antes de commit: `npm test`, `npm run lint`, `npx knip`, `npm run build` e
   `git diff --check`.
 - `git push origin v2` dispara validação e deploy automaticamente.
 - A URL pública canônica da V2 é exclusivamente `PUBLIC_APP_URL`, versionada

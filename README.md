@@ -104,6 +104,7 @@ cp .env.example .env
 # preencher .env com os valores reais (Supabase, Gemini, UAZAPI, Asaas, N8N...)
 
 npm run dev      # tsx --max-old-space-size=1024 server.ts — Express + Vite juntos, porta 3000
+npm test         # concorrência/lifecycle dos jobs + invariantes da topologia
 npm run lint     # tsc --noEmit — sempre rodar antes de commitar
 npm run build    # vite build → dist/
 ```
@@ -115,12 +116,14 @@ O Vite roda como middleware do Express — não precisa de processo separado.
 ## Deploy (Fly.io)
 
 ```bash
-npm run lint && npm run build          # confirma tsc + build limpos antes de qualquer deploy
+npm test && npm run lint && npm run build
 fly deploy -a imobiflow-v2 --config fly.toml --remote-only
 fly logs -a imobiflow-v2               # acompanhar
 ```
 
-Diferente do v1 (`main` → GitHub Actions → deploy automático), o v2 é deployado **manualmente** a partir da working tree — não há CI/CD configurado nesta branch ainda.
+A V2 é publicada automaticamente por GitHub Actions em todo push na branch
+`v2`, após testes, TypeScript, Knip e build. O Fly executa três process groups:
+`web`, `worker` e `scheduler` singleton.
 
 App em produção: `https://imobiflow-v2.fly.dev`
 

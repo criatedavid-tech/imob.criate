@@ -1,12 +1,30 @@
 # Estado do projeto
 
+## Escala: testes e scheduler dedicado em validação local (2026-07-22)
+
+- Auditoria confirmou a branch `v2` limpa e sincronizada em `853aff0`; os dez
+  commits posteriores a `4ffe30e` tiveram GitHub Actions aprovado.
+- Migrations `20260721f` e `20260721g` estão aplicadas: todas as cinco colunas
+  novas foram confirmadas no schema.
+- Baseline de 24h: 8 contas, 4 tickets ativos, 49 mensagens; inbox p95 4.101ms,
+  outbox p95 1.371ms, zero `pending`/`processing`/`dead`.
+- Criados `server/lib/recurringJobs.ts`, `scheduler-worker.ts`, process group
+  `scheduler`, endpoint `/api/health`, suíte Node Test e harness protegido de
+  carga. Oito testes aprovados; Fly config validada.
+- Smoke local: 1.000 GETs em `/api/health`, concorrência 25, 1.307,94 req/s,
+  p95 36,8ms, p99 54,8ms, 100% HTTP 200 e zero erro.
+- O scheduler impede execução sobreposta, sobrevive a falha de tick e drena no
+  SIGTERM. `server.ts` não registra mais jobs recorrentes.
+- Ainda não publicado. Próximo gate: lint, Knip, build, diff-check, commit/push
+  somente em `v2` e verificação dos três process groups.
+
 ## Feature: notificar corretor quando a IA de atendimento marca visita (2026-07-21)
 
 - Quando o cliente agenda visita conversando com a IA no WhatsApp
   (`POST /api/agenda/n8n/create`), o corretor não estava no loop. Agora é
   avisado por duas vias (escolha do usuário): badge na Agenda dentro do app
   **e** WhatsApp num número pessoal.
-- Migration `20260721g_visit_broker_notification.sql` (aplicar manualmente):
+- Migration `20260721g_visit_broker_notification.sql` aplicada e verificada:
   `imf_agenda.booked_by_chatbot`, `broker_seen_at`, `whatsapp_notified_at` +
   `imf_brokers.notification_phone` + índice parcial.
 - Backend: rota N8N grava `booked_by_chatbot=true`; novo
@@ -22,8 +40,7 @@
 - Motivo do número separado: a instância UAZAPI é o número comercial que a IA
   usa com o cliente; um número não notifica a si mesmo de forma confiável.
   Sem `notification_phone`, só o badge in-app aparece.
-- `tsc`, `knip`, `build`, `git diff --check` OK. Não commitado — aguardando
-  autorização. Depende da migration aplicada no Supabase pra funcionar.
+- Publicado no commit `853aff0`; GitHub Actions run `29871344447` aprovado.
 
 ## Melhoria: seletor de data/hora no "Agendar Visita" da landing (2026-07-21)
 
@@ -40,7 +57,7 @@
   sem mudança de backend. Não foi possível QA visual ao vivo (browser pane
   indisponível nesta sessão) — comportamento nativo do input, validar após
   deploy.
-- Pendente: autorização do usuário para commit/push.
+- Publicado no commit `fdd8f93`; QA visual ainda recomendado.
 
 ## Fix: foto falsa de corretor na landing (2026-07-21)
 
@@ -53,7 +70,7 @@
   (perfil do Dashboard 1.0, `broker_address.photoUrl`) continua aparecendo
   quando configurada.
 - `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration.
-- Pendente: autorização do usuário para commit/push.
+- Publicado no commit `457418a`; QA visual ainda recomendado.
 
 ## Bug: dados cadastrados sumidos da landing page do imóvel (2026-07-21)
 
@@ -79,7 +96,7 @@
   corretamente do ditado; o elo quebrado era só a exibição na landing.
 - `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration,
   sem mudança de backend.
-- Pendente: autorização do usuário para commit/push.
+- Publicado no commit `9a4436f`; QA visual ainda recomendado.
 
 ## Bug: microfone abre a galeria no iOS (2026-07-21, resolvido na 2ª tentativa)
 
@@ -105,7 +122,7 @@
   algum engine vazar hit-area). Padrão Android preservado por completo.
 - Validado: `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. QA
   no iPhone depende do usuário (não reproduzo iOS nem tenho device aqui).
-- Pendente: autorização do usuário para commit/push. Sem migration.
+- Publicado no commit `2383308`; QA em iPhone ainda recomendado. Sem migration.
 
 ## Bug: texto repetido nas seções da landing page de imóvel (2026-07-21)
 
@@ -135,8 +152,7 @@
   job — nada de errado, só um lembrete de que dev local usa o banco real).
 - `npx tsc --noEmit`, `npx knip`, `npm run build` aprovados. Sem migration,
   sem mudança de backend.
-- Pendente: autorização do usuário para commit/push; confirmação visual
-  real (recarregar a página do imóvel) fica por conta do usuário.
+- Publicado no commit `865f592`; confirmação visual real ainda recomendada.
 
 ## Bug: horário absoluto em schedule_followup/create_reminder (2026-07-21)
 
@@ -167,10 +183,7 @@
   (`{date: Date|null; reason?: ...}`), sem depender de narrowing de union.
 - Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
   aprovados.
-- Pendente: autorização do usuário para commit/push. O follow-up errado do
-  Hiago (19:39) continua pendente em produção — o usuário pode cancelar
-  direto na aba Lembretes (botão de lixeira, enquanto "Aguardando envio")
-  e pedir de novo pro Assistente IA depois do deploy.
+- Publicado no commit `060b507`; validar com um novo horário absoluto.
 
 ## Dois bugs de UI relatados pelo usuário (2026-07-21)
 
@@ -196,7 +209,7 @@
   aprovados. Confirmação visual real (mobile, admin autenticado) ainda
   depende do usuário — não reproduzo sessão autenticada nem visão de admin
   sem credenciais.
-- Pendente: autorização do usuário para commit/push. Nenhuma migration.
+- Publicado no commit `320ad1d`; QA visual mobile ainda recomendado.
 
 ## Alerta de lembrete vencido: badge + WhatsApp pro corretor (2026-07-21)
 
@@ -218,15 +231,14 @@
   `agentScheduledFollowups.ts`. Adiado até o Codex publicar a limpeza do
   transporte (`67aa90d`) — implementado logo em seguida, já sobre
   `server/services/uazapi.ts`. Migration
-  `20260721f_reminder_whatsapp_alert.sql` (coluna nova), ainda não aplicada.
+  `20260721f_reminder_whatsapp_alert.sql` (coluna nova), aplicada e verificada.
 - **Limitação conhecida:** o alerta por WhatsApp sempre usa o número da
   CONTA, nunca a instância própria de um membro em modo "own" — não existe
   telefone do membro salvo no schema.
 - Validado localmente: `npx tsc --noEmit`, `npx knip`, `npm run build`
   aprovados. Confirmação visual do badge e teste real do envio ainda
   dependem de sessão autenticada com lembrete vencido de verdade.
-- Pendente: aplicar a migration manualmente no Supabase e autorização do
-  usuário para commit/push.
+- Publicado no commit `30ef784`; QA real de badge + entrega ainda recomendado.
 
 ## Limpeza total do transporte antigo publicada (2026-07-21)
 
@@ -272,9 +284,8 @@
   parameter de `RETURNS TABLE` com nome igual a coluna real, referenciado sem
   alias): as outras quatro funções e o trigger usam variáveis `v_`/`p_`
   prefixadas ou já qualificam com alias — bug isolado, só nesta função.
-- **Pendente:** aplicar a migration manualmente no Supabase e autorização do
-  usuário para commit/push (regra padrão do projeto). Nenhuma mudança de
-  código TypeScript — só a função no Postgres.
+- Migration aplicada e correção publicada no commit `7f25b31`, run
+  `29854511196` aprovado. Nenhuma mudança de código TypeScript.
 
 ## Fila durável de webhooks publicada (2026-07-21)
 

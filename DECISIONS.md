@@ -8,8 +8,8 @@
   `work/imob.criate-phase3`; `C:\Users\Criate\imob.criate` está congelado.
 - **PMP v2.0.** `PROJECT.md`, `ARCHITECTURE.md`, `PROGRESS.md`, `DECISIONS.md` e
   `NEXT_TASK.md` formam a memória curta; `DOCUMENTACAO.md` mantém o detalhe.
-- **Deploy automático.** Push em `v2` valida com `npm ci`, TypeScript, Knip e
-  build antes de publicar. Não há gate manual posterior ao push.
+- **Deploy automático.** Push em `v2` valida com `npm ci`, testes automatizados,
+  TypeScript, Knip e build antes de publicar. Não há gate manual posterior.
 - **Migrations manuais.** O usuário sempre executa SQL no Supabase; deploy não
   aplica banco.
 
@@ -63,11 +63,15 @@
 - **URL pública única e versionada (2026-07-21).** A V2 usa somente
   `PUBLIC_APP_URL`, definida no `fly.toml`. Links, redirects e webhooks não
   aceitam fallback para endereço externo armazenado em secret.
-- **`web` singleton enquanto houver scheduler legado (2026-07-21).** O Fly
-  criou duas Machines web por alta disponibilidade no primeiro rollout, mas
-  isso também duplicaria os jobs periódicos ainda presentes em `server.ts`.
-  O deploy usa `--ha=false` e `flyctl scale count web=1`; redundância web só
-  volta depois de mover/auditar esses jobs. Worker continua escalável.
+- **Scheduler dedicado antes de escalar a API (2026-07-22).** Os oito jobs
+  periódicos saíram de `server.ts` e passaram a `scheduler-worker.ts`, com
+  prevenção de sobreposição, recuperação após erro e drenagem no SIGTERM. O
+  Fly mantém `scheduler=1`; `web` fica em 1 somente até teste de carga e Redis
+  compartilhado. O `worker` continua escalável de forma independente.
+- **Carga pesada nunca direto em produção (2026-07-22).** O harness bloqueia
+  `imobiflow-v2.fly.dev` por padrão. Testes realistas usam staging/conta de
+  teste com provedores isolados; produção recebe apenas smoke curto e
+  controlado. Critérios estão em `SCALABILITY_TEST_PLAN.md`.
 
 - **UAZAPI direta.** Não existe intermediário de mensagens; a reconexão
   reafirma o webhook canônico da V2.
