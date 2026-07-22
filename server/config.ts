@@ -66,8 +66,21 @@ export const CLIENT_FINANCIAL_OPERATIONS_ENABLED =
 // Token interno: N8N → servidor (substitui "credential" estática no N8N).
 // Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
 export const INTERNAL_PROXY_TOKEN = process.env.INTERNAL_PROXY_TOKEN || "";
+// Janela curta de rotação sem downtime. Configure com o token antigo,
+// troque a credencial do n8n para INTERNAL_PROXY_TOKEN e remova em seguida.
+export const INTERNAL_PROXY_TOKEN_PREVIOUS = process.env.INTERNAL_PROXY_TOKEN_PREVIOUS || "";
+// Autentica ImobiFlow -> webhook do n8n. Enquanto a credencial dedicada ainda
+// não foi criada, o token interno existente mantém compatibilidade. O header
+// só passa a ser exigido quando o Webhook node for configurado com Header Auth.
+export const N8N_WEBHOOK_TOKEN    = process.env.N8N_WEBHOOK_TOKEN || INTERNAL_PROXY_TOKEN;
 export const LLM_PROXY_ENC_KEY    = process.env.LLM_PROXY_ENC_KEY    || "";
 // Fallback: chave da empresa usada enquanto o corretor não configurou a própria.
 export const OPENROUTER_API_KEY   = process.env.OPENROUTER_API_KEY   || "";
+export const OPENROUTER_N8N_MODELS = new Set(
+  (process.env.OPENROUTER_N8N_MODELS || "openai/gpt-4o-mini,google/gemini-2.5-flash-lite")
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean),
+);
 export const SENTRY_DSN           = process.env.SENTRY_DSN           || "";
 export const REDIS_URL            = process.env.REDIS_URL            || "";

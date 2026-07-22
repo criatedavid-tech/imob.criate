@@ -7,6 +7,14 @@ import { makeRedisStore } from "../lib/infra";
 const skipInDev = () => process.env.NODE_ENV !== 'production';
 const AI_WINDOW_MS = 15 * 60 * 1000;
 const authenticatedUserKey = (req: any) => `user:${req.userId || 'unknown'}`;
+const internalBrokerKey = (req: any) => {
+  const brokerScope = req.body?.broker_id
+    || req.query?.broker_id
+    || req.params?.id
+    || req.params?.brokerPhone
+    || 'unknown';
+  return `broker:${String(brokerScope).slice(0, 100)}`;
+};
 
 // --- RATE LIMITERS ---
 export const authLimiter = rateLimit({
@@ -49,6 +57,31 @@ export const webhookLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded.' },
   store: makeRedisStore('webhook', 60 * 1000),
+});
+
+// Automações internas usam um token compartilhado, então o limite precisa
+// ser por conta/corretor e persistido no Redis para continuar correto quando o
+// grupo web tiver várias instâncias.
+export const n8nInternalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: internalBrokerKey,
+  message: { error: 'Limite de automações excedido para este corretor.' },
+  store: makeRedisStore('n8n-internal', 60 * 1000),
+  skip: skipInDev,
+});
+
+export const n8nLlmLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: internalBrokerKey,
+  message: { error: { message: 'Limite de IA excedido para este corretor.', type: 'rate_limit' } },
+  store: makeRedisStore('n8n-llm', 60 * 1000),
+  skip: skipInDev,
 });
 
 // Aplicados depois de requireUser: a chave vem do JWT validado, não de um

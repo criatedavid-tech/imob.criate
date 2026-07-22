@@ -2,9 +2,10 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
-import { INTERNAL_PROXY_TOKEN } from "../config";
 import { pauseAiForHumanTakeover } from "../services/followup";
 import { ensureConversationTicket } from "../services/conversationTickets";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
 
 export const followupRouter = express.Router();
 
@@ -65,11 +66,7 @@ followupRouter.post('/api/followup/config', requireUser, async (req, res) => {
 // [N8N] Cliente enviou mensagem → re-arma o timer; retorna { respond }.
 // Se respond=false (handover humano ativo), o agente N8N deve PARAR de responder.
 // Auth: Bearer INTERNAL_PROXY_TOKEN. Body: { broker_phone, customer_phone }.
-followupRouter.post('/api/followup/inbound', async (req, res) => {
-  const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido.' });
-  }
+followupRouter.post('/api/followup/inbound', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
     const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
     if (!customerPhone) {
@@ -165,11 +162,7 @@ followupRouter.post('/api/followup/inbound', async (req, res) => {
 
 // [N8N] Corretor respondeu manualmente → handover humano: interrompe o agente
 // e pausa follow-ups naquela conversa. Auth: Bearer INTERNAL_PROXY_TOKEN.
-followupRouter.post('/api/followup/broker-reply', async (req, res) => {
-  const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido.' });
-  }
+followupRouter.post('/api/followup/broker-reply', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
     const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || '').split(':')[0]);
     if (!customerPhone) {

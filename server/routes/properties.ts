@@ -2,8 +2,58 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { PUBLIC_APP_URL } from "../config";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
+import {
+  N8nInputValidationError,
+  parseN8nPropertyCatalog,
+} from "../security/n8nGuardrails";
 
 export const propertiesRouter = express.Router();
+
+const cleanCatalogText = (value: unknown, max: number) => String(value || '')
+  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+  .trim()
+  .slice(0, max);
+
+// Catálogo mínimo para o n8n. Evita entregar uma credencial Supabase ao
+// workflow e impede que cada mensagem carregue SELECT * sem limite.
+propertiesRouter.get(
+  "/api/properties/n8n/catalog",
+  requireInternalToken,
+  n8nInternalLimiter,
+  async (req, res) => {
+    try {
+      const { broker_id, limit } = parseN8nPropertyCatalog(req.query);
+      const { data, error } = await supabase
+        .from('imf_properties')
+        .select('id, title, price, location, description, slug, link, status, updated_at')
+        .eq('broker_id', broker_id)
+        .eq('status', 'disponivel')
+        .order('updated_at', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+
+      return res.json((data || []).map((property: any) => ({
+        id: property.id,
+        title: cleanCatalogText(property.title, 160),
+        price: cleanCatalogText(property.price, 80),
+        location: cleanCatalogText(property.location, 240),
+        description: cleanCatalogText(
+          String(property.description || '').split('---DETALHES-GERADOS---')[0],
+          1_000,
+        ),
+        link: cleanCatalogText(property.link, 2_048),
+      })));
+    } catch (err) {
+      if (err instanceof N8nInputValidationError) {
+        return res.status(400).json({ error: err.message });
+      }
+      console.error("Erro GET /api/properties/n8n/catalog:", err);
+      return res.status(500).json({ error: "Falha interna ao carregar catálogo." });
+    }
+  },
+);
 
 // --- ROTAS DE PROPRIEDADES (IMÓVEIS) ---
 /**

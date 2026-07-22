@@ -3,7 +3,6 @@ import { supabase } from "../supabase";
 import { sendUazapiText, resolveOutboundInstanceToken } from "../services/uazapi";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
-import { INTERNAL_PROXY_TOKEN } from "../config";
 import { pauseAiForHumanTakeover } from "../services/followup";
 import {
   ensureConversationTicket,
@@ -12,6 +11,13 @@ import {
 } from "../services/conversationTickets";
 import { resolveNewLeadStage } from "../services/crmPipelines";
 import { enqueueUazapiWebhook } from "../services/inboundWebhookQueue";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
+import {
+  isValidNormalizedBrazilianPhone,
+  N8nInputValidationError,
+  parseN8nAiReply,
+} from "../security/n8nGuardrails";
 
 export const conversationsRouter = express.Router();
 
@@ -48,18 +54,15 @@ async function canAccessTicket(userId: string, brokerId: string, ticketId: strin
 // de /api/followup/inbound e não depende de credenciais de outro sistema.
 // Auth: Bearer INTERNAL_PROXY_TOKEN.
 // Body: { broker_id, customer_phone, text, ticket_id? }.
-conversationsRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
-  const auth = (req.headers["authorization"] || "").replace("Bearer ", "").trim();
-  if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
-    return res.status(401).json({ error: "Token inválido." });
-  }
+conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
-    const brokerId = String(req.body?.broker_id || "").trim();
-    const text = String(req.body?.text || "").trim();
-    const customerPhone = normalizePhoneBR(String(req.body?.customer_phone || ""));
-    const ticketId = String(req.body?.ticket_id || "").trim() || undefined;
-    if (!brokerId || !text || !customerPhone) {
-      return res.status(400).json({ error: "broker_id, customer_phone e text são obrigatórios." });
+    const input = parseN8nAiReply(req.body);
+    const brokerId = input.broker_id;
+    const text = input.text;
+    const customerPhone = normalizePhoneBR(input.customer_phone);
+    const ticketId = input.ticket_id;
+    if (!isValidNormalizedBrazilianPhone(customerPhone)) {
+      return res.status(400).json({ error: "customer_phone inválido." });
     }
 
     const ticket = ticketId
@@ -100,8 +103,11 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err: any) {
+    if (err instanceof N8nInputValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
     console.error("[WhatsApp] erro em /ai-reply:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Falha interna ao enviar resposta." });
   }
 });
 

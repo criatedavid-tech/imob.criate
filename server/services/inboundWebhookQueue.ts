@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { N8N_WEBHOOK_URL } from "../config";
+import { N8N_WEBHOOK_TOKEN, N8N_WEBHOOK_URL } from "../config";
 import { normalizePhoneBR } from "../lib/crypto";
 import { fetchWithTimeout } from "../lib/http";
 import { supabase } from "../supabase";
@@ -467,6 +467,9 @@ async function dispatchOutboxRow(row: OutboxRow): Promise<void> {
       headers: {
         "Content-Type": "application/json",
         "X-ImobiFlow-Event-Id": row.id,
+        ...(N8N_WEBHOOK_TOKEN
+          ? { Authorization: `Bearer ${N8N_WEBHOOK_TOKEN}` }
+          : {}),
       },
       body: JSON.stringify({ ...row.payload, event_id: row.id }),
     });

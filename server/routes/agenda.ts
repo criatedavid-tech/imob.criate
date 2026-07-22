@@ -1,7 +1,17 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
-import { INTERNAL_PROXY_TOKEN } from "../config";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
+import { normalizePhoneBR } from "../lib/crypto";
+import {
+  N8nInputValidationError,
+  parseN8nAgendaContext,
+  parseN8nAgendaCreate,
+  parseN8nAgendaDelete,
+  parseN8nAgendaList,
+  parseN8nAgendaUpdate,
+} from "../security/n8nGuardrails";
 
 export const agendaRouter = express.Router();
 
@@ -209,29 +219,115 @@ agendaRouter.post("/api/agenda/visits/mark-chatbot-seen", requireUser, async (re
 // Endpoints internos de agenda consumidos pelo Agente IA Corretor.
 // ─────────────────────────────────────────────────────────────────────────
 
-function requireInternalToken(req: any, res: any): boolean {
-  const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
-    res.status(401).json({ error: 'Token inválido.' });
-    return false;
-  }
-  return true;
+function brasiliaLabel(value: string): string {
+  return new Date(value).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
 }
+
+async function hasAgendaConflict(
+  brokerId: string,
+  startMs: number,
+  endMs: number,
+  excludeId?: string,
+): Promise<boolean> {
+  let query = supabase
+    .from('imf_agenda')
+    .select('id, scheduled_at, duration_minutes')
+    .eq('broker_id', brokerId)
+    .eq('event_type', 'visita')
+    .neq('status', 'cancelado')
+    .gte('scheduled_at', new Date(startMs - 24 * 60 * 60_000).toISOString())
+    .lt('scheduled_at', new Date(endMs).toISOString())
+    .limit(1_000);
+  if (excludeId) query = query.neq('id', excludeId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).some((visit: any) => {
+    const existingStart = new Date(visit.scheduled_at).getTime();
+    const existingEnd = existingStart + (visit.duration_minutes || 60) * 60_000;
+    return startMs < existingEnd && endMs > existingStart;
+  });
+}
+
+function n8nAgendaError(res: express.Response, err: unknown, operation: string) {
+  if (err instanceof N8nInputValidationError) {
+    return res.status(400).json({ error: err.message });
+  }
+  if ((err as any)?.code === '23P01') {
+    return res.status(409).json({ error: 'Este horário já está ocupado.' });
+  }
+  console.error(`[Agenda N8N] ${operation}:`, err);
+  return res.status(500).json({ error: 'Falha interna na agenda.' });
+}
+
+// Contexto seguro para o agente: dados identificáveis apenas das visitas do
+// próprio telefone; compromissos dos demais clientes viram slots anônimos.
+agendaRouter.get(
+  '/api/agenda/n8n/context',
+  requireInternalToken,
+  n8nInternalLimiter,
+  async (req, res) => {
+    try {
+      const { broker_id, phone } = parseN8nAgendaContext(req.query);
+      const normalizedPhone = normalizePhoneBR(phone);
+      const now = Date.now();
+      const { data, error } = await supabase
+        .from('imf_agenda')
+        .select('id, client_name, client_phone, scheduled_at, duration_minutes, title, status, imf_properties(title)')
+        .eq('broker_id', broker_id)
+        .eq('event_type', 'visita')
+        .neq('status', 'cancelado')
+        .gte('scheduled_at', new Date(now - 24 * 60 * 60_000).toISOString())
+        .lte('scheduled_at', new Date(now + 120 * 24 * 60 * 60_000).toISOString())
+        .order('scheduled_at', { ascending: true })
+        .limit(1_000);
+      if (error) throw error;
+
+      const visits = data || [];
+      res.json({
+        customer_visits: visits
+          .filter((visit: any) => normalizePhoneBR(String(visit.client_phone || '')) === normalizedPhone)
+          .map((visit: any) => ({
+            id: visit.id,
+            title: visit.title || 'Visita',
+            scheduled_at: visit.scheduled_at,
+            horario_brasilia: brasiliaLabel(visit.scheduled_at),
+            duration_minutes: visit.duration_minutes || 60,
+            status: visit.status,
+            property: visit.imf_properties?.title || null,
+          })),
+        busy_slots: visits.map((visit: any) => ({
+          scheduled_at: visit.scheduled_at,
+          horario_brasilia: brasiliaLabel(visit.scheduled_at),
+          duration_minutes: visit.duration_minutes || 60,
+        })),
+      });
+    } catch (err) {
+      return n8nAgendaError(res, err, 'GET context');
+    }
+  },
+);
 
 // [N8N] Lista agendamentos de um corretor.
 // Query: broker_id (obrigatório), phone (opcional — filtra por cliente)
-agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
-  if (!requireInternalToken(req, res)) return;
+agendaRouter.get('/api/agenda/n8n/list', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
-    const { broker_id, phone } = req.query as { broker_id?: string; phone?: string };
-    if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+    const { broker_id, phone } = parseN8nAgendaList(req.query);
 
     let query = supabase
       .from('imf_agenda')
       .select('*, imf_properties(title)')
       .eq('broker_id', broker_id)
       .eq('event_type', 'visita') // agente externo só decide horário ocupado/livre com base em visita real, nunca lembrete do corretor
-      .order('scheduled_at', { ascending: true });
+      .order('scheduled_at', { ascending: true })
+      .limit(1_000);
 
     if (phone) {
       const normalized = phone.replace(/\D/g, '');
@@ -255,10 +351,7 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
       // isso que causou uma visita marcada 3h errada em 2026-07-14: a
       // ferramenta de agendamento do N8N gravava a hora local como se já
       // fosse UTC). Sempre usar ESTE campo pra decidir horário ocupado/livre.
-      horario_brasilia: new Date(a.scheduled_at).toLocaleString("pt-BR", {
-        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-        timeZone: "America/Sao_Paulo",
-      }),
+      horario_brasilia: brasiliaLabel(a.scheduled_at),
       duration_minutes: a.duration_minutes,
       status:           a.status,
       notes:            a.notes,
@@ -267,8 +360,7 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
       created_at:       a.created_at,
     })));
   } catch (err: any) {
-    console.error('[Agenda N8N] GET list:', err);
-    res.status(500).json({ error: err.message });
+    return n8nAgendaError(res, err, 'GET list');
   }
 });
 
@@ -279,25 +371,32 @@ agendaRouter.get('/api/agenda/n8n/list', async (req, res) => {
 // offset nenhum pra representar hora local — isso já causou uma visita
 // marcada 3h errada (16h combinada com o cliente virou 13h gravado, porque
 // o prompt do N8N mandava "Z" pra hora que na verdade era de Brasília).
-agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
-  if (!requireInternalToken(req, res)) return;
+agendaRouter.post('/api/agenda/n8n/create', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
+    const input = parseN8nAgendaCreate(req.body);
     const {
       broker_id, client_name, client_phone, client_email,
       startAt, endAt, title, notes, property_id
-    } = req.body;
-
-    if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
-    if (!startAt)   return res.status(400).json({ error: 'startAt é obrigatório.' });
-    // Nome do cliente costuma não estar disponível ainda no momento de agendar
-    // (o cliente pode marcar visita antes de se identificar) — telefone sempre
-    // temos, vindo da própria conversa, então nunca bloqueia a criação.
-    if (!client_name && !client_phone) return res.status(400).json({ error: 'client_name ou client_phone é obrigatório.' });
+    } = input;
 
     const scheduled_at = new Date(startAt).toISOString();
-    const duration_minutes = endAt
-      ? Math.round((new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000)
-      : 60;
+    const startMs = new Date(startAt).getTime();
+    const endMs = endAt ? new Date(endAt).getTime() : startMs + 60 * 60_000;
+
+    if (property_id) {
+      const { data: property, error: propertyError } = await supabase
+        .from('imf_properties')
+        .select('id')
+        .eq('id', property_id)
+        .eq('broker_id', broker_id)
+        .maybeSingle();
+      if (propertyError) throw propertyError;
+      if (!property) return res.status(400).json({ error: 'Imóvel inválido para este corretor.' });
+    }
+
+    if (await hasAgendaConflict(broker_id, startMs, endMs)) {
+      return res.status(409).json({ error: 'Este horário já está ocupado.' });
+    }
 
     const { data, error } = await supabase
       .from('imf_agenda')
@@ -307,7 +406,7 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
         client_phone:     client_phone || null,
         client_email:     client_email || null,
         scheduled_at,
-        duration_minutes: duration_minutes > 0 ? duration_minutes : 60,
+        duration_minutes: 60,
         title:            title || null,
         notes:            notes || null,
         property_id:      property_id || null,
@@ -326,28 +425,27 @@ agendaRouter.post('/api/agenda/n8n/create', async (req, res) => {
     if (error) throw error;
     res.status(201).json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
   } catch (err: any) {
-    console.error('[Agenda N8N] POST create:', err);
-    res.status(500).json({ error: err.message });
+    return n8nAgendaError(res, err, 'POST create');
   }
 });
 
 // [N8N] Atualiza agendamento.
 // Mesmo contrato de fuso do POST /create acima: startAt/endAt precisam de
 // offset explícito ("-03:00" pra Brasília, nunca "Z").
-agendaRouter.patch('/api/agenda/n8n/:id', async (req, res) => {
-  if (!requireInternalToken(req, res)) return;
+agendaRouter.patch('/api/agenda/n8n/:id', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { broker_id, startAt, endAt, title, notes, status } = req.body;
-
-    if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
+    const id = parseN8nAgendaDelete({ id: req.params.id, broker_id: req.body?.broker_id }).id;
+    const { broker_id, startAt, endAt, title, notes, status } = parseN8nAgendaUpdate(req.body);
 
     const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-    if (startAt) updates.scheduled_at = new Date(startAt).toISOString();
     if (endAt && startAt) {
-      updates.duration_minutes = Math.round(
-        (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000
-      );
+      const startMs = new Date(startAt).getTime();
+      const endMs = new Date(endAt).getTime();
+      if (await hasAgendaConflict(broker_id, startMs, endMs, id)) {
+        return res.status(409).json({ error: 'Este horário já está ocupado.' });
+      }
+      updates.scheduled_at = new Date(startAt).toISOString();
+      updates.duration_minutes = 60;
     }
     if (title)  updates.title  = title;
     if (notes)  updates.notes  = notes;
@@ -359,36 +457,38 @@ agendaRouter.patch('/api/agenda/n8n/:id', async (req, res) => {
       .eq('id', id)
       .eq('broker_id', broker_id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Agendamento não encontrado.' });
     res.json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
   } catch (err: any) {
-    console.error('[Agenda N8N] PATCH update:', err);
-    res.status(500).json({ error: err.message });
+    return n8nAgendaError(res, err, 'PATCH update');
   }
 });
 
 // [N8N] Cancela agendamento.
-agendaRouter.delete('/api/agenda/n8n/:id', async (req, res) => {
-  if (!requireInternalToken(req, res)) return;
+agendaRouter.delete('/api/agenda/n8n/:id', requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
-    const { id } = req.params;
-    const broker_id = (req.query.broker_id || req.body?.broker_id) as string;
+    const { id, broker_id } = parseN8nAgendaDelete({
+      id: req.params.id,
+      broker_id: req.query.broker_id || req.body?.broker_id,
+      event_id: req.query.event_id || req.body?.event_id,
+    });
 
-    if (!broker_id) return res.status(400).json({ error: 'broker_id é obrigatório.' });
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('imf_agenda')
       .delete()
       .eq('id', id)
-      .eq('broker_id', broker_id);
+      .eq('broker_id', broker_id)
+      .select('id')
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Agendamento não encontrado.' });
     res.json({ ok: true, deleted_id: id });
   } catch (err: any) {
-    console.error('[Agenda N8N] DELETE:', err);
-    res.status(500).json({ error: err.message });
+    return n8nAgendaError(res, err, 'DELETE');
   }
 });
 

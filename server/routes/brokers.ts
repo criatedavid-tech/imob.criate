@@ -3,10 +3,12 @@ import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
-import { TERMS_VERSION, INTERNAL_PROXY_TOKEN, UAZAPI_HOST } from "../config";
+import { TERMS_VERSION, UAZAPI_HOST } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance, setUazapiWebhook } from "../services/provisioning";
 import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
 
 export const brokersRouter = express.Router();
 
@@ -177,11 +179,7 @@ brokersRouter.post("/api/brokers/my-agent", requireUser, async (req, res) => {
 });
 
 // Endpoint para N8N — auth via INTERNAL_PROXY_TOKEN
-brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
-  const auth = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
-  if (!INTERNAL_PROXY_TOKEN || auth !== INTERNAL_PROXY_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido.' });
-  }
+brokersRouter.get("/api/brokers/:id/agent", requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const [agentResult, brokerResult] = await Promise.all([
@@ -213,8 +211,10 @@ brokersRouter.get("/api/brokers/:id/agent", async (req, res) => {
       : '';
 
     res.json({
-      agent_name: publicName || legacyName || 'Juliana',
-      system_prompt: agentResult.data?.system_prompt ?? '',
+      agent_name: (publicName || legacyName || 'Juliana').slice(0, 80),
+      system_prompt: String(agentResult.data?.system_prompt || '')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+        .slice(0, 4_000),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
