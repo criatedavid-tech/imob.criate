@@ -420,7 +420,7 @@ export function EquipeArea() {
                 </div>
                 <div className="flex items-center gap-4 text-[12px] text-[var(--text-low)] shrink-0">
                   <span>{r.closed_leads_month} lead{r.closed_leads_month === 1 ? '' : 's'} fechado{r.closed_leads_month === 1 ? '' : 's'} (mês)</span>
-                  <span className="text-[var(--text-hi)] font-semibold">{centsToReais(r.sales_total_cents)}</span>
+                  <span className="cr-money font-semibold">{centsToReais(r.sales_total_cents)}</span>
                 </div>
               </div>
             ))}

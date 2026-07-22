@@ -439,7 +439,7 @@ export function LocacaoArea() {
                   </p>
                 )}
                 <p className="text-[12px] text-[var(--text-low)] mb-1.5">Proprietário: {c.owner_name}</p>
-                <p className="text-[20px] font-black text-[var(--text-hi)] mt-2">{centsToReais(c.rent_amount_cents)}<span className="text-[12px] font-semibold text-[var(--text-low)]">/mês</span></p>
+                <p className="text-[20px] font-black cr-money mt-2">{centsToReais(c.rent_amount_cents)}<span className="text-[12px] font-semibold text-[var(--text-low)]">/mês</span></p>
                 <p className="text-[11px] text-[var(--text-low)] mt-1">Vencimento todo dia {c.due_day}</p>
 
                 {c.status === 'ativo' && (

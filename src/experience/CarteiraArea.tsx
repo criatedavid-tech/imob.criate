@@ -145,7 +145,7 @@ export function CarteiraArea() {
                 <p className="text-[12px] text-[var(--text-low)] flex items-center gap-1 mt-0.5 truncate">
                   <MapPin className="w-3 h-3 shrink-0" /> {p.location}
                 </p>
-                <p className="text-[16px] font-black text-[var(--text-hi)] mt-2">{p.price}</p>
+                <p className="text-[16px] font-black cr-money mt-2">{p.price}</p>
 
                 <div className="flex items-center gap-1.5 mt-4">
                   <button onClick={() => { setEditing(p); setShowForm(true); }}

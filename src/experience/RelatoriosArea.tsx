@@ -160,19 +160,19 @@ export function RelatoriosArea() {
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-[var(--text-low)]">VGV vendido</p>
-              <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-none">{centsToReais(s.salesTotalCents)}</p>
+              <p className="text-2xl font-black cr-money mt-2 leading-none">{centsToReais(s.salesTotalCents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">{s.salesCount} unidade(s) no período</p>
             </GlassCard>
             {s.scope === 'account' && (
               <>
                 <GlassCard className="!p-5">
                   <p className="text-[12px] font-medium text-[var(--text-low)]">Aluguéis recebidos</p>
-                  <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-none">{centsToReais(s.rentalPaidCents)}</p>
+                  <p className="text-2xl font-black cr-money mt-2 leading-none">{centsToReais(s.rentalPaidCents)}</p>
                   <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">{s.rentalPaymentsCount} pagamento(s) no período</p>
                 </GlassCard>
                 <GlassCard className="!p-5">
                   <p className="text-[12px] font-medium text-[var(--text-low)]">Carteira mensal ativa</p>
-                  <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-none">{centsToReais(s.rentalMonthlyCents)}</p>
+                  <p className="text-2xl font-black cr-money mt-2 leading-none">{centsToReais(s.rentalMonthlyCents)}</p>
                   <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">posição atual · não acumulada</p>
                 </GlassCard>
               </>

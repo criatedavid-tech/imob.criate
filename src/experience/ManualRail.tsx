@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Home, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
+  Home, Sparkles, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
   Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -133,7 +133,7 @@ export function ManualRail({
         style={{ background: 'var(--scrim-glass)', borderColor: 'var(--hairline)' }}>
         <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 shrink-0 border"
           style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
-          <Home className="w-5 h-5" />
+          <Sparkles className="w-5 h-5" />
         </div>
 
         {areas.map((a) => {
@@ -172,7 +172,7 @@ export function ManualRail({
               <div className="flex items-center gap-2 mb-6 px-2 pt-1">
                 <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border"
                   style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
-                  <Home className="w-4 h-4" />
+                  <Sparkles className="w-4 h-4" />
                 </div>
                 <span className="font-bold text-lg cr-text-hi">Criate</span>
               </div>

@@ -45,15 +45,20 @@ function Kpis({ spec }: { spec: WidgetSpec }) {
   const items = spec.data as any[];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {items.map((k, i) => (
+      {items.map((k, i) => {
+        // Valor monetário (VGV, faturamento, comissão…) ganha o latão — o
+        // detalhe premium da paleta. Contagens seguem em branco de alto contraste.
+        const isMoney = typeof k.value === 'string' && k.value.includes('R$');
+        return (
         <div key={i}>
           <GlassCard className="!p-5">
             <p className="text-[12px] font-medium text-[var(--text-low)]">{k.label}</p>
-            <p className="text-3xl font-black text-[var(--text-hi)] mt-2 leading-none">{k.value}</p>
+            <p className={`text-3xl font-black mt-2 leading-none ${isMoney ? 'cr-money' : 'text-[var(--text-hi)]'}`}>{k.value}</p>
             <p className={`text-[11px] font-semibold mt-2 ${toneColor[k.tone] || 'text-[var(--text-low)]'}`}>{k.delta}</p>
           </GlassCard>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -137,6 +142,17 @@ function Conversations({ spec }: { spec: WidgetSpec }) {
   );
 }
 
+// Chip de status do lead: cor semântica (fechado=sucesso, novo=azure, quente=alerta,
+// perdido=perigo). Presentacional — só mapeia a string de status existente numa cor.
+function leadStatusTone(status: string): string {
+  const t = (status || '').toLowerCase();
+  if (/fech|ganho|conclu|vendid/.test(t)) return 'text-[var(--success)] bg-[var(--success-soft)]';
+  if (/nov|new/.test(t))                  return 'text-[var(--accent)] bg-[var(--accent-soft)]';
+  if (/quent|hot/.test(t))                return 'text-[var(--warning)] bg-[var(--warning-soft)]';
+  if (/perd|lost|frio|cancel/.test(t))    return 'text-[var(--danger)] bg-[var(--danger-soft)]';
+  return 'text-[var(--text-mid)] bg-[var(--control-fill-hover)]';
+}
+
 // ── Leads recentes: dado real (lead da landing/portal), sem fingir ser conversa de WhatsApp ──
 function LeadsList({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (area: string) => void }) {
   const items = spec.data as any[];
@@ -155,7 +171,7 @@ function LeadsList({ spec, onAreaClick }: { spec: WidgetSpec; onAreaClick?: (are
               <span className="text-[14px] font-semibold text-[var(--text-hi)] truncate block">{l.name}</span>
               <p className="text-[12px] text-[var(--text-low)] truncate">{l.property}</p>
             </div>
-            <span className="text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 text-[var(--text-low)] bg-[var(--control-fill-hover)]">
+            <span className={`text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 ${leadStatusTone(l.status)}`}>
               {l.status}
             </span>
           </div>

@@ -104,12 +104,12 @@ export function FinanceiroArea() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-[var(--text-low)]">Receita mensal de locação</p>
-              <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-tight break-words">{centsToReais(summary!.rental_monthly_cents)}</p>
+              <p className="text-2xl font-black cr-money mt-2 leading-tight break-words">{centsToReais(summary!.rental_monthly_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">recorrente</p>
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-[var(--text-low)]">Recebido este mês</p>
-              <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-tight break-words">{centsToReais(summary!.rental_paid_this_month_cents)}</p>
+              <p className="text-2xl font-black cr-money mt-2 leading-tight break-words">{centsToReais(summary!.rental_paid_this_month_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">aluguel pago</p>
             </GlassCard>
             <GlassCard className={`!p-5 ${summary!.rental_overdue_count > 0 ? 'ring-1 ring-red-400/25' : ''}`}>
@@ -123,7 +123,7 @@ export function FinanceiroArea() {
             </GlassCard>
             <GlassCard className="!p-5">
               <p className="text-[12px] font-medium text-[var(--text-low)]">Receita de vendas</p>
-              <p className="text-2xl font-black text-[var(--text-hi)] mt-2 leading-tight break-words">{centsToReais(summary!.sales_total_cents)}</p>
+              <p className="text-2xl font-black cr-money mt-2 leading-tight break-words">{centsToReais(summary!.sales_total_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">{summary!.sales_count} unidade{summary!.sales_count === 1 ? '' : 's'}</p>
             </GlassCard>
           </div>
