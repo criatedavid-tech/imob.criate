@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2, Tags as TagsIcon, UserPlus, Check, Pencil } from 'lucide-react';
+import {
+  MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2,
+  Tags as TagsIcon, UserPlus, Check, Pencil, Menu, ArrowLeft, MoreVertical, RotateCcw,
+} from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { cn } from '../lib/utils';
 
 interface Tag { id: string; name: string; color: string | null; }
 interface Queue { id: string; name: string; color: string | null; }
@@ -52,13 +56,15 @@ const CATEGORY_LABEL: Record<Category, string> = {
   encerrado: 'Encerrado',
 };
 
-const STATUS_LABEL: Record<TicketStatus, string> = {
-  pending: 'Pendente',
-  open: 'Em atendimento',
-  closed: 'Encerrado',
-};
-
 const TAG_COLORS = ['#a78bfa', '#f472b6', '#fb923c', '#facc15', '#4ade80', '#38bdf8'];
+
+// Uma entrada da timeline unificada — mensagem OU nota interna, sempre na
+// posição cronológica certa (correção do bug "nota aparecia no topo": antes
+// vivia num painel separado acima das mensagens; agora é só mais um item
+// ordenado por created_at, igual ordenação já usada pra mensagens).
+type TimelineEntry =
+  | { kind: 'message'; id: string; created_at: string; message: Message }
+  | { kind: 'note'; id: string; created_at: string; note: Note };
 
 async function api(url: string, opts: RequestInit = {}) {
   const res = await fetch(url, { ...opts, headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -150,7 +156,7 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[16px] font-bold text-[var(--text-hi)] flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Gerenciar tags</h3>
+          <h3 className="text-[16px] font-bold text-[var(--text-hi)] flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Tags</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
         </div>
 
@@ -218,12 +224,120 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
   );
 }
 
+// Painel único de detalhes do ticket — substitui os 3 pickers soltos
+// (responsável/fila/tag) e as pills de status que antes poluíam o cabeçalho
+// da conversa. Mesmo padrão visual dos outros modais deste arquivo (cartão
+// centralizado), reaproveitado em vez de inventar um drawer/bottom-sheet novo.
+function TicketDetailsModal({
+  conversation, queues, members, allTags, newTagName, onNewTagNameChange, onCreateTag,
+  onAssign, onSetQueue, onAddTag, onRemoveTag, onReopen, reopening, onClose,
+}: {
+  conversation: ConversationSummary;
+  queues: Queue[];
+  members: Member[];
+  allTags: Tag[];
+  newTagName: string;
+  onNewTagNameChange: (v: string) => void;
+  onCreateTag: () => void;
+  onAssign: (userId: string) => void;
+  onSetQueue: (queueId: string) => void;
+  onAddTag: (tagId: string) => void;
+  onRemoveTag: (tagId: string) => void;
+  onReopen: () => void;
+  reopening: boolean;
+  onClose: () => void;
+}) {
+  const availableTags = allTags.filter((t) => !conversation.tags.some((ct) => ct.id === t.id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-[16px] font-bold text-[var(--text-hi)]">Detalhes do atendimento</h3>
+          <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+
+        {conversation.conversation_status === 'closed' && (
+          <button onClick={onReopen} disabled={reopening}
+            className="w-full mb-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+              bg-violet-500/25 border border-violet-300/30 hover:bg-violet-500/35 disabled:opacity-50 transition-colors">
+            {reopening ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />} Reabrir atendimento
+          </button>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-[11px] font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Responsável</label>
+            <select value={conversation.assigned_user_id || ''} onChange={(e) => onAssign(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--hairline-strong)] outline-none [color-scheme:dark]">
+              <option value="">Sem responsável</option>
+              {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Fila</label>
+            {queues.length === 0 ? (
+              <p className="text-[12px] text-[var(--text-low)]">Nenhuma fila cadastrada ainda.</p>
+            ) : (
+              <select value={conversation.queue_id || ''} onChange={(e) => onSetQueue(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--hairline-strong)] outline-none [color-scheme:dark]">
+                <option value="">Sem fila</option>
+                {queues.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Tags</label>
+            <div className="flex items-center gap-1.5 flex-wrap mb-2">
+              {conversation.tags.length === 0 && <span className="text-[12px] text-[var(--text-low)]">Nenhuma tag nesta conversa.</span>}
+              {conversation.tags.map((t) => (
+                <span key={t.id} className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full"
+                  style={{ backgroundColor: `${t.color}25`, color: t.color || '#fff' }}>
+                  {t.name}
+                  <button onClick={() => onRemoveTag(t.id)}><X className="w-2.5 h-2.5" /></button>
+                </span>
+              ))}
+            </div>
+            {availableTags.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                {availableTags.map((t) => (
+                  <button key={t.id} onClick={() => onAddTag(t.id)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full text-[var(--text-mid)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                    <Plus className="w-2.5 h-2.5" /> {t.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input value={newTagName} onChange={(e) => onNewTagNameChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onCreateTag()}
+                placeholder="Nova tag…"
+                className="flex-1 min-w-0 px-3 py-1.5 rounded-xl text-[12px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-[var(--hairline)]" />
+              <button onClick={onCreateTag} className="text-[12px] font-bold text-violet-300 px-2">Criar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Conversas real — lista quem está falando com a IA agora, a thread de cada
 // conversa, e permite responder manualmente / ligar-desligar a IA / gerenciar
 // o ticket (status, fila, atribuição, tags, notas — inspirado na API de
 // atendimento, implementado nativamente). Envio e entrada precisam de um
 // corretor com UAZAPI conectada pra funcionar de ponta a ponta — sem isso, a
 // lista funciona mas responder vai dar erro claro, não fingir sucesso.
+//
+// Layout: inbox estilo Zendesk/Intercom (lista + thread), não um Kanban de
+// arrastar — decisão de produto 2026-07-23, uma conversa recebe mensagem nova
+// a cada poucos segundos (poll), então mover um card ao vivo entre colunas
+// seria estranho e arriscado no mobile. No mobile a lista e a thread NUNCA
+// ficam empilhadas: é lista OU thread em tela cheia, alternando por `selected`
+// (sem media query nova — só troca `hidden`/visível abaixo do breakpoint `md`,
+// que continua mostrando as duas colunas lado a lado como sempre foi).
 export function ConversasArea() {
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -242,11 +356,8 @@ export function ConversasArea() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [notes, setNotes] = useState<Note[] | null>(null);
-  const [showNotes, setShowNotes] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
-  const [tagPickerOpen, setTagPickerOpen] = useState(false);
-  const [assignPickerOpen, setAssignPickerOpen] = useState(false);
-  const [queuePickerOpen, setQueuePickerOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [showNewConvo, setShowNewConvo] = useState(false);
   const [newPhone, setNewPhone] = useState('');
@@ -254,6 +365,9 @@ export function ConversasArea() {
   const [creatingConvo, setCreatingConvo] = useState(false);
   const [deletingConvo, setDeletingConvo] = useState(false);
   const [showTagsManager, setShowTagsManager] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   const [leadStatusByTicket, setLeadStatusByTicket] = useState<Record<string, 'created' | 'existing'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -332,10 +446,8 @@ export function ConversasArea() {
     if (selected) {
       loadMessages(selected);
       loadNotes(selected);
-      setShowNotes(false);
-      setTagPickerOpen(false);
-      setAssignPickerOpen(false);
-      setQueuePickerOpen(false);
+      setAddingNote(false);
+      setShowDetails(false);
     }
   }, [selected]);
 
@@ -363,6 +475,18 @@ export function ConversasArea() {
   }, [conversations]);
 
   const selectedConv = conversations?.find((c) => c.id === selected) || null;
+
+  // Timeline unificada: mensagens e notas internas juntas, sempre em ordem
+  // cronológica — a nota aparece na posição real dela (geralmente no fim,
+  // por ser adicionada depois), nunca numa seção separada acima de tudo.
+  const timeline = useMemo<TimelineEntry[]>(() => {
+    const msgEntries: TimelineEntry[] = (messages || []).map((m) => ({ kind: 'message', id: `m-${m.id}`, created_at: m.created_at, message: m }));
+    const noteEntries: TimelineEntry[] = (notes || []).map((n) => ({ kind: 'note', id: `n-${n.id}`, created_at: n.created_at, note: n }));
+    return [...msgEntries, ...noteEntries].sort((a, b) => {
+      const byDate = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return byDate || a.id.localeCompare(b.id);
+    });
+  }, [messages, notes]);
 
   const handleSend = async () => {
     if (!selected || !draft.trim()) return;
@@ -392,7 +516,7 @@ export function ConversasArea() {
   };
 
   const setStatus = async (next: TicketStatus) => {
-    if (!selected || selectedConv?.conversation_status === 'closed') return;
+    if (!selected) return;
     setActionError(null);
     try {
       await api(`/api/conversas/${encodeURIComponent(selected)}/status`, { method: 'PATCH', body: JSON.stringify({ conversation_status: next }) });
@@ -400,6 +524,12 @@ export function ConversasArea() {
     } catch (e: any) {
       setActionError(e.message || 'Falha ao mudar o status.');
     }
+  };
+
+  const reopenConversation = async () => {
+    setReopening(true);
+    await setStatus('open');
+    setReopening(false);
   };
 
   const setAssign = async (userId: string) => {
@@ -429,7 +559,6 @@ export function ConversasArea() {
     try {
       await api(`/api/conversas/${encodeURIComponent(selected)}/tags`, { method: 'POST', body: JSON.stringify({ tag_id: tagId }) });
       loadConversations();
-      setTagPickerOpen(false);
     } catch (e: any) {
       setActionError(e.message || 'Falha ao marcar tag.');
     }
@@ -463,6 +592,7 @@ export function ConversasArea() {
     try {
       await api(`/api/conversas/${encodeURIComponent(selected)}/notes`, { method: 'POST', body: JSON.stringify({ body: noteDraft.trim() }) });
       setNoteDraft('');
+      setAddingNote(false);
       loadNotes(selected);
     } catch (e: any) {
       setActionError(e.message || 'Falha ao salvar nota.');
@@ -513,7 +643,7 @@ export function ConversasArea() {
       const result = await api(`/api/conversas/${selected}/create-lead`, { method: 'POST' });
       setLeadStatusByTicket((cur) => ({ ...cur, [selected]: result.already_existed ? 'existing' : 'created' }));
     } catch (e: any) {
-      setActionError(e.message || 'Falha ao criar lead.');
+      setActionError(e.message || 'Falha ao criar CRM.');
     } finally {
       setCreatingLead(false);
     }
@@ -526,23 +656,49 @@ export function ConversasArea() {
 
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
+      {/* Cabeçalho + tabs de categoria pertencem à tela de LISTA — no mobile,
+          somem quando uma conversa está aberta (a thread vira a tela cheia). */}
+      <div className={cn('flex items-center justify-between mb-6', selected && 'hidden md:flex')}>
         <h2 className="text-2xl font-black text-[var(--text-hi)]">Conversas</h2>
         <div className="flex items-center gap-2">
+          {/* Desktop: os 2 botões sempre visíveis. */}
           <button
             onClick={() => setShowTagsManager(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-mid)]
+            className="hidden md:inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-mid)]
               bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors"
           >
-            <TagsIcon className="w-4 h-4" /> Gerenciar tags
+            <TagsIcon className="w-4 h-4" /> Tags
           </button>
           <button
             onClick={() => setShowNewConvo(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+            className="hidden md:inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
               bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors"
           >
             <Plus className="w-4 h-4" /> Nova conversa
           </button>
+
+          {/* Mobile: hambúrguer com os mesmos 2 itens dentro. */}
+          <div className="relative md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-2xl text-[var(--text-mid)]
+                bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            {mobileMenuOpen && (
+              <div className="absolute z-10 top-11 right-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
+                <button onClick={() => { setShowTagsManager(true); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-2 text-left text-[13px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-3 py-2">
+                  <TagsIcon className="w-3.5 h-3.5" /> Tags
+                </button>
+                <button onClick={() => { setShowNewConvo(true); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-2 text-left text-[13px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-3 py-2">
+                  <Plus className="w-3.5 h-3.5" /> Nova conversa
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -565,7 +721,7 @@ export function ConversasArea() {
         </GlassCard>
       ) : (
         <>
-          <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-4">
+          <div className={cn('flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-4', selected && 'hidden md:flex')}>
             {(['aguardando', 'ia', 'encerrado'] as Category[]).map((cat) => (
               <button
                 key={cat}
@@ -580,7 +736,7 @@ export function ConversasArea() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5">
-            <GlassCard className="!p-2 h-[640px] overflow-y-auto">
+            <GlassCard className={cn('!p-2 h-[640px] overflow-y-auto', selected && 'hidden md:block')}>
               {filtered.length === 0 ? (
                 <p className="text-[13px] text-[var(--text-low)] text-center py-8">Nada por aqui.</p>
               ) : (
@@ -618,7 +774,7 @@ export function ConversasArea() {
               )}
             </GlassCard>
 
-            <GlassCard className="!p-0 h-[640px] flex flex-col overflow-hidden">
+            <GlassCard className={cn('!p-0 h-[640px] flex flex-col overflow-hidden', !selected && 'hidden md:flex')}>
               {!selected || !selectedConv ? (
                 <div className="h-full flex-1 flex items-center justify-center text-[var(--text-low)] text-[14px]">
                   Selecione uma conversa
@@ -626,25 +782,30 @@ export function ConversasArea() {
               ) : (
                 <>
                   <div className="px-5 py-3.5 border-b border-[var(--hairline)] space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <span className="text-[14px] font-semibold text-[var(--text-hi)] block truncate">{selectedConv.contact_name || selectedConv.customer_phone}</span>
-                        <span className="text-[11px] text-[var(--text-low)] truncate block">
-                          {selectedConv.contact_name ? selectedConv.customer_phone + ' · ' : ''}
-                          <span className="font-mono text-[var(--text-low)]" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
-                        </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <button onClick={() => setSelected(null)} className="md:hidden shrink-0 text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors">
+                          <ArrowLeft className="w-4.5 h-4.5" />
+                        </button>
+                        <div className="min-w-0">
+                          <span className="text-[14px] font-semibold text-[var(--text-hi)] block truncate">{selectedConv.contact_name || selectedConv.customer_phone}</span>
+                          <span className="text-[11px] text-[var(--text-low)] truncate block">
+                            {selectedConv.contact_name ? selectedConv.customer_phone + ' · ' : ''}
+                            <span className="font-mono text-[var(--text-low)]" title={selectedConv.id}>Ticket #{selectedConv.id.slice(0, 8).toUpperCase()}</span>
+                          </span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {leadStatusByTicket[selectedConv.id] ? (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15">
-                            <Check className="w-3.5 h-3.5" /> Já é lead
+                            <Check className="w-3.5 h-3.5" /> CRM criado
                           </span>
                         ) : (
                           <button onClick={createLead} disabled={creatingLead}
-                            title="Cadastrar este contato como lead"
+                            title="Cadastrar este contato no CRM"
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
                               bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-40">
-                            {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar lead
+                            {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar CRM
                           </button>
                         )}
                         <button onClick={toggleAi} disabled={selectedConv.conversation_status === 'closed'}
@@ -652,6 +813,17 @@ export function ConversasArea() {
                             selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
                           } disabled:opacity-40 disabled:cursor-not-allowed`}>
                           <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
+                        </button>
+                        <button onClick={() => setAddingNote((v) => !v)}
+                          title="Adicionar nota interna"
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-xl transition-colors ${
+                            addingNote ? 'text-amber-200 bg-amber-500/15' : 'text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)]'
+                          }`}>
+                          <StickyNote className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => setShowDetails(true)} title="Detalhes do atendimento"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors">
+                          <MoreVertical className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={deleteConversation} disabled={deletingConvo}
                           title="Apagar este ciclo de atendimento"
@@ -661,123 +833,25 @@ export function ConversasArea() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {(['pending', 'open', 'closed'] as TicketStatus[]).map((s) => (
-                        <button key={s} onClick={() => setStatus(s)} disabled={selectedConv.conversation_status === 'closed'}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
-                            selectedConv.conversation_status === s
-                              ? 'bg-white/[0.16] text-[var(--text-hi)]'
-                              : 'text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]'
-                          } disabled:cursor-not-allowed`}>
-                          {STATUS_LABEL[s]}
-                        </button>
-                      ))}
-
-                      <div className="relative ml-1">
-                        <button onClick={() => { setAssignPickerOpen((v) => !v); setQueuePickerOpen(false); setTagPickerOpen(false); }}
-                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-[var(--control-fill)] text-[var(--text-mid)] hover:bg-[var(--control-fill)] transition-colors">
-                          {memberName(selectedConv.assigned_user_id) || 'Sem responsável'}
-                        </button>
-                        {assignPickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
-                            <button onClick={() => { setAssign(''); setAssignPickerOpen(false); }}
-                              className="w-full text-left text-[11px] text-[var(--text-mid)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
-                              Sem responsável
-                            </button>
-                            {members.map((m) => (
-                              <button key={m.user_id} onClick={() => { setAssign(m.user_id); setAssignPickerOpen(false); }}
-                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
-                                {m.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                    {selectedConv.tags.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {selectedConv.tags.map((t) => (
+                          <span key={t.id} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: `${t.color}25`, color: t.color || '#fff' }}>
+                            {t.name}
+                          </span>
+                        ))}
                       </div>
-
-                      <div className="relative">
-                        <button onClick={() => { setQueuePickerOpen((v) => !v); setAssignPickerOpen(false); setTagPickerOpen(false); }}
-                          className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-[var(--control-fill)] text-[var(--text-mid)] hover:bg-[var(--control-fill)] transition-colors">
-                          {queues.find((q) => q.id === selectedConv.queue_id)?.name || 'Sem fila'}
-                        </button>
-                        {queuePickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
-                            <button onClick={() => { setQueue(''); setQueuePickerOpen(false); }}
-                              className="w-full text-left text-[11px] text-[var(--text-mid)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
-                              Sem fila
-                            </button>
-                            {queues.map((q) => (
-                              <button key={q.id} onClick={() => { setQueue(q.id); setQueuePickerOpen(false); }}
-                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1.5">
-                                {q.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <button onClick={() => setShowNotes((v) => !v)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
-                          showNotes ? 'bg-white/[0.16] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]'
-                        }`}>
-                        <StickyNote className="w-3 h-3" /> Notas {notes && notes.length > 0 ? `(${notes.length})` : ''}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {selectedConv.tags.map((t) => (
-                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: `${t.color}25`, color: t.color || '#fff' }}>
-                          {t.name}
-                          <button onClick={() => removeTagFromConvo(t.id)}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                      ))}
-                      <div className="relative">
-                        <button onClick={() => setTagPickerOpen((v) => !v)}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full text-[var(--text-low)] hover:text-[var(--text-mid)] bg-[var(--control-fill)]">
-                          <Plus className="w-2.5 h-2.5" /> Tag
-                        </button>
-                        {tagPickerOpen && (
-                          <div className="absolute z-10 top-6 left-0 w-48 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-2 space-y-1 shadow-xl">
-                            {tags.filter((t) => !selectedConv.tags.some((st) => st.id === t.id)).map((t) => (
-                              <button key={t.id} onClick={() => addTagToConvo(t.id)}
-                                className="w-full text-left text-[11px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-2 py-1">
-                                {t.name}
-                              </button>
-                            ))}
-                            <div className="flex gap-1 pt-1">
-                              <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && createTag()}
-                                placeholder="Nova tag…"
-                                className="flex-1 min-w-0 px-2 py-1 rounded-lg text-[11px] bg-[var(--control-fill)] text-[var(--text-hi)] outline-none" />
-                              <button onClick={createTag} className="text-[11px] text-violet-300 font-bold px-1">+</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {showNotes && (
-                    <div className="px-5 py-3 border-b border-[var(--hairline)] bg-[var(--control-fill)] space-y-2 max-h-40 overflow-y-auto">
-                      {notes === null ? (
-                        <Loader2 className="w-4 h-4 text-[var(--text-low)] animate-spin" />
-                      ) : notes.length === 0 ? (
-                        <p className="text-[11px] text-[var(--text-low)]">Nenhuma nota ainda — visível só pro time.</p>
-                      ) : (
-                        notes.map((n) => (
-                          <div key={n.id} className="text-[12px] text-[var(--text-mid)] bg-[var(--control-fill)] rounded-xl px-3 py-2">
-                            {n.body}
-                            <div className="text-[10px] text-[var(--text-low)] mt-0.5">{memberName(n.user_id) || 'Você'}</div>
-                          </div>
-                        ))
-                      )}
-                      <div className="flex gap-2">
-                        <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && addNote()}
-                          placeholder="Anotar algo pro time…"
-                          className="flex-1 px-3 py-1.5 rounded-xl text-[12px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none" />
-                        <button onClick={addNote} className="text-[11px] font-bold text-violet-300 px-2">Salvar</button>
-                      </div>
+                  {selectedConv.conversation_status === 'closed' && (
+                    <div className="flex items-center justify-between gap-3 px-5 py-2.5 border-b border-[var(--hairline)] bg-[var(--control-fill)]">
+                      <span className="text-[12px] text-[var(--text-mid)]">Atendimento encerrado.</span>
+                      <button onClick={reopenConversation} disabled={reopening}
+                        className="inline-flex items-center gap-1.5 text-[12px] font-bold text-violet-300 hover:text-violet-200 transition-colors disabled:opacity-50">
+                        {reopening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />} Reabrir
+                      </button>
                     </div>
                   )}
 
@@ -803,16 +877,30 @@ export function ConversasArea() {
                             </button>
                           </div>
                         )}
-                        {messages.map((m) => (
-                          <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                        {timeline.map((entry) => entry.kind === 'message' ? (
+                          <div key={entry.id} className={`flex ${entry.message.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[13px] ${
-                              m.direction === 'out' ? 'bg-violet-500/20 text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-hi)]/85'
+                              entry.message.direction === 'out' ? 'bg-violet-500/20 text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-hi)]/85'
                             }`}>
-                              {m.body}
+                              {entry.message.body}
                               <div className="text-[10px] text-[var(--text-low)] mt-1">
-                                {m.sender_type === 'ai' ? 'IA' : m.sender_type === 'broker_manual' ? 'Você' : 'Cliente'}
+                                {entry.message.sender_type === 'ai' ? 'IA' : entry.message.sender_type === 'broker_manual' ? 'Você' : 'Cliente'}
                                 {' · '}
-                                {new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                {new Date(entry.message.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={entry.id} className="flex justify-center">
+                            <div className="max-w-[85%] w-full rounded-2xl px-4 py-2.5 text-[13px] bg-amber-500/10 border border-amber-400/20 text-[var(--text-mid)]">
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300/80 uppercase tracking-wide mb-1">
+                                <StickyNote className="w-3 h-3" /> Nota interna — só o time vê
+                              </div>
+                              {entry.note.body}
+                              <div className="text-[10px] text-[var(--text-low)] mt-1">
+                                {memberName(entry.note.user_id) || 'Você'}
+                                {' · '}
+                                {new Date(entry.note.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                               </div>
                             </div>
                           </div>
@@ -825,6 +913,19 @@ export function ConversasArea() {
                   {actionError && (
                     <p className="px-5 pb-1 text-[12px] text-red-300">{actionError}</p>
                   )}
+
+                  {addingNote && (
+                    <div className="flex items-center gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
+                      <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                        autoFocus
+                        placeholder="Nota interna (só o time vê)…"
+                        className="flex-1 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
+                      <button onClick={addNote} disabled={!noteDraft.trim()}
+                        className="text-[12px] font-bold text-amber-300 px-3 py-2 disabled:opacity-40">Salvar</button>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 p-3 border-t border-[var(--hairline)]">
                     <input
                       value={draft}
@@ -877,6 +978,25 @@ export function ConversasArea() {
         <TagsManagerModal
           onClose={() => setShowTagsManager(false)}
           onChanged={() => { api('/api/conversas/tags').then(setTags).catch(() => {}); loadConversations(); }}
+        />
+      )}
+
+      {showDetails && selectedConv && (
+        <TicketDetailsModal
+          conversation={selectedConv}
+          queues={queues}
+          members={members}
+          allTags={tags}
+          newTagName={newTagName}
+          onNewTagNameChange={setNewTagName}
+          onCreateTag={createTag}
+          onAssign={setAssign}
+          onSetQueue={setQueue}
+          onAddTag={addTagToConvo}
+          onRemoveTag={removeTagFromConvo}
+          onReopen={reopenConversation}
+          reopening={reopening}
+          onClose={() => setShowDetails(false)}
         />
       )}
     </div>

@@ -176,15 +176,17 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 ### Situação funcional por domínio
 
 - **Hoje:** indicadores da operação real por persona.
-- **Conversas:** caixa por status, histórico, resposta humana, liga/desliga IA,
-  responsável, fila, tags, notas e exclusão definitiva de um ticket/ciclo
+- **Conversas** (redesenhada 2026-07-23 — inbox estilo Zendesk/Intercom, não
+  Kanban de arrastar; ver "Redesign da área de Conversas" abaixo): caixa por
+  status, histórico, resposta humana, liga/desliga IA, responsável, fila,
+  tags, notas e exclusão definitiva de um ticket/ciclo
   (`DELETE /api/conversas/:ticketId`, com mensagens/tags/notas em cascata).
   Nome do contato (de `imf_contacts`, auto-salvo no primeiro inbound) exibido
   na lista e no cabeçalho. Tags têm gerenciamento próprio (criar, renomear,
-  trocar cor, apagar — botão "Gerenciar tags", `PATCH`/`DELETE
-  /api/conversas/tags/:id`). Botão "Criar lead" cadastra o contato da
+  trocar cor, apagar — botão **"Tags"**, `PATCH`/`DELETE
+  /api/conversas/tags/:id`). Botão **"Criar CRM"** cadastra o contato da
   conversa como lead (nome + telefone), sem imóvel de interesse ainda —
-  idempotente, não duplica se já existir um lead com o telefone
+  idempotente, mostra **"CRM criado"** se já existir um lead com o telefone
   (`POST /api/conversas/:ticketId/create-lead`).
 - **Assistente IA:** nome, instruções e Follow-Up Inteligente em área própria.
   Config não contém mais campos de IA na V2.
@@ -278,8 +280,14 @@ O trabalho local posterior à release v87 introduz um ID nativo por atendimento:
   diferentes do mesmo telefone;
 - enquanto o ticket estiver `pending` ou `open`, novas mensagens reutilizam o
   mesmo UUID;
-- depois de `closed`, o ticket fica imutável e a próxima mensagem do cliente
-  abre outro UUID em `pending`;
+- depois de `closed`, o corretor pode **reabrir** o mesmo ticket (botão
+  "Reabrir" na tela Conversas, decisão de produto 2026-07-23 — antes era
+  imutável de propósito). Se o cliente mandar mensagem antes de ser reaberto
+  manualmente, `ensureConversationTicket` abre outro UUID em `pending` do
+  mesmo jeito; os dois caminhos (reabertura manual e automática) nunca
+  colidem porque o endpoint de status só permite sair de `closed` quando não
+  existe outro ticket ativo (`pending`/`open`) pro mesmo telefone — a mesma
+  checagem que já existia pra evitar 2 tickets ativos simultâneos;
 - `followup_conversations` continua como ponte operacional do ticket atual por
   telefone, para preservar o scheduler de follow-up;
 - a tela Conversas lista tickets ativos e históricos e mostra um código curto
@@ -291,6 +299,63 @@ A migration `20260717_conversation_ticket_cycles.sql` faz o backfill. Como não
 é possível inferir com segurança os limites de ciclos históricos antigos, todo
 o conteúdo legado de um telefone é associado a um ticket inicial. A separação
 exata por ciclo passa a valer a partir da publicação desta implementação.
+
+### Redesign da área de Conversas (2026-07-23)
+
+Pedido do usuário (3 screenshots do app real no mobile): lista e thread
+apareciam **empilhadas verticalmente** (dois blocos de altura fixa, um
+embaixo do outro) — o grid `md:grid-cols-[320px_1fr]` colapsava pra 1 coluna
+no mobile sem esconder nenhum dos dois lados. Junto: 3 pills de status
+redundantes (Pendente/Em atendimento/Encerrado) dentro do cabeçalho da
+conversa (a lista já categoriza isso por IA atendendo/Aguardando você/
+Encerrado), "Sem fila"/Notas/+Tag soltos como botões desconectados, e um
+painel de Notas separado que abria ACIMA das mensagens.
+
+- **Decisão de arquitetura** (perguntada ao usuário antes de implementar):
+  **inbox reorganizado** (estilo Zendesk/Intercom/Chatwoot — lista + thread),
+  **não** um Kanban literal de arrastar cards. Motivo: uma conversa recebe
+  mensagem nova a cada poucos segundos (poll de 3-5s) e precisa de resposta
+  rápida — arrastar esse tipo de card ao vivo é incomum pro gênero e mais
+  arriscado no mobile. A referência a "Kanban/pipeline" do pedido é atendida
+  na linguagem visual (pills de categoria, badges), não em drag-and-drop.
+- **Mobile: lista OU thread, nunca as duas** — condicionado a `selected`
+  (`hidden md:block`/`hidden md:flex`, resolvido corretamente pelo
+  `tailwind-merge` do `cn()` — testado direto com o pacote real antes de
+  confiar). Seta "voltar" no cabeçalho da thread no mobile.
+  Header/tabs de categoria da tela de lista somem no mobile quando uma
+  conversa está aberta (`selected` truthy).
+- **Menu hambúrguer no mobile**: "Gerenciar tags"/"Nova conversa" (sempre
+  visíveis lado a lado no desktop) viram um dropdown de 2 itens no mobile.
+  Renomeado pros dois tamanhos: "Gerenciar tags" → **"Tags"**.
+- **Textos**: "Criar lead" → **"Criar CRM"**; "Já é lead" → **"CRM criado"**
+  (só string — mesmo ícone/handler/endpoint `create-lead`).
+- **Cabeçalho da thread simplificado**: removidas as 3 pills de status
+  (redundantes com a categorização da lista). Adicionado botão "Detalhes"
+  (ícone `MoreVertical`) e um ícone de nota interna direto no cabeçalho.
+  Se `closed`: faixa "Atendimento encerrado" + botão **"Reabrir"**.
+- **Modal "Detalhes do atendimento"** (mesmo padrão visual do
+  `TagsManagerModal` já existente — sem componente novo de drawer/sheet):
+  concentra Responsável e Fila (agora `<select>` nativo, no lugar dos 3
+  dropdowns customizados com estado próprio que existiam antes) + Tags
+  (add/remove) + "Reabrir atendimento" quando fechado.
+- **Timeline única**: mensagens e notas mescladas num só array ordenado por
+  `created_at` (com discriminante `kind` calculado no client, nada muda no
+  backend — `GET /notes` já vinha ordenado ascendente). Nota renderiza como
+  bolha visualmente distinta (âmbar, ícone `StickyNote`, "Nota interna — só
+  o time vê") na posição cronológica real — resolve a queixa de "nota
+  aparecia no topo" (não era ordenação errada, era um painel `showNotes`
+  separado que abria acima de tudo). Adicionar nota agora é um campo inline
+  curto (ícone na thread), não mais um painel.
+- **Backend — reabrir ticket encerrado**: `server/routes/conversations.ts`
+  `PATCH /api/conversas/:ticketId/status` — removido o bloqueio "Ticket
+  encerrado é imutável"; a checagem de "outro ticket ativo pro mesmo
+  telefone" (já existente, ver seção "Ciclos de ticket" abaixo) segue como o
+  guarda-corpo real, e continua suficiente porque `ensureConversationTicket`
+  já reaproveita o ticket ativo se o cliente mandar mensagem de novo.
+- Checklist: tsc limpo, knip ok, build ok, diff --check limpo. QA visual ao
+  vivo não rodada (mesma limitação de sempre — backend real dispara jobs de
+  produção); mecânica de show/hide confirmada rodando `tailwind-merge` de
+  verdade fora do browser, não só lida no código.
 
 **Estado:** migration aplicada e verificada manualmente no Supabase em
 17/07/2026. Tabela, colunas e índice retornaram `true`; conversas, mensagens,

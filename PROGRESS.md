@@ -1,5 +1,48 @@
 # Estado do projeto
 
+## Redesign da área de Conversas: inbox mobile+desktop (2026-07-23)
+
+- Usuário mostrou 3 screenshots do mobile real: lista e thread empilhadas
+  verticalmente (grid `md:grid-cols-[320px_1fr]` colapsava pra 1 coluna sem
+  esconder nenhum lado), 3 pills de status redundantes no cabeçalho, "Sem
+  fila"/Notas/+Tag soltos, painel de Notas separado abrindo acima das
+  mensagens (por isso "aparecia no topo" — não era ordenação errada).
+- Antes de implementar: usado EnterPlanMode (não pra "consultar o usuário",
+  mas porque é decisão de arquitetura de verdade). Perguntado via
+  AskUserQuestion: Kanban literal (arrastar cards, como NegociosArea.tsx) vs
+  inbox reorganizado (Zendesk/Intercom/Chatwoot). Usuário escolheu **inbox**
+  (recomendado) — conversa recebe mensagem nova a cada poucos segundos,
+  arrastar esse tipo de card ao vivo é incomum e mais arriscado no mobile.
+- Investigação de backend antes de mexer: `server/routes/conversations.ts`
+  tinha bloqueio explícito "ticket encerrado é imutável"; confirmado que a
+  checagem seguinte ("outro ticket ativo pro telefone") já é o guarda-corpo
+  suficiente, e que `ensureConversationTicket` (conversationTickets.ts) já
+  reaproveita ticket ativo — reabertura manual e automática convergem com
+  segurança. Confirmado também que a RPC de follow-up não filtra por
+  pending/open, só por timers — remover esse toggle da UI não quebra nada.
+- Implementado (`src/experience/ConversasArea.tsx` reescrito + 3 linhas em
+  `server/routes/conversations.ts`):
+  - Mobile: lista OU thread nunca empilhadas (`hidden md:block`/`md:flex`
+    condicionados a `selected`) + seta voltar.
+  - Menu hambúrguer mobile (Tags + Nova conversa); "Gerenciar tags"→"Tags".
+  - "Criar lead"→"Criar CRM"; "Já é lead"→"CRM criado".
+  - Cabeçalho da thread sem as 3 pills de status; botão Detalhes + faixa
+    "Reabrir" quando encerrado.
+  - Modal único "Detalhes do atendimento" (mesmo padrão visual do
+    TagsManagerModal) com Responsável/Fila (agora `<select>` nativo, trocando
+    3 dropdowns customizados por 2 selects) + Tags + Reabrir.
+  - Timeline única mensagens+notas ordenada por `created_at` (merge no
+    client, backend intocado).
+  - Backend: removido o bloqueio de imutabilidade do status `closed`.
+- Verificação extra: testei o `cn()`/`tailwind-merge` do projeto DE VERDADE
+  via node (não só lendo o código) pra confirmar que combinar `flex` +
+  `hidden md:flex` no mesmo elemento resolve corretamente (mantém a última
+  classe conflitante) — resultado confirmado, sem bug de CSS.
+- Checklist: tsc limpo, knip ok, build ok, diff --check limpo.
+- QA visual ao vivo NÃO rodada (mesma limitação de sempre: backend real
+  dispara jobs de produção, vite preview não autentica). Recomendo QA real
+  no celular assim que subir — é a mudança de UI mais estrutural da sessão.
+
 ## Teste de modelo: xiaomi/mimo-v2.5 no Assistente IA (2026-07-23)
 
 - Usuário pediu pra trocar o modelo do Assistente IA no OpenRouter, "para

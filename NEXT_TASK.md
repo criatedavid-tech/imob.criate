@@ -6,6 +6,16 @@
 - Branch: `v2`; última base publicada `eb5bd99` (hardening P0 contra prompt injection).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
+- **Uncommitted (2026-07-23):** redesign completo da área de Conversas —
+  `src/experience/ConversasArea.tsx` (reescrito) + `server/routes/conversations.ts`
+  (removido bloqueio de ticket encerrado imutável). Plano aprovado via
+  EnterPlanMode/ExitPlanMode em `C:\Users\Criate\.claude\plans\declarative-napping-sifakis.md`.
+  Checklist passou (tsc/knip/build/diff). Aguardando autorização de
+  commit+deploy.
+- **QA pós-deploy prioritário:** é a mudança de UI mais estrutural da sessão
+  — testar no celular de verdade: alternância lista↔thread (nunca
+  empilhadas), menu hambúrguer, modal de Detalhes (Responsável/Fila/Tags),
+  reabrir um ticket encerrado, timeline mesclada de mensagens+notas.
 - **Prévia da vitrine (DivulgacaoArea.tsx):** publicado (commit `59049de`).
 - **Uncommitted (2026-07-23):** patch "lente de vidro" aplicado (rail +
   ThemeToggle + index.css). Checklist passou. QA visual só em harness estático

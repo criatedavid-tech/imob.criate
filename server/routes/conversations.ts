@@ -342,7 +342,15 @@ conversationsRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, asy
   }
 });
 
-// Marca conversa como encerrada ou reaberta.
+// Marca conversa como encerrada ou reaberta. Reabrir um ticket encerrado é
+// permitido (decisão de produto 2026-07-23: "reabrir atendimento" na tela de
+// Conversas) — a checagem logo abaixo ("já existe outro ticket ativo pra esse
+// telefone") é o guarda-corpo real: ensureConversationTicket
+// (conversationTickets.ts) reaproveita esse MESMO ticket_id se o cliente
+// mandar mensagem de novo enquanto ele está reaberto, então os dois caminhos
+// (reabertura manual e reabertura automática pelo cliente) convergem com
+// segurança pro mesmo ciclo, sem violar o índice único parcial de
+// "1 ticket ativo por telefone" (uq_conversation_ticket_active_phone).
 conversationsRouter.patch("/api/conversas/:ticketId/status", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -354,10 +362,6 @@ conversationsRouter.patch("/api/conversas/:ticketId/status", requireUser, async 
     const { conversation_status } = req.body || {};
     if (!["pending", "open", "closed"].includes(conversation_status)) {
       return res.status(400).json({ error: "conversation_status deve ser 'pending', 'open' ou 'closed'." });
-    }
-
-    if (ticket.conversation_status === "closed" && conversation_status !== "closed") {
-      return res.status(409).json({ error: "Ticket encerrado é imutável. Uma nova interação deve abrir outro ticket." });
     }
 
     if (conversation_status !== "closed") {

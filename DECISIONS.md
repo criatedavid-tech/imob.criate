@@ -39,6 +39,19 @@
 
 ## Produto e experiência
 
+- **Conversas é inbox, não Kanban de arrastar (2026-07-23).** Perguntado
+  explicitamente ao usuário (AskUserQuestion) antes de reescrever a tela:
+  Kanban literal (colunas + drag-and-drop, como `NegociosArea.tsx`) vs inbox
+  reorganizado (Zendesk/Intercom/Chatwoot). Escolhido inbox — motivo: uma
+  conversa recebe mensagem nova a cada poucos segundos (poll 3-5s) e precisa
+  de resposta rápida; arrastar um card "ao vivo" é incomum pro gênero e mais
+  arriscado no mobile. A referência a "Kanban/pipeline" do pedido original
+  vira linguagem visual (pills de categoria/badges), não mecanismo de drag.
+  Ticket "encerrado" agora pode ser reaberto (botão "Reabrir") — o bloqueio
+  de imutabilidade em `PATCH /api/conversas/:ticketId/status` foi removido;
+  a checagem de "outro ticket ativo pro telefone" já existente é o
+  guarda-corpo real, e `ensureConversationTicket` já convergia reabertura
+  manual e automática pro mesmo ticket_id com segurança.
 - **Broadcast do assistente não pausa a IA + trava de 50 (2026-07-22).** A ação
   `broadcast_message` (enviar pra todos os contatos salvos) grava como
   `senderType:"ai"` e NÃO faz handover — divulgação é proativa, a IA deve
