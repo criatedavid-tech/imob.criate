@@ -76,8 +76,17 @@ export const N8N_WEBHOOK_TOKEN    = process.env.N8N_WEBHOOK_TOKEN || INTERNAL_PR
 export const LLM_PROXY_ENC_KEY    = process.env.LLM_PROXY_ENC_KEY    || "";
 // Fallback: chave da empresa usada enquanto o corretor não configurou a própria.
 export const OPENROUTER_API_KEY   = process.env.OPENROUTER_API_KEY   || "";
+// Modelo do Agente de Atendimento no WhatsApp (fluxo n8n "Teste-v2 imob").
+// Fonte única da verdade: o fluxo lê este valor via GET /api/brokers/:id/agent
+// (campo `model`) e ainda mantém um fallback embutido no próprio nó, então
+// trocar o modelo em produção é só `fly secrets set N8N_AGENT_MODEL=...`, sem
+// editar o n8n. Padrão: um modelo "flash" rápido/barato, forte em PT-BR e em
+// tool-calling, e SEM cadeia de raciocínio exposta — modelos de raciocínio
+// (ex.: xiaomi/mimo-v2.5) vazam o raciocínio no texto enviado ao cliente quando
+// usados direto no nó de agente do n8n, que não filtra esses tokens.
+export const N8N_AGENT_MODEL = (process.env.N8N_AGENT_MODEL || "google/gemini-2.5-flash").trim();
 export const OPENROUTER_N8N_MODELS = new Set(
-  (process.env.OPENROUTER_N8N_MODELS || "openai/gpt-4o-mini,google/gemini-2.5-flash-lite")
+  (process.env.OPENROUTER_N8N_MODELS || "openai/gpt-4o-mini,google/gemini-2.5-flash-lite,google/gemini-2.5-flash")
     .split(',')
     .map((model) => model.trim())
     .filter(Boolean),

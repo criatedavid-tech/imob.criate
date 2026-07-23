@@ -3,7 +3,7 @@ import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
-import { TERMS_VERSION, UAZAPI_HOST } from "../config";
+import { TERMS_VERSION, UAZAPI_HOST, N8N_AGENT_MODEL } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance, setUazapiWebhook } from "../services/provisioning";
 import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
@@ -212,6 +212,11 @@ brokersRouter.get("/api/brokers/:id/agent", requireInternalToken, n8nInternalLim
 
     res.json({
       agent_name: (publicName || legacyName || 'Juliana').slice(0, 80),
+      // Modelo do agente de atendimento no WhatsApp. Centralizado no backend
+      // (N8N_AGENT_MODEL) para o fluxo n8n não ficar com o modelo em branco
+      // (usava o default do nó, que vazava raciocínio) nem hardcoded. O nó do
+      // fluxo lê este campo com fallback próprio, então o contrato é resiliente.
+      model: N8N_AGENT_MODEL,
       system_prompt: String(agentResult.data?.system_prompt || '')
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
         .slice(0, 4_000),

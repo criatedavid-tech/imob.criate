@@ -84,12 +84,22 @@ const agendaDeleteSchema = z.object({
   event_id: uuid.optional(),
 }).strict();
 
+// O fluxo n8n sempre envia `ticket_id` no corpo, mas em payloads antigos ou
+// testes manuais ele pode vir vazio ("") — o Set node do n8n renderiza campo
+// ausente como string vazia. Coagimos ""/whitespace para undefined ANTES do
+// uuid.optional() para que o ai-reply caia no fallback por telefone
+// (ensureConversationTicket) em vez de rejeitar a resposta com 400.
+const optionalUuidField = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  uuid.optional(),
+);
+
 const aiReplySchema = z.object({
   broker_id: uuid,
   customer_phone: phone,
   text: safeText(4_000),
-  ticket_id: uuid.optional(),
-  event_id: uuid.optional(),
+  ticket_id: optionalUuidField,
+  event_id: optionalUuidField,
 }).strict();
 
 const llmMessageSchema = z.object({
