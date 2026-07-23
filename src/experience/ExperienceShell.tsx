@@ -336,24 +336,25 @@ export function ExperienceShell() {
           do app: fica solto aqui no topo pra não virar containing block dos
           vários modais "fixed inset-0" (leads, equipe, lançamentos, locação,
           conversas), que no mobile apareciam espelhados/presos.
-          ⚠️ A animação de abertura ERA um flip 3D (rotateY + perspective +
-          preserve-3d). Somado ao backdrop-blur de tela cheia, o compositor do
-          Safari/Chrome mobile não dava conta de rasterizar 3D + blur a cada
-          frame: travava ao ABRIR e às vezes ficava preso ao FECHAR (a animação
-          de saída não completava e o painel nunca desmontava). Trocado por um
-          slide+fade simples (translateX), que é composição de GPU barata e não
-          precisa de perspective/preserve-3d. Como o CommandBar não tem nenhum
-          filho "fixed", o transform daqui não afeta modal nenhum do app.
-          A altura usa 100dvh (viewport dinâmico) pra o rodapé/input nunca
-          ficarem atrás da barra do Safari no mobile. */}
+          FLIP-LITE (card-turn): abrir/fechar faz um giro de card em perspectiva
+          (rotateY + perspective + fade + scale). É SEGURO no mobile porque a face
+          que gira (CommandBar) é OPACA (app-bg, sem backdrop-blur) e é UM único
+          elemento — sem `preserve-3d` e sem blur na camada animada, então é só um
+          transform de GPU barato. Foi o blur de tela cheia + 3D juntos que
+          travavam o compositor do Safari/Chrome mobile antes (travava ao abrir e
+          às vezes ficava preso ao fechar); aqui nenhum dos dois acontece. Como o
+          CommandBar não tem nenhum filho "fixed", o transform daqui não afeta
+          modal nenhum do app. A altura usa 100dvh (viewport dinâmico) pra o
+          rodapé/input nunca ficarem atrás da barra do Safari no mobile. */}
       <AnimatePresence>
         {chatOpen && (
           <motion.div
             key="ai-chat"
-            initial={{ opacity: 0, x: '6%' }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: '6%' }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            initial={{ opacity: 0, rotateY: -90, scale: 0.9 }}
+            animate={{ opacity: 1, rotateY: 0, scale: 1 }}
+            exit={{ opacity: 0, rotateY: -90, scale: 0.9 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            style={{ transformPerspective: 1600, transformOrigin: 'center', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
             className="fixed inset-0 z-[100] h-[100dvh]"
           >
             <CommandBar

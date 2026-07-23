@@ -1,5 +1,27 @@
 # Estado do projeto
 
+## Flip-lite (card-turn) ao abrir/fechar o Assistente IA (2026-07-23)
+
+- Patch recebido pronto (`imob-cristal-rodadas-2a4.patch`, 3 commits
+  bundlados). Partes 1/3 e 2/3 já estavam publicadas (1/3 = commit `bfb30a6`
+  do Codex; 2/3 = commit `6d77e24`, a lente de vidro já aplicada nesta sessão)
+  — extraída e aplicada só a parte 3/3, nova.
+- `ExperienceShell.tsx`: a animação de abrir/fechar o Assistente IA trocou de
+  slide+fade (`translateX`) pra um giro de card em perspectiva — "flip-lite"
+  (`rotateY -90→0` + `scale 0.9→1` + fade, `transformPerspective:1600`).
+- Repete um problema já visto antes (flip 3D que travava o compositor no
+  Safari/Chrome mobile, por isso tinha sido trocado por slide) — mas de um
+  jeito deliberadamente seguro desta vez: um ÚNICO elemento anima (sem
+  `preserve-3d`, sem elemento pai 3D separado do filho), e a face que gira
+  (`CommandBar`) é opaca (`app-bg`, comentário explícito "Sem backdrop-blur"
+  no próprio arquivo) — sem blur de tela cheia empilhado com o 3D, que era a
+  combinação que travava antes. Verificado lendo o código do CommandBar antes
+  de aplicar.
+- Checklist: tsc limpo, knip ok, build ok, diff --check limpo.
+- QA visual real não feita (mesma limitação de sempre: dev server dispara
+  jobs de produção, vite preview não autentica); recomendar teste ao vivo no
+  celular após o deploy, já que o risco histórico dessa animação é mobile.
+
 ## Tooltip honesto no botão de autonomia (2026-07-23)
 
 - Usuário pediu explicação simples dos 3 modos (Piloto automático/Copiloto/
