@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   MessageCircle, Loader2, User, Send, Bot, Plus, X, StickyNote, Trash2,
   Tags as TagsIcon, UserPlus, Check, Pencil, Menu, ArrowLeft, MoreVertical, RotateCcw,
+  Image as ImageIcon, FileText, Mic, Download, ChevronDown, KanbanSquare,
 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
@@ -36,8 +37,14 @@ interface Message {
   direction: 'in' | 'out';
   sender_type: 'customer' | 'ai' | 'broker_manual';
   body: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
   created_at: string;
 }
+
+interface CrmStage { id: string; name: string; position: number; stage_type: string; color: string | null; pipeline_id: string; }
+interface CrmPipeline { id: string; name: string; is_default: boolean; stages: CrmStage[]; }
+interface LeadInfo { exists: boolean; lead_id?: string; pipeline_id?: string | null; pipeline_stage_id?: string | null; }
 
 type Category = 'ia' | 'aguardando' | 'encerrado';
 
@@ -369,9 +376,30 @@ export function ConversasArea() {
   const [reopening, setReopening] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
-  const [leadStatusByTicket, setLeadStatusByTicket] = useState<Record<string, 'created' | 'existing'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldScrollToEndRef = useRef(false);
+
+  // Layout: o painel de conversa mede a altura livre até o fim da viewport, pra
+  // caber sem scroll de página — a lista de mensagens rola por dentro e o
+  // composer fica sempre à vista (desktop e mobile). Ver measurePanel().
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState<number | null>(null);
+
+  // Composer com mídia (imagem/documento/áudio).
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+
+  // CRM na conversa: estado real do lead (existe? em qual etapa?) + as etapas
+  // do pipeline pra mover direto daqui.
+  const [pipelines, setPipelines] = useState<CrmPipeline[]>([]);
+  const [leadInfoByTicket, setLeadInfoByTicket] = useState<Record<string, LeadInfo>>({});
+  const [crmMenuOpen, setCrmMenuOpen] = useState(false);
+  const [movingStage, setMovingStage] = useState(false);
 
   const loadConversations = () => {
     fetch('/api/conversas', { headers: authService.getAuthHeaders() })
@@ -391,7 +419,30 @@ export function ConversasArea() {
     api('/api/conversas/queues').then(setQueues).catch(() => setQueues([]));
     api('/api/conversas/tags').then(setTags).catch(() => setTags([]));
     api('/api/equipe/members').then(setMembers).catch(() => setMembers([]));
+    api('/api/crm/pipelines').then((p) => setPipelines(Array.isArray(p) ? p : [])).catch(() => setPipelines([]));
   }, []);
+
+  // Mede a altura livre do painel de conversa até o rodapé da viewport, para
+  // caber sem scroll de página. Roda quando o que está ACIMA do grid muda de
+  // altura (seleção esconde cabeçalho/tabs no mobile, lista carrega/esvazia) e
+  // em todo resize. Só lê posição (getBoundingClientRect().top), nunca a altura
+  // que ele mesmo define — então não há laço de realimentação.
+  useLayoutEffect(() => {
+    const measurePanel = () => {
+      const el = gridRef.current;
+      if (!el) { setPanelHeight(null); return; }
+      // Mede a partir do topo do container rolável: se o usuário trocou de aba
+      // com a página rolada, o topo do grid seria lido deslocado. Zerar aqui
+      // também é o comportamento desejado (abrir Conversas mostra o começo).
+      const scrollParent = el.closest('main');
+      if (scrollParent && scrollParent.scrollTop !== 0) scrollParent.scrollTop = 0;
+      const top = el.getBoundingClientRect().top;
+      setPanelHeight(Math.max(340, Math.round(window.innerHeight - top - 16)));
+    };
+    measurePanel();
+    window.addEventListener('resize', measurePanel);
+    return () => window.removeEventListener('resize', measurePanel);
+  }, [selected, category, error, conversations === null, (conversations || []).length === 0]);
 
   // Sem isso, uma resposta nova (do cliente ou da IA) só aparecia depois de
   // um F5 manual — a lista de conversas e a thread aberta agora se atualizam
@@ -442,12 +493,20 @@ export function ConversasArea() {
     api(`/api/conversas/${encodeURIComponent(ticketId)}/notes`).then(setNotes).catch(() => setNotes([]));
   };
 
+  const fetchLeadInfo = (ticketId: string) => {
+    api(`/api/conversas/${encodeURIComponent(ticketId)}/lead`)
+      .then((info: LeadInfo) => setLeadInfoByTicket((cur) => ({ ...cur, [ticketId]: info })))
+      .catch(() => { /* silencioso: o botão só fica em "Criar CRM" */ });
+  };
+
   useEffect(() => {
     if (selected) {
       loadMessages(selected);
       loadNotes(selected);
       setAddingNote(false);
       setShowDetails(false);
+      setCrmMenuOpen(false);
+      if (!leadInfoByTicket[selected]) fetchLeadInfo(selected);
     }
   }, [selected]);
 
@@ -475,6 +534,14 @@ export function ConversasArea() {
   }, [conversations]);
 
   const selectedConv = conversations?.find((c) => c.id === selected) || null;
+
+  // CRM da conversa aberta: o lead já existe? em qual pipeline/etapa? (usado
+  // pelo botão que alterna entre "Criar no CRM" e o seletor de etapa).
+  const currentLead = selected ? leadInfoByTicket[selected] : undefined;
+  const leadPipeline = currentLead?.exists
+    ? (pipelines.find((p) => p.id === currentLead.pipeline_id) || pipelines.find((p) => p.is_default) || pipelines[0])
+    : undefined;
+  const leadStage = leadPipeline?.stages.find((s) => s.id === currentLead?.pipeline_stage_id);
 
   // Timeline unificada: mensagens e notas internas juntas, sempre em ordem
   // cronológica — a nota aparece na posição real dela (geralmente no fim,
@@ -641,13 +708,115 @@ export function ConversasArea() {
     setActionError(null);
     try {
       const result = await api(`/api/conversas/${selected}/create-lead`, { method: 'POST' });
-      setLeadStatusByTicket((cur) => ({ ...cur, [selected]: result.already_existed ? 'existing' : 'created' }));
+      const lead = result?.lead || {};
+      setLeadInfoByTicket((cur) => ({
+        ...cur,
+        [selected]: { exists: true, lead_id: lead.id, pipeline_id: lead.pipeline_id ?? null, pipeline_stage_id: lead.pipeline_stage_id ?? null },
+      }));
     } catch (e: any) {
       setActionError(e.message || 'Falha ao criar CRM.');
     } finally {
       setCreatingLead(false);
     }
   };
+
+  // Move o lead de etapa direto pela conversa. Atualização otimista + rollback
+  // em falha, pra não travar a UI mesmo com a rede lenta.
+  const moveLeadStage = async (stage: CrmStage) => {
+    if (!selected) return;
+    const info = leadInfoByTicket[selected];
+    if (!info?.lead_id) return;
+    const prev = info.pipeline_stage_id ?? null;
+    setMovingStage(true);
+    setLeadInfoByTicket((cur) => ({ ...cur, [selected]: { ...info, pipeline_id: stage.pipeline_id, pipeline_stage_id: stage.id } }));
+    try {
+      await api(`/api/leads/${encodeURIComponent(info.lead_id)}/stage`, { method: 'PATCH', body: JSON.stringify({ stage_id: stage.id }) });
+      setCrmMenuOpen(false);
+    } catch (e: any) {
+      setLeadInfoByTicket((cur) => ({ ...cur, [selected]: { ...info, pipeline_stage_id: prev } }));
+      setActionError(e.message || 'Falha ao mover no CRM.');
+    } finally {
+      setMovingStage(false);
+    }
+  };
+
+  // Envio de MÍDIA: lê o arquivo/gravação em base64 e manda pro backend, que
+  // sobe no Storage e dispara via UAZAPI. Um upload por vez (uploadingMedia).
+  const sendMediaFile = async (kind: 'image' | 'document' | 'audio', file: Blob, filename: string, mimeHint?: string) => {
+    if (!selected) return;
+    if (file.size === 0) { setActionError('Arquivo vazio.'); return; }
+    if (file.size > 7 * 1024 * 1024) { setActionError('Arquivo muito grande (máximo 7 MB).'); return; }
+    setUploadingMedia(true);
+    setActionError(null);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
+      const mime = (file as File).type || mimeHint || (dataUrl.startsWith('data:') ? dataUrl.slice(5, dataUrl.indexOf(';')) : 'application/octet-stream');
+      await api(`/api/conversas/${encodeURIComponent(selected)}/reply-media`, {
+        method: 'POST',
+        body: JSON.stringify({ kind, data_base64: base64, mime, filename }),
+      });
+      loadMessages(selected);
+      loadConversations();
+    } catch (e: any) {
+      setActionError(e.message || 'Falha ao enviar a mídia.');
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const onPickFile = (kind: 'image' | 'document') => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite reenviar o mesmo arquivo depois
+    if (file) sendMediaFile(kind, file, file.name);
+  };
+
+  // Gravação de áudio (nota de voz). Escolhe o melhor formato suportado pelo
+  // navegador; para o stream ao terminar pra liberar o microfone.
+  const startRecording = async () => {
+    if (recording || uploadingMedia) return;
+    setActionError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      const preferred = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+      const mimeType = preferred.find((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(t));
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) audioChunksRef.current.push(ev.data); };
+      recorder.onstop = () => {
+        const type = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type });
+        recordingStreamRef.current?.getTracks().forEach((t) => t.stop());
+        recordingStreamRef.current = null;
+        const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+        if (blob.size > 0) sendMediaFile('audio', blob, `audio-${Date.now()}.${ext}`, type);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setActionError('Não consegui acessar o microfone. Verifique a permissão do navegador.');
+      recordingStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recordingStreamRef.current = null;
+    }
+  };
+
+  const stopRecording = (send: boolean) => {
+    const recorder = mediaRecorderRef.current;
+    setRecording(false);
+    if (!recorder) return;
+    if (!send) { audioChunksRef.current = []; recorder.onstop = () => { recordingStreamRef.current?.getTracks().forEach((t) => t.stop()); recordingStreamRef.current = null; }; }
+    try { recorder.stop(); } catch { /* já parado */ }
+    mediaRecorderRef.current = null;
+  };
+
+  useEffect(() => () => { recordingStreamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
 
   const memberName = (userId: string | null) => {
     if (!userId) return null;
@@ -735,8 +904,8 @@ export function ConversasArea() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5">
-            <GlassCard className={cn('!p-2 h-[640px] overflow-y-auto', selected && 'hidden md:block')}>
+          <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5">
+            <GlassCard style={{ height: panelHeight ?? undefined }} className={cn('!p-2 h-[640px] overflow-y-auto', selected && 'hidden md:block')}>
               {filtered.length === 0 ? (
                 <p className="text-[13px] text-[var(--text-low)] text-center py-8">Nada por aqui.</p>
               ) : (
@@ -774,7 +943,7 @@ export function ConversasArea() {
               )}
             </GlassCard>
 
-            <GlassCard className={cn('!p-0 h-[640px] flex flex-col overflow-hidden', !selected && 'hidden md:flex')}>
+            <GlassCard style={{ height: panelHeight ?? undefined }} className={cn('!p-0 h-[640px] min-h-0 flex flex-col overflow-hidden', !selected && 'hidden md:flex')}>
               {!selected || !selectedConv ? (
                 <div className="h-full flex-1 flex items-center justify-center text-[var(--text-low)] text-[14px]">
                   Selecione uma conversa
@@ -796,18 +965,55 @@ export function ConversasArea() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {leadStatusByTicket[selectedConv.id] ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15">
-                            <Check className="w-3.5 h-3.5" /> CRM criado
-                          </span>
-                        ) : (
-                          <button onClick={createLead} disabled={creatingLead}
-                            title="Cadastrar este contato no CRM"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
-                              bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-40">
-                            {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar CRM
-                          </button>
-                        )}
+                        <div className="relative">
+                          {currentLead === undefined ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-low)] bg-[var(--control-fill)]">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> CRM
+                            </span>
+                          ) : !currentLead.exists ? (
+                            <button onClick={createLead} disabled={creatingLead}
+                              title="Cadastrar este contato no CRM"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
+                                bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-40">
+                              {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar no CRM
+                            </button>
+                          ) : (
+                            <button onClick={() => setCrmMenuOpen((v) => !v)}
+                              title="Mover este lead de etapa no CRM"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 transition-colors max-w-[200px]">
+                              <KanbanSquare className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">{leadStage ? `CRM: ${leadStage.name}` : 'CRM criado'}</span>
+                              <ChevronDown className="w-3 h-3 shrink-0 opacity-70" />
+                            </button>
+                          )}
+
+                          {crmMenuOpen && currentLead?.exists && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setCrmMenuOpen(false)} />
+                              <div className="absolute z-40 right-0 top-10 w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
+                                <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">
+                                  {leadPipeline ? leadPipeline.name : 'Etapas'}
+                                </div>
+                                {(leadPipeline?.stages || []).length === 0 ? (
+                                  <p className="px-2.5 py-2 text-[12px] text-[var(--text-low)]">Nenhuma etapa neste pipeline.</p>
+                                ) : (
+                                  [...(leadPipeline?.stages || [])].sort((a, b) => a.position - b.position).map((s) => {
+                                    const active = s.id === currentLead.pipeline_stage_id;
+                                    return (
+                                      <button key={s.id} onClick={() => moveLeadStage(s)} disabled={movingStage || active}
+                                        className={cn('w-full flex items-center gap-2 text-left rounded-xl px-2.5 py-2 text-[13px] transition-colors disabled:cursor-default',
+                                          active ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'text-[var(--text-mid)] hover:bg-[var(--control-fill)] hover:text-[var(--text-hi)]')}>
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-[var(--glass-border)]" style={{ backgroundColor: s.color || '#8b8b8b' }} />
+                                        <span className="flex-1 truncate">{s.name}</span>
+                                        {active && <Check className="w-3.5 h-3.5 text-emerald-300 shrink-0" />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                         <button onClick={toggleAi} disabled={selectedConv.conversation_status === 'closed'}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
                             selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
@@ -855,7 +1061,7 @@ export function ConversasArea() {
                     </div>
                   )}
 
-                  <div className="flex-1 p-5 overflow-y-auto">
+                  <div className="flex-1 min-h-0 p-5 overflow-y-auto">
                     {loadingMessages || !messages ? (
                       <div className="flex justify-center pt-16">
                         <Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" />
@@ -882,7 +1088,26 @@ export function ConversasArea() {
                             <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[13px] ${
                               entry.message.direction === 'out' ? 'bg-violet-500/20 text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-hi)]/85'
                             }`}>
-                              {entry.message.body}
+                              {entry.message.media_url && entry.message.media_type === 'image' && (
+                                <a href={entry.message.media_url} target="_blank" rel="noreferrer" className="block mb-1">
+                                  <img src={entry.message.media_url} alt="imagem" loading="lazy"
+                                    className="rounded-lg max-h-64 max-w-full object-cover" />
+                                </a>
+                              )}
+                              {entry.message.media_url && entry.message.media_type === 'audio' && (
+                                <audio src={entry.message.media_url} controls preload="none" className="mb-1 max-w-full w-64" />
+                              )}
+                              {entry.message.media_url && entry.message.media_type === 'document' && (
+                                <a href={entry.message.media_url} target="_blank" rel="noreferrer"
+                                  className="flex items-center gap-2 mb-1 rounded-lg px-3 py-2 bg-black/20 hover:bg-black/30 transition-colors">
+                                  <FileText className="w-4 h-4 shrink-0" />
+                                  <span className="truncate text-[12px] underline">{entry.message.body || 'Documento'}</span>
+                                  <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                                </a>
+                              )}
+                              {entry.message.body && !(entry.message.media_url && entry.message.media_type === 'document') && (
+                                <div className="whitespace-pre-wrap break-words">{entry.message.body}</div>
+                              )}
                               <div className="text-[10px] text-[var(--text-low)] mt-1">
                                 {entry.message.sender_type === 'ai' ? 'IA' : entry.message.sender_type === 'broker_manual' ? 'Você' : 'Cliente'}
                                 {' · '}
@@ -926,21 +1151,61 @@ export function ConversasArea() {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2 p-3 border-t border-[var(--hairline)]">
-                    <input
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                      placeholder={selectedConv.conversation_status === 'closed' ? 'Ticket encerrado' : 'Responder como você…'}
-                      disabled={selectedConv.conversation_status === 'closed'}
-                      className="flex-1 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]
-                        bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)]"
-                    />
-                    <button onClick={handleSend} disabled={sending || !draft.trim() || selectedConv.conversation_status === 'closed'}
-                      className="w-10 h-10 flex items-center justify-center rounded-2xl bg-violet-500/25 text-[var(--text-hi)]
-                        hover:bg-violet-500/35 disabled:opacity-40 transition-colors">
-                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    </button>
+                  <div className="p-3 border-t border-[var(--hairline)]">
+                    {/* Inputs de arquivo escondidos — abertos pelos botões de anexo. */}
+                    <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onPickFile('image')} />
+                    <input ref={docInputRef} type="file" hidden onChange={onPickFile('document')}
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,application/pdf" />
+
+                    {recording ? (
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] text-red-300 bg-red-500/10 border border-red-400/20">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse shrink-0" /> Gravando áudio…
+                        </span>
+                        <button onClick={() => stopRecording(false)} title="Cancelar gravação"
+                          className="w-10 h-10 shrink-0 flex items-center justify-center rounded-2xl text-[var(--text-mid)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => stopRecording(true)} title="Enviar áudio"
+                          className="w-10 h-10 shrink-0 flex items-center justify-center rounded-2xl bg-violet-500/25 text-[var(--text-hi)] hover:bg-violet-500/35 transition-colors">
+                          <Send className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => imageInputRef.current?.click()} title="Enviar imagem"
+                            disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
+                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            <ImageIcon className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => docInputRef.current?.click()} title="Enviar documento"
+                            disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
+                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            <FileText className="w-4 h-4" />
+                          </button>
+                          <button onClick={startRecording} title="Gravar áudio"
+                            disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
+                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            <Mic className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <input
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                          placeholder={selectedConv.conversation_status === 'closed' ? 'Ticket encerrado' : uploadingMedia ? 'Enviando anexo…' : 'Responder como você…'}
+                          disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
+                          className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]
+                            bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)]"
+                        />
+                        <button onClick={handleSend} disabled={sending || uploadingMedia || !draft.trim() || selectedConv.conversation_status === 'closed'}
+                          className="w-10 h-10 shrink-0 flex items-center justify-center rounded-2xl bg-violet-500/25 text-[var(--text-hi)]
+                            hover:bg-violet-500/35 disabled:opacity-40 transition-colors">
+                          {sending || uploadingMedia ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

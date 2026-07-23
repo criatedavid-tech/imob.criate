@@ -31,6 +31,38 @@ export async function sendUazapiText(
   }
 }
 
+// Envio de MÍDIA (imagem/documento/áudio) — espelha o padrão confirmado do
+// /send/text: header "token" = API Token da instância, sem id no path. A UAZAPI
+// aceita `file` como URL pública (preferido — evita estourar payload e é o que
+// usamos, subindo antes pro Storage) e converte o áudio "ptt" pro formato de
+// nota de voz do WhatsApp no lado dela. `type`: image | document | ptt | audio |
+// video. `text` vira legenda; `docName` nomeia o documento.
+export async function sendUazapiMedia(
+  instanceToken: string,
+  number: string,
+  media: { type: "image" | "document" | "ptt" | "audio" | "video"; file: string; caption?: string; docName?: string },
+): Promise<{ ok: boolean; status: number; raw: string }> {
+  try {
+    const body: Record<string, unknown> = {
+      number: normalizePhoneBR(number),
+      type: media.type,
+      file: media.file,
+    };
+    if (media.caption) body.text = media.caption;
+    if (media.docName) body.docName = media.docName;
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/send/media`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: instanceToken },
+      body: JSON.stringify(body),
+    }, 30_000);
+    const raw = await r.text();
+    return { ok: r.ok, status: r.status, raw };
+  } catch (e: any) {
+    console.warn("[UAZAPI] sendUazapiMedia exceção:", e.message);
+    return { ok: false, status: 0, raw: e.message };
+  }
+}
+
 export interface DownloadedUazapiMedia {
   base64Data: string;
   mimetype: string;

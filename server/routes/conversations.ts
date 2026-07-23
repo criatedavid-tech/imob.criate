@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { sendUazapiText, resolveOutboundInstanceToken } from "../services/uazapi";
+import { sendUazapiText, sendUazapiMedia, resolveOutboundInstanceToken } from "../services/uazapi";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
 import { pauseAiForHumanTakeover } from "../services/followup";
@@ -306,6 +306,144 @@ conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (r
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro POST /api/conversas/:ticketId/reply:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Resposta com MÍDIA (imagem / documento / áudio) ────────────────────────
+// Também é handover humano (mesma regra do /reply em texto). O arquivo chega em
+// base64 (limite do express.json = 10 MB → teto real ~7 MB de binário), é
+// gravado no Storage e enviado ao cliente por URL pública via UAZAPI. Guardar a
+// URL em media_url deixa a própria tela de Conversas renderizar a mídia.
+const CONVERSA_MEDIA_BUCKET = "imf-conversation-media";
+const MAX_CONVERSA_MEDIA_BYTES = 7 * 1024 * 1024;
+const CONVERSA_MEDIA_KIND_TO_UAZAPI: Record<string, "image" | "document" | "ptt"> = {
+  image: "image",
+  document: "document",
+  audio: "ptt",
+};
+
+function extensionFromMime(mime: string): string {
+  const map: Record<string, string> = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+    "audio/ogg": ".ogg", "audio/webm": ".webm", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/wav": ".wav",
+    "application/pdf": ".pdf",
+  };
+  return map[mime.split(";")[0].trim().toLowerCase()] || "";
+}
+
+// Upload no caminho quente sem pagar um round-trip de createBucket por request:
+// tenta subir; só se o bucket não existir, cria e repete uma vez.
+async function uploadConversaMedia(path: string, buffer: Buffer, contentType: string) {
+  const attempt = () => supabase.storage.from(CONVERSA_MEDIA_BUCKET).upload(path, buffer, { contentType, upsert: false });
+  let { error } = await attempt();
+  if (error && /bucket.*not.*found|not found/i.test(error.message || "")) {
+    await supabase.storage.createBucket(CONVERSA_MEDIA_BUCKET, { public: true, fileSizeLimit: MAX_CONVERSA_MEDIA_BYTES }).catch(() => {});
+    ({ error } = await attempt());
+  }
+  if (error) throw error;
+}
+
+conversationsRouter.post("/api/conversas/:ticketId/reply-media", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
+    if (ticket.conversation_status === "closed") {
+      return res.status(409).json({ error: "Este ticket está encerrado. Uma nova mensagem do cliente abrirá outro ticket." });
+    }
+
+    const { kind, data_base64, mime, filename, caption } = req.body || {};
+    if (!["image", "document", "audio"].includes(kind)) return res.status(400).json({ error: "kind deve ser image, document ou audio." });
+    if (typeof data_base64 !== "string" || !data_base64) return res.status(400).json({ error: "data_base64 é obrigatório." });
+    if (typeof mime !== "string" || !mime) return res.status(400).json({ error: "mime é obrigatório." });
+    if (kind === "image" && !mime.startsWith("image/")) return res.status(400).json({ error: "mime não corresponde a uma imagem." });
+    if (kind === "audio" && !mime.startsWith("audio/")) return res.status(400).json({ error: "mime não corresponde a um áudio." });
+
+    const rawBase64 = data_base64.includes(",") ? data_base64.slice(data_base64.indexOf(",") + 1) : data_base64;
+    const buffer = Buffer.from(rawBase64, "base64");
+    if (!buffer.length) return res.status(400).json({ error: "Arquivo vazio ou base64 inválido." });
+    if (buffer.length > MAX_CONVERSA_MEDIA_BYTES) return res.status(413).json({ error: "Arquivo excede o limite de 7 MB." });
+
+    const instanceToken = await resolveOutboundInstanceToken(brokerId, ticket.customer_phone);
+    if (!instanceToken) return res.status(503).json({ error: "Instância WhatsApp não configurada para este corretor ainda." });
+
+    const cleanName = String(filename || kind).replace(/[^\w.\-]+/g, "_").slice(-80) || kind;
+    const nameWithExt = cleanName.includes(".") ? cleanName : `${cleanName}${extensionFromMime(mime)}`;
+    const path = `${brokerId}/${ticket.id}/${Date.now()}-${nameWithExt}`;
+    await uploadConversaMedia(path, buffer, mime);
+    const { data: pub } = supabase.storage.from(CONVERSA_MEDIA_BUCKET).getPublicUrl(path);
+    const publicUrl = pub.publicUrl;
+
+    const cleanCaption = typeof caption === "string" && caption.trim() ? caption.trim().slice(0, 1000) : undefined;
+    const sent = await sendUazapiMedia(instanceToken, ticket.customer_phone, {
+      type: CONVERSA_MEDIA_KIND_TO_UAZAPI[kind],
+      file: publicUrl,
+      caption: cleanCaption,
+      docName: kind === "document" ? nameWithExt : undefined,
+    });
+    if (!sent.ok) {
+      console.warn(`[Conversas] envio de mídia falhou pro broker ${brokerId}: status=${sent.status} raw=${String(sent.raw).slice(0, 200)}`);
+      return res.status(502).json({ error: "Falha ao enviar a mídia pelo WhatsApp." });
+    }
+
+    await recordConversationMessage({
+      brokerId,
+      customerPhone: ticket.customer_phone,
+      ticketId: ticket.id,
+      direction: "out",
+      senderType: "broker_manual",
+      body: cleanCaption || null,
+      mediaUrl: publicUrl,
+      mediaType: kind,
+    });
+
+    await pauseAiForHumanTakeover(brokerId, ticket.customer_phone);
+    await supabase.from("imf_conversation_tickets").update({
+      ai_active: false,
+      human_takeover_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", ticket.id).eq("broker_id", brokerId);
+
+    res.json({ ok: true, media_url: publicUrl, media_type: kind });
+  } catch (err: any) {
+    console.error("Erro POST /api/conversas/:ticketId/reply-media:", err.message);
+    res.status(500).json({ error: "Falha ao enviar a mídia." });
+  }
+});
+
+// Status do lead no CRM para ESTE contato (mesma dedupe do create-lead): existe
+// um lead com esse telefone nesta conta? Em qual pipeline/etapa ele está? A tela
+// de Conversas usa isso pra decidir entre "Criar no CRM" e o seletor de etapa.
+conversationsRouter.get("/api/conversas/:ticketId/lead", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    const ticket = await getConversationTicket(brokerId, req.params.ticketId);
+    if (!ticket || !(await canAccessTicket(userId, brokerId, req.params.ticketId))) return res.status(403).json({ error: "Acesso negado." });
+
+    const phone = ticket.customer_phone;
+    const { data: propRows } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+    const propIds = (propRows || []).map((p: any) => p.id);
+    let query = supabase.from("leads").select("id, name, pipeline_id, pipeline_stage_id").eq("phone", phone);
+    query = propIds.length > 0
+      ? query.or(`broker_id.eq.${brokerId},property_id.in.(${propIds.join(",")})`)
+      : query.eq("broker_id", brokerId);
+    const { data: rows } = await query.limit(1);
+    const lead = rows && rows[0];
+    if (!lead) return res.json({ exists: false });
+    res.json({
+      exists: true,
+      lead_id: lead.id,
+      pipeline_id: lead.pipeline_id || null,
+      pipeline_stage_id: lead.pipeline_stage_id || null,
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/conversas/:ticketId/lead:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
