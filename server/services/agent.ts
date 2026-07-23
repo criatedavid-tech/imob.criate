@@ -934,7 +934,13 @@ async function callOpenRouter(apiKey: string, systemPrompt: string, contextMessa
       "X-Title": "ImobiFlow",
     },
     body: JSON.stringify({
-      model: "openai/gpt-4o-mini",
+      // Teste 2026-07-23: trocado de "openai/gpt-4o-mini" pra "xiaomi/mimo-v2.5"
+      // (via OpenRouter) a pedido do usuário, pra comparar qualidade/custo.
+      // response_format json_object abaixo não tem suporte confirmado nesse
+      // modelo — se vier malformado, parseAgentModelResponse lança e o catch
+      // em runAgent já devolve "Tive um problema pra pensar nisso agora."
+      // (nunca quebra), então dá pra testar sem risco de erro não tratado.
+      model: "xiaomi/mimo-v2.5",
       temperature: 0.3,
       response_format: { type: "json_object" },
       messages: [

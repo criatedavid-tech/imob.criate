@@ -1,5 +1,33 @@
 # Estado do projeto
 
+## Teste de modelo: xiaomi/mimo-v2.5 no Assistente IA (2026-07-23)
+
+- Usuário pediu pra trocar o modelo do Assistente IA no OpenRouter, "para
+  testarmos". Modelo escolhido: `xiaomi/mimo-v2.5` (Xiaomi, omnimodal, 1M
+  contexto, $0.105/$0.28 por 1M tokens in/out, é modelo de RACIOCÍNIO — retorna
+  campo `reasoning`/`reasoning_details` junto da resposta).
+- Antes de trocar: confirmado que o modelo existe no catálogo do OpenRouter
+  (não estava na primeira busca por listagem completa, achado via WebSearch)
+  e testado ISOLADO (chamada direta à API do OpenRouter, sem tocar
+  Supabase/backend — só precisa da `OPENROUTER_API_KEY` do `.env` local):
+  - JSON mode (`response_format:"json_object"`) funciona — resposta em JSON
+    válido, sem markdown, sem texto fora do JSON.
+  - Teste de extração estruturada (`create_lead` com nome/telefone/property_id
+    de um pedido em português) devolveu EXATAMENTE os campos esperados, sem
+    campo extra — importante porque os schemas zod são `.strict()` (rejeitam
+    campo desconhecido).
+  - Latência ~2.7s por chamada (mais lento que o `openai/gpt-4o-mini` anterior,
+    esperado por ser modelo de raciocínio); custo por chamada de teste:
+    ~$0.000045.
+- `server/services/agent.ts`: `model: "openai/gpt-4o-mini"` →
+  `model: "xiaomi/mimo-v2.5"` (única linha, com comentário explicando a troca
+  e por que é seguro testar mesmo sem suporte confirmado a json_object —
+  falha de parse já cai num erro tratado em `runAgent`, nunca quebra).
+- Checklist: tsc limpo, 8/8 testes, knip ok, build ok, diff --check limpo.
+- ⚠️ Sem staging: ao dar deploy, TODOS os corretores que usarem o Assistente
+  IA passam a usar esse modelo — não é um teste isolado, é a produção real.
+  Reverter é trocar a mesma linha de volta pra `openai/gpt-4o-mini`.
+
 ## Flip-lite (card-turn) ao abrir/fechar o Assistente IA (2026-07-23)
 
 - Patch recebido pronto (`imob-cristal-rodadas-2a4.patch`, 3 commits
