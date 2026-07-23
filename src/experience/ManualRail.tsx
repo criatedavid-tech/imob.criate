@@ -143,10 +143,17 @@ export function ManualRail({
               key={a.key}
               onClick={() => onSelect(a.key)}
               className={cn(
-                'w-[72px] py-2.5 rounded-2xl flex flex-col items-center gap-1 transition-colors shrink-0 border border-transparent',
-                isActive ? 'is-selected cr-text-hi [&_svg]:text-[var(--brass)]' : 'cr-text-low hover:text-[var(--text-mid)] hover:bg-[var(--accent-soft)]',
+                'relative isolate w-[72px] py-2.5 rounded-2xl flex flex-col items-center gap-1 transition-colors shrink-0 border border-transparent',
+                isActive ? 'cr-text-hi [&_svg]:text-[var(--brass)]' : 'cr-text-low hover:text-[var(--text-mid)] hover:bg-[var(--accent-soft)]',
               )}
             >
+              {isActive && (
+                <motion.div
+                  layoutId="rail-lens" aria-hidden
+                  className="cr-glass-lens absolute inset-0 -z-10"
+                  transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+                />
+              )}
               <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
               <span className="text-[10px] font-medium leading-none">{a.label}</span>
             </button>
@@ -185,10 +192,17 @@ export function ManualRail({
                       key={a.key}
                       onClick={() => { onSelect(a.key); onMobileClose?.(); }}
                       className={cn(
-                        'w-full px-4 py-3 rounded-2xl flex items-center gap-3 transition-colors border border-transparent',
-                        isActive ? 'is-selected cr-text-hi [&_svg]:text-[var(--brass)]' : 'cr-text-mid hover:text-[var(--text-hi)] hover:bg-[var(--accent-soft)]',
+                        'relative isolate w-full px-4 py-3 rounded-2xl flex items-center gap-3 transition-colors border border-transparent',
+                        isActive ? 'cr-text-hi [&_svg]:text-[var(--brass)]' : 'cr-text-mid hover:text-[var(--text-hi)] hover:bg-[var(--accent-soft)]',
                       )}
                     >
+                      {isActive && (
+                        <motion.div
+                          layoutId="rail-lens-mobile" aria-hidden
+                          className="cr-glass-lens absolute inset-0 -z-10"
+                          transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+                        />
+                      )}
                       <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
                       <span className="text-[13px] font-semibold">{a.label}</span>
                     </button>

@@ -1,5 +1,27 @@
 # Estado do projeto
 
+## Lente de vidro no rail + toggle Dia/Noite (2026-07-23)
+
+- Patch recebido pronto (`imob-cristal-polish-3.patch`, já escrito por Claude
+  Opus 4.8 em outra sessão) e aplicado com `git apply` — só identidade visual,
+  nenhuma função/rota alterada.
+- `ManualRail.tsx`: o indicador do item ativo (rail desktop + drawer mobile)
+  deixou de ser a borda/fundo estático `.is-selected` e virou uma LENTE DE
+  VIDRO que desliza entre os itens via `layoutId` do Framer Motion (`motion`,
+  já era dependência usada em várias telas). Ícone ativo em latão por cima.
+- `ThemeToggle.tsx`: o thumb deslizante virou a mesma lente de vidro sobre o
+  ícone ativo (sol/lua), em vez do preenchimento sólido em gradiente.
+- `index.css`: 2 classes novas, `.cr-glass-lens` (rail) e `.cr-toggle-glass`
+  (toggle) — `backdrop-filter: blur + saturate + brightness`, sem filtro de
+  deslocamento (evita o "piscar" de outras tentativas de vidro).
+- Checklist: tsc limpo, knip ok, build ok, diff --check limpo.
+- QA visual: dev server real não rodado (backend dispara WhatsApp de produção
+  via jobs de fundo); `vite preview` não autentica (sem backend). Verificado
+  em harness estático isolado com os tokens/classes REAIS do `index.css`
+  (`getComputedStyle` confirmou `backdrop-filter`/`border-radius`/`z-index`
+  aplicando sem conflito de seletor, console sem erros) — não é screenshot
+  pixel-a-pixel da tela real, então QA visual final fica pra produção/usuário.
+
 ## Assistente IA: link da vitrine + broadcast pra contatos (2026-07-22)
 
 - Problema (mostrado pelo usuário): "envie a minha divulgação pros meus contatos"

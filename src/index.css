@@ -239,6 +239,35 @@ html.theme-transition * {
 /* Rail lateral: vidro + um brilho de latão bem sutil no topo (perto do logo) — detalhe premium, sem colorir os ícones. */
 .cr-rail     { background: linear-gradient(180deg, rgba(238,192,124,.055), transparent 22%), var(--scrim-glass); }
 
+/* Lente de vidro do indicador ATIVO (rail desktop + drawer mobile). Fica atrás
+   do ícone (-z-10); desliza entre os itens via layoutId do Framer Motion. O
+   ícone fica por cima e nítido (a lente só embaça o fundo do rail atrás dela). */
+.cr-glass-lens{
+  border-radius:16px; overflow:hidden;
+  border:1px solid var(--glass-border-strong);
+  background:var(--control-fill-hover);
+  -webkit-backdrop-filter:blur(7px) saturate(1.5) brightness(1.05);
+  backdrop-filter:blur(7px) saturate(1.5) brightness(1.05);
+  box-shadow:0 8px 20px rgba(6,16,34,.30), inset 0 1px 0 rgba(255,255,255,.28),
+    inset 3px 0 8px -3px rgba(255,90,90,.14), inset -3px 0 8px -3px rgba(90,150,255,.18);
+}
+.cr-glass-lens::before{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(120deg, rgba(255,255,255,.30), transparent 44%); }
+
+/* Toggle Dia/Noite em vidro: o thumb é uma lente de vidro que desliza sobre o
+   ícone ativo (como na referência). Blur leve pra não borrar o ícone. */
+.cr-toggle-glass{
+  position:absolute; top:4px; bottom:4px; width:32px; border-radius:999px; z-index:20; pointer-events:none;
+  border:1px solid var(--glass-border-strong);
+  background:var(--control-fill-hover);
+  -webkit-backdrop-filter:blur(2px) saturate(1.5) brightness(1.05);
+  backdrop-filter:blur(2px) saturate(1.5) brightness(1.05);
+  box-shadow:0 4px 12px rgba(6,16,34,.28), inset 0 1px 0 rgba(255,255,255,.3);
+  transition:transform .32s var(--ease-spring);
+}
+.cr-toggle-glass::before{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:linear-gradient(120deg, rgba(255,255,255,.4), transparent 46%); }
+
 /* ── Acessibilidade ─────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html.theme-transition, html.theme-transition * { transition-duration: .01ms !important; }

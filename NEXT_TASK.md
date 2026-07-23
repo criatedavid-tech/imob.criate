@@ -7,6 +7,11 @@
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
 - **Prévia da vitrine (DivulgacaoArea.tsx):** publicado (commit `59049de`).
+- **Uncommitted (2026-07-23):** patch "lente de vidro" aplicado (rail +
+  ThemeToggle + index.css). Checklist passou. QA visual só em harness estático
+  isolado (sem screenshot da tela real — Browser pane sem compositing nesta
+  sessão). Aguardando autorização de commit+deploy; recomendar ao usuário
+  conferir visualmente em produção logo após o deploy.
 - **Uncommitted (2026-07-22):** A/B/C do assistente feitos — `agent.ts`,
   `agentGuardrails.ts`, `routes/agent.ts`, `tests/agentGuardrails.test.ts`.
   (A) `vitrineUrl` no snapshot; (C) regra de divulgação no prompt; (B) ação
