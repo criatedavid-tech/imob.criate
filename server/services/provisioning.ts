@@ -18,6 +18,17 @@ import { fetchWithTimeout } from "../lib/http";
 // chamado tanto na criação quanto a cada conexão para corrigir qualquer URL
 // divergente. Best-effort: nunca lança, para não derrubar quem chama.
 export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
+  // Guarda de produção: se PUBLIC_APP_URL não for uma URL pública (https e não
+  // localhost), NÃO configura o webhook — apontar a UAZAPI para
+  // http://localhost:3000 quebra TODO o inbound silenciosamente (a UAZAPI nunca
+  // alcança o backend). Falha ruidosa aqui evita esse footgun clássico.
+  if (!/^https:\/\//i.test(PUBLIC_APP_URL) || /(^|\/\/)(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(PUBLIC_APP_URL)) {
+    console.error(
+      `[Provisioning] PUBLIC_APP_URL inválida para webhook ("${PUBLIC_APP_URL}"). ` +
+      `Defina PUBLIC_APP_URL=https://SEU-DOMINIO (ex.: https://imobiflow-v2.fly.dev) ou o inbound do WhatsApp NÃO funciona.`,
+    );
+    return false;
+  }
   const inboundUrl = `${PUBLIC_APP_URL}/api/wpp-shim/inbound/${instanceId}`;
   try {
     const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {

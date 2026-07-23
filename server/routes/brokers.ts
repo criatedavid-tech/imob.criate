@@ -335,7 +335,10 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
     // corrigindo qualquer configuração externa divergente.
     // (instanceId só volta preenchido pra instância JÁ existente — a recém
     // provisionada já nasce com o webhook certo.) Best-effort, não bloqueia.
-    if (instanceId) await setUazapiWebhook(token, instanceId);
+    // webhookOk=false sinaliza PUBLIC_APP_URL inválida (webhook não configurado):
+    // sem ele o inbound do WhatsApp não chega — vai no retorno pra UI avisar.
+    let webhookOk: boolean | null = null;
+    if (instanceId) webhookOk = await setUazapiWebhook(token, instanceId);
 
     // phone opcional: se vier, a UAZAPI gera código de pareamento em vez de
     // QR code (POST /instance/connect aceita os dois modos — ver doc oficial).
@@ -358,6 +361,7 @@ brokersRouter.post("/api/brokers/whatsapp/connect", requireUser, async (req, res
       connected: !!data?.connected,
       qrcode: data?.instance?.qrcode || null,
       paircode: data?.instance?.paircode || null,
+      webhook_ok: webhookOk,
     });
   } catch (err: any) {
     console.error("Erro POST /api/brokers/whatsapp/connect:", err);

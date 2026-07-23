@@ -10,7 +10,7 @@ import {
   recordConversationMessage,
 } from "../services/conversationTickets";
 import { resolveNewLeadStage } from "../services/crmPipelines";
-import { enqueueUazapiWebhook } from "../services/inboundWebhookQueue";
+import { enqueueUazapiWebhook, runWebhookInboxTick } from "../services/inboundWebhookQueue";
 import { requireInternalToken } from "../middleware/internalAuth";
 import { n8nInternalLimiter } from "../middleware/rateLimits";
 import {
@@ -122,6 +122,16 @@ conversationsRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) =
     // Duplicatas e payloads invalidos recebem 200 para o provedor nao insistir.
     // Eventos validos so chegam aqui depois do INSERT duravel na inbox.
     res.status(200).json({ ok: true, queued: result === "accepted" });
+
+    // Processa JÁ, no próprio processo web, sem esperar o worker dedicado —
+    // inbound quase-instantâneo e resiliente a uma eventual indisponibilidade do
+    // processo `worker`. Seguro rodar em paralelo com o worker: claim_imf_webhook
+    // _inbox usa lease/lock, então nenhuma linha é processada em duplicidade. O
+    // worker segue existindo pra escala/backlog; isto é só a garantia de tempo real.
+    if (result === "accepted") {
+      void runWebhookInboxTick().catch((e: any) =>
+        console.warn("[WhatsApp] tick oportunista do inbox falhou:", e?.message));
+    }
 
   } catch (err: any) {
     // Sem persistencia nao ha ACK: 503 pede que a UAZAPI tente novamente.
