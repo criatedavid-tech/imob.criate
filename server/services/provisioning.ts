@@ -51,6 +51,27 @@ export async function setUazapiWebhook(instanceToken: string, instanceId: string
   }
 }
 
+// Lê a URL de webhook atualmente configurada na instância, pra o guardião
+// detectar desvio sem re-setar à toa. Defensivo: a UAZAPI pode variar o shape
+// da resposta (ou nem suportar GET); nesses casos devolve null e o guardião
+// re-afirma por garantia numa cadência mais espaçada.
+export async function getUazapiWebhookUrl(instanceToken: string): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
+      method: 'GET',
+      headers: { token: instanceToken },
+    });
+    if (!res.ok) return null;
+    const data: any = await res.json().catch(() => null);
+    if (!data) return null;
+    const candidates = [data?.url, data?.webhook?.url, data?.value?.url, Array.isArray(data) ? data[0]?.url : null];
+    const url = candidates.find((u: unknown) => typeof u === 'string' && u);
+    return typeof url === 'string' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 async function createUazapiInstance(channelName: string): Promise<{ instanceId: string; instanceToken: string }> {
   const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
     method: 'POST',

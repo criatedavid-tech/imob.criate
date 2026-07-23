@@ -1105,7 +1105,7 @@ export function ConversasArea() {
                                   <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
                                 </a>
                               )}
-                              {entry.message.body && !(entry.message.media_url && entry.message.media_type === 'document') && (
+                              {entry.message.body && !(entry.message.media_url && (entry.message.media_type === 'document' || /^\[(Áudio|Imagem)\]/.test(entry.message.body))) && (
                                 <div className="whitespace-pre-wrap break-words">{entry.message.body}</div>
                               )}
                               <div className="text-[10px] text-[var(--text-low)] mt-1">

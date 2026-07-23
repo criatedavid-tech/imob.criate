@@ -8,6 +8,7 @@ import {
   recordConversationMessage,
 } from "./conversationTickets";
 import { resolveInboundMedia } from "./inboundMedia";
+import { storeConversationMediaFromBase64 } from "./conversationMedia";
 
 type EnqueueResult = "accepted" | "duplicate" | "ignored";
 
@@ -298,6 +299,8 @@ async function processInboxRow(row: InboxRow): Promise<void> {
     let storedBody = optionalString(recorded?.body);
     let inboundMediaType = optionalString(recorded?.media_type) || null;
     let agentText = agentTextFromRecordedMessage(storedBody, inboundMediaType, plainText);
+    let inboundMediaBase64: string | null = null;
+    let inboundMediaMimetype: string | null = null;
 
     if (!recorded) {
       if (message.type === "text") {
@@ -313,6 +316,8 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         storedBody = media.storedBody;
         agentText = media.agentText;
         inboundMediaType = media.mediaType;
+        inboundMediaBase64 = media.mediaBase64 || null;
+        inboundMediaMimetype = media.mediaMimetype || null;
       } else {
         return await markInboxIgnored(row.id, "Tipo de mensagem ainda nao suportado.");
       }
@@ -328,6 +333,25 @@ async function processInboxRow(row: InboxRow): Promise<void> {
       });
       ticketId = ticket.id;
 
+      // Persiste o arquivo recebido (áudio/imagem) no Storage pra tocar/ver na
+      // tela de Conversas. Best-effort: se o upload falhar, a mensagem é gravada
+      // mesmo assim (com a transcrição/descrição em body) — nunca perde a msg.
+      let inboundMediaUrl: string | null = null;
+      if (inboundMediaBase64 && inboundMediaMimetype) {
+        try {
+          const stored = await storeConversationMediaFromBase64({
+            brokerId: row.broker_id,
+            ticketId,
+            base64: inboundMediaBase64,
+            mime: inboundMediaMimetype,
+            filenameHint: inboundMediaType === "audio" ? "audio-recebido" : "imagem-recebida",
+          });
+          inboundMediaUrl = stored.publicUrl;
+        } catch (mediaError: any) {
+          console.warn("[Webhook Inbox] upload de midia recebida falhou:", safeError(mediaError));
+        }
+      }
+
       try {
         const result = await recordConversationMessage({
           brokerId: row.broker_id,
@@ -337,6 +361,7 @@ async function processInboxRow(row: InboxRow): Promise<void> {
           senderType: "customer",
           body: storedBody,
           mediaType: inboundMediaType,
+          mediaUrl: inboundMediaUrl,
           providerMessageId: persistenceMessageId,
         });
         recorded = result.message;

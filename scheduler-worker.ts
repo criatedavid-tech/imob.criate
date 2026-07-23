@@ -8,6 +8,7 @@ import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
 import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
+import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
 
 const jobs: RecurringJob[] = [
   {
@@ -56,6 +57,14 @@ const jobs: RecurringJob[] = [
     intervalMs: 24 * 60 * 60 * 1_000,
     runOnStart: true,
     task: purgeExpiredWebhookLogs,
+  },
+  {
+    // Reafirma o webhook UAZAPI das instâncias — impede o inbound de "cair" e
+    // exigir reconexão manual quando a UAZAPI perde a config do webhook.
+    name: "guardião de webhook",
+    intervalMs: 3 * 60 * 1_000,
+    runOnStart: true,
+    task: runWebhookKeeperTick,
   },
 ];
 

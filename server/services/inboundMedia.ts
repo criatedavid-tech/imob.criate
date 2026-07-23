@@ -28,6 +28,11 @@ export interface ResolvedInboundMedia {
   storedBody: string;
   mediaType: InboundMediaKind;
   usedFallback: boolean;
+  // Bytes do arquivo baixado da UAZAPI, para o worker persistir no Storage e a
+  // tela de Conversas tocar o áudio / mostrar a imagem (não só a transcrição).
+  // Ausentes no fallback (quando a mídia não pôde ser baixada).
+  mediaBase64?: string;
+  mediaMimetype?: string;
 }
 
 interface InboundMediaDependencies {
@@ -133,6 +138,8 @@ export async function resolveInboundMedia(
         storedBody: `[Áudio] ${transcript}`,
         mediaType: kind,
         usedFallback: false,
+        mediaBase64: media.base64Data,
+        mediaMimetype: media.mimetype,
       };
     }
 
@@ -148,6 +155,8 @@ export async function resolveInboundMedia(
       storedBody: `[Imagem] ${description}${captionSuffix}`,
       mediaType: kind,
       usedFallback: false,
+      mediaBase64: media.base64Data,
+      mediaMimetype: media.mimetype,
     };
   } catch (error: any) {
     logAiProviderError(`[WhatsApp] processamento de ${kind} falhou`, error);
