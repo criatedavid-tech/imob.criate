@@ -9,6 +9,7 @@ import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
 import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
+import { runInboundMediaBackfillTick } from "./server/services/inboundMediaBackfill";
 
 const jobs: RecurringJob[] = [
   {
@@ -65,6 +66,15 @@ const jobs: RecurringJob[] = [
     intervalMs: 3 * 60 * 1_000,
     runOnStart: true,
     task: runWebhookKeeperTick,
+  },
+  {
+    // Torna tocáveis os áudios/imagens recebidos que ficaram só como transcrição
+    // (recebidos antes do fix, ou que falharam no upload ao vivo): re-baixa da
+    // UAZAPI e preenche o media_url. Idempotente e best-effort.
+    name: "backfill de mídia recebida",
+    intervalMs: 30 * 60 * 1_000,
+    runOnStart: true,
+    task: runInboundMediaBackfillTick,
   },
 ];
 
