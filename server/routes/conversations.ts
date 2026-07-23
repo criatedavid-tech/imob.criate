@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { sendUazapiText, resolveOutboundInstanceToken } from "../services/uazapi";
+import { sendUazapiText, sendUazapiMedia, resolveOutboundInstanceToken } from "../services/uazapi";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { normalizePhoneBR } from "../lib/crypto";
 import { pauseAiForHumanTakeover } from "../services/followup";
@@ -262,6 +262,11 @@ conversationsRouter.get("/api/conversas/:ticketId/messages", requireUser, async 
 // Corretor responde direto pela tela nova. Isso É o handover humano — não
 // precisa mais do truque do ZWSP pra adivinhar quem mandou, porque o
 // ImobiFlow sabe com certeza: quem chama esta rota é o corretor autenticado.
+//
+// Aceita texto OU áudio (mediaUrl+mediaType, 23/07/2026) — nunca os dois.
+// Pra áudio, o corretor já subiu o arquivo antes via upload-audio (abaixo) e
+// manda só a URL aqui; body vira um rótulo curto (não texto de verdade) só
+// pra aparecer como prévia na lista de conversas.
 conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -273,8 +278,9 @@ conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (r
       return res.status(409).json({ error: "Este ticket está encerrado. Uma nova mensagem do cliente abrirá outro ticket." });
     }
 
-    const { message } = req.body || {};
-    if (!message?.trim()) return res.status(400).json({ error: "message é obrigatório." });
+    const { message, mediaUrl, mediaType } = req.body || {};
+    const isAudio = typeof mediaUrl === "string" && mediaUrl.trim().startsWith("https://") && mediaType === "audio";
+    if (!isAudio && !message?.trim()) return res.status(400).json({ error: "message é obrigatório." });
 
     // Resolve pela instância própria do membro se a conversa entrou por ela
     // (ver resolveOutboundInstanceToken), senão cai pra instância da conta.
@@ -283,8 +289,10 @@ conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (r
       return res.status(503).json({ error: "Instância UAZAPI não configurada para este corretor ainda." });
     }
 
-    const sent = await sendUazapiText(instanceToken, ticket.customer_phone, message);
-    if (!sent.ok) return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
+    const sent = isAudio
+      ? await sendUazapiMedia(instanceToken, ticket.customer_phone, mediaUrl, "ptt")
+      : await sendUazapiText(instanceToken, ticket.customer_phone, message);
+    if (!sent.ok) return res.status(502).json({ error: isAudio ? "Falha ao enviar áudio via UAZAPI." : "Falha ao enviar via UAZAPI." });
 
     await recordConversationMessage({
       brokerId,
@@ -292,7 +300,9 @@ conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (r
       ticketId: ticket.id,
       direction: "out",
       senderType: "broker_manual",
-      body: message,
+      body: isAudio ? "[Áudio]" : message,
+      mediaUrl: isAudio ? mediaUrl : null,
+      mediaType: isAudio ? "audio" : null,
     });
 
     await pauseAiForHumanTakeover(brokerId, ticket.customer_phone);
@@ -306,6 +316,52 @@ conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (r
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro POST /api/conversas/:ticketId/reply:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload de áudio gravado no navegador (mensagens de voz) — mesmo padrão de
+// POST /api/properties/upload-image (base64 -> Buffer -> Supabase Storage ->
+// URL pública), bucket próprio pra não misturar com fotos de imóvel.
+conversationsRouter.post("/api/conversas/upload-audio", requireUser, async (req, res) => {
+  const userId = (req as any).userId as string;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const { audioData, mimeType } = req.body || {};
+    if (!audioData || typeof audioData !== "string") {
+      return res.status(400).json({ error: "Dados do áudio ausentes." });
+    }
+
+    const base64Data = audioData.replace(/^data:audio\/[\w-]+(;codecs=[\w-]+)?;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+
+    // Limite defensivo — mesma ordem de grandeza do MAX_AUDIO_BYTES usado
+    // pro áudio recebido do cliente (mediaAi.ts).
+    if (buffer.length > 8 * 1024 * 1024) {
+      return res.status(413).json({ error: "Áudio muito grande (máx. 8MB)." });
+    }
+
+    const ext = typeof mimeType === "string" && mimeType.includes("mp4") ? "m4a" : "webm";
+    const fileName = `audio-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+    await supabase.storage.createBucket("conversation-audio", {
+      public: true,
+      fileSizeLimit: 8388608,
+    }).catch(() => {}); // ignora erro se o bucket já existe
+
+    const { error: uploadError } = await supabase.storage
+      .from("conversation-audio")
+      .upload(fileName, buffer, { contentType: typeof mimeType === "string" ? mimeType : "audio/webm", upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from("conversation-audio")
+      .getPublicUrl(fileName);
+
+    res.json({ url: publicUrl });
+  } catch (err: any) {
+    console.error("Erro upload áudio de conversa:", err);
     res.status(500).json({ error: err.message });
   }
 });
