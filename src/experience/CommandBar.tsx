@@ -33,10 +33,12 @@ function isAndroidInAppBrowser(): boolean {
 // interno em vez de empurrar o resto do painel pra fora da tela.
 const MAX_INPUT_HEIGHT_PX = 144;
 
-// Camada de comando REAL (Etapa 13): fala do corretor → agente Gemini no
-// backend (POST /api/agent/command) que responde, navega ou age sobre os
-// endpoints que já existem. A autonomia (Etapa 12) governa: piloto executa na
-// hora; copiloto/manual propõem e esperam o "Confirmar".
+// Camada de comando REAL (Etapa 13): fala do corretor → agente no backend
+// (POST /api/agent/command, OpenRouter) que responde, navega ou age sobre os
+// endpoints que já existem. Autonomia é só o rótulo (piloto/copiloto/manual)
+// — desde o hardening contra prompt injection (22/07/2026), toda mutação
+// SEMPRE propõe e espera o "Confirmar", nos 3 modos igual (ver
+// requiresHumanConfirmation em agentGuardrails.ts).
 //
 // Vive no verso do card-flip (ver ExperienceShell) — painel de tela cheia,
 // não mais uma barra fixa por cima de toda página.

@@ -1,5 +1,21 @@
 # Estado do projeto
 
+## Tooltip honesto no botão de autonomia (2026-07-23)
+
+- Usuário pediu explicação simples dos 3 modos (Piloto automático/Copiloto/
+  Manual). Achado ao investigar: desde o hardening contra prompt injection
+  (`eb5bd99`, 22/07/2026), os 3 modos SE COMPORTAM IGUAL — toda mutação do
+  Assistente IA sempre propõe e espera confirmação, nunca auto-executa (nem
+  no Piloto). O rótulo do botão (`ExperienceShell.tsx`) ficou prometendo uma
+  diferença que não existe mais.
+- Decisão do usuário: manter o comportamento seguro (sempre confirmar), só
+  corrigir o texto pra não prometer o que não faz mais.
+- `ExperienceShell.tsx`: `title={AUTONOMY_HINT}` no botão — tooltip explica
+  que a confirmação é sempre obrigatória nos 3 modos.
+- `CommandBar.tsx`: comentário desatualizado corrigido (ainda citava "agente
+  Gemini" — já é OpenRouter — e dizia que o Piloto executa na hora).
+- Checklist: tsc/knip/build/diff --check limpos.
+
 ## Lente de vidro no rail + toggle Dia/Noite (2026-07-23)
 
 - Patch recebido pronto (`imob-cristal-polish-3.patch`, já escrito por Claude

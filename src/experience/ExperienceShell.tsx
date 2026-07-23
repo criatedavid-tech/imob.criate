@@ -33,6 +33,11 @@ const AUTONOMY_LABEL: Record<Autonomy, string> = {
   manual: 'Manual',
 };
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
+// Só troca o rótulo — desde o hardening contra prompt injection (22/07/2026),
+// os 3 modos se comportam igual: toda ação do Assistente IA (cadastrar,
+// enviar mensagem, agendar etc.) sempre pede confirmação antes de executar,
+// nunca roda sozinha, nem no Piloto automático.
+const AUTONOMY_HINT = 'Toda ação do Assistente IA (cadastrar, enviar mensagem, agendar etc.) sempre pede sua confirmação antes de executar — em qualquer um dos 3 modos.';
 
 // Toggle Dia/Noite. Liberado a pedido do usuário pra QA ao vivo do modo Dia.
 // O modo Noite é o padrão; o Dia já é funcional (neutros/acentos/semânticos
@@ -254,7 +259,7 @@ export function ExperienceShell() {
               {/* Botão de autonomia — no mobile mostra só a bolinha+seta (sem o
                   rótulo, "Piloto automático" é longo demais pra caber ao lado
                   do "ver como"/pílulas de persona sem quebrar linha). */}
-              <button onClick={cycleAutonomy}
+              <button onClick={cycleAutonomy} title={AUTONOMY_HINT}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-[12px] font-semibold cr-text-hi transition-colors shrink-0 whitespace-nowrap hover:border-[var(--glass-border-strong)]"
                 style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
