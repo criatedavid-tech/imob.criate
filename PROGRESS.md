@@ -1,5 +1,62 @@
 # Estado do projeto
 
+## Ajustes de responsividade, áudio e navegação pro CRM em Conversas (2026-07-23)
+
+- Depois do redesign de Conversas (abaixo), usuário mandou novos screenshots
+  mostrando o botão flutuante do Assistente IA sobrepondo notas/composer no
+  mobile, e pediu: responsividade total (teclado aberto, telas pequenas),
+  áudio completo (gravar/cancelar/ouvir antes/enviar/tocar recebidos e
+  enviados) e "CRM criado" navegando + abrindo o cadastro do lead.
+- Usado EnterPlanMode de novo (arquitetura real: 3 endpoints novos/alterados,
+  2 arquivos de serviço backend, componente de player novo, canal de
+  comunicação entre áreas que não existia). Investigação antes de escrever
+  qualquer linha:
+  - FAB do Assistente IA é `position:absolute` global (`ExperienceShell.tsx`)
+    — sobrepõe QUALQUER área; causa raiz confirmada lendo o código, não
+    suposição.
+  - `h-[640px]` fixo herdado do design desktop-only; `CommandBar.tsx` já
+    resolvia exatamente esse problema (`100dvh` + flex column) — reaproveitei
+    a técnica em vez de inventar cálculo de pixel.
+  - `imf_conversation_messages.media_url`/`media_type` já existiam desde a
+    criação da tabela (migration `20260702`), nunca usados;
+    `recordConversationMessage` já aceitava esses parâmetros;
+    `GET /messages` já os selecionava. Praticamente todo encanamento de
+    LEITURA já existia — faltava só escrever e desenhar UI.
+  - Tentei confirmar o formato exato do `/send/media` da UAZAPI via
+    WebSearch/WebFetch — a doc oficial (docs.uazapi.com) é renderizada via
+    JS, inacessível pras ferramentas desta sessão. Decisão: implementar com
+    a hipótese mais provável (URL pública, `type:"ptt"`), falha honesta se
+    a UAZAPI recusar, e pedir um teste real ao usuário depois do deploy —
+    mesmo padrão que este projeto já usa (`sendUazapiText` também só existe
+    no formato certo hoje por ter sido testado ao vivo contra o Hunter).
+- Implementado:
+  - `ExperienceShell.tsx`: FAB escondido (`hidden md:flex`) quando
+    `area==='conversas'` no mobile; novo estado `pendingCrmLead` (ponte
+    Conversas→CRM).
+  - `ConversasArea.tsx`: lista sem altura fixa no mobile; thread vira
+    overlay `fixed inset-0 h-[100dvh]` no mobile (`md:` restaura o desktop
+    intacto); componente `AudioMessagePlayer` (play/pause, progresso
+    clicável, tempo); gravação no composer (3 estados: gravando/pré-escuta/
+    enviando) com limpeza automática ao trocar de conversa ou desmontar;
+    `createLead()` guarda o lead completo; botão "CRM criado" navega.
+  - `server/routes/conversations.ts`: novo `POST /upload-audio`
+    (cópia do padrão de `properties.ts`); `/reply` aceita `{mediaUrl,
+    mediaType}` opcionais.
+  - `server/services/uazapi.ts`: nova `sendUazapiMedia` (comentário
+    explícito marcando o formato como não confirmado).
+  - `server/services/inboundMedia.ts`: áudio recebido agora também sobe pro
+    Storage (`uploadInboundAudio`, nunca lança — falha de upload não quebra
+    a transcrição) e devolve `mediaUrl`.
+  - `server/services/inboundWebhookQueue.ts`: propaga `mediaUrl` até
+    `recordConversationMessage` (já propagava `mediaType`, faltava o par).
+  - `NegociosArea.tsx::KanbanBoard`: prop `openLeadId`/`openLeadPipelineId` —
+    seleciona o pipeline certo do lead (a busca é escopada por pipeline) e
+    abre o modal de edição automaticamente quando a lista carregar.
+- Checklist: tsc limpo, knip ok, build ok, 8/8 testes, diff --check limpo.
+- ⚠️ Pendente do usuário: testar o envio de áudio ao vivo (formato da UAZAPI
+  não confirmado) — ida (corretor→cliente) e volta (cliente→corretor).
+- QA visual/funcional ao vivo NÃO rodada (mesma limitação de sempre).
+
 ## Redesign da área de Conversas: inbox mobile+desktop (2026-07-23)
 
 - Usuário mostrou 3 screenshots do mobile real: lista e thread empilhadas

@@ -186,7 +186,11 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   trocar cor, apagar — botão **"Tags"**, `PATCH`/`DELETE
   /api/conversas/tags/:id`). Botão **"Criar CRM"** cadastra o contato da
   conversa como lead (nome + telefone), sem imóvel de interesse ainda —
-  idempotente, mostra **"CRM criado"** se já existir um lead com o telefone
+  idempotente, mostra **"CRM criado"** se já existir um lead com o telefone;
+  clicar em **"CRM criado"** (2026-07-23) navega pra aba CRM e abre o
+  cadastro daquele lead automaticamente. Envio/recepção de **áudio** (grava,
+  cancela, ouve antes de enviar, toca enviados/recebidos — ver "Ajustes de
+  responsividade/áudio/CRM" abaixo)
   (`POST /api/conversas/:ticketId/create-lead`).
 - **Assistente IA:** nome, instruções e Follow-Up Inteligente em área própria.
   Config não contém mais campos de IA na V2.
@@ -356,6 +360,82 @@ painel de Notas separado que abria ACIMA das mensagens.
   vivo não rodada (mesma limitação de sempre — backend real dispara jobs de
   produção); mecânica de show/hide confirmada rodando `tailwind-merge` de
   verdade fora do browser, não só lida no código.
+
+### Ajustes de responsividade, áudio e navegação pro CRM (2026-07-23)
+
+Depois do redesign acima, o usuário mostrou screenshots do app real no
+celular com 2 problemas concretos e pediu 2 recursos novos:
+
+- **Botão flutuante do Assistente IA sobrepondo Conversas.** O FAB
+  (`ExperienceShell.tsx`, `position: absolute bottom-6 right-6 z-30`) é
+  global — aparece por cima de QUALQUER área. No mobile, dentro de
+  Conversas, ficava em cima das notas/composer. Corrigido escondendo-o
+  (`hidden md:flex`) sempre que `area === 'conversas'` no mobile; sem efeito
+  nas outras áreas nem no desktop, onde não há esse conflito de espaço.
+- **Painel de conversa com altura fixa (`h-[640px]`), não se adaptava ao
+  celular nem ao teclado.** Herdado do design desktop-only original.
+  Corrigido reaproveitando a MESMA técnica já usada pelo chat do Assistente
+  IA (`CommandBar`/`ExperienceShell`, comentário do flip-lite): no mobile, a
+  thread de uma conversa aberta vira um overlay `fixed inset-0 h-[100dvh]
+  flex flex-col` (header/composer `shrink-0`, timeline `flex-1 min-h-0
+  overflow-y-auto`) — `100dvh` encolhe sozinho quando o teclado abre, então
+  o composer nunca fica escondido atrás dele. No desktop (`md:`), volta a
+  ser uma célula normal do grid de 640px, sem nenhuma mudança. A lista
+  também parou de ter altura fixa no mobile (`md:h-[640px]` só a partir do
+  desktop) — no mobile ela flui na página normal.
+- **Áudio — gravar, cancelar, ouvir antes, enviar, tocar enviados/recebidos.**
+  `imf_conversation_messages.media_url`/`media_type` já existiam desde a
+  criação da tabela (nunca usados) e `GET /messages` já os selecionava —
+  só faltava escrever e desenhar a UI:
+  - `POST /api/conversas/upload-audio` (novo, `conversations.ts`): mesmo
+    padrão de `POST /api/properties/upload-image` (base64 → Buffer →
+    Supabase Storage bucket `conversation-audio` → URL pública).
+  - `sendUazapiMedia` (novo, `uazapi.ts`): `POST /send/media` com
+    `type: "ptt"`. ⚠️ **Formato NÃO confirmado ao vivo** (diferente de
+    `sendUazapiText`, validado contra o WhatsApp real do Hunter em 03/07) —
+    a documentação oficial (docs.uazapi.com) é renderizada via JS e ficou
+    inacessível pras ferramentas de busca desta sessão; só se confirmou que
+    o `type` aceita `"ptt"`. Falha honesta se a UAZAPI recusar (nunca finge
+    entrega). **Precisa de um teste real (gravar e mandar um áudio de
+    verdade) depois do deploy** — se o formato estiver errado, é um ajuste
+    pontual só nessa função.
+  - `PATCH /reply` estendido: aceita `{mediaUrl, mediaType}` opcionais além
+    de `{message}` — usa `sendUazapiMedia` em vez de `sendUazapiText`
+    quando vierem, persiste com `recordConversationMessage({..., mediaUrl,
+    mediaType})` (parâmetros que já existiam na função, nunca usados até
+    agora).
+  - **Áudio recebido do cliente** (`inboundMedia.ts::resolveInboundMedia`):
+    antes baixava da UAZAPI, transcrevia via OpenRouter e **descartava o
+    arquivo** — só o texto ficava. Agora também sobe o base64 baixado pro
+    mesmo bucket `conversation-audio` (função `uploadInboundAudio`, nunca
+    lança — se o upload falhar, a transcrição continua funcionando
+    normalmente, só sem player) e devolve `mediaUrl` até
+    `inboundWebhookQueue.ts::processInboxRow`, que já tinha o encanamento de
+    `mediaType` pronto (só faltava o `mediaUrl` irmão).
+  - `AudioMessagePlayer` (novo componente, `ConversasArea.tsx`): usa
+    `<audio>` nativo só como motor (não o `controls` nativo, que muda de
+    cara por navegador/SO), UI própria — play/pause, progresso clicável
+    (buscar posição), tempo decorrido/total. Usado na timeline (mensagens
+    com `media_type==='audio'`) e na pré-escuta antes de enviar.
+  - Gravação no composer: mesma detecção de suporte/`MediaRecorder` do
+    `CommandBar.tsx` (mic do Assistente IA), adaptada pra NÃO transcrever —
+    só captura o blob. Estados: gravando (timer + cancelar + parar) →
+    pré-escuta (`AudioMessagePlayer` + Descartar/Enviar) → enviando
+    (spinner) → erro honesto se falhar. Trocar de conversa ou desmontar o
+    componente com o mic ligado cancela a gravação automaticamente (evita
+    microfone/timer vazando em segundo plano).
+- **"CRM criado" navega e abre o cadastro.** Antes era só um selo estático.
+  `createLead()` (`ConversasArea.tsx`) agora guarda o lead completo (id +
+  `pipeline_id`) devolvido por `POST /create-lead` (já vinha completo, não
+  precisou de endpoint novo). Canal novo de comunicação entre áreas — não
+  existia nenhum antes — via estado elevado em `ExperienceShell.tsx`
+  (`pendingCrmLead`): clicar em "CRM criado" troca a área pra `negocios` e
+  passa `openLeadId`/`openLeadPipelineId` pra `NegociosArea`, que seleciona
+  o pipeline certo do lead (a busca de leads é escopada por pipeline — sem
+  isso o lead podia nem aparecer na tela) e abre o modal de edição dele
+  assim que a lista carregar.
+- Checklist: tsc limpo, knip ok, build ok, 8/8 testes, diff --check limpo.
+  QA visual/funcional ao vivo não rodada (mesma limitação de sempre).
 
 **Estado:** migration aplicada e verificada manualmente no Supabase em
 17/07/2026. Tabela, colunas e índice retornaram `true`; conversas, mensagens,

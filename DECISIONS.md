@@ -39,6 +39,21 @@
 
 ## Produto e experiência
 
+- **Envio de áudio (UAZAPI) implementado sem confirmação ao vivo do formato
+  (2026-07-23).** `sendUazapiMedia` (`server/services/uazapi.ts`) usa a
+  hipótese mais provável (`POST /send/media`, `type:"ptt"`, URL pública) —
+  diferente de `sendUazapiText`, que foi validado contra o WhatsApp real do
+  Hunter. A doc oficial (docs.uazapi.com) é renderizada via JS e ficou
+  inacessível pras ferramentas de busca desta sessão. Falha honesta se a
+  UAZAPI recusar (nunca finge entrega). **Pendente: testar com um áudio
+  real depois do deploy** — ver NEXT_TASK.md. Reversão/ajuste, se o formato
+  estiver errado, é pontual só nessa função.
+- **FAB do Assistente IA escondido no mobile só dentro de Conversas
+  (2026-07-23).** O botão flutuante é global (`ExperienceShell.tsx`) e
+  sobrepunha o composer/notas de Conversas no mobile — não um bug de
+  Conversas, é o FAB que não considerava outras áreas com composer fixo
+  embaixo. Corrigido condicionando à área ativa, não removendo o FAB de
+  vez (ele continua útil/sem conflito nas outras áreas e no desktop).
 - **Conversas é inbox, não Kanban de arrastar (2026-07-23).** Perguntado
   explicitamente ao usuário (AskUserQuestion) antes de reescrever a tela:
   Kanban literal (colunas + drag-and-drop, como `NegociosArea.tsx`) vs inbox

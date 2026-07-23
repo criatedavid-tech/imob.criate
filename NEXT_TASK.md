@@ -6,6 +6,27 @@
 - Branch: `v2`; última base publicada `eb5bd99` (hardening P0 contra prompt injection).
 - Limpeza do transporte antigo publicada e verificada na produção V2.
 - O n8n não foi acessado nem alterado nesta etapa.
+- **Uncommitted (2026-07-23, mais recente):** ajustes de responsividade +
+  áudio + navegação pro CRM em Conversas — `ExperienceShell.tsx` (FAB
+  condicional + `pendingCrmLead`), `ConversasArea.tsx` (mobile 100dvh,
+  `AudioMessagePlayer`, gravação, lead completo), `NegociosArea.tsx`
+  (`openLeadId`), `server/routes/conversations.ts` (`upload-audio`, `/reply`
+  estendido), `server/services/uazapi.ts` (`sendUazapiMedia`),
+  `server/services/inboundMedia.ts` + `inboundWebhookQueue.ts` (persistir
+  áudio recebido). Plano em
+  `C:\Users\Criate\.claude\plans\declarative-napping-sifakis.md`. Checklist
+  passou (tsc/knip/build/8 testes/diff). Aguardando autorização de
+  commit+deploy.
+- **⚠️ TESTE AO VIVO OBRIGATÓRIO após o deploy:** gravar e mandar um áudio
+  de teste — ida (corretor→cliente) e volta (cliente→corretor). O formato
+  do envio (`sendUazapiMedia`, `uazapi.ts`) NÃO foi confirmado contra a
+  documentação real da UAZAPI (site em JS, inacessível nesta sessão) — só a
+  hipótese mais provável, com falha honesta se recusado. Se não funcionar,
+  é ajuste pontual só nessa função.
+- **QA pós-deploy — responsividade:** testar em celular pequeno/médio/grande
+  real: abrir/fechar conversa, teclado do celular aberto (composer
+  acessível), gravar/cancelar/ouvir/enviar áudio, tocar áudio recebido,
+  clicar "CRM criado" (deve abrir o CRM já no lead certo).
 - **Uncommitted (2026-07-23):** redesign completo da área de Conversas —
   `src/experience/ConversasArea.tsx` (reescrito) + `server/routes/conversations.ts`
   (removido bloqueio de ticket encerrado imutável). Plano aprovado via
