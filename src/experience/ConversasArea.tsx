@@ -160,8 +160,8 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-4 sm:p-6 max-h-[calc(100dvh-1.5rem)] min-h-0 flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[16px] font-bold text-[var(--text-hi)] flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Tags</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
@@ -177,9 +177,9 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
           ) : (
             tags.map((tag) => (
               <div key={tag.id} className="flex items-center gap-2 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline)] px-3 py-2">
-                <div className="relative group shrink-0">
+                <div className="relative group shrink-0" tabIndex={0}>
                   <span className="w-4 h-4 rounded-full block border border-[var(--glass-border)]" style={{ backgroundColor: tag.color || '#888' }} />
-                  <div className="hidden group-hover:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-slate-800 border border-[var(--glass-border)] shadow-xl">
+                  <div className="hidden group-hover:flex group-focus-within:flex absolute z-10 top-6 left-0 gap-1 p-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--glass-border)] shadow-xl">
                     {TAG_COLORS.map((c) => (
                       <button key={c} onClick={() => setColor(tag, c)}
                         className="w-4 h-4 rounded-full border border-[var(--glass-border)] hover:scale-110 transition-transform"
@@ -257,8 +257,8 @@ function TicketDetailsModal({
   const availableTags = allTags.filter((t) => !conversation.tags.some((ct) => ct.id === t.id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-4 sm:p-6 max-h-[calc(100dvh-1.5rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-[16px] font-bold text-[var(--text-hi)]">Detalhes do atendimento</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
@@ -434,6 +434,7 @@ export function ConversasArea() {
   // em todo resize. Só lê posição (getBoundingClientRect().top), nunca a altura
   // que ele mesmo define — então não há laço de realimentação.
   useLayoutEffect(() => {
+    let animationFrame = 0;
     const measurePanel = () => {
       const el = gridRef.current;
       if (!el) { setPanelHeight(null); return; }
@@ -443,12 +444,26 @@ export function ConversasArea() {
       const scrollParent = el.closest('main');
       if (scrollParent && scrollParent.scrollTop !== 0) scrollParent.scrollTop = 0;
       const top = el.getBoundingClientRect().top;
-      setPanelHeight(Math.max(340, Math.round(window.innerHeight - top - 16)));
+      const viewport = window.visualViewport;
+      const viewportBottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
+      const minimumHeight = window.innerWidth < 768 ? 220 : 340;
+      setPanelHeight(Math.max(minimumHeight, Math.round(viewportBottom - top - 16)));
     };
-    measurePanel();
-    window.addEventListener('resize', measurePanel);
-    return () => window.removeEventListener('resize', measurePanel);
-  }, [selected, category, error, conversations === null, (conversations || []).length === 0]);
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(measurePanel);
+    };
+    scheduleMeasure();
+    window.addEventListener('resize', scheduleMeasure);
+    window.visualViewport?.addEventListener('resize', scheduleMeasure);
+    window.visualViewport?.addEventListener('scroll', scheduleMeasure);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', scheduleMeasure);
+      window.visualViewport?.removeEventListener('resize', scheduleMeasure);
+      window.visualViewport?.removeEventListener('scroll', scheduleMeasure);
+    };
+  }, [selected, category, addingNote, error, conversations === null, (conversations || []).length === 0]);
 
   // Sem isso, uma resposta nova (do cliente ou da IA) só aparecia depois de
   // um F5 manual — a lista de conversas e a thread aberta agora se atualizam
@@ -1161,14 +1176,14 @@ export function ConversasArea() {
                   )}
 
                   {addingNote && (
-                    <div className="flex items-center gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
+                    <div className="flex items-center min-w-0 gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
                       <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && addNote()}
                         autoFocus
                         placeholder="Nota interna (só o time vê)…"
-                        className="flex-1 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
                       <button onClick={addNote} disabled={!noteDraft.trim()}
-                        className="text-[12px] font-bold text-amber-300 px-3 py-2 disabled:opacity-40">Salvar</button>
+                        className="shrink-0 text-[12px] font-bold text-amber-300 px-2 sm:px-3 py-2 disabled:opacity-40">Salvar</button>
                     </div>
                   )}
 
@@ -1236,9 +1251,9 @@ export function ConversasArea() {
       )}
 
       {showNewConvo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4"
           onClick={() => setShowNewConvo(false)}>
-          <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-4 sm:p-6 max-h-[calc(100dvh-1.5rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-[16px] font-bold text-[var(--text-hi)] mb-4">Nova conversa</h3>
             <label className="text-[12px] text-[var(--text-low)] font-semibold">Número (WhatsApp)</label>
             <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)}

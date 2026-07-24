@@ -83,20 +83,21 @@ function NewLeadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-3xl overflow-hidden
+        max-h-[calc(100dvh-1.5rem)] min-h-0 flex flex-col
         backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)]">
 
-        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--hairline)]">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 sm:py-5 border-b border-[var(--hairline)] shrink-0">
           <h3 className="text-lg font-bold text-[var(--text-hi)]">{isEdit ? 'Editar lead' : 'Novo lead'}</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto min-h-0">
           {error && (
             <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2">
               {error}
@@ -177,7 +178,7 @@ function NewLeadModal({
           )}
         </div>
 
-        <div className="flex gap-3 px-6 py-4 border-t border-[var(--hairline)]">
+        <div className="flex gap-3 px-4 sm:px-6 py-4 border-t border-[var(--hairline)] shrink-0">
           <button
             onClick={onClose}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)]
@@ -484,12 +485,12 @@ function KanbanBoard() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap min-w-0 w-full sm:w-auto">
           {pipelines && pipelines.length > 0 && (
             <select
               value={selectedPipelineId}
               onChange={(e) => { setSelectedPipelineId(e.target.value); setLeads(null); }}
-              className="rounded-xl px-3 py-2 text-[13px] font-semibold bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--hairline-strong)] [color-scheme:dark]"
+              className="max-w-full flex-1 sm:flex-none rounded-xl px-3 py-2 text-[13px] font-semibold bg-[var(--control-fill)] text-[var(--text-hi)] border border-[var(--hairline-strong)] [color-scheme:dark]"
             >
               {pipelines.filter((p) => p.active || p.id === selectedPipelineId).map((p) => (
                 <option key={p.id} value={p.id} style={{ backgroundColor: '#1e293b' }}>
@@ -507,7 +508,7 @@ function KanbanBoard() {
         <button
           onClick={() => setShowCreate(true)}
           disabled={!selectedPipelineId}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+          className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
             bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] disabled:opacity-40 transition-colors"
         >
           <Plus className="w-4 h-4" /> Novo lead
@@ -634,7 +635,7 @@ function KanbanBoard() {
               não é afetado pelo overflow-x-auto das colunas. */}
           <DragOverlay>
             {activeLead ? (
-              <div className="w-64 rotate-2 opacity-95">
+              <div className="w-[min(16rem,calc(100vw-2rem))] rotate-2 opacity-95">
                 <LeadCardBody
                   lead={activeLead}
                   prev={activeLeadStageIdx > 0 ? stages[activeLeadStageIdx - 1] : undefined}
