@@ -6,6 +6,10 @@ import {
 } from "../config";
 import { cancelAsaasSubscription } from "../services/billing";
 import { provisionUazapiInstanceNative, ensureBrokerInstance } from "../services/provisioning";
+import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases } from "../services/systemHealth";
+import { purgeResolvedQueueRows } from "../services/maintenance";
+import { runWebhookKeeperTick } from "../services/webhookKeeper";
+import { runWebhookInboxTick, runWebhookOutboxTick } from "../services/inboundWebhookQueue";
 
 export const adminRouter = express.Router();
 
@@ -356,6 +360,72 @@ adminRouter.post("/api/admin/brokers/:id/ticket-adjustment", async (req, res) =>
     console.log(`[ADMIN] Ajuste tickets: broker=${brokerId} type=${type} amount=${amount>0?'+':''}${amount} por admin=${adminId}`);
     res.json({ success: true, adjustment: data });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// SAÚDE DO SISTEMA (só admin) — diagnóstico + intervenção manual
+// Existe para responder sem abrir o SQL: o pipeline está drenando? tem
+// mensagem parada? qual corretor está com o WhatsApp caído? E, principalmente,
+// para AGIR quando a resposta for ruim.
+// ─────────────────────────────────────────────────────────────────────────
+
+adminRouter.get("/api/admin/health", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    res.json(await getSystemHealth());
+  } catch (err: any) {
+    console.error("Erro GET /api/admin/health:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.get("/api/admin/health/brokers", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    res.json(await getBrokerHealth());
+  } catch (err: any) {
+    console.error("Erro GET /api/admin/health/brokers:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ações de intervenção. Todas idempotentes e com efeito limitado — o pior caso
+// é reprocessar algo que já estava certo, nunca perder dado.
+adminRouter.post("/api/admin/health/actions/:action", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  const queue = req.body?.queue === "outbox" ? "imf_webhook_outbox" : "imf_webhook_inbox";
+  try {
+    switch (req.params.action) {
+      case "requeue-dead": {
+        const moved = await requeueDeadRows(queue);
+        return res.json({ ok: true, action: "requeue-dead", queue, affected: moved });
+      }
+      case "release-stale-leases": {
+        const released = await releaseStaleLeases(queue);
+        return res.json({ ok: true, action: "release-stale-leases", queue, affected: released });
+      }
+      case "purge-queues": {
+        await purgeResolvedQueueRows();
+        return res.json({ ok: true, action: "purge-queues" });
+      }
+      case "reassert-webhooks": {
+        // Reaponta o webhook da UAZAPI de todas as instâncias para este backend.
+        // É o botão para quando o inbound "cai" e ninguém sabe por quê.
+        await runWebhookKeeperTick();
+        return res.json({ ok: true, action: "reassert-webhooks" });
+      }
+      case "drain-queues": {
+        // Força um ciclo das filas agora, sem esperar o worker.
+        await Promise.all([runWebhookInboxTick(), runWebhookOutboxTick()]);
+        return res.json({ ok: true, action: "drain-queues" });
+      }
+      default:
+        return res.status(400).json({ error: "Ação desconhecida." });
+    }
+  } catch (err: any) {
+    console.error(`Erro POST /api/admin/health/actions/${req.params.action}:`, err);
     res.status(500).json({ error: err.message });
   }
 });

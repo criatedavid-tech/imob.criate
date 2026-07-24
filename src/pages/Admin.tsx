@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Home, TrendingUp, DollarSign, Shield, CheckCircle2,
@@ -8,6 +8,9 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../services/auth';
 import Copyright from '../components/Copyright';
+
+// Painel pesado e usado só quando há incidente — carregado sob demanda.
+const AdminHealth = lazy(() => import('../components/AdminHealth'));
 
 interface Broker {
   id: string;
@@ -86,6 +89,7 @@ export default function Admin() {
   const [memberLimitInput, setMemberLimitInput] = useState('');
   const [savingMemberLimit, setSavingMemberLimit] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
+  const [view, setView] = useState<'contas' | 'saude'>('contas');
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
   const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
 
@@ -329,7 +333,27 @@ export default function Admin() {
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-8">
-        {loading ? (
+        {/* Duas visões: as CONTAS (assinatura, cobrança) e a SAÚDE do sistema
+            (filas, WhatsApp por corretor, intervenção manual em incidente). */}
+        <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-6">
+          {([['contas', 'Contas'], ['saude', 'Saúde do sistema']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={`px-4 py-2 rounded-xl text-[12px] font-semibold transition-colors ${
+                view === key ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)]' : 'text-[var(--text-low)] hover:text-[var(--text-mid)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {view === 'saude' ? (
+          <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
+            <AdminHealth />
+          </Suspense>
+        ) : loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" />
           </div>
