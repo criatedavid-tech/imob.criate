@@ -161,7 +161,7 @@ function TagsManagerModal({ onClose, onChanged }: { onClose: () => void; onChang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[16px] font-bold text-[var(--text-hi)] flex items-center gap-2"><TagsIcon className="w-4 h-4 text-violet-300" /> Tags</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
@@ -258,7 +258,7 @@ function TicketDetailsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-[16px] font-bold text-[var(--text-hi)]">Detalhes do atendimento</h3>
           <button onClick={onClose} className="text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors"><X className="w-5 h-5" /></button>
@@ -872,7 +872,7 @@ export function ConversasArea() {
               <Menu className="w-4 h-4" />
             </button>
             {mobileMenuOpen && (
-              <div className="absolute z-10 top-11 right-0 w-44 rounded-xl bg-slate-900 border border-[var(--glass-border)] p-1 shadow-xl">
+              <div className="absolute z-10 top-11 right-0 w-44 rounded-xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-1 shadow-xl">
                 <button onClick={() => { setShowTagsManager(true); setMobileMenuOpen(false); }}
                   className="w-full flex items-center gap-2 text-left text-[13px] text-[var(--text-hi)] hover:bg-[var(--control-fill)] rounded-lg px-3 py-2">
                   <TagsIcon className="w-3.5 h-3.5" /> Tags
@@ -1006,7 +1006,7 @@ export function ConversasArea() {
                           {crmMenuOpen && currentLead?.exists && (
                             <>
                               <div className="fixed inset-0 z-30" onClick={() => setCrmMenuOpen(false)} />
-                              <div className="absolute z-40 left-3 right-3 top-[104px] md:left-auto md:right-5 md:top-[58px] md:w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
+                              <div className="absolute z-40 left-3 right-3 top-[104px] md:left-auto md:right-5 md:top-[58px] md:w-56 rounded-2xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
                                 <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">
                                   {leadPipeline ? leadPipeline.name : 'Etapas'}
                                 </div>
@@ -1238,7 +1238,7 @@ export function ConversasArea() {
       {showNewConvo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => setShowNewConvo(false)}>
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-[var(--glass-border)] p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-3xl bg-[var(--surface-2)] border border-[var(--glass-border)] p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-[16px] font-bold text-[var(--text-hi)] mb-4">Nova conversa</h3>
             <label className="text-[12px] text-[var(--text-low)] font-semibold">Número (WhatsApp)</label>
             <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
