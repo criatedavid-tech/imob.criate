@@ -29,6 +29,39 @@ export function formatCentsBR(cents: number): string {
   });
 }
 
+// Converte os preços textuais legados para centavos ao preencher o formulário
+// de edição. No legado existem valores com separadores de milhar em ambos os
+// formatos ("5,000,000" e "1.200.000") e valores pt-BR com centavos
+// ("R$ 1.000.000,00"). Uma vírgula só é decimal quando é única e aparece no
+// final; múltiplas vírgulas são separadores de milhar.
+export function parseLegacyPriceToCents(raw?: string): number {
+  const compact = (raw || '').trim().replace(/\s/g, '');
+  if (!compact) return 0;
+
+  const commaCount = (compact.match(/,/g) || []).length;
+  const dotCount = (compact.match(/\./g) || []).length;
+  const decimalComma = commaCount === 1 && /,\d{1,2}$/.test(compact);
+  // Aceita também o formato internacional "5,000.00", mas mantém "5.00"
+  // compatível com o legado pt-BR, onde o ponto era separador de milhar.
+  const decimalDot = !decimalComma && commaCount > 0 && dotCount === 1 && /\.\d{1,2}$/.test(compact);
+
+  const decimalSeparator = decimalComma ? ',' : decimalDot ? '.' : null;
+  if (decimalSeparator) {
+    const separatorIndex = compact.lastIndexOf(decimalSeparator);
+    const reaisDigits = compact.slice(0, separatorIndex).replace(/\D/g, '').slice(0, 10);
+    const centsDigits = compact.slice(separatorIndex + 1).replace(/\D/g, '').padEnd(2, '0').slice(0, 2);
+    const reais = reaisDigits ? parseInt(reaisDigits, 10) : 0;
+    const cents = centsDigits ? parseInt(centsDigits, 10) : 0;
+    const total = reais * 100 + cents;
+    return Number.isSafeInteger(total) ? total : 0;
+  }
+
+  const reaisDigits = compact.replace(/\D/g, '').slice(0, 10);
+  if (!reaisDigits) return 0;
+  const total = parseInt(reaisDigits, 10) * 100;
+  return Number.isSafeInteger(total) ? total : 0;
+}
+
 // Exibição de preço "legado": imóveis antigos guardaram o preço como texto
 // livre (ex.: "5,000,000", "400000", "1.200.000"). Normaliza pra R$ pt-BR na
 // hora de mostrar. Preços já formatados (contêm "R$") passam direto.

@@ -3,27 +3,9 @@ import { X, Upload, Home, MapPin, DollarSign, Camera, Check, Loader2, Sparkles }
 import { motion, AnimatePresence } from 'motion/react';
 
 import { authService } from '../services/auth';
-import { maskFromCents, centsFromMaskInput } from '../lib/money';
+import { maskFromCents, centsFromMaskInput, parseLegacyPriceToCents } from '../lib/money';
 
 import MagicWandTextarea from './MagicWandTextarea';
-
-// Preços antigos foram digitados como texto livre, sem centavos — trata
-// qualquer sequência de dígitos como reais inteiros pra pré-popular a
-// máscara ao editar um imóvel já cadastrado. Preços já formatados com
-// centavos (ex.: "R$ 1.000.000,00", gerados pelo assistente de IA ou por
-// uma edição anterior) têm a vírgula decimal, não sofrem o *100: sem esse
-// caso a formatação inflava 100x (R$1.000.000,00 virava R$100.000.000,00
-// ao abrir "Editar Imóvel" de um cadastro feito pela IA).
-function parseLegacyPriceToCents(raw: string): number {
-  const s = (raw || '').trim();
-  if (!s) return 0;
-  if (s.includes(',')) {
-    const reais = parseFloat(s.replace(/[^\d,]/g, '').replace(/\./g, '').replace(',', '.'));
-    return Number.isFinite(reais) ? Math.round(reais * 100) : 0;
-  }
-  const digits = s.replace(/\D/g, '').slice(0, 10);
-  return digits ? parseInt(digits, 10) * 100 : 0;
-}
 
 interface PropertyData {
   id?: string;
