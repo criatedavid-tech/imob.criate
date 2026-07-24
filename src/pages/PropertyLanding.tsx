@@ -21,28 +21,72 @@ const fadeUp = {
 const titleCase = (s: string) =>
   s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
-// Distribui a descrição (curta ou longa) em blocos, um por foto — é o que dá
-// o ar "orgânico", como se alguém tivesse escrito a página em capítulos. Curta
-// vira 1 bloco; longa, vários (teto de 4 pra não picotar demais).
-function splitIntoChunks(text: string): string[] {
-  const clean = (text || '').replace(/\s+/g, ' ').trim();
-  if (!clean) return [];
-  const sentences = clean.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [clean];
-  const kept = sentences.map((s) => s.trim()).filter((s) => s.length > 12);
-  if (kept.length === 0) return [clean];
-  const maxChunks = Math.min(4, kept.length);
-  const perChunk = Math.ceil(kept.length / maxChunks);
-  const chunks: string[] = [];
-  for (let i = 0; i < kept.length; i += perChunk) {
-    chunks.push(kept.slice(i, i + perChunk).join(' '));
+// A descrição pode vir em markdown (o "melhorar com IA" gera **negrito**,
+// listas e títulos). Na página isso apareceria como lixo literal — então o
+// texto é limpo antes de ser distribuído.
+function stripMarkdown(text: string): string {
+  return (text || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^\s*>\s?/gm, '');
+}
+
+const MAX_BLOCKS = 4;
+// Bloco fecha ao passar de MIN (pra intercalar com as fotos em vez de virar um
+// parágrafo único) e nunca passa de MAX (pra não virar paredão em fonte display).
+const MIN_BLOCK_CHARS = 90;
+const MAX_BLOCK_CHARS = 260;
+
+// Distribui a descrição em blocos curtos (um por foto) — é o que dá o ar
+// "orgânico", como se alguém tivesse escrito a página em capítulos. Descrição
+// curta vira 1 bloco; longa preenche até MAX_BLOCKS e o QUE SOBRA volta em
+// `rest`, pra virar a seção "Sobre este imóvel". Assim nada do que o corretor
+// escreveu se perde, e nenhum bloco vira um paredão de texto.
+function buildEditorial(text: string): { blocks: string[]; rest: string } {
+  const clean = stripMarkdown(text).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (!clean) return { blocks: [], rest: '' };
+
+  const flat = clean.replace(/\s+/g, ' ');
+  const sentences = (flat.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [flat])
+    .map((s) => s.trim())
+    .filter((s) => s.length > 12);
+  if (sentences.length === 0) return { blocks: [clean], rest: '' };
+
+  const blocks: string[] = [];
+  let current = '';
+  let consumed = 0;
+  for (let i = 0; i < sentences.length; i++) {
+    if (blocks.length >= MAX_BLOCKS) break;
+    const s = sentences[i];
+    const merged = current ? `${current} ${s}` : s;
+    // Frase sozinha já maior que o teto vira bloco próprio.
+    if (current && merged.length > MAX_BLOCK_CHARS) {
+      blocks.push(current);
+      current = s;
+    } else {
+      current = merged;
+    }
+    consumed = i + 1;
+    if (current.length >= MIN_BLOCK_CHARS && blocks.length < MAX_BLOCKS) {
+      blocks.push(current);
+      current = '';
+    }
   }
-  return chunks;
+  if (current && blocks.length < MAX_BLOCKS) { blocks.push(current); current = ''; }
+
+  const restParts = [current, ...sentences.slice(consumed)].filter(Boolean);
+  return { blocks, rest: restParts.join(' ').trim() };
 }
 
 // Rótulo curto de cada bloco, derivado das PRÓPRIAS palavras do texto (nunca
 // inventado). Sem match, cai num rótulo neutro pela posição.
 function deriveKicker(text: string, index: number): string {
   const t = text.toLowerCase();
+  // "sem suítes" não pode virar o rótulo "Suítes" — negativa não é diferencial.
+  const has = (k: string) => t.includes(k) && !new RegExp(`sem\\s+\\w*\\s?${k}`).test(t);
   const map: [string, string][] = [
     ['piscina', 'Área de lazer'], ['lazer', 'Lazer & bem-estar'], ['gourmet', 'Espaço gourmet'],
     ['churrasq', 'Espaço gourmet'], ['segur', 'Segurança'], ['vista', 'Vista'],
@@ -52,7 +96,7 @@ function deriveKicker(text: string, index: number): string {
     ['espaço', 'Espaço & conforto'], ['conforto', 'Espaço & conforto'], ['localiz', 'Localização'],
     ['reform', 'Reformado'], ['moderna', 'Design'], ['moderno', 'Design'],
   ];
-  for (const [k, label] of map) if (t.includes(k)) return label;
+  for (const [k, label] of map) if (has(k)) return label;
   return ['O imóvel', 'Ambientes', 'Diferenciais', 'Detalhes'][index % 4];
 }
 
@@ -235,7 +279,7 @@ export default function PropertyLanding() {
   ].filter(Boolean) as { label: string; value: string }[];
 
   // Blocos editoriais: um por trecho da descrição real, com foto ao lado.
-  const chunks = splitIntoChunks(d.description);
+  const { blocks: chunks, rest: restDescription } = buildEditorial(d.description);
   const spreads = chunks.map((text, i) => ({
     text,
     kicker: deriveKicker(text, i),
@@ -347,6 +391,16 @@ export default function PropertyLanding() {
           </motion.div>
         </section>
       ))}
+
+      {/* ── Sobre este imóvel (só quando a descrição é longa e sobrou texto) ── */}
+      {restDescription && (
+        <section className="bg-[#f6f5f1] border-t border-[#d7d6cf] py-[clamp(56px,8vw,96px)] px-5 md:px-16">
+          <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} className="max-w-[760px] mx-auto">
+            <div className="pl-eyebrow text-[#83847e] flex items-center gap-3 mb-4"><span className="w-6 h-px bg-current" />Sobre este imóvel</div>
+            <p className="text-[#3b3e41] whitespace-pre-line" style={{ fontSize: '1.06rem', lineHeight: 1.85 }}>{restDescription}</p>
+          </motion.div>
+        </section>
+      )}
 
       {/* ── Ficha técnica ── */}
       {fichaItems.length > 0 && (
