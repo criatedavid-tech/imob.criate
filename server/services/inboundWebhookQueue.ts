@@ -9,6 +9,7 @@ import {
 } from "./conversationTickets";
 import { resolveInboundMedia } from "./inboundMedia";
 import { storeConversationMediaFromBase64 } from "./conversationMedia";
+import { createSemaphore, withDeadline } from "../lib/semaphore";
 
 type EnqueueResult = "accepted" | "duplicate" | "ignored";
 
@@ -37,6 +38,14 @@ const WORKER_ID = `${process.pid}:${randomUUID()}`;
 const INBOX_BATCH_SIZE = envInteger("WEBHOOK_INBOX_BATCH_SIZE", 10, 1, 100);
 const OUTBOX_BATCH_SIZE = envInteger("WEBHOOK_OUTBOX_BATCH_SIZE", 20, 1, 200);
 const MAX_ATTEMPTS = envInteger("WEBHOOK_QUEUE_MAX_ATTEMPTS", 20, 1, 100);
+// Enriquecimento de mídia (download na UAZAPI + transcrição/visão no
+// OpenRouter) é a etapa mais cara do pipeline: dezenas de MB e até dezenas de
+// segundos por linha. Limitar a concorrência protege a memória do processo e a
+// cota do provedor de IA; o prazo impede que UMA linha lenta congele o lote
+// inteiro — e, com ele, as mensagens de TEXTO que estão no mesmo lote.
+const MEDIA_CONCURRENCY = envInteger("WEBHOOK_MEDIA_CONCURRENCY", 3, 1, 10);
+const MEDIA_DEADLINE_MS = envInteger("WEBHOOK_MEDIA_DEADLINE_MS", 25_000, 5_000, 120_000);
+const withMediaSlot = createSemaphore(MEDIA_CONCURRENCY);
 
 let inboxTickRunning = false;
 let outboxTickRunning = false;
@@ -350,7 +359,8 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         if (message.isGroup) return await markInboxIgnored(row.id, "Midia de grupo ignorada.");
         const instanceToken = optionalString(body.token);
         if (!instanceToken) throw new Error("Token da instancia ausente no payload persistido.");
-        const media = await resolveInboundMedia(message, instanceToken);
+        const media = await withMediaSlot(() =>
+          withDeadline(resolveInboundMedia(message, instanceToken), MEDIA_DEADLINE_MS, "midia"));
         if (!media) return await markInboxIgnored(row.id, "Tipo de midia ainda nao suportado.");
         storedBody = media.storedBody;
         agentText = media.agentText;
@@ -378,13 +388,17 @@ async function processInboxRow(row: InboxRow): Promise<void> {
       let inboundMediaUrl: string | null = null;
       if (inboundMediaBase64 && inboundMediaMimetype) {
         try {
-          const stored = await storeConversationMediaFromBase64({
-            brokerId: row.broker_id,
-            ticketId,
-            base64: inboundMediaBase64,
-            mime: inboundMediaMimetype,
-            filenameHint: inboundMediaType === "audio" ? "audio-recebido" : "imagem-recebida",
-          });
+          const stored = await withMediaSlot(() => withDeadline(
+            storeConversationMediaFromBase64({
+              brokerId: row.broker_id,
+              ticketId,
+              base64: inboundMediaBase64!,
+              mime: inboundMediaMimetype!,
+              filenameHint: inboundMediaType === "audio" ? "audio-recebido" : "imagem-recebida",
+            }),
+            MEDIA_DEADLINE_MS,
+            "upload de midia",
+          ));
           inboundMediaUrl = stored.publicUrl;
         } catch (mediaError: any) {
           console.warn("[Webhook Inbox] upload de midia recebida falhou:", safeError(mediaError));
