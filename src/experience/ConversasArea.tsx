@@ -345,7 +345,7 @@ function TicketDetailsModal({
 // ficam empilhadas: é lista OU thread em tela cheia, alternando por `selected`
 // (sem media query nova — só troca `hidden`/visível abaixo do breakpoint `md`,
 // que continua mostrando as duas colunas lado a lado como sempre foi).
-export function ConversasArea() {
+export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (open: boolean) => void } = {}) {
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -390,6 +390,7 @@ export function ConversasArea() {
   // composer fica sempre à vista (desktop e mobile). Ver measurePanel().
   const gridRef = useRef<HTMLDivElement>(null);
   const noteInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const panelHeightRef = useRef<number | null>(null);
   const [panelHeight, setPanelHeight] = useState<number | null>(null);
 
@@ -445,10 +446,11 @@ export function ConversasArea() {
         return;
       }
       const viewport = window.visualViewport;
-      // Opening the iPhone keyboard shrinks VisualViewport. Keep the existing
-      // card height while the note field is focused so typing cannot resize it.
-      const keyboardIsOpen = !!viewport && viewport.height < window.innerHeight * 0.8;
-      if (document.activeElement === noteInputRef.current && keyboardIsOpen && panelHeightRef.current !== null) return;
+      // Keep the existing card height throughout a compose session. Safari can
+      // emit several viewport resize/scroll events between focus, first key and
+      // keyboard animation; reacting to any of them made the whole thread jump.
+      const composerHasFocus = document.activeElement === noteInputRef.current || document.activeElement === messageInputRef.current;
+      if (composerHasFocus && panelHeightRef.current !== null) return;
 
       // Mede a partir do topo do container rolável: se o usuário trocou de aba
       // com a página rolada, o topo do grid seria lido deslocado. Zerar aqui
@@ -459,8 +461,7 @@ export function ConversasArea() {
       const viewportBottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
       const isMobile = window.innerWidth < 768;
       const minimumHeight = isMobile ? 220 : 340;
-      // Reserve a mobile strip below the conversation for the AI agent button.
-      const bottomClearance = isMobile ? 76 : 16;
+      const bottomClearance = 16;
       const nextHeight = Math.max(minimumHeight, Math.round(viewportBottom - top - bottomClearance));
       panelHeightRef.current = nextHeight;
       setPanelHeight(nextHeight);
@@ -480,6 +481,11 @@ export function ConversasArea() {
       window.visualViewport?.removeEventListener('scroll', scheduleMeasure);
     };
   }, [selected, category, addingNote, error, conversations === null, (conversations || []).length === 0]);
+
+  useEffect(() => {
+    onThreadOpenChange?.(!!selected);
+    return () => onThreadOpenChange?.(false);
+  }, [selected, onThreadOpenChange]);
 
   // Sem isso, uma resposta nova (do cliente ou da IA) só aparecia depois de
   // um F5 manual — a lista de conversas e a thread aberta agora se atualizam
@@ -512,7 +518,17 @@ export function ConversasArea() {
       setMessages((current) => {
         if (mode === 'replace') return page;
         const byId = new Map<string, Message>();
-        for (const message of [...(current || []), ...page]) byId.set(message.id, message);
+        const serverBodies = new Set(
+          page
+            .filter((message) => message.direction === 'out')
+            .map((message) => `${message.body || ''}|${message.direction}`),
+        );
+        // Keep the optimistic bubble if refresh fails; replace it silently as
+        // soon as the matching persisted message arrives from the server.
+        const retained = (current || []).filter((message) =>
+          !message.id.startsWith('optimistic-') || !serverBodies.has(`${message.body || ''}|${message.direction}`),
+        );
+        for (const message of [...retained, ...page]) byId.set(message.id, message);
         return Array.from(byId.values()).sort((a, b) => {
           const byDate = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
           return byDate || a.id.localeCompare(b.id);
@@ -558,13 +574,14 @@ export function ConversasArea() {
   useEffect(() => {
     const msgs = messages || [];
     const lastId = msgs.length ? msgs[msgs.length - 1].id : null;
+    const initialLoad = prevLastMsgIdRef.current === null;
     const hasNewLast = !!lastId && lastId !== prevLastMsgIdRef.current;
     prevLastMsgIdRef.current = lastId;
     // Rola pro fim ao abrir a conversa (replace) ou quando chega mensagem nova
     // E o usuário já estava no rodapé. Se ele subiu pra ler, respeita a posição.
     if (shouldScrollToEndRef.current || (hasNewLast && atBottomRef.current)) {
       const el = messagesScrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: initialLoad ? 'auto' : 'smooth' });
       else messagesEndRef.current?.scrollIntoView({ block: 'end' });
       shouldScrollToEndRef.current = false;
     }
@@ -603,15 +620,30 @@ export function ConversasArea() {
   }, [messages, notes]);
 
   const handleSend = async () => {
-    if (!selected || !draft.trim()) return;
+    const message = draft.trim();
+    if (!selected || !message || sending) return;
+    const ticketId = selected;
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: optimisticId,
+      direction: 'out',
+      sender_type: 'broker_manual',
+      body: message,
+      created_at: new Date().toISOString(),
+    };
+
+    shouldScrollToEndRef.current = true;
+    setMessages((current) => [...(current || []), optimisticMessage]);
+    setDraft('');
     setSending(true);
     setActionError(null);
     try {
-      await api(`/api/conversas/${encodeURIComponent(selected)}/reply`, { method: 'POST', body: JSON.stringify({ message: draft.trim() }) });
-      setDraft('');
-      loadMessages(selected);
+      await api(`/api/conversas/${encodeURIComponent(ticketId)}/reply`, { method: 'POST', body: JSON.stringify({ message }) });
+      await loadMessages(ticketId, 'poll');
       loadConversations();
     } catch (e: any) {
+      setMessages((current) => (current || []).filter((item) => item.id !== optimisticId));
+      setDraft((current) => current || message);
       setActionError(e.message || 'Falha ao enviar.');
     } finally {
       setSending(false);
@@ -1062,7 +1094,7 @@ export function ConversasArea() {
                           )}
                         </div>
                         <button onClick={toggleAi} disabled={selectedConv.conversation_status === 'closed'}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
+                          className={`inline-flex w-[88px] md:w-auto justify-center items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-[11px] font-bold transition-colors ${
                             selectedConv.ai_active ? 'text-violet-200 bg-violet-500/15 hover:bg-violet-500/25' : 'text-amber-200 bg-amber-500/15 hover:bg-amber-500/25'
                           } disabled:opacity-40 disabled:cursor-not-allowed`}>
                           <Bot className="w-3.5 h-3.5" /> {selectedConv.ai_active ? 'IA ligada' : 'IA pausada'}
@@ -1113,7 +1145,7 @@ export function ConversasArea() {
                       const el = e.currentTarget;
                       atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
                     }}
-                    className="flex-1 min-h-0 p-5 overflow-y-auto">
+                    className="flex-1 min-h-0 px-3 pt-3 pb-16 sm:p-5 overflow-y-auto overscroll-contain [overflow-anchor:auto]">
                     {loadingMessages || !messages ? (
                       <div className="flex justify-center pt-16">
                         <Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" />
@@ -1121,7 +1153,7 @@ export function ConversasArea() {
                     ) : messages.length === 0 ? (
                       <p className="text-[var(--text-low)] text-[14px] text-center pt-16">Sem mensagens registradas.</p>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="space-y-2.5 sm:space-y-3">
                         {hasOlderMessages && (
                           <div className="flex justify-center pb-2">
                             <button
@@ -1136,8 +1168,8 @@ export function ConversasArea() {
                           </div>
                         )}
                         {timeline.map((entry) => entry.kind === 'message' ? (
-                          <div key={entry.id} className={`flex ${entry.message.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-[13px] ${
+                          <div key={entry.id} className={`flex ${entry.message.id.startsWith('optimistic-') ? 'chat-message-enter' : ''} ${entry.message.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[84%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2.5 text-[13px] leading-relaxed ${
                               entry.message.direction === 'out' ? 'bg-violet-500/20 text-[var(--text-hi)]' : 'bg-[var(--control-fill)] text-[var(--text-hi)]/85'
                             }`}>
                               {entry.message.media_url && entry.message.media_type === 'image' && (
@@ -1169,7 +1201,7 @@ export function ConversasArea() {
                           </div>
                         ) : (
                           <div key={entry.id} className="flex justify-center">
-                            <div className="max-w-[85%] w-full rounded-2xl px-4 py-2.5 text-[13px] bg-amber-500/10 border border-amber-400/20 text-[var(--text-mid)]">
+                            <div className="max-w-[92%] sm:max-w-[85%] w-full rounded-2xl px-3 sm:px-4 py-2.5 text-[13px] bg-amber-500/10 border border-amber-400/20 text-[var(--text-mid)]">
                               <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300/80 uppercase tracking-wide mb-1">
                                 <StickyNote className="w-3 h-3" /> Nota interna — só o time vê
                               </div>
@@ -1193,8 +1225,14 @@ export function ConversasArea() {
 
                   {addingNote && (
                     <div className="flex h-[61px] shrink-0 items-center min-w-0 gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
-                      <input ref={noteInputRef} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                      <input ref={noteInputRef} data-chat-composer="true" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            addNote();
+                          }
+                        }}
+                        enterKeyHint="done"
                         autoFocus
                         placeholder="Nota interna (só o time vê)…"
                         className="flex-1 min-w-0 h-10 box-border appearance-none px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
@@ -1203,14 +1241,14 @@ export function ConversasArea() {
                     </div>
                   )}
 
-                  <div className="p-3 border-t border-[var(--hairline)]">
+                  <div className="shrink-0 min-h-[64px] p-2 sm:p-3 border-t border-[var(--hairline)] bg-[var(--surface-1)]">
                     {/* Inputs de arquivo escondidos — abertos pelos botões de anexo. */}
                     <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onPickFile('image')} />
                     <input ref={docInputRef} type="file" hidden onChange={onPickFile('document')}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,application/pdf" />
 
                     {recording ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-h-10 items-center gap-1.5 sm:gap-2">
                         <span className="flex items-center gap-2 flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] text-red-300 bg-red-500/10 border border-red-400/20">
                           <span className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse shrink-0" /> Gravando áudio…
                         </span>
@@ -1224,34 +1262,41 @@ export function ConversasArea() {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-0.5 shrink-0">
+                      <div className="flex min-h-10 items-center gap-1.5 sm:gap-2">
+                        <div className="flex items-center shrink-0">
                           <button onClick={() => imageInputRef.current?.click()} title="Enviar imagem"
                             disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
-                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            className="w-8 h-10 sm:w-9 sm:h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
                             <ImageIcon className="w-4 h-4" />
                           </button>
                           <button onClick={() => docInputRef.current?.click()} title="Enviar documento"
                             disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
-                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            className="w-8 h-10 sm:w-9 sm:h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
                             <FileText className="w-4 h-4" />
                           </button>
                           <button onClick={startRecording} title="Gravar áudio"
                             disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
-                            className="w-9 h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
+                            className="w-8 h-10 sm:w-9 sm:h-9 flex items-center justify-center rounded-2xl text-[var(--text-low)] hover:bg-[var(--control-fill)] hover:text-[var(--text-mid)] transition-colors disabled:opacity-40">
                             <Mic className="w-4 h-4" />
                           </button>
                         </div>
-                        <input
+                        <input ref={messageInputRef} data-chat-composer="true"
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              handleSend();
+                            }
+                          }}
+                          enterKeyHint="send"
                           placeholder={selectedConv.conversation_status === 'closed' ? 'Ticket encerrado' : uploadingMedia ? 'Enviando anexo…' : 'Responder como você…'}
                           disabled={selectedConv.conversation_status === 'closed' || uploadingMedia}
-                          className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]
+                          className="flex-1 min-w-0 h-10 box-border appearance-none px-3 sm:px-4 py-2.5 rounded-2xl text-[13px] text-[var(--text-hi)] placeholder:text-[var(--text-low)]
                             bg-[var(--control-fill)] border border-[var(--hairline-strong)] outline-none focus:border-[var(--glass-border-strong)]"
                         />
                         <button onClick={handleSend} disabled={sending || uploadingMedia || !draft.trim() || selectedConv.conversation_status === 'closed'}
+                          aria-label="Enviar mensagem"
                           className="w-10 h-10 shrink-0 flex items-center justify-center rounded-2xl bg-violet-500/25 text-[var(--text-hi)]
                             hover:bg-violet-500/35 disabled:opacity-40 transition-colors">
                           {sending || uploadingMedia ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

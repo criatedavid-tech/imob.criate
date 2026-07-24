@@ -247,6 +247,13 @@ html.theme-transition * {
   .crm-mobile-safe :where(input, textarea, select) { font-size: 16px !important; }
 }
 
+/* Envio otimista: a nova bolha entra sem alterar medidas do restante da thread. */
+.chat-message-enter { animation: chat-message-in .18s ease-out both; }
+@keyframes chat-message-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* Lente de vidro do indicador ATIVO (rail desktop + drawer mobile). Fica atrás
    do ícone (-z-10); desliza entre os itens via layoutId do Framer Motion. O
    ícone fica por cima e nítido (a lente só embaça o fundo do rail atrás dela). */
@@ -279,6 +286,7 @@ html.theme-transition * {
 /* ── Acessibilidade ─────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html.theme-transition, html.theme-transition * { transition-duration: .01ms !important; }
+  .chat-message-enter { animation: none; }
 }
 
 /* Transparência reduzida: solidifica vidro/scrim pra quem pede menos translucidez. */

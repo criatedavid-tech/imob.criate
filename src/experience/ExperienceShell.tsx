@@ -96,6 +96,8 @@ export function ExperienceShell() {
   const [loadingLayout, setLoadingLayout] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [conversationThreadOpen, setConversationThreadOpen] = useState(false);
+  const [chatComposerFocused, setChatComposerFocused] = useState(false);
   // Bump quando a IA executa uma ação — remonta a área atual (refetch) e
   // refaz o cockpit, pra a tela nunca ficar defasada do que a IA acabou de fazer.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -152,6 +154,26 @@ export function ExperienceShell() {
     }
     prevAreaRef.current = area;
   }, [area]);
+
+  // The global AI action does not participate in composing a conversation.
+  // Hide secondary floating actions while the chat input owns focus.
+  useEffect(() => {
+    let frame = 0;
+    const syncComposerFocus = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const active = document.activeElement as HTMLElement | null;
+        setChatComposerFocused(!!active?.closest('[data-chat-composer="true"]'));
+      });
+    };
+    document.addEventListener('focusin', syncComposerFocus);
+    document.addEventListener('focusout', syncComposerFocus);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('focusin', syncComposerFocus);
+      document.removeEventListener('focusout', syncComposerFocus);
+    };
+  }, []);
 
   const cycleAutonomy = () =>
     setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
@@ -277,11 +299,14 @@ export function ExperienceShell() {
 
         {/* Conteúdo: canvas generativo (Hoje) ou área manual.
             key inclui refreshKey → ação da IA remonta a área e força refetch. */}
-        <div key={`${area}-${refreshKey}`} className="px-6 pt-6 pb-16">
+        <div key={`${area}-${refreshKey}`} className={cn(
+          'px-6 pt-6 pb-16',
+          area === 'conversas' && conversationThreadOpen && 'px-2.5 pt-3 pb-3 sm:px-6 sm:pt-6 sm:pb-16',
+        )}>
           {area === 'carteira' ? (
             <CarteiraArea />
           ) : area === 'conversas' ? (
-            <ConversasArea />
+            <ConversasArea onThreadOpenChange={setConversationThreadOpen} />
           ) : area === 'negocios' ? (
             <NegociosArea />
           ) : area === 'contatos' ? (
@@ -320,14 +345,14 @@ export function ExperienceShell() {
       </main>
 
       {/* Botão flutuante — abre o chat. */}
-      {!chatOpen && (
+      {!chatOpen && !(area === 'conversas' && conversationThreadOpen && chatComposerFocused) && (
         <button
           onClick={() => setChatOpen(true)}
           aria-label="Falar com a IA"
           className={cn(
             'absolute z-30 rounded-full flex items-center justify-center border hover:scale-105 active:scale-95 transition-transform',
-            area === 'conversas'
-              ? 'bottom-4 right-4 w-12 h-12 md:bottom-6 md:right-6 md:w-14 md:h-14'
+            area === 'conversas' && conversationThreadOpen
+              ? 'bottom-24 right-3 w-11 h-11 md:bottom-6 md:right-6 md:w-14 md:h-14'
               : 'bottom-6 right-6 w-14 h-14',
           )}
           style={{
