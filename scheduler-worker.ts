@@ -7,7 +7,7 @@ import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduled
 import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
 import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
-import { purgeExpiredWebhookLogs } from "./server/services/maintenance";
+import { purgeExpiredWebhookLogs, purgeResolvedQueueRows } from "./server/services/maintenance";
 import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
 import { runInboundMediaBackfillTick } from "./server/services/inboundMediaBackfill";
 
@@ -58,6 +58,16 @@ const jobs: RecurringJob[] = [
     intervalMs: 24 * 60 * 60 * 1_000,
     runOnStart: true,
     task: purgeExpiredWebhookLogs,
+  },
+  {
+    // Filas: linhas já resolvidas viram peso morto. Sem retenção, os índices
+    // UNIQUE de dedupe (que cobrem todo o histórico) crescem para sempre e
+    // cada INSERT de ingestão sonda um btree cada vez maior — a latência
+    // degrada de forma permanente, mesmo com a fila vazia.
+    name: "retenção das filas de webhook",
+    intervalMs: 6 * 60 * 60 * 1_000,
+    runOnStart: true,
+    task: purgeResolvedQueueRows,
   },
   {
     // Reafirma o webhook UAZAPI das instâncias — impede o inbound de "cair" e

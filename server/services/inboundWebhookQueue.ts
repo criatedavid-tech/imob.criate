@@ -83,7 +83,27 @@ function safeError(error: unknown): string {
   return message.slice(0, 2_000);
 }
 
+// Cache do mapeamento instanceId -> broker. É um dado praticamente estático
+// (muda só no provisionamento), mas era resolvido com 1-2 SELECTs em TODO
+// webhook — com 200 instâncias isso são centenas de queries/s só para
+// descobrir de quem é a mensagem. TTL curto mantém o self-heal do
+// provisionamento sem precisar de invalidação explícita.
+const instanceCache = new Map<string, { value: ResolvedInstance | null; expires: number }>();
+const INSTANCE_TTL_MS = 60_000;
+
 async function resolveInstance(instanceId: string): Promise<ResolvedInstance | null> {
+  const cached = instanceCache.get(instanceId);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  const resolved = await resolveInstanceUncached(instanceId);
+  if (instanceCache.size > 2_000) {
+    const now = Date.now();
+    for (const [k, v] of instanceCache) if (v.expires <= now) instanceCache.delete(k);
+  }
+  instanceCache.set(instanceId, { value: resolved, expires: Date.now() + INSTANCE_TTL_MS });
+  return resolved;
+}
+
+async function resolveInstanceUncached(instanceId: string): Promise<ResolvedInstance | null> {
   const { data: broker, error: brokerError } = await supabase
     .from("imf_brokers")
     .select("id, uazapi_instance_token")

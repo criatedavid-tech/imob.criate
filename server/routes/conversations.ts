@@ -12,7 +12,7 @@ import {
 import { resolveNewLeadStage } from "../services/crmPipelines";
 import { enqueueUazapiWebhook, runWebhookInboxTick } from "../services/inboundWebhookQueue";
 import { requireInternalToken } from "../middleware/internalAuth";
-import { n8nInternalLimiter } from "../middleware/rateLimits";
+import { n8nInternalLimiter, inboundWebhookLimiter } from "../middleware/rateLimits";
 import {
   isValidNormalizedBrazilianPhone,
   N8nInputValidationError,
@@ -122,7 +122,7 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInte
 // A rota preserva o payload bruto numa inbox duravel antes do ACK. O parsing,
 // a persistencia da conversa e o repasse ao n8n acontecem nos workers de
 // inboundWebhookQueue.ts, com deduplicacao, lease, retry e DLQ.
-conversationsRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) => {
+conversationsRouter.post("/api/wpp-shim/inbound/:instanceId", inboundWebhookLimiter, async (req, res) => {
   try {
     const result = await enqueueUazapiWebhook(req.params.instanceId, req.body);
 

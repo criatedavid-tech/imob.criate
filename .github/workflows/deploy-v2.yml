@@ -71,6 +71,13 @@ jobs:
       # Machine até o teste de carga e a ativação do Redis distribuído; depois
       # disso pode aumentar sem duplicar jobs recorrentes.
       - name: Keep scheduler singleton
-        run: flyctl scale count web=1 scheduler=1 --app imobiflow-v2 --yes
+        # worker=2: o claim das filas usa lease + fencing token, então rodar
+        # vários workers é seguro e dobra a vazão de ingestão (o gargalo).
+        # web continua em 1 DE PROPÓSITO até o Redis existir: os rate limiters
+        # caem para store em memória por máquina, então com web=2 os limites de
+        # login/checkout dobrariam silenciosamente. Depois de configurar
+        # REDIS_URL, subir para web=3.
+        # scheduler=1 é obrigatório (singleton — jobs recorrentes).
+        run: flyctl scale count web=1 worker=2 scheduler=1 --app imobiflow-v2 --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}

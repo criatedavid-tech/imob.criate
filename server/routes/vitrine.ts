@@ -1,5 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
+import { publicReadLimiter } from "../middleware/rateLimits";
 
 export const vitrineRouter = express.Router();
 
@@ -8,7 +9,7 @@ export const vitrineRouter = express.Router();
 // (/p/:slug) — cada card leva pra página do imóvel, onde já vive o fluxo de
 // contato/agendamento. Público (sem auth), só expõe campo seguro do corretor
 // (nome/cidade) — os mesmos que a landing individual já mostra.
-vitrineRouter.get("/api/vitrine/:brokerId", async (req, res) => {
+vitrineRouter.get("/api/vitrine/:brokerId", publicReadLimiter, async (req, res) => {
   try {
     const { brokerId } = req.params;
 
@@ -59,7 +60,7 @@ vitrineRouter.get("/api/vitrine/:brokerId", async (req, res) => {
 // Vitrine pública de Lançamentos (incorporadora) — mesmo espírito do vitrine
 // de Carteira acima: um link único mostrando os empreendimentos, sem expor
 // nome/telefone de comprador (só os contadores agregados por status).
-vitrineRouter.get("/api/vitrine-lancamentos/:brokerId", async (req, res) => {
+vitrineRouter.get("/api/vitrine-lancamentos/:brokerId", publicReadLimiter, async (req, res) => {
   try {
     const { brokerId } = req.params;
 

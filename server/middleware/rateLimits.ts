@@ -52,11 +52,56 @@ export const reservationPaymentLimiter = rateLimit({
 
 export const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  // 600/min: o Asaas envia de poucos IPs fixos, então o limite por IP é
+  // compartilhado por TODOS os corretores. Com 120/min, um dia de cobrança em
+  // massa estourava o limite e o Asaas passava a receber 429 — atrasando
+  // eventos de pagamento reais. A rota já valida o token do Asaas.
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded.' },
   store: makeRedisStore('webhook', 60 * 1000),
+});
+
+// Webhook de entrada do WhatsApp: a chave é a INSTÂNCIA, não o IP — a UAZAPI
+// sai de poucos IPs, então limitar por IP puniria todos os corretores juntos.
+// 600/min por instância é ~10 msg/s de um único número: muito acima do uso
+// real e ainda assim um teto que impede um laço de retry de saturar o app.
+export const inboundWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `instance:${String(req.params?.instanceId || 'unknown').slice(0, 100)}`,
+  message: { error: 'Rate limit exceeded.' },
+  store: makeRedisStore('wpp-inbound', 60 * 1000),
+});
+
+// Formulário público da vitrine (POST /api/leads). Sem limite, um laço trivial
+// polui o CRM de todos os corretores com leads falsos e ainda satura o app —
+// o property_id é público por definição, já que a landing é divulgada em
+// anúncios. Generoso o bastante para uma família preenchendo do mesmo IP.
+export const publicFormLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitos envios deste IP. Tente novamente mais tarde.' },
+  store: makeRedisStore('public-form', 60 * 60 * 1000),
+  skip: skipInDev,
+});
+
+// Leitura pública (vitrine e landing de imóvel). São as rotas divulgadas em
+// anúncio, então precisam absorver pico legítimo — o teto existe só para
+// impedir raspagem agressiva de um único IP.
+export const publicReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas requisições. Tente novamente em instantes.' },
+  store: makeRedisStore('public-read', 60 * 1000),
+  skip: skipInDev,
 });
 
 // Automações internas usam um token compartilhado, então o limite precisa

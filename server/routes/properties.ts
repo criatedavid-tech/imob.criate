@@ -3,7 +3,7 @@ import { supabase } from "../supabase";
 import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { PUBLIC_APP_URL } from "../config";
 import { requireInternalToken } from "../middleware/internalAuth";
-import { n8nInternalLimiter } from "../middleware/rateLimits";
+import { n8nInternalLimiter, publicReadLimiter } from "../middleware/rateLimits";
 import {
   N8nInputValidationError,
   parseN8nPropertyCatalog,
@@ -258,7 +258,7 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
   }
 });
 
-propertiesRouter.get("/api/properties/:slug", async (req, res) => {
+propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res) => {
   try {
     // Landing pública — allowlist explícita do corretor embutido: o resto de
     // imf_brokers tem segredos (reset_token, uazapi_instance_token,

@@ -3,6 +3,7 @@ import { supabase } from "../supabase";
 import { requireUser, optionalUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
 import { resolveNewLeadStage } from "../services/crmPipelines";
+import { publicFormLimiter } from "../middleware/rateLimits";
 
 export const leadsRouter = express.Router();
 
@@ -101,7 +102,7 @@ leadsRouter.get("/api/leads/recent", requireUser, async (req, res) => {
 /**
  * Endpoint aprimorado para salvar leads e disparar integrações automáticas.
  */
-leadsRouter.post("/api/leads", optionalUser, async (req, res) => {
+leadsRouter.post("/api/leads", publicFormLimiter, optionalUser, async (req, res) => {
   try {
     const { property_id, name, phone, email, status, notes, pipeline_id: pipelineIdHint } = req.body;
 

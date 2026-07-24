@@ -8,7 +8,7 @@ test("API web não registra schedulers recorrentes", async () => {
   assert.match(source, /process group singleton `scheduler`/);
 });
 
-test("processo scheduler contém os oito jobs esperados", async () => {
+test("processo scheduler registra todos os jobs recorrentes esperados", async () => {
   const source = await readFile(new URL("../scheduler-worker.ts", import.meta.url), "utf8");
   for (const job of [
     "runFollowupTick",
@@ -19,6 +19,12 @@ test("processo scheduler contém os oito jobs esperados", async () => {
     "reconcilePendingBillingActions",
     "expireDueUnitReservations",
     "purgeExpiredWebhookLogs",
+    // Sem retenção, os índices de dedupe das filas crescem para sempre e a
+    // ingestão degrada de forma permanente.
+    "purgeResolvedQueueRows",
+    // Sem o guardião, a UAZAPI perde o webhook e o inbound para em silêncio.
+    "runWebhookKeeperTick",
+    "runInboundMediaBackfillTick",
   ]) {
     assert.match(source, new RegExp(`task: ${job}`));
   }
@@ -30,5 +36,9 @@ test("Fly declara scheduler singleton sem serviço HTTP", async () => {
   assert.match(fly, /scheduler = .*scheduler-worker\.ts/);
   assert.match(fly, /processes = \["scheduler"\]/);
   assert.doesNotMatch(fly.match(/\[http_service\][\s\S]*?\[\[http_service\.checks\]\]/)?.[0] || "", /scheduler/);
-  assert.match(workflow, /scale count web=1 scheduler=1/);
+  // O invariante é o scheduler ser SINGLETON (os jobs recorrentes não podem
+  // rodar em duas máquinas). A contagem de `web`/`worker` é decisão de
+  // capacidade e não deve ser fixada aqui — antes o teste exigia web=1
+  // literal, o que impedia escalar a camada web sem quebrar o CI.
+  assert.match(workflow, /scale count[^\n]*scheduler=1/);
 });

@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import helmet from "helmet";
 
 import { SUPABASE_URL } from "./server/config";
-import "./server/lib/infra"; // side-effect: inicializa Sentry/Redis se configurados
+import { closeInfra } from "./server/lib/infra"; // o import também inicializa Sentry/Redis se configurados
 
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
@@ -49,9 +49,12 @@ async function startServer() {
   // Content-Type "application/csp-report", que o parser JSON padrão ignora.
   app.post(
     "/api/csp-report",
-    express.json({ type: ["application/json", "application/csp-report"] }),
+    express.json({ type: ["application/json", "application/csp-report"], limit: "64kb" }),
     (req, res) => {
-      console.warn("[CSP] violação reportada:", JSON.stringify(req.body?.["csp-report"] || req.body));
+      // Truncado: a rota é pública e sem autenticação — logar o corpo inteiro
+      // permitia inflar volume de log de graça.
+      const raw = JSON.stringify(req.body?.["csp-report"] || req.body) || "";
+      console.warn("[CSP] violação reportada:", raw.slice(0, 500));
       res.status(204).end();
     }
   );
@@ -118,6 +121,16 @@ async function startServer() {
     next();
   });
 
+  // Limites de corpo por rota ANTES do global: body-parser ignora a requisição
+  // que já foi parseada, então o parser específico vence. As rotas públicas de
+  // alto volume (webhook a dezenas por segundo, formulário da vitrine) não
+  // precisam de payload grande e eram o vetor natural de exaustão de memória —
+  // 10 MB × concorrência não cabe numa VM de 1 GB. As rotas de upload
+  // (foto de imóvel, mídia da conversa, documento, áudio) continuam no limite
+  // grande do parser global logo abaixo.
+  app.use("/api/wpp-shim/inbound", express.json({ limit: "512kb" }));
+  app.use("/api/leads", express.json({ limit: "64kb" }));
+
   // 10mb: suficiente para upload individual de foto em base64 (~7MB de imagem real).
   // Limite anterior de 50mb era vetor de DoS por exaustão de memória.
   app.use(express.json({ limit: "10mb" }));
@@ -175,15 +188,55 @@ async function startServer() {
         }
       },
     }));
+    // Rota de API inexistente devolve JSON 404 em vez do HTML da SPA. Sem
+    // isso, um GET /api/errado respondia 200 + index.html: erro de front e
+    // varredura de bot viravam "sucesso" nas métricas, cada um custando uma
+    // leitura de arquivo.
+    app.use("/api", (_req, res) => {
+      res.status(404).json({ error: "Not found" });
+    });
+
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Timeouts: o default do Node é 300s de requestTimeout. Atrás de um proxy
+  // que corta em algumas centenas de conexões, uma requisição presa num
+  // Supabase lento segurava um slot por 5 minutos. keepAlive acima do
+  // idle timeout do proxy do Fly (60s) evita corrida de conexão reaproveitada.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 70_000;
+  server.requestTimeout = 30_000;
+
+  // Graceful shutdown: sem isso o Node encerra IMEDIATAMENTE no SIGTERM, e os
+  // 30s de kill_timeout do Fly nunca eram usados. Toda requisição em voo
+  // morria no meio a cada deploy — incluindo INSERT de lead e checkout entre
+  // duas chamadas ao Asaas. Os process groups worker/scheduler já faziam isso;
+  // o `web`, que é justamente quem atende usuário, era o único sem.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[web] ${signal} recebido; drenando conexões.`);
+    const forced = setTimeout(() => {
+      console.warn("[web] drenagem excedeu o limite; encerrando à força.");
+      process.exit(1);
+    }, 25_000);
+    forced.unref();
+    server.close(async () => {
+      clearTimeout(forced);
+      try { await closeInfra(); } catch { /* encerrando de qualquer forma */ }
+      process.exit(0);
+    });
+  };
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
 }
 
 startServer();

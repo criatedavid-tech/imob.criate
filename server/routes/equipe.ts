@@ -1,7 +1,7 @@
 import express from "express";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, invalidateIdentityCache } from "../middleware/auth";
 import { MEMBER_WHATSAPP_SLOT_MAX, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
 
@@ -314,6 +314,11 @@ equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res)
 
     const { error } = await supabase.from("imf_broker_members").delete().eq("broker_id", brokerId).eq("user_id", req.params.userId);
     if (error) throw error;
+    // A identidade (userId -> brokerId / é dono) é cacheada por 60s para tirar
+    // 2-3 queries de toda requisição autenticada. Numa REMOÇÃO isso não pode
+    // esperar o TTL: sem invalidar, quem acabou de ser removido continuaria
+    // enxergando a conta por até um minuto.
+    invalidateIdentityCache(req.params.userId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/equipe/members/:userId:", err);
