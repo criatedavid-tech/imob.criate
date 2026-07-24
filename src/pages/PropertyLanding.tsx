@@ -18,8 +18,22 @@ const fadeUp = {
 // adaptam a MESMA página a qualquer conteúdo, sem inventar dado e sem repetir
 // as specs ao longo das seções de foto.
 
+// O cadastro é digitado às pressas (muitas vezes tudo em minúsculas: "hunter",
+// "condomínio do lago"). Nos TÍTULOS a página capitaliza pra ficar apresentável,
+// preservando conectores em pt-BR ("Alto da Glória", não "Alto Da Glória") e
+// respeitando quem já escreveu com maiúsculas.
+const SMALL_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'no', 'na', 'nos', 'nas', 'a', 'o', 'as', 'os', 'para', 'com']);
 const titleCase = (s: string) =>
-  s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  (s || '')
+    .split(/(\s+)/)
+    .map((word, i) => {
+      if (!word.trim()) return word;
+      if (/[A-ZÀ-Ý]/.test(word.slice(1))) return word; // já tem maiúscula própria (ex.: "JK", "McField")
+      const lower = word.toLowerCase();
+      if (i > 0 && SMALL_WORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join('');
 
 // A descrição pode vir em markdown (o "melhorar com IA" gera **negrito**,
 // listas e títulos). Na página isso apareceria como lixo literal — então o
@@ -288,7 +302,7 @@ export default function PropertyLanding() {
   const usedImgs = new Set([heroImg, ...spreads.map((s) => s.img)]);
   const galleryImgs = allImages.filter((img, i) => i !== 0 && !usedImgs.has(img));
 
-  const brokerName = property.brokers?.name || 'Corretor';
+  const brokerName = titleCase(property.brokers?.name || 'Corretor');
   let brokerTitle = 'Corretor responsável';
   let brokerPhoto = '';
   let brokerBio1 = 'Atendimento próximo e transparente em cada etapa da negociação.';
@@ -487,7 +501,7 @@ export default function PropertyLanding() {
           <div className="max-w-[1240px] mx-auto">
             <motion.header variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} className="mb-9 md:text-center">
               <div className="pl-eyebrow text-[#83847e] flex items-center md:justify-center gap-3"><span className="w-6 h-px bg-current" />Localização<span className="w-6 h-px bg-current" /></div>
-              <h2 className="pl-serif mt-3" style={{ fontSize: 'clamp(2rem,4vw,3rem)' }}>{d.location}</h2>
+              <h2 className="pl-serif mt-3" style={{ fontSize: 'clamp(2rem,4vw,3rem)' }}>{titleCase(d.location)}</h2>
             </motion.header>
             <motion.div initial={{ opacity: 0, y: 26 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 1 }}
               className="w-full h-[380px] md:h-[500px] rounded-[28px] overflow-hidden border border-[#d7d6cf] bg-[#d7d6cf] group">
