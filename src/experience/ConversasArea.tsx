@@ -389,6 +389,8 @@ export function ConversasArea() {
   // caber sem scroll de página — a lista de mensagens rola por dentro e o
   // composer fica sempre à vista (desktop e mobile). Ver measurePanel().
   const gridRef = useRef<HTMLDivElement>(null);
+  const noteInputRef = useRef<HTMLInputElement>(null);
+  const panelHeightRef = useRef<number | null>(null);
   const [panelHeight, setPanelHeight] = useState<number | null>(null);
 
   // Composer com mídia (imagem/documento/áudio).
@@ -437,17 +439,31 @@ export function ConversasArea() {
     let animationFrame = 0;
     const measurePanel = () => {
       const el = gridRef.current;
-      if (!el) { setPanelHeight(null); return; }
+      if (!el) {
+        panelHeightRef.current = null;
+        setPanelHeight(null);
+        return;
+      }
+      const viewport = window.visualViewport;
+      // Opening the iPhone keyboard shrinks VisualViewport. Keep the existing
+      // card height while the note field is focused so typing cannot resize it.
+      const keyboardIsOpen = !!viewport && viewport.height < window.innerHeight * 0.8;
+      if (document.activeElement === noteInputRef.current && keyboardIsOpen && panelHeightRef.current !== null) return;
+
       // Mede a partir do topo do container rolável: se o usuário trocou de aba
       // com a página rolada, o topo do grid seria lido deslocado. Zerar aqui
       // também é o comportamento desejado (abrir Conversas mostra o começo).
       const scrollParent = el.closest('main');
       if (scrollParent && scrollParent.scrollTop !== 0) scrollParent.scrollTop = 0;
       const top = el.getBoundingClientRect().top;
-      const viewport = window.visualViewport;
       const viewportBottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
-      const minimumHeight = window.innerWidth < 768 ? 220 : 340;
-      setPanelHeight(Math.max(minimumHeight, Math.round(viewportBottom - top - 16)));
+      const isMobile = window.innerWidth < 768;
+      const minimumHeight = isMobile ? 220 : 340;
+      // Reserve a mobile strip below the conversation for the AI agent button.
+      const bottomClearance = isMobile ? 76 : 16;
+      const nextHeight = Math.max(minimumHeight, Math.round(viewportBottom - top - bottomClearance));
+      panelHeightRef.current = nextHeight;
+      setPanelHeight(nextHeight);
     };
     const scheduleMeasure = () => {
       cancelAnimationFrame(animationFrame);
@@ -1176,14 +1192,14 @@ export function ConversasArea() {
                   )}
 
                   {addingNote && (
-                    <div className="flex items-center min-w-0 gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
-                      <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+                    <div className="flex h-[61px] shrink-0 items-center min-w-0 gap-2 px-3 pt-3 border-t border-[var(--hairline)] bg-[var(--control-fill)]">
+                      <input ref={noteInputRef} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && addNote()}
                         autoFocus
                         placeholder="Nota interna (só o time vê)…"
-                        className="flex-1 min-w-0 px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
+                        className="flex-1 min-w-0 h-10 box-border appearance-none px-3 py-2 rounded-xl text-[13px] bg-[var(--control-fill)] text-[var(--text-hi)] placeholder:text-[var(--text-low)] outline-none border border-amber-400/20" />
                       <button onClick={addNote} disabled={!noteDraft.trim()}
-                        className="shrink-0 text-[12px] font-bold text-amber-300 px-2 sm:px-3 py-2 disabled:opacity-40">Salvar</button>
+                        className="w-14 sm:w-auto h-10 shrink-0 inline-flex items-center justify-center text-[12px] font-bold text-amber-300 px-2 sm:px-3 py-2 disabled:opacity-40">Salvar</button>
                     </div>
                   )}
 

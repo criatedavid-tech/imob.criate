@@ -324,8 +324,12 @@ export function ExperienceShell() {
         <button
           onClick={() => setChatOpen(true)}
           aria-label="Falar com a IA"
-          className="absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full flex items-center justify-center
-            border hover:scale-105 active:scale-95 transition-transform"
+          className={cn(
+            'absolute z-30 rounded-full flex items-center justify-center border hover:scale-105 active:scale-95 transition-transform',
+            area === 'conversas'
+              ? 'bottom-4 right-4 w-12 h-12 md:bottom-6 md:right-6 md:w-14 md:h-14'
+              : 'bottom-6 right-6 w-14 h-14',
+          )}
           style={{
             background: 'var(--accent-gradient)',
             color: 'var(--on-accent)',
