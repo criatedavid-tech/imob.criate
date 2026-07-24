@@ -38,12 +38,18 @@ kill_timeout = 30
   # dormir/escalar para zero. Mantém sempre 1 máquina viva.
   auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 1
+  # 2+ máquinas sempre vivas: com uma só, todo deploy era downtime (não há
+  # para onde drenar o tráfego) e qualquer crash tirava o app do ar.
+  min_machines_running = 2
 
   [http_service.concurrency]
     type = "requests"
-    soft_limit = 200
-    hard_limit = 250
+    # Com UMA máquina esses números eram decorativos: o soft_limit serve para o
+    # proxy ESCOLHER outra máquina, e não havia outra — só o hard_limit valia,
+    # como ponto de corte com 503. Agora, com web=3, baixar o soft faz o Fly
+    # espalhar antes de sobrecarregar o event loop de uma instância.
+    soft_limit = 80
+    hard_limit = 150
 
 # Health check: liveness barata do processo Express, sem tocar banco/provedores.
 [[http_service.checks]]

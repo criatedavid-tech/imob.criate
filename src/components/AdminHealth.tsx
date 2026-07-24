@@ -19,7 +19,7 @@ interface Health {
   dead_letters: { id: string; broker_id: string; event_type: string; attempts: number; last_error: string | null; created_at: string }[];
   rejected_webhooks_24h: number;
   runtime: { uptime_seconds: number; rss_mb: number; heap_used_mb: number; node_version: string };
-  config: { public_app_url: string; redis_configured: boolean; sentry_configured: boolean; n8n_webhook_configured: boolean };
+  config: { public_app_url: string; redis_configured: boolean; redis_connected: boolean; redis_error: string | null; sentry_configured: boolean; n8n_webhook_configured: boolean };
 }
 interface BrokerRow {
   broker_id: string; name: string; status: string | null; instance_id: string | null;
@@ -202,7 +202,7 @@ export default function AdminHealth() {
             <div>Memória: <b className="text-white tabular-nums">{health.runtime.rss_mb} MB</b></div>
             <div className="col-span-2 flex flex-wrap gap-2 pt-1">
               {[
-                { ok: health.config.redis_configured, label: 'Redis' },
+                { ok: health.config.redis_configured && health.config.redis_connected, label: 'Redis' },
                 { ok: health.config.sentry_configured, label: 'Sentry' },
                 { ok: health.config.n8n_webhook_configured, label: 'n8n' },
               ].map(({ ok, label }) => (
@@ -211,6 +211,11 @@ export default function AdminHealth() {
                 </span>
               ))}
             </div>
+            {health.config.redis_configured && !health.config.redis_connected && (
+              <div className="col-span-2 text-[12px] text-red-300">
+                Redis configurado mas SEM conexão{health.config.redis_error ? `: ${health.config.redis_error}` : '.'}
+              </div>
+            )}
           </div>
         </div>
       </div>

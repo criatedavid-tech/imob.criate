@@ -18,15 +18,39 @@ if (REDIS_URL) {
   // comandos em memória sem teto e as requisições ficam penduradas até 20
   // tentativas. Com enableOfflineQueue:false + timeouts curtos, o comando
   // falha rápido e o wrapper abaixo deixa a requisição passar.
+  // O Redis gerenciado do Fly (Upstash) só tem endereço IPv6 na rede privada,
+  // e o ioredis resolve como IPv4 por padrão — a conexão falharia em silêncio
+  // (e, com o store fail-open, o app seguiria funcionando SEM rate limit
+  // distribuído, que é o pior dos mundos: parece certo e não é).
+  // REDIS_FAMILY permite forçar 4 ou 6 se o provedor mudar.
+  const host = (() => { try { return new URL(REDIS_URL).hostname; } catch { return ''; } })();
+  const envFamily = Number(process.env.REDIS_FAMILY);
+  const family = Number.isInteger(envFamily) && [4, 6].includes(envFamily)
+    ? envFamily
+    : (host.endsWith('.upstash.io') || host.endsWith('.internal') ? 6 : 4);
+
   redisClient = new Redis(REDIS_URL, {
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,
     connectTimeout: 2_000,
     commandTimeout: 1_000,
     lazyConnect: false,
+    family,
   });
-  redisClient.on('connect', () => console.log('[Redis] conectado'));
+  redisClient.on('connect', () => console.log(`[Redis] conectado (IPv${family})`));
   redisClient.on('error',  (e: Error) => console.error('[Redis] erro:', e.message));
+}
+
+// Estado REAL da conexão (o painel de saúde mostrava só "a variável existe",
+// o que daria "ativo" mesmo com o Redis inalcançável).
+export async function checkRedis(): Promise<{ configured: boolean; connected: boolean; error: string | null }> {
+  if (!redisClient) return { configured: false, connected: false, error: null };
+  try {
+    const pong = await redisClient.ping();
+    return { configured: true, connected: pong === 'PONG', error: null };
+  } catch (e: any) {
+    return { configured: true, connected: false, error: e?.message?.slice(0, 200) || 'falha ao conectar' };
+  }
 }
 
 export function makeRedisStore(prefix: string, windowMs: number) {

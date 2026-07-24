@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
-import { PUBLIC_APP_URL, REDIS_URL, SENTRY_DSN, N8N_WEBHOOK_URL } from "../config";
+import { PUBLIC_APP_URL, SENTRY_DSN, N8N_WEBHOOK_URL } from "../config";
+import { checkRedis } from "../lib/infra";
 
 // ─── Saúde do sistema (painel do admin) ─────────────────────────────────────
 // O objetivo é responder, sem abrir o SQL: o pipeline está drenando? tem
@@ -98,6 +99,11 @@ export async function getSystemHealth() {
   ]);
 
   const mem = process.memoryUsage();
+  // PING de verdade: antes o painel dizia "ativo" só porque a variável de
+  // ambiente existia — mostraria verde mesmo com o Redis inalcançável, que é
+  // justamente o caso perigoso (o rate limit distribuído silenciosamente não
+  // existe, mas parece que existe).
+  const redis = await checkRedis();
 
   return {
     generated_at: new Date().toISOString(),
@@ -118,8 +124,10 @@ export async function getSystemHealth() {
     },
     config: {
       public_app_url: PUBLIC_APP_URL,
-      // Só o estado (configurado ou não) — nunca o valor do segredo.
-      redis_configured: !!REDIS_URL,
+      // Só o estado — nunca o valor do segredo.
+      redis_configured: redis.configured,
+      redis_connected: redis.connected,
+      redis_error: redis.error,
       sentry_configured: !!SENTRY_DSN,
       n8n_webhook_configured: !!N8N_WEBHOOK_URL,
     },
