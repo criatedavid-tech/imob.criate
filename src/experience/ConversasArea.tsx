@@ -967,8 +967,8 @@ export function ConversasArea() {
               ) : (
                 <>
                   <div className="px-5 py-3.5 border-b border-[var(--hairline)] space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
                         <button onClick={() => setSelected(null)} className="md:hidden shrink-0 text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors">
                           <ArrowLeft className="w-4.5 h-4.5" />
                         </button>
@@ -980,23 +980,23 @@ export function ConversasArea() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <div>
+                      <div className="flex items-center gap-1.5 min-w-0 w-full md:w-auto">
+                        <div className="flex-1 min-w-0 md:flex-none">
                           {currentLead === undefined ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-low)] bg-[var(--control-fill)]">
+                            <span className="inline-flex w-full md:w-auto items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-low)] bg-[var(--control-fill)]">
                               <Loader2 className="w-3.5 h-3.5 animate-spin" /> CRM
                             </span>
                           ) : !currentLead.exists ? (
                             <button onClick={createLead} disabled={creatingLead}
                               title="Cadastrar este contato no CRM"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
+                              className="inline-flex w-full md:w-auto items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)]
                                 bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-40">
                               {creatingLead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />} Criar no CRM
                             </button>
                           ) : (
                             <button onClick={() => setCrmMenuOpen((v) => !v)}
                               title="Mover este lead de etapa no CRM"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 transition-colors max-w-[200px]">
+                              className="inline-flex w-full md:w-auto min-w-0 items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 transition-colors md:max-w-[200px]">
                               <KanbanSquare className="w-3.5 h-3.5 shrink-0" />
                               <span className="truncate">{leadStage ? `CRM: ${leadStage.name}` : 'CRM criado'}</span>
                               <ChevronDown className="w-3 h-3 shrink-0 opacity-70" />
@@ -1006,7 +1006,7 @@ export function ConversasArea() {
                           {crmMenuOpen && currentLead?.exists && (
                             <>
                               <div className="fixed inset-0 z-30" onClick={() => setCrmMenuOpen(false)} />
-                              <div className="absolute z-40 left-3 right-3 top-[72px] sm:left-auto sm:right-5 sm:top-[58px] sm:w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
+                              <div className="absolute z-40 left-3 right-3 top-[104px] md:left-auto md:right-5 md:top-[58px] md:w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
                                 <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">
                                   {leadPipeline ? leadPipeline.name : 'Etapas'}
                                 </div>
