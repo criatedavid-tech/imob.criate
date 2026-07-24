@@ -855,7 +855,7 @@ export function ConversasArea() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto w-full">
+    <div className="crm-mobile-safe max-w-6xl mx-auto w-full">
       {/* Cabeçalho + tabs de categoria pertencem à tela de LISTA — no mobile,
           somem quando uma conversa está aberta (a thread vira a tela cheia). */}
       <div className={cn('flex items-center justify-between mb-6', selected && 'hidden md:flex')}>

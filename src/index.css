@@ -239,6 +239,14 @@ html.theme-transition * {
 /* Rail lateral: vidro + um brilho de latão bem sutil no topo (perto do logo) — detalhe premium, sem colorir os ícones. */
 .cr-rail     { background: linear-gradient(180deg, rgba(238,192,124,.055), transparent 22%), var(--scrim-glass); }
 
+/* O Safari/iOS amplia automaticamente a página ao focar campos menores que
+   16px e pode manter esse zoom depois do teclado fechar. Nos fluxos móveis de
+   Conversas/CRM, preserva 16px durante a edição; no desktop cada componente
+   continua usando seu tamanho original. */
+@media (max-width: 767px) {
+  .crm-mobile-safe :where(input, textarea, select) { font-size: 16px !important; }
+}
+
 /* Lente de vidro do indicador ATIVO (rail desktop + drawer mobile). Fica atrás
    do ícone (-z-10); desliza entre os itens via layoutId do Framer Motion. O
    ícone fica por cima e nítido (a lente só embaça o fundo do rail atrás dela). */

@@ -691,7 +691,7 @@ export function NegociosArea() {
   const [tab, setTab] = useState<'kanban' | 'pipelines'>('kanban');
 
   return (
-    <div className="max-w-6xl mx-auto w-full">
+    <div className="crm-mobile-safe max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-2xl font-black text-[var(--text-hi)]">CRM</h2>
         <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
