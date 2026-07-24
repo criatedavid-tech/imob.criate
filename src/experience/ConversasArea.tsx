@@ -378,6 +378,12 @@ export function ConversasArea() {
   const [creatingLead, setCreatingLead] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldScrollToEndRef = useRef(false);
+  // Auto-scroll estilo WhatsApp: segue o fim quando chega mensagem nova, mas só
+  // se o usuário já estava no rodapé — se ele subiu pra ler o histórico, não o
+  // arranca de lá. `atBottomRef` é atualizado no onScroll da lista.
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+  const prevLastMsgIdRef = useRef<string | null>(null);
 
   // Layout: o painel de conversa mede a altura livre até o fim da viewport, pra
   // caber sem scroll de página — a lista de mensagens rola por dentro e o
@@ -501,6 +507,8 @@ export function ConversasArea() {
 
   useEffect(() => {
     if (selected) {
+      atBottomRef.current = true;
+      prevLastMsgIdRef.current = null;
       loadMessages(selected);
       loadNotes(selected);
       setAddingNote(false);
@@ -517,8 +525,16 @@ export function ConversasArea() {
   }, [selected]);
 
   useEffect(() => {
-    if (shouldScrollToEndRef.current) {
-      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    const msgs = messages || [];
+    const lastId = msgs.length ? msgs[msgs.length - 1].id : null;
+    const hasNewLast = !!lastId && lastId !== prevLastMsgIdRef.current;
+    prevLastMsgIdRef.current = lastId;
+    // Rola pro fim ao abrir a conversa (replace) ou quando chega mensagem nova
+    // E o usuário já estava no rodapé. Se ele subiu pra ler, respeita a posição.
+    if (shouldScrollToEndRef.current || (hasNewLast && atBottomRef.current)) {
+      const el = messagesScrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      else messagesEndRef.current?.scrollIntoView({ block: 'end' });
       shouldScrollToEndRef.current = false;
     }
   }, [messages]);
@@ -1061,7 +1077,12 @@ export function ConversasArea() {
                     </div>
                   )}
 
-                  <div className="flex-1 min-h-0 p-5 overflow-y-auto">
+                  <div ref={messagesScrollRef}
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                    }}
+                    className="flex-1 min-h-0 p-5 overflow-y-auto">
                     {loadingMessages || !messages ? (
                       <div className="flex justify-center pt-16">
                         <Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" />

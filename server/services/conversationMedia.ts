@@ -4,10 +4,10 @@ import { supabase } from "../supabase";
 // entre o ENVIO (rota /reply-media) e a RECEPÇÃO (worker de inbound). Guardar a
 // mídia num bucket público e referenciar por media_url deixa a tela de
 // Conversas renderizar a imagem/áudio/documento nativamente, dos dois lados.
-export const CONVERSA_MEDIA_BUCKET = "imf-conversation-media";
-export const MAX_CONVERSA_MEDIA_BYTES = 7 * 1024 * 1024;
+const CONVERSA_MEDIA_BUCKET = "imf-conversation-media";
+const MAX_CONVERSA_MEDIA_BYTES = 7 * 1024 * 1024;
 
-export function extensionFromMime(mime: string): string {
+function extensionFromMime(mime: string): string {
   const map: Record<string, string> = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
     "audio/ogg": ".ogg", "audio/webm": ".webm", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
@@ -19,7 +19,7 @@ export function extensionFromMime(mime: string): string {
 
 // Upload no caminho quente sem pagar um round-trip de createBucket por request:
 // tenta subir; só se o bucket não existir, cria e repete uma vez.
-export async function uploadConversaMedia(path: string, buffer: Buffer, contentType: string): Promise<void> {
+async function uploadConversaMedia(path: string, buffer: Buffer, contentType: string): Promise<void> {
   const attempt = () => supabase.storage.from(CONVERSA_MEDIA_BUCKET).upload(path, buffer, { contentType, upsert: false });
   let { error } = await attempt();
   if (error && /bucket.*not.*found|not found/i.test(error.message || "")) {
