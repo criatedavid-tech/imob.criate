@@ -7,6 +7,7 @@ import {
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { cn } from '../lib/utils';
+import { usePolling } from '../lib/usePolling';
 
 interface Tag { id: string; name: string; color: string | null; }
 interface Queue { id: string; name: string; color: string | null; }
@@ -410,8 +411,8 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
   const [crmMenuOpen, setCrmMenuOpen] = useState(false);
   const [movingStage, setMovingStage] = useState(false);
 
-  const loadConversations = () => {
-    fetch('/api/conversas', { headers: authService.getAuthHeaders() })
+  const loadConversations = (signal?: AbortSignal) => {
+    return fetch('/api/conversas', { headers: authService.getAuthHeaders(), signal })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
@@ -420,10 +421,14 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
         return r.json();
       })
       .then((data) => setConversations(Array.isArray(data) ? data : []))
-      .catch((e) => setError(e.message || 'Erro ao carregar conversas.'));
+      .catch((e) => {
+        // Requisição cancelada (aba oculta / troca de conversa) não é erro.
+        if (e?.name === 'AbortError') return;
+        setError(e.message || 'Erro ao carregar conversas.');
+      });
   };
 
-  useEffect(loadConversations, []);
+  useEffect(() => { loadConversations(); }, []);
   useEffect(() => {
     api('/api/conversas/queues').then(setQueues).catch(() => setQueues([]));
     api('/api/conversas/tags').then(setTags).catch(() => setTags([]));
@@ -490,12 +495,9 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
   // Sem isso, uma resposta nova (do cliente ou da IA) só aparecia depois de
   // um F5 manual — a lista de conversas e a thread aberta agora se atualizam
   // sozinhas em segundo plano, sem piscar o loading a cada rodada.
-  useEffect(() => {
-    const id = setInterval(loadConversations, 5000);
-    return () => clearInterval(id);
-  }, []);
+  usePolling((signal) => loadConversations(signal), 5000);
 
-  const loadMessages = async (ticketId: string, mode: 'replace' | 'poll' | 'older' = 'replace') => {
+  const loadMessages = async (ticketId: string, mode: 'replace' | 'poll' | 'older' = 'replace', signal?: AbortSignal) => {
     if (mode === 'replace') setLoadingMessages(true);
     if (mode === 'older') setLoadingOlderMessages(true);
     try {
@@ -504,7 +506,7 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
         : '';
       const response = await fetch(
         `/api/conversas/${encodeURIComponent(ticketId)}/messages?limit=50${before}`,
-        { headers: authService.getAuthHeaders() },
+        { headers: authService.getAuthHeaders(), signal },
       );
       if (!response.ok) throw new Error(`Erro ${response.status}`);
       const payload = await response.json();
@@ -534,7 +536,10 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
           return byDate || a.id.localeCompare(b.id);
         });
       });
-    } catch {
+    } catch (e: any) {
+      // Cancelamento (aba oculta, troca de conversa, desmontagem) não pode
+      // limpar a thread já carregada.
+      if (e?.name === 'AbortError') return;
       if (mode === 'replace') setMessages([]);
     } finally {
       if (mode === 'replace') setLoadingMessages(false);
@@ -565,11 +570,7 @@ export function ConversasArea({ onThreadOpenChange }: { onThreadOpenChange?: (op
     }
   }, [selected]);
 
-  useEffect(() => {
-    if (!selected) return;
-    const id = setInterval(() => loadMessages(selected, 'poll'), 3000);
-    return () => clearInterval(id);
-  }, [selected]);
+  usePolling((signal) => { if (selected) return loadMessages(selected, 'poll', signal); }, 3000, !!selected);
 
   useEffect(() => {
     const msgs = messages || [];

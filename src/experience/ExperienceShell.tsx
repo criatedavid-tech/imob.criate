@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Plus, ChevronDown, Loader2, Shield, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,24 +7,30 @@ import { Canvas } from './Canvas';
 import { CommandBar } from './CommandBar';
 import { PERSONA_LABEL, AREAS } from './engine';
 import { fetchCorretorLayout, fetchIncorporadoraLayout, fetchImobiliariaLayout } from './realData';
-import { CarteiraArea } from './CarteiraArea';
-import { ConversasArea } from './ConversasArea';
-import { NegociosArea } from './NegociosArea';
-import { ContatosArea } from './ContatosArea';
-import { LembretesArea } from './LembretesArea';
-import { AgendaArea } from './AgendaArea';
-import { LocacaoArea } from './LocacaoArea';
-import { LancamentosArea } from './LancamentosArea';
-import { FinanceiroArea } from './FinanceiroArea';
-import { EquipeArea } from './EquipeArea';
-import { RelatoriosArea } from './RelatoriosArea';
-import { DivulgacaoArea } from './DivulgacaoArea';
-import { ConfigArea } from './ConfigArea';
-import { AssistenteIAArea } from './AssistenteIAArea';
 import { ThemeToggle } from './ThemeToggle';
 import type { Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
+
+// Cada área vira seu próprio pedaço do bundle, carregado só quando o corretor
+// abre aquela tela. Antes tudo entrava no MESMO arquivo (~340 KB): quem só usa
+// Conversas baixava Lançamentos, Locação, Config, Equipe, Relatórios e o
+// calendário da Agenda sem nunca abrir. São exports nomeados, por isso o .then
+// mapeando para `default`.
+const CarteiraArea = lazy(() => import('./CarteiraArea').then((m) => ({ default: m.CarteiraArea })));
+const ConversasArea = lazy(() => import('./ConversasArea').then((m) => ({ default: m.ConversasArea })));
+const NegociosArea = lazy(() => import('./NegociosArea').then((m) => ({ default: m.NegociosArea })));
+const ContatosArea = lazy(() => import('./ContatosArea').then((m) => ({ default: m.ContatosArea })));
+const LembretesArea = lazy(() => import('./LembretesArea').then((m) => ({ default: m.LembretesArea })));
+const AgendaArea = lazy(() => import('./AgendaArea').then((m) => ({ default: m.AgendaArea })));
+const LocacaoArea = lazy(() => import('./LocacaoArea').then((m) => ({ default: m.LocacaoArea })));
+const LancamentosArea = lazy(() => import('./LancamentosArea').then((m) => ({ default: m.LancamentosArea })));
+const FinanceiroArea = lazy(() => import('./FinanceiroArea').then((m) => ({ default: m.FinanceiroArea })));
+const EquipeArea = lazy(() => import('./EquipeArea').then((m) => ({ default: m.EquipeArea })));
+const RelatoriosArea = lazy(() => import('./RelatoriosArea').then((m) => ({ default: m.RelatoriosArea })));
+const DivulgacaoArea = lazy(() => import('./DivulgacaoArea').then((m) => ({ default: m.DivulgacaoArea })));
+const ConfigArea = lazy(() => import('./ConfigArea').then((m) => ({ default: m.ConfigArea })));
+const AssistenteIAArea = lazy(() => import('./AssistenteIAArea').then((m) => ({ default: m.AssistenteIAArea })));
 
 const PERSONAS: Persona[] = ['corretor', 'imobiliaria', 'incorporadora'];
 const AUTONOMY_LABEL: Record<Autonomy, string> = {
@@ -298,11 +304,20 @@ export function ExperienceShell() {
         </div>
 
         {/* Conteúdo: canvas generativo (Hoje) ou área manual.
-            key inclui refreshKey → ação da IA remonta a área e força refetch. */}
-        <div key={`${area}-${refreshKey}`} className={cn(
+            A key remonta a área para forçar refetch depois de uma ação da IA.
+            Conversas fica FORA disso: ela já se atualiza sozinha a cada 5s, e
+            remontar no meio do atendimento fechava a conversa aberta, apagava
+            o rascunho digitado no composer e devolvia o scroll pro topo —
+            justamente enquanto o corretor estava falando com um cliente. */}
+        <div key={area === 'conversas' ? 'conversas' : `${area}-${refreshKey}`} className={cn(
           'px-6 pt-6 pb-16',
           area === 'conversas' && conversationThreadOpen && 'px-2.5 pt-3 pb-3 sm:px-6 sm:pt-6 sm:pb-16',
         )}>
+          <Suspense fallback={
+            <div className="flex justify-center pt-24">
+              <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />
+            </div>
+          }>
           {area === 'carteira' ? (
             <CarteiraArea />
           ) : area === 'conversas' ? (
@@ -340,6 +355,7 @@ export function ExperienceShell() {
           ) : (
             <Canvas layout={layout} onAreaClick={setArea} />
           )}
+          </Suspense>
         </div>
 
       </main>

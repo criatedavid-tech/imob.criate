@@ -8,6 +8,7 @@ import { cn } from '../lib/utils';
 import { AREAS } from './engine';
 import type { Persona } from './types';
 import { authService } from '../services/auth';
+import { usePolling } from '../lib/usePolling';
 
 // Sino de Lembretes: conta quantos lembretes pendentes já venceram (não
 // segue o corretor fora do app — só sinaliza enquanto o rail está montado,
@@ -15,26 +16,22 @@ import { authService } from '../services/auth';
 // um extra, nunca pode travar a navegação.
 function useDueReminderCount(): number {
   const [count, setCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const res = await fetch('/api/agenda/visits?event_type=lembrete', { headers: authService.getAuthHeaders() });
-        if (!res.ok) return;
-        const data = await res.json();
-        const now = Date.now();
-        const due = Array.isArray(data)
-          ? data.filter((r: any) => r.status === 'pendente' && new Date(r.scheduled_at).getTime() <= now).length
-          : 0;
-        if (!cancelled) setCount(due);
-      } catch {
-        // silencioso — ver comentário acima
-      }
+  const check = async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch('/api/agenda/visits?event_type=lembrete', { headers: authService.getAuthHeaders(), signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      const now = Date.now();
+      const due = Array.isArray(data)
+        ? data.filter((r: any) => r.status === 'pendente' && new Date(r.scheduled_at).getTime() <= now).length
+        : 0;
+      setCount(due);
+    } catch {
+      // silencioso — ver comentário acima
     }
-    check();
-    const id = setInterval(check, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  };
+  useEffect(() => { check(); }, []);
+  usePolling((signal) => check(signal), 60_000);
   return count;
 }
 
@@ -44,25 +41,21 @@ function useDueReminderCount(): number {
 // extra silencioso, nunca trava a navegação.
 function useNewChatbotVisitCount(active: string): number {
   const [count, setCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const res = await fetch('/api/agenda/visits', { headers: authService.getAuthHeaders() });
-        if (!res.ok) return;
-        const data = await res.json();
-        const n = Array.isArray(data)
-          ? data.filter((r: any) => r.booked_by_chatbot && !r.broker_seen_at).length
-          : 0;
-        if (!cancelled) setCount(n);
-      } catch {
-        // silencioso — ver comentário acima
-      }
+  const check = async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch('/api/agenda/visits', { headers: authService.getAuthHeaders(), signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      const n = Array.isArray(data)
+        ? data.filter((r: any) => r.booked_by_chatbot && !r.broker_seen_at).length
+        : 0;
+      setCount(n);
+    } catch {
+      // silencioso — ver comentário acima
     }
-    check();
-    const id = setInterval(check, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  };
+  useEffect(() => { check(); }, []);
+  usePolling((signal) => check(signal), 60_000);
 
   useEffect(() => {
     if (active !== 'agenda') return;
