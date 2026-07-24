@@ -32,6 +32,11 @@ const AUTONOMY_LABEL: Record<Autonomy, string> = {
   copiloto: 'Copiloto',
   manual: 'Manual',
 };
+const AUTONOMY_MOBILE_LABEL: Record<Autonomy, string> = {
+  piloto: 'Piloto',
+  copiloto: 'Copiloto',
+  manual: 'Manual',
+};
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
 // Só troca o rótulo — desde o hardening contra prompt injection (22/07/2026),
 // os 3 modos se comportam igual: toda ação do Assistente IA (cadastrar,
@@ -182,7 +187,7 @@ export function ExperienceShell() {
         {/* Barra superior — vidro translúcido (tier-2) sobre o mesh */}
         <div className="sticky top-0 z-20 backdrop-blur-2xl border-b"
           style={{ background: 'var(--scrim-glass)', borderColor: 'var(--hairline)' }}>
-          <div className="max-w-6xl mx-auto w-full px-6 py-3.5 flex items-center justify-between gap-4">
+          <div className="max-w-6xl mx-auto w-full px-3 sm:px-6 py-3.5 flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setMobileNavOpen(true)}
@@ -228,7 +233,7 @@ export function ExperienceShell() {
               )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 sm:gap-3 shrink-0">
               {/* Toggle de tema Dia/Noite — oculto até o modo Dia passar no QA */}
               {THEME_TOGGLE_ENABLED && <ThemeToggle className="shrink-0" />}
 
@@ -256,13 +261,13 @@ export function ExperienceShell() {
                 </button>
               )}
 
-              {/* Botão de autonomia — no mobile mostra só a bolinha+seta (sem o
-                  rótulo, "Piloto automático" é longo demais pra caber ao lado
-                  do "ver como"/pílulas de persona sem quebrar linha). */}
+              {/* No mobile usa um rótulo curto para manter o controle legível sem
+                  fazer a barra superior ultrapassar a largura da tela. */}
               <button onClick={cycleAutonomy} title={AUTONOMY_HINT}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-[12px] font-semibold cr-text-hi transition-colors shrink-0 whitespace-nowrap hover:border-[var(--glass-border-strong)]"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-2xl border text-[11px] sm:text-[12px] font-semibold cr-text-hi transition-colors shrink-0 whitespace-nowrap hover:border-[var(--glass-border-strong)]"
                 style={{ background: 'var(--control-fill)', borderColor: 'var(--glass-border)' }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
+                <span className="sm:hidden">{AUTONOMY_MOBILE_LABEL[autonomy]}</span>
                 <span className="hidden sm:inline">{AUTONOMY_LABEL[autonomy]}</span>
                 <ChevronDown className="w-3.5 h-3.5 cr-text-low shrink-0" />
               </button>

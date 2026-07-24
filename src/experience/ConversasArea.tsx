@@ -959,7 +959,7 @@ export function ConversasArea() {
               )}
             </GlassCard>
 
-            <GlassCard style={{ height: panelHeight ?? undefined }} className={cn('!p-0 h-[640px] min-h-0 flex flex-col overflow-hidden', !selected && 'hidden md:flex')}>
+            <GlassCard style={{ height: panelHeight ?? undefined }} className={cn('!p-0 h-[640px] min-h-0 flex flex-col overflow-hidden relative', !selected && 'hidden md:flex')}>
               {!selected || !selectedConv ? (
                 <div className="h-full flex-1 flex items-center justify-center text-[var(--text-low)] text-[14px]">
                   Selecione uma conversa
@@ -981,7 +981,7 @@ export function ConversasArea() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <div className="relative">
+                        <div>
                           {currentLead === undefined ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-low)] bg-[var(--control-fill)]">
                               <Loader2 className="w-3.5 h-3.5 animate-spin" /> CRM
@@ -1006,7 +1006,7 @@ export function ConversasArea() {
                           {crmMenuOpen && currentLead?.exists && (
                             <>
                               <div className="fixed inset-0 z-30" onClick={() => setCrmMenuOpen(false)} />
-                              <div className="absolute z-40 right-0 top-10 w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
+                              <div className="absolute z-40 left-3 right-3 top-[72px] sm:left-auto sm:right-5 sm:top-[58px] sm:w-56 rounded-2xl bg-slate-900 border border-[var(--glass-border)] p-1.5 shadow-xl max-h-[320px] overflow-y-auto">
                                 <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">
                                   {leadPipeline ? leadPipeline.name : 'Etapas'}
                                 </div>
