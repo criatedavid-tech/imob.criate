@@ -37,7 +37,11 @@ export async function setUazapiWebhook(instanceToken: string, instanceId: string
       body: JSON.stringify({
         url: inboundUrl,
         enabled: true,
-        events: ['messages', 'connection', 'wasSentByApi', 'messages_update', 'call', 'contacts', 'groups', 'history'],
+        // Só o que o pipeline realmente consome. Assinar messages_update
+        // (recibos de entrega/leitura), contacts, groups e history triplicava o
+        // volume de webhooks — todos eram enfileirados e descartados depois.
+        // `connection` fica porque é raro e diz quando a instância cai.
+        events: ['messages', 'connection'],
         excludeMessages: [],
         addUrlEvents: false,
         addUrlTypesMessages: false,

@@ -114,16 +114,21 @@ async function resolveInstance(instanceId: string): Promise<ResolvedInstance | n
   };
 }
 
+// `includeBody: false` grava só o cabeçalho do evento (~50 bytes) em vez do
+// payload inteiro (2-5 KB). Usado no descarte de eventos não acionáveis, que
+// são a maioria do tráfego — sem isso, webhook_logs cresce mais rápido que a
+// própria inbox e a purga de 90 dias não dá conta.
 function logWebhookBestEffort(
   instanceId: string,
   body: Record<string, any>,
   status: string,
+  includeBody = true,
 ): void {
   void Promise.resolve(
     supabase.from("webhook_logs").insert({
       source: "uazapi",
       event_type: eventType(body),
-      payload: { instance_id: instanceId, body },
+      payload: includeBody ? { instance_id: instanceId, body } : { instance_id: instanceId },
       status,
     }),
   ).then(({ error }) => {
@@ -149,6 +154,19 @@ export async function enqueueUazapiWebhook(
     return "ignored";
   }
 
+  // Filtro na BORDA: só entra na fila o que o worker realmente processaria.
+  // Medido em produção: 68% dos eventos gravados eram descartados depois
+  // (messages_update/recibos de leitura = 57%, mais contacts/history/eco da
+  // própria IA). Cada um desses consumia 2 SELECTs + INSERT na inbox + INSERT
+  // em webhook_logs e — pior — um slot do orçamento de vazão do claim, que é
+  // o gargalo do pipeline. Descartar aqui multiplica a vazão útil por ~3-6x.
+  const message = body.message;
+  const isActionable = eventType(body) === "messages" && !!message && !message.fromMe;
+  if (!isActionable) {
+    logWebhookBestEffort(instanceId, body, "filtered", false);
+    return "ignored";
+  }
+
   const customerPhone = normalizePhoneBR(optionalString(body.message?.chatid));
   const partitionKey = customerPhone
     ? `${instance.brokerId}:${customerPhone}`
@@ -167,13 +185,14 @@ export async function enqueueUazapiWebhook(
 
   if (error) {
     if ((error as any).code === "23505") {
-      logWebhookBestEffort(instanceId, body, "duplicate");
+      logWebhookBestEffort(instanceId, body, "duplicate", false);
       return "duplicate";
     }
     throw error;
   }
 
-  logWebhookBestEffort(instanceId, body, "queued");
+  // Sem log de "queued": a própria linha da inbox já guarda o payload completo,
+  // então duplicar em webhook_logs só amplificava escrita no caminho quente.
   return "accepted";
 }
 
@@ -497,7 +516,11 @@ async function dispatchOutboxRow(row: OutboxRow): Promise<void> {
           : {}),
       },
       body: JSON.stringify({ ...row.payload, event_id: row.id }),
-    });
+      // 60s (o default do fetchWithTimeout é 15s). O fluxo do n8n responde ao
+      // cliente DENTRO da execução e leva 5-14s com o agente de IA; no default
+      // nós abortávamos uma execução que já tinha enviado o WhatsApp, e o
+      // retry fazia o cliente receber a mesma resposta de novo (até 20x).
+    }, 60_000);
     retryAfterSeconds = Number(response.headers.get("retry-after")) || undefined;
     if (!response.ok) {
       const responseBody = (await response.text()).slice(0, 500);

@@ -21,6 +21,13 @@ import {
 
 export const conversationsRouter = express.Router();
 
+// Tick oportunista da inbox no processo web (ver a rota de inbound abaixo).
+// WEB_OPPORTUNISTIC_TICK=off desliga sem redeploy de código, se um incidente
+// exigir que o web só sirva HTTP.
+const WEB_OPPORTUNISTIC_TICK = process.env.WEB_OPPORTUNISTIC_TICK !== "off";
+const OPPORTUNISTIC_TICK_MIN_INTERVAL_MS = Number(process.env.WEB_OPPORTUNISTIC_TICK_MS) || 500;
+let lastOpportunisticTickAt = 0;
+
 // Conversa não tem dono próprio (mensagem chega do cliente, não de um
 // membro) — a visibilidade é derivada casando o telefone com o lead
 // correspondente. Sem lead casando, só o dono da conta vê (evita expor
@@ -126,11 +133,22 @@ conversationsRouter.post("/api/wpp-shim/inbound/:instanceId", async (req, res) =
     // Processa JÁ, no próprio processo web, sem esperar o worker dedicado —
     // inbound quase-instantâneo e resiliente a uma eventual indisponibilidade do
     // processo `worker`. Seguro rodar em paralelo com o worker: claim_imf_webhook
-    // _inbox usa lease/lock, então nenhuma linha é processada em duplicidade. O
-    // worker segue existindo pra escala/backlog; isto é só a garantia de tempo real.
-    if (result === "accepted") {
-      void runWebhookInboxTick().catch((e: any) =>
-        console.warn("[WhatsApp] tick oportunista do inbox falhou:", e?.message));
+    // _inbox usa lease/lock, então nenhuma linha é processada em duplicidade.
+    //
+    // O DEBOUNCE importa: a flag interna do tick só evita execuções
+    // sobrepostas, não a cadência. Sob carga (dezenas de webhooks/s) o web
+    // encadeava um tick atrás do outro sem folga, virando um worker em tempo
+    // integral que por acaso também serve o app. Com o intervalo mínimo abaixo
+    // ele continua dando latência baixa quando o tráfego é esparso (o caso em
+    // que isso importa) e devolve o trabalho ao `worker` quando aperta.
+    // Desligável por env em caso de incidente.
+    if (result === "accepted" && WEB_OPPORTUNISTIC_TICK) {
+      const now = Date.now();
+      if (now - lastOpportunisticTickAt >= OPPORTUNISTIC_TICK_MIN_INTERVAL_MS) {
+        lastOpportunisticTickAt = now;
+        void runWebhookInboxTick().catch((e: any) =>
+          console.warn("[WhatsApp] tick oportunista do inbox falhou:", e?.message));
+      }
     }
 
   } catch (err: any) {

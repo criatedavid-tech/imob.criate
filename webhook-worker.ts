@@ -15,23 +15,33 @@ const SHUTDOWN_TIMEOUT_MS = 25_000;
 
 let stopping = false;
 let timer: NodeJS.Timeout | null = null;
-let activeCycle: Promise<void> | null = null;
 
-async function processQueueCycle(): Promise<void> {
-  await Promise.all([runWebhookInboxTick(), runWebhookOutboxTick()]);
+// Inbox e outbox rodam em ciclos INDEPENDENTES. Antes era um Promise.all: o
+// próximo ciclo só começava quando os dois terminassem, então uma
+// indisponibilidade do n8n (downstream) prendia a gravação das mensagens
+// (upstream) — cada lote da outbox gastava o timeout inteiro e a inbox ficava
+// limitada a um lote por timeout. Uma fila não pode depender da outra.
+const cycles: Record<"inbox" | "outbox", Promise<void> | null> = { inbox: null, outbox: null };
+
+function startCycle(name: "inbox" | "outbox", run: () => Promise<void>): void {
+  if (stopping || cycles[name]) return;
+  cycles[name] = run()
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[Webhook Worker] ciclo ${name} falhou:`, message);
+    })
+    .finally(() => {
+      cycles[name] = null;
+    });
 }
 
 function startQueueCycle(): void {
-  if (stopping || activeCycle) return;
+  startCycle("inbox", runWebhookInboxTick);
+  startCycle("outbox", runWebhookOutboxTick);
+}
 
-  activeCycle = processQueueCycle()
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("[Webhook Worker] ciclo falhou:", message);
-    })
-    .finally(() => {
-      activeCycle = null;
-    });
+function activeCycles(): Promise<void>[] {
+  return [cycles.inbox, cycles.outbox].filter(Boolean) as Promise<void>[];
 }
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -40,11 +50,11 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (timer) clearInterval(timer);
   console.log(`[Webhook Worker] ${signal} recebido; aguardando ciclo ativo.`);
 
-  const cycle = activeCycle;
+  const running = activeCycles();
   let timeout: NodeJS.Timeout | undefined;
-  const drained = cycle
+  const drained = running.length
     ? await Promise.race([
-        cycle.then(() => true),
+        Promise.all(running).then(() => true),
         new Promise<boolean>((resolve) => {
           timeout = setTimeout(() => resolve(false), SHUTDOWN_TIMEOUT_MS);
           timeout.unref();
