@@ -1343,8 +1343,6 @@ correspondente roda no scheduler singleton.
 
 - Confirmar operacionalmente a `UAZAPI_PLATFORM_SESSION`; sem ela,
   recuperação de senha por WhatsApp não envia mensagem.
-- Confirmar visualmente o evento artificial no painel do Sentry sem bloqueador
-  de conteúdo e revisar alertas/retenção; o SDK confirmou o envio em produção.
 - Separar `N8N_WEBHOOK_TOKEN` de `INTERNAL_PROXY_TOKEN` e confirmar Header Auth,
   credenciais, isolamento de memória e deduplicação no workflow N8N.
 - Confirmar manualmente a aplicação das migrations `20260722a` e `20260724`.
@@ -1375,6 +1373,11 @@ correspondente roda no scheduler singleton.
 10. Fazer smoke de `/`, `/app`, login, pagamento, admin, páginas públicas e
    responsividade desktop/mobile.
 11. Inspecionar logs, CSP reports, Sentry, jobs e webhooks sem erro.
+
+O Sentry deixou de ser pendência de implantação em 27/07/2026: o secret está
+ativo na Fly, o evento artificial sem dados de clientes chegou ao painel, foi
+inspecionado e marcado como resolvido. A tela `is:unresolved` ficou vazia após o
+teste, como esperado.
 
 ### Testes funcionais da IA — planejados (roteiro definido em 20/07/2026)
 

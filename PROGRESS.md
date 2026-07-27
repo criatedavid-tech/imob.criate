@@ -12,8 +12,8 @@
   evento remove usuário, extras, corpo, query, cookies, cabeçalhos, IP,
   breadcrumbs de console e parâmetros/fragmentos de URL.
 - Evento artificial `ImobiFlow Sentry validation`, sem dados de clientes, foi
-  aceito pelo SDK. A página de issues exibiu bloqueio local de extensão no
-  navegador usado na validação, sem impacto no transporte do evento.
+  aceito pelo SDK, visualizado no painel e marcado como resolvido. A consulta
+  `is:unresolved` ficou sem resultados depois da resolução, como esperado.
 
 ## Etapa 1 do cadastro vira cards de plano (2026-07-27)
 

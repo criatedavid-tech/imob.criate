@@ -156,8 +156,8 @@ limit já foram separados.
   foi confirmada nesta auditoria; o arquivo está versionado e exige verificação
   manual antes de ser declarado aplicado.
 - A entrega de um evento artificial sem dados de cliente foi confirmada pelo
-  SDK em 27/07/2026. A inspeção visual da lista de issues ainda depende de abrir
-  o Sentry sem bloqueador de conteúdo no navegador.
+  SDK e visualizada no painel do Sentry em 27/07/2026. A issue de validação foi
+  marcada como resolvida; não há issues pendentes após o teste.
 
 Consulte [`SCALABILITY_TEST_PLAN.md`](./SCALABILITY_TEST_PLAN.md) para os
 critérios de carga e [`DOCUMENTACAO.md`](./DOCUMENTACAO.md) para o detalhe por

@@ -88,8 +88,8 @@ batches.
 
 ## Prioridade 5 — observabilidade e lançamento
 
-- Confirmar visualmente o evento de validação no painel do Sentry com o
-  bloqueador de conteúdo desativado e revisar a política de retenção do projeto.
+- [x] Sentry ativado e validado de ponta a ponta em 27/07/2026: secret na Fly,
+  filtros de privacidade, evento recebido no painel e issue de teste resolvida.
 - Criar alertas de fila `dead`, idade acima de 60 s, erro HTTP, reinício e uso
   de memória.
 - Repetir isolamento com dois tenants e titular/membro.
