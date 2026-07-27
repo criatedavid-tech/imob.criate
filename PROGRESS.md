@@ -19,11 +19,14 @@
   largura do card fica constante (`max-w-3xl`) nas 3 etapas, e as Etapas 2/3
   centralizam os campos numa faixa `max-w-md` dentro desse card largo — sem
   outro alargamento condicional.
-- Verificado com o usuário rodando `npm run dev` local de verdade (não só
-  Browser pane automatizado) antes do commit — checklist técnico
-  (`tsc`/`knip`/`build`/`git diff --check`) limpo em todas as rodadas.
-- Commit `5431ad1` (versão inicial) + ajustes seguintes na mesma branch antes
-  do push.
+- Verificado com o usuário rodando `npm run dev` local antes da publicação.
+  Em 27/07/2026, a produção também foi validada em `/signup`: os três cards
+  exibem o preço fornecido por `/api/config/plan`; no viewport móvel de 360 px
+  ficam empilhados, sem overflow horizontal.
+- Publicado pelos commits `5431ad1` (versão inicial) e `8aae185` (largura
+  constante + documentação), GitHub Actions aprovado e release Fly `v181`
+  saudável. Checklist registrado no commit: 32/32 testes, TypeScript, Knip,
+  build e `git diff --check`.
 
 ## Estado consolidado em 27/07/2026
 
@@ -31,8 +34,9 @@ Esta seção é a fotografia atual. As entradas datadas abaixo são histórico d
 implementação e podem citar topologias, modelos ou pendências que eram verdade
 naquele dia, mas já foram substituídas.
 
-- Branch `v2` sincronizada com produção no commit `8e3ed27`; release Fly
-  `v180`.
+- Baseline funcional da branch `v2` sincronizado com produção no commit
+  `8aae185`, release Fly `v181`; o pacote seguinte é exclusivamente
+  documental e não altera a aplicação.
 - Três `web` ativas e saudáveis, um `scheduler` singleton ativo e um `worker`
   ativo; a segunda Machine de worker está em standby parada.
 - Redis Upstash ativo para rate limit distribuído, com PING real, timeouts

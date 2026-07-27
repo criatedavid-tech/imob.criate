@@ -31,10 +31,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 ### Estado conhecido de produção
 
-O deploy vigente é publicado automaticamente pelo workflow `deploy-v2.yml`
-a partir do HEAD da branch `v2`. Em 27/07/2026, Git/Fly foram auditados e
-estavam no commit `8e3ed27`, release Fly `v180`, imagem
-`deployment-01KYAY2SRSXPFNHV4TVPAC1X42`, região `gru`.
+O deploy é publicado automaticamente pelo workflow `deploy-v2.yml` a partir
+do HEAD da branch `v2`. O baseline funcional auditado em 27/07/2026 estava no
+commit `8aae185`, release Fly `v181`, imagem
+`deployment-01KYJJ152S0EK576FR7WF0VMQJ`, região `gru`. O pacote documental
+posterior preserva esse mesmo código; consultar Fly/GitHub para o número da
+release documental mais recente.
 
 A topologia observada possui três Machines `web` iniciadas e saudáveis, uma
 Machine `scheduler` iniciada e o grupo `worker` com uma Machine ativa e uma
@@ -256,7 +258,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
    cards de plano (preço real de `GET /api/config/plan`, checklist de
    features, destaque "mais popular" no Corretor autônomo, toggle
    Mensal/Anual decorativo) — mecanismo de escolha continua sendo
-   `account_type`, sem preço diferenciado por plano ainda.
+   `account_type`, sem preço diferenciado por plano ainda. QA em produção
+   confirmou três colunas no desktop e cards empilhados sem overflow em
+   viewport móvel de 360 px; o fluxo não foi submetido para evitar criar uma
+   conta de teste desnecessária.
 2. Usuário pendente é enviado para `/payment`.
 3. Checkout e assinatura usam a conta Asaas global da Criate.
 4. O webhook Asaas valida idempotência, atualiza a assinatura e ativa a conta.
@@ -383,7 +388,7 @@ check e smoke HTTP 200 em `/`, `/login` e `/app`.
 
 Depois desse redesign foram publicados ajustes adicionais de responsividade,
 composer/teclado, menus do CRM, anexos, mídia recebida, auto-scroll, guardião
-de webhook e backfill. O estado visual atual é o do commit `8e3ed27`; os
+de webhook e backfill. O estado visual atual é o do commit `8aae185`; os
 detalhes acima registram a decisão original de 23/07.
 
 `UAZAPI_PLATFORM_SESSION` não é a instância individual do corretor. Ela é a
@@ -1343,7 +1348,7 @@ correspondente roda no scheduler singleton.
 - Confirmar manualmente a aplicação das migrations `20260722a` e `20260724`.
 - Não trocar `ASAAS_ENV`/chaves reais antes do QA completo em sandbox.
 - Repetir a conferência de commit/release antes do lançamento; em 27/07/2026 o
-  app estava no commit `8e3ed27`, release `v180`.
+  app estava no commit `8aae185`, release `v181`.
 
 ### QA autenticado obrigatório
 

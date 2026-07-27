@@ -1,21 +1,23 @@
 # Próximas tarefas — ImobiFlow V2
 
 > Atualizado em 27/07/2026. Este arquivo substitui as listas antigas de
-> alterações locais pendentes: tudo até `8e3ed27` já está versionado na branch
-> `v2` e publicado na release Fly `v180`.
+> alterações funcionais pendentes: o baseline funcional `8aae185` está
+> versionado na branch `v2` e foi validado na release Fly `v181`. O pacote
+> documental posterior não muda o código do produto.
 >
-> **Depois de `8e3ed27`:** cards de plano na Etapa 1 do cadastro
-> (`src/pages/Signup.tsx` — ver PROGRESS.md/DECISIONS.md), publicado logo em
-> seguida neste mesmo dia. QA pendente: conferir em produção que os 3 cards
-> aparecem certinho no `/signup` (desktop 3-colunas, mobile empilhado) e que
-> o preço exibido bate com `GET /api/config/plan`.
+> A nova Etapa 1 do cadastro com cards de plano foi confirmada em produção:
+> desktop em três colunas, mobile empilhado sem overflow e preço vindo de
+> `GET /api/config/plan`. O ciclo anual continua deliberadamente informativo,
+> sem alterar cobrança.
 
 ## Estado para retomar
 
 - Checkout canônico:
   `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
 - Branch: `v2`; não trabalhar em `main` nem no checkout antigo.
-- Produção: `https://imobiflow-v2.fly.dev`, release `v180`, commit `8e3ed27`.
+- Baseline funcional da produção: release `v181`, commit `8aae185`, em
+  `https://imobiflow-v2.fly.dev`; consultar Fly/GitHub para o número da release
+  documental mais recente.
 - Fly: 3 `web` ativas e saudáveis, 1 `scheduler` ativo, 1 `worker` ativo e 1
   `worker` standby.
 - Redis: ativo e respondendo; rate limit distribuído com fail-open.

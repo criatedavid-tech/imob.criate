@@ -5,9 +5,10 @@ O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
 agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
 para a operação diária.
 
-> Estado auditado em 27/07/2026: branch `v2`, commit `8e3ed27`, release Fly
-> `v180`, em `https://imobiflow-v2.fly.dev`. A V1 (`main` e app
-> `imobiflow`) está congelada e não recebe alterações.
+> Baseline funcional auditado em 27/07/2026: branch `v2`, commit `8aae185`,
+> release Fly `v181`, em `https://imobiflow-v2.fly.dev`. Releases posteriores
+> que alterem somente documentação preservam esse mesmo código. A V1 (`main`
+> e app `imobiflow`) está congelada e não recebe alterações.
 
 ## Arquitetura em produção
 
@@ -26,7 +27,7 @@ para a operação diária.
 | Assinatura SaaS | Asaas; operações financeiras de clientes ficam desativadas por padrão |
 | Deploy | GitHub Actions para Fly.io, região `gru` |
 
-Topologia Fly confirmada na release `v180`:
+Topologia Fly confirmada no baseline funcional da release `v181`:
 
 - `web`: 3 Machines `shared-cpu-1x`, 1 GB, todas iniciadas e saudáveis;
 - `worker`: quantidade configurada 2, sendo 1 ativa e 1 standby parada;
@@ -48,6 +49,11 @@ para titular e membros:
   Contatos, Lembretes, Divulgação, Relatórios e Config;
 - **Imobiliária:** acrescenta Locação, Financeiro e Equipe;
 - **Incorporadora:** acrescenta Lançamentos, Financeiro e Equipe.
+
+No cadastro, essas personas aparecem como três cards de plano. Hoje os três
+usam o mesmo preço mensal retornado por `GET /api/config/plan`; o seletor anual
+é apenas informativo e não muda a cobrança. Imobiliária e incorporadora exibem
+o add-on já existente de WhatsApp próprio por membro.
 
 O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
 pagamentos de clientes permanece desligada por

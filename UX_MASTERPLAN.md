@@ -9,6 +9,9 @@
 
 - `/app` atende corretor, imobiliária e incorporadora, com escopo diferente
   para titular e membros.
+- A Etapa 1 de `/signup` apresenta as três personas como cards de plano. O
+  preço é único e vem do backend; o anual é informativo. O desktop usa três
+  colunas e o mobile empilha os cards sem overflow.
 - Tema Cristal Dia/Noite está habilitado; contraste, tokens e responsividade
   receberam correções nas áreas operacionais e formulários.
 - Conversas é uma inbox responsiva, com lista/thread, handover, CRM, notas,

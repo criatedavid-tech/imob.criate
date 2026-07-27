@@ -12,8 +12,8 @@
   TypeScript, Knip e build antes de publicar. Não há gate manual posterior.
 - **Migrations manuais.** O usuário sempre executa SQL no Supabase; deploy não
   aplica banco.
-- **Baseline operacional auditado em 27/07/2026.** O commit `8e3ed27` está na
-  release Fly `v180`: três `web` ativas, um `scheduler` singleton ativo, um
+- **Baseline operacional auditado em 27/07/2026.** O commit `8aae185` está na
+  release Fly `v181`: três `web` ativas, um `scheduler` singleton ativo, um
   `worker` ativo e uma segunda Machine de worker em standby. Redis está ativo;
   Sentry não está configurado. Essa topologia é disponibilidade/capacidade
   potencial, não certificação de carga.

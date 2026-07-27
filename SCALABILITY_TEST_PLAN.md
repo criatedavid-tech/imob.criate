@@ -20,7 +20,7 @@ Esse baseline prova saúde em carga baixa, não capacidade de produção.
 
 ## Topologia auditada em 27/07/2026
 
-- release Fly `v180`, commit `8e3ed27`, região `gru`;
+- release Fly `v181`, commit `8aae185`, região `gru`;
 - 3 Machines `web` ativas, 1 GB, com checks passando;
 - 1 `scheduler` singleton ativo, 512 MB;
 - grupo `worker` com 1 Machine ativa de 1 GB e 1 standby parada;

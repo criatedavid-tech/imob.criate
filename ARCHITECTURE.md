@@ -1,7 +1,8 @@
 # Arquitetura — ImobiFlow V2
 
-> Fotografia técnica auditada em 27/07/2026 contra a branch `v2` no commit
-> `8e3ed27` e a release Fly `v180`.
+> Fotografia técnica do baseline funcional auditado em 27/07/2026: branch
+> `v2`, commit `8aae185`, release Fly `v181`. Releases exclusivamente
+> documentais posteriores não mudam esta topologia/código.
 
 ## Visão geral
 
@@ -42,6 +43,9 @@ estiver parada.
 
 - Frontend V2 em `src/experience/*`, servido em `/app`; páginas públicas e
   administrativas ficam em `src/pages/*`.
+- `src/pages/Signup.tsx` escolhe `account_type` por cards de plano e consulta
+  o preço público em `GET /api/config/plan`; não existe diferenciação real de
+  preço ou ciclo anual no backend.
 - `server.ts` inicializa Express, segurança, routers e SPA. Não registra jobs.
 - `server/middleware/auth.ts` valida JWT Supabase e resolve `user_id` e
   `broker_id` no servidor.

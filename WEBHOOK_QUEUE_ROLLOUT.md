@@ -1,7 +1,7 @@
 # Operação da fila durável de webhooks
 
 > Rollout inicial concluído. Estado revisado em 27/07/2026 no commit
-> `8e3ed27`/release Fly `v180`.
+> `8aae185`/release Fly `v181`.
 
 ## Objetivo e contrato
 
