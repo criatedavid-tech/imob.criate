@@ -143,7 +143,7 @@ export default function Signup() {
         </p>
       </motion.div>
 
-      <div className="relative z-10 w-full max-w-md">
+      <div className="relative z-10 w-full max-w-3xl">
         {/* Barra de progresso */}
         <div className="mb-6 px-1">
           <div className="flex justify-between mb-2">
@@ -203,7 +203,7 @@ export default function Signup() {
                       Cobrança anual chega em breve — hoje é só mensal.
                     </p>
                   )}
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon, popular }) => {
                       const selected = formData.account_type === value;
                       const features = value === 'corretor'
@@ -249,19 +249,21 @@ export default function Signup() {
                     })}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Nome Completo</label>
-                  <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
-                    <input required value={formData.name}
-                      onChange={e => setFormData({ ...formData, name: e.target.value })}
-                      className={`${inputClass} pl-11 pr-4`}
-                      placeholder="Seu nome completo" />
+                <div className="max-w-md mx-auto w-full space-y-5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">Nome Completo</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-low)] pointer-events-none" />
+                      <input required value={formData.name}
+                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                        className={`${inputClass} pl-11 pr-4`}
+                        placeholder="Seu nome completo" />
+                    </div>
                   </div>
+                  <button type="submit" className={btnPrimary}>
+                    Continuar <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </button>
                 </div>
-                <button type="submit" className={btnPrimary}>
-                  Continuar <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </button>
               </motion.form>
             )}
 
@@ -269,7 +271,7 @@ export default function Signup() {
             {step === 2 && (
               <motion.form key="step2"
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.2 }} onSubmit={handleStep2} className="space-y-5">
+                transition={{ duration: 0.2 }} onSubmit={handleStep2} className="space-y-5 max-w-md mx-auto">
                 <div>
                   <p className="text-sm text-[var(--text-low)] mb-4">
                     Olá, <strong className="text-[var(--text-hi)]">{formData.name.split(' ')[0]}</strong>! Qual é o seu WhatsApp?
@@ -298,7 +300,7 @@ export default function Signup() {
             {step === 3 && (
               <motion.form key="step3"
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
-                transition={{ duration: 0.2 }} onSubmit={handleStep3} className="space-y-4">
+                transition={{ duration: 0.2 }} onSubmit={handleStep3} className="space-y-4 max-w-md mx-auto">
                 <div>
                   <label className="block text-[10px] font-bold text-[var(--text-low)] mb-1.5 uppercase tracking-widest pl-1">E-mail</label>
                   <div className="relative">

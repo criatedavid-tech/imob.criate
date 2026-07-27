@@ -4,6 +4,26 @@ Este roteiro acompanha o backend preparado em 2026-07-22. Ele foi desenhado
 para ser aplicado sem alterar as features de interface que estao sendo
 trabalhadas em paralelo.
 
+## Estado confirmado em 27/07/2026
+
+- O backend publicado envia autenticação ao webhook do N8N e expõe
+  `event_id`, `ticket_id`, catálogo limitado e guardrails de agenda.
+- A integração N8N estava ativa no painel de saúde da produção.
+- O Fly não possui um secret `N8N_WEBHOOK_TOKEN` dedicado. Portanto
+  `server/config.ts` usa o fallback `INTERNAL_PROXY_TOKEN` na saída para o
+  webhook.
+- O Fly também não possui `N8N_AGENT_MODEL`; vale o padrão versionado
+  `google/gemini-2.5-flash`.
+- Não foi possível comprovar somente pelo repositório/Fly se o workflow online
+  exige Header Auth, usa credenciais em todos os nodes, isola memória por
+  `broker_id:ticket_id` e deduplica efeitos por `event_id`.
+- A migration `20260722a_n8n_agenda_guardrails.sql` está versionada; sua
+  aplicação no banco deve ser confirmada manualmente.
+
+Assim, os itens abaixo continuam sendo um roteiro de auditoria/aplicação
+manual. Não interpretar a presença do código no backend como prova de que o
+workflow do N8N já foi endurecido.
+
 ## Riscos encontrados no export
 
 1. `Webhook1` nao exige autenticacao. O UUID da URL nao e uma credencial.

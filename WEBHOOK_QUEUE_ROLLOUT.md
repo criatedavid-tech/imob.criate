@@ -1,25 +1,44 @@
-# Rollout da fila durável de webhooks
+# Operação da fila durável de webhooks
 
-## Objetivo
+> Rollout inicial concluído. Estado revisado em 27/07/2026 no commit
+> `8e3ed27`/release Fly `v180`.
 
-Impedir perda silenciosa de mensagens quando a API ou o n8n ficam
-indisponíveis. A entrada UAZAPI e o despacho ao n8n agora usam inbox/outbox no
-Postgres, com deduplicação, claims atômicos, lease recuperável, retry e DLQ.
+## Objetivo e contrato
 
-## Ordem obrigatória de publicação
+A entrada UAZAPI e a entrega ao N8N usam inbox/outbox no PostgreSQL para evitar
+perda silenciosa quando API, worker ou N8N ficam indisponíveis.
 
-1. Aplicar manualmente no Supabase:
-   `supabase/migrations/20260721b_webhook_inbox_outbox.sql`.
-2. Confirmar que as duas tabelas e as duas RPCs existem.
-3. Somente depois publicar o backend.
-4. Enviar uma mensagem textual real e acompanhar inbox/outbox até
-   `status='completed'`.
+- o inbound só responde ACK depois de persistir `imf_webhook_inbox`;
+- claims atômicos usam lease e `FOR UPDATE SKIP LOCKED`;
+- retry e DLQ recuperam falhas transitórias e preservam diagnóstico;
+- inbox e outbox avançam em ciclos independentes;
+- a entrega ao N8N é **at-least-once**;
+- `event_id` estável segue no header `X-ImobiFlow-Event-Id` e no JSON.
 
-O backend novo não deve ser publicado antes da migration: sem a tabela de
-inbox ele responde 503 e pede retry ao provedor, em vez de confirmar uma
-mensagem que não conseguiu guardar.
+Redis não é a fila. O Redis ativo serve ao rate limit distribuído; os eventos
+duráveis continuam no PostgreSQL.
 
-## Verificação no Supabase
+## Estado atual no Fly
+
+- `web`: 3 ativas; recebe HTTP e persiste o webhook antes do ACK;
+- `worker`: 1 ativa + 1 standby parada; processa inbox/outbox e mídia;
+- `scheduler`: 1 ativa; executa os 11 jobs periódicos;
+- `[http_service]` atende somente `web`;
+- SIGTERM permite drenagem e o lease devolve trabalho incompleto para retry.
+
+O grupo worker está configurado com duas Machines, mas a standby não aumenta
+throughput enquanto parada. Escala de processamento exige duas workers
+efetivamente iniciadas e deve ser validada em staging.
+
+## Pré-requisitos de banco
+
+A migration base é
+`supabase/migrations/20260721b_webhook_inbox_outbox.sql`. Em um ambiente novo:
+
+1. aplicar a migration manualmente;
+2. confirmar tabelas e RPCs;
+3. publicar o backend somente depois;
+4. enviar evento real de teste e acompanhar até `completed`.
 
 ```sql
 select to_regclass('public.imf_webhook_inbox') is not null as inbox_ok,
@@ -28,7 +47,10 @@ select to_regclass('public.imf_webhook_inbox') is not null as inbox_ok,
        to_regprocedure('public.claim_imf_webhook_outbox(text,integer,integer)') is not null as claim_outbox_ok;
 ```
 
-## Monitoramento operacional
+## Monitoramento
+
+O painel Admin mostra contagens de entrada/saída, estados, falhas, idade da
+fila e ações idempotentes de recuperação. Para diagnóstico direto:
 
 ```sql
 select status, count(*) as total, min(created_at) as mais_antigo
@@ -54,25 +76,37 @@ order by updated_at desc
 limit 100;
 ```
 
-Alertas iniciais sugeridos:
+Alertar em qualquer linha `dead`, evento `pending/processing` com mais de 60 s
+ou crescimento contínuo da outbox por cinco minutos.
 
-- qualquer linha `dead`;
-- evento `pending` ou `processing` com mais de 60 segundos;
-- crescimento contínuo da outbox por cinco minutos.
+## Recuperação operacional
 
-## Contrato com o n8n
+O painel Admin oferece processar filas, reprocessar falhas, destravar itens,
+reapontar webhooks e limpar histórico resolvido. As operações são desenhadas
+para repetição segura, mas devem ser usadas após identificar a causa.
 
-O payload anterior foi preservado. Foram acrescentados:
+Durante incidente:
 
-- header `X-ImobiFlow-Event-Id`;
-- campo JSON `event_id`.
+1. preservar inbox/outbox; nunca apagar filas como primeira ação;
+2. verificar saúde de web, worker, scheduler, Supabase, Redis e N8N;
+3. corrigir o componente indisponível;
+4. reprocessar falhas e observar a drenagem;
+5. confirmar ausência de efeitos duplicados no N8N/WhatsApp.
 
-A entrega da outbox é **at-least-once**. Se o n8n executar o fluxo e a resposta
-HTTP se perder, o backend tentará de novo com o mesmo `event_id`. Para impedir
-efeitos duplicados em 100% dos casos, o workflow deve registrar esse ID antes
-de enviar WhatsApp ou alterar dados e ignorar IDs já concluídos.
+Reverter o backend não exige remover tabelas. O histórico deve permanecer para
+diagnóstico e recuperação.
 
-## Configuração opcional
+## N8N e deduplicação
+
+Uma resposta HTTP perdida depois de o N8N executar o fluxo provoca retry com o
+mesmo `event_id`. Portanto o workflow precisa registrar o ID **antes** de
+enviar WhatsApp ou alterar dados e ignorar IDs já concluídos.
+
+A existência desse comportamento no workflow online não foi comprovada por
+esta auditoria de código/Fly. Validar manualmente seguindo
+[`docs/N8N_SECURITY_HARDENING.md`](./docs/N8N_SECURITY_HARDENING.md).
+
+## Parâmetros
 
 ```env
 WEBHOOK_INBOX_BATCH_SIZE=10
@@ -81,43 +115,15 @@ WEBHOOK_QUEUE_MAX_ATTEMPTS=20
 WEBHOOK_WORKER_POLL_MS=1000
 ```
 
-Os defaults já são seguros para o rollout inicial. Aumentar batches somente
-depois de teste de carga e observação de CPU, memória, banco e n8n.
+Os defaults priorizam segurança. Aumentar batches ou ativar mais workers só
+depois de medir fila, banco, CPU, memória e limite do N8N em staging.
 
-## Rollback
+## Validação periódica
 
-Reverter apenas o backend para a versão anterior. As tabelas podem permanecer
-no banco sem afetar a versão antiga e preservam os eventos para diagnóstico.
-Não apagar inbox/outbox durante um incidente.
-
-## Process groups no Fly
-
-- `web`: executa `server.ts`, recebe HTTP e persiste o webhook antes do ACK;
-- `worker`: executa `webhook-worker.ts`, sem serviço HTTP, e processa
-  inbox/outbox;
-- `fly.toml` associa `[http_service]` apenas a `web`;
-- o desligamento usa `SIGTERM`, até 30 segundos no Fly e drenagem de até 25
-  segundos no worker. Se o processo for interrompido antes, o lease devolve a
-  linha para retry;
-- por padrão, o primeiro deploy de novos grupos pode criar duas `web` e uma
-  `worker` com standby. Como os schedulers legados ainda estão em `server.ts`,
-  o workflow usa `--ha=false` e reduz `web` para uma Machine após o deploy;
-- a topologia alvo inicial é uma `web` ativa e uma `worker` ativa; uma standby
-  parada do worker não consome CPU/RAM até precisar assumir;
-- não aumentar o grupo `web` enquanto os demais schedulers de `server.ts` não
-  forem isolados ou auditados para execução concorrente.
-
-Validação depois do primeiro deploy:
-
-1. confirmar uma Machine ativa em `web` e uma ativa em `worker`;
-2. procurar o log `[Webhook Worker] inbox/outbox ativas`;
-3. enviar uma nova mensagem e confirmar inbox/outbox em `completed`;
-4. reiniciar somente o worker durante um teste controlado e confirmar que a
-   fila volta a zero;
-5. só então aumentar batches ou quantidade de workers.
-
-## Próximas etapas
-
-- implementar deduplicação por `event_id` no n8n;
-- adicionar métricas de idade da fila e DLQ;
-- executar testes de carga e de reinício dos processos.
+1. Enviar texto e mídia de uma conta de teste.
+2. Confirmar inbox/outbox em `completed` e mídia reproduzível.
+3. Parar o worker ativo de forma controlada e confirmar recuperação por lease.
+4. Indisponibilizar um N8N stub, acumular outbox e confirmar drenagem.
+5. Repetir o mesmo `event_id` e comprovar deduplicação ponta a ponta.
+6. Confirmar execução do guardião de webhook e do backfill de mídia sem
+   duplicação.

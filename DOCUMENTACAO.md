@@ -1,9 +1,12 @@
 # ImobiFlow V2 — referência atual do projeto
 
-> Estado consolidado do código da branch `v2` em 2026-07-21.
+> Estado consolidado do código da branch `v2` em 2026-07-27.
 >
 > Este arquivo descreve somente como o sistema está estruturado e o que é
 > verdade agora. Guias de integrações desativadas não fazem parte da V2.
+> Entradas com data/release antiga registram a evolução histórica; quando
+> houver divergência, prevalecem o estado de produção abaixo e as seções
+> arquiteturais atuais.
 
 ## 1. Produto, escopo e ambientes
 
@@ -29,17 +32,16 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 ### Estado conhecido de produção
 
 O deploy vigente é publicado automaticamente pelo workflow `deploy-v2.yml`
-a partir do HEAD da branch `v2`, atualmente `c372ccc` (fix de metacomentário
-do assistente interno em mensagens ao cliente — ver "Assistente IA e
-Follow-Up"). Nessa mesma linha vieram: o suporte multimodal do WhatsApp
-(áudio/imagem, baseline `d36fac5`→`5d096ef`), o alinhamento de
-`imf_brokers.ai_name` com o contrato `agent_name` do N8N (`069db64`) e as
-correções mobile do Assistente IA sobre o hardening de segurança do CRM em
-`84497c3`; ver seção 6. Smoke de `/`, `/app` e `/login` respondeu HTTP 200
-em 2026-07-21. Número exato da release Fly não confirmado nesta entrada —
-`flyctl` local está bloqueado por política de Application Control (Smart
-App Control) do Windows nesta máquina; consultar `fly status -a
-imobiflow-v2` ou o painel Fly quando disponível.
+a partir do HEAD da branch `v2`. Em 27/07/2026, Git/Fly foram auditados e
+estavam no commit `8e3ed27`, release Fly `v180`, imagem
+`deployment-01KYAY2SRSXPFNHV4TVPAC1X42`, região `gru`.
+
+A topologia observada possui três Machines `web` iniciadas e saudáveis, uma
+Machine `scheduler` iniciada e o grupo `worker` com uma Machine ativa e uma
+standby parada. A segunda worker fornece failover de host, não throughput
+adicional enquanto parada. O Redis Upstash está ativo; Sentry não possui
+secret no ambiente auditado. O painel Admin confirma saúde de filas, N8N e
+Redis e oferece intervenções idempotentes.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
 `imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
@@ -51,9 +53,10 @@ pode ficar bloqueado por política de Application Control (Smart App Control)
 do Windows — o CI builda e publica 100% nos runners do GitHub, sem depender
 de nada local.
 
-O produto está funcional e sem usuários ativos registrados, mas **não deve ser
-declarado 100% pronto para lançamento** enquanto os QAs autenticados e as
-credenciais listadas na seção 15 não forem concluídos.
+O produto está funcional, mas **não deve ser declarado 100% pronto para
+lançamento** enquanto QA multi-tenant, carga em staging, hardening do N8N e os
+itens da seção 15 não forem concluídos. A quantidade atual de Machines não é,
+por si só, certificação de capacidade.
 
 ## 2. Arquitetura atual
 
@@ -75,8 +78,8 @@ Supabase
        ├── N8N ───── automação e agente
        ├── OpenRouter/proxy LLM
        ├── Asaas ─── assinatura, aluguel e sinal PIX
-       ├── Redis ─── rate limit distribuído, se configurado
-       └── Sentry ── observabilidade, se configurado
+       ├── Redis ─── rate limit distribuído (ativo)
+       └── Sentry ── observabilidade opcional (não configurado)
 ```
 
 ### Stack
@@ -85,7 +88,7 @@ Supabase
 - build/dev: Vite 6, TypeScript 5.8 e `tsx`;
 - backend: Express 4, Zod, Helmet e `express-rate-limit`;
 - dados/autenticação: Supabase Auth, PostgreSQL e Supabase Storage;
-- infraestrutura opcional: Redis/ioredis e Sentry;
+- infraestrutura: Redis/ioredis ativo; Sentry opcional e não configurado;
 - produção: container Docker no Fly.io; HTTP na porta interna 3000 apenas no
   process group `web`.
 
@@ -93,7 +96,9 @@ Supabase
 
 | Caminho | Responsabilidade |
 | --- | --- |
-| `server.ts` | bootstrap Express, headers, routers, jobs e entrega do SPA |
+| `server.ts` | bootstrap Express, headers, routers e entrega do SPA; não registra jobs |
+| `webhook-worker.ts` | processamento independente de inbox/outbox e mídia |
+| `scheduler-worker.ts` | 11 jobs periódicos singleton |
 | `server/config.ts` | leitura centralizada das variáveis de ambiente |
 | `server/middleware/auth.ts` | JWT, tenant e distinção titular/membro |
 | `server/routes/` | endpoints separados por domínio |
@@ -188,6 +193,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   conversa como lead (nome + telefone), sem imóvel de interesse ainda —
   idempotente, mostra **"CRM criado"** se já existir um lead com o telefone
   (`POST /api/conversas/:ticketId/create-lead`).
+  A thread suporta anexos enviados pelo corretor e mídia recebida reproduzível
+  (áudio, imagem e documentos suportados). O composer mobile foi estabilizado
+  para teclado virtual, notas internas e envio sem redimensionamento inesperado;
+  menus/ações do CRM permanecem contidos no viewport.
 - **Assistente IA:** nome, instruções e Follow-Up Inteligente em área própria.
   Config não contém mais campos de IA na V2.
 - **Carteira:** imóveis, estados, imagens, landing pública e vitrine.
@@ -233,13 +242,21 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
 - **Relatórios:** métricas determinísticas de 3, 6 ou 12 meses.
 - **Config:** perfil, WhatsApp, plano, uso/excedentes, termos, chave Asaas para
   imobiliária/incorporadora e saída.
+- **Tema:** o seletor Cristal Dia/Noite está habilitado; a preferência é local
+  e as áreas móveis usam tokens de tema em vez de cores fixas sempre que já
+  migradas.
 
 ## 6. Fluxos ponta a ponta importantes
 
 ### Cadastro, pagamento e ativação
 
 1. O cadastro cria o usuário no Supabase Auth e a linha `imf_brokers`, com a
-   persona escolhida e status inicial `pendente`.
+   persona escolhida e status inicial `pendente`. Desde 27/07/2026 a Etapa 1
+   do wizard (`src/pages/Signup.tsx`) apresenta os 3 tipos de conta como
+   cards de plano (preço real de `GET /api/config/plan`, checklist de
+   features, destaque "mais popular" no Corretor autônomo, toggle
+   Mensal/Anual decorativo) — mecanismo de escolha continua sendo
+   `account_type`, sem preço diferenciado por plano ainda.
 2. Usuário pendente é enviado para `/payment`.
 3. Checkout e assinatura usam a conta Asaas global da Criate.
 4. O webhook Asaas valida idempotência, atualiza a assinatura e ativa a conta.
@@ -273,7 +290,7 @@ de reconciliação para operações externas que não concluíram de forma atôm
 
 ### Ciclos de ticket e histórico de conversas
 
-O trabalho local posterior à release v87 introduz um ID nativo por atendimento:
+O sistema publicado usa um ID nativo por atendimento:
 
 - `imf_conversation_tickets.id` é um UUID único por ticket;
 - mensagens, tags e notas apontam para `ticket_id`, evitando misturar ciclos
@@ -363,6 +380,11 @@ tags e notas sem `ticket_id` retornaram zero. O código dependente foi publicado
 no commit `d50e938` e na release Fly v88. Validação concluída com
 `npx tsc --noEmit`, `npx knip`, `npm run build`, `git diff --check`, health
 check e smoke HTTP 200 em `/`, `/login` e `/app`.
+
+Depois desse redesign foram publicados ajustes adicionais de responsividade,
+composer/teclado, menus do CRM, anexos, mídia recebida, auto-scroll, guardião
+de webhook e backfill. O estado visual atual é o do commit `8e3ed27`; os
+detalhes acima registram a decisão original de 23/07.
 
 `UAZAPI_PLATFORM_SESSION` não é a instância individual do corretor. Ela é a
 sessão da plataforma usada para mensagens como recuperação de senha por
@@ -568,6 +590,12 @@ sinalizando aqui em vez de decidir sozinho, conforme pedido.
 - O proxy LLM usa chave OpenRouter do tenant quando configurada e fallback
   global da Criate. Segredos por tenant são criptografados com
   `LLM_PROXY_ENC_KEY`.
+- Modelos vigentes no código: Assistente interno `xiaomi/mimo-v2.5`; agente
+  externo do WhatsApp `N8N_AGENT_MODEL`, padrão
+  `google/gemini-2.5-flash`; transcrição/visão
+  `google/gemini-2.5-flash-lite`; melhoria de texto
+  `openai/gpt-4o-mini`. O ambiente auditado não possui secret
+  `N8N_AGENT_MODEL`, portanto usa o padrão versionado.
 
 **Fix — áudio (iOS) e anexo de foto (Android) no Assistente IA (20/07/2026):**
 Dois bugs distintos, um por plataforma, no `CommandBar.tsx`:
@@ -686,8 +714,9 @@ com o token da instância e `message.messageid`, pedindo `return_base64=true` e
    intactos e continuando a ignorar recibos e tipos ainda não suportados;
    mídia de grupos também é ignorada para evitar automação/custo fora de uma
    conversa privada de atendimento;
-2. baixa e descriptografa a mídia pela UAZAPI, com teto de 6 MB para áudio e
-   8 MB para imagem, sem persistir base64 nem URL pública temporária;
+2. baixa e descriptografa a mídia pela UAZAPI, com limites por tipo, sem
+   persistir base64 bruto; quando suportado, armazena uma cópia no Storage e
+   grava `media_url` para reprodução no chat;
 3. reutiliza em `server/services/mediaAi.ts` a mesma transcrição OpenRouter
    usada por `/api/ai/transcribe`; imagens são descritas pelo mesmo modelo
    multimodal, incluindo a legenda quando existir;
@@ -697,11 +726,13 @@ com o token da instância e `message.messageid`, pedindo `return_base64=true` e
 5. em falha de download, formato, cota ou timeout, ainda grava a ocorrência e
    envia ao N8N uma instrução gentil de fallback, evitando silêncio;
 6. consulta `provider_message_id` antes do processamento para não cobrar IA
-   nem disparar resposta novamente em webhooks repetidos.
+   nem disparar resposta novamente em webhooks repetidos;
+7. executa backfill periódico best-effort para mídia histórica que ficou sem
+   URL reproduzível e reafirma os webhooks UAZAPI por um guardião separado.
 
-Não há migration nem alteração necessária no workflow N8N: o contrato `text`
-continua válido. O QA real pós-deploy precisa repetir um áudio e uma imagem na
-conversa privada; a implementação não processa vídeo, documento ou sticker.
+O contrato textual com o N8N continua válido. O QA real deve repetir texto,
+áudio, imagem e documento suportado em conversa privada; vídeo, sticker e
+mídia de grupos continuam fora do processamento do agente.
 
 **Fix — assistente interno narrando a própria ação em mensagens ao cliente
 (21/07/2026):** ao pedir "faça um follow pro X" no Assistente IA
@@ -1145,8 +1176,9 @@ Controles existentes:
 - `Cache-Control: no-store` em toda `/api`;
 - limite global de JSON/urlencoded em 10 MB;
 - rate limit em autenticação, checkout, IA e webhooks;
-- Redis opcional para rate limit distribuído; sem `REDIS_URL`, o contador é
-  local por VM;
+- Redis ativo para rate limit distribuído entre as Machines web; a integração
+  usa PING real, timeouts curtos, preferência IPv6 no host Upstash/Fly e
+  fail-open para uma indisponibilidade não derrubar a API;
 - validação Zod em fluxos críticos;
 - Assistente interno com dados variáveis fora do `system prompt`, encapsulados
   em `UNTRUSTED_ACCOUNT_CONTEXT`; saída do modelo e confirmação passam por
@@ -1157,7 +1189,8 @@ Controles existentes:
 - criptografia AES-256-GCM para chaves OpenRouter/Asaas por tenant;
 - Storage privado e URL assinada para documentos de reserva;
 - idempotência e reconciliação nos fluxos de cobrança;
-- Sentry opcional e retenção de 90 dias dos logs de webhook.
+- Sentry opcional (não configurado no ambiente auditado) e retenção de 90 dias
+  dos logs de webhook.
 
 Pendências de segurança/infraestrutura:
 
@@ -1166,8 +1199,8 @@ Pendências de segurança/infraestrutura:
   audit periodicamente e antes de lançamento;
 - observar relatórios reais da CSP e, após QA, decidir a passagem de
   `reportOnly: true` para bloqueio;
-- configurar Redis antes de escalar para várias máquinas, ou aceitar
-  explicitamente rate limit por VM;
+- testar em staging o rate limit distribuído, o fail-open do Redis e a
+  capacidade real das três Machines web;
 - confirmar rotação, mínimo privilégio e presença de todos os secrets no Fly;
 - fazer testes de isolamento com dois tenants reais e titular/membro;
 - ampliar a suíte automatizada recém-criada para rotas, isolamento multi-tenant
@@ -1191,13 +1224,16 @@ Pendências de segurança/infraestrutura:
 | Reconciliação financeira | 5 min + boot | reprocessa intenções monetárias pendentes |
 | Expiração de reserva PIX | 60 s + boot | libera reservas vencidas e cancela cobrança |
 | Retenção de webhook logs | 24 h + boot | remove logs com mais de 90 dias |
+| Retenção das filas | 6 h + boot | remove linhas resolvidas para conter índices e histórico operacional |
+| Guardião de webhook | 3 min + boot | reafirma os webhooks UAZAPI das instâncias |
+| Backfill de mídia recebida | 30 min + boot | recupera URL reproduzível de mídia histórica incompleta |
 
 A inbox/outbox roda exclusivamente em `webhook-worker.ts` e pode usar múltiplas
 Machines porque os claims usam `FOR UPDATE SKIP LOCKED`, lease e partição por
-conversa. Os demais jobs rodam em `scheduler-worker.ts`, numa Machine singleton,
+conversa. Os 11 jobs rodam em `scheduler-worker.ts`, numa Machine singleton,
 com prevenção local de sobreposição e drenagem no SIGTERM. `server.ts` não
-registra schedulers. A web permanece em uma instância até Redis e teste de
-carga, não por risco de duplicar jobs. Ver `SCALABILITY_TEST_PLAN.md`.
+registra schedulers. A produção possui três web; o grupo worker tem uma ativa
+e uma standby parada. Ver `SCALABILITY_TEST_PLAN.md` antes de alterar escala.
 
 ## 13. Variáveis de ambiente
 
@@ -1215,16 +1251,20 @@ carga, não por risco de duplicar jobs. Ver `SCALABILITY_TEST_PLAN.md`.
 - limite de produto: `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e
   `VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false`;
 - UAZAPI: `UAZAPI_HOST`, `UAZAPI_TOKEN`, `UAZAPI_PLATFORM_SESSION`;
-- N8N/IA: `N8N_WEBHOOK_URL`, `INTERNAL_PROXY_TOKEN`,
-  `LLM_PROXY_ENC_KEY`, `OPENROUTER_API_KEY`;
+- N8N/IA: `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_TOKEN`, `N8N_AGENT_MODEL`,
+  `OPENROUTER_N8N_MODELS`, `INTERNAL_PROXY_TOKEN`,
+  `INTERNAL_PROXY_TOKEN_PREVIOUS`, `LLM_PROXY_ENC_KEY`,
+  `OPENROUTER_API_KEY`;
 - fila: `WEBHOOK_INBOX_BATCH_SIZE`, `WEBHOOK_OUTBOX_BATCH_SIZE`,
   `WEBHOOK_QUEUE_MAX_ATTEMPTS`, `WEBHOOK_WORKER_POLL_MS`;
 - operação: `REDIS_URL`, `SENTRY_DSN`, `NODE_ENV`.
 
-Em 21/07/2026, os secrets residuais de origem pública e administração da
-integração desativada foram removidos do app Fly. A origem pública permanece
-somente no `PUBLIC_APP_URL` versionado e o webhook UAZAPI foi relido no domínio
-V2 após o rolling restart.
+Em 27/07/2026, os nomes de secrets do Fly confirmaram Supabase, UAZAPI, Asaas,
+N8N, proxy LLM, criptografia e `REDIS_URL`. Não havia `SENTRY_DSN`,
+`N8N_AGENT_MODEL` nem `N8N_WEBHOOK_TOKEN`. Assim, Sentry fica desligado, o
+agente N8N usa o modelo padrão do código e o token da entrada do webhook usa o
+fallback temporário `INTERNAL_PROXY_TOKEN`. A origem pública permanece somente
+no `PUBLIC_APP_URL` versionado.
 
 `server/config.ts` aceita a URL Supabase pública como fallback conhecido, mas
 recusa iniciar sem `SUPABASE_SERVICE_ROLE_KEY`. Não criar fallback `VITE_*`
@@ -1251,6 +1291,8 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260721d_fix_crm_ensure_default_pipeline_ambiguous_column.sql` | aplicada e verificada | corrige coluna ambígua em `imf_crm_ensure_default_pipeline` que derrubava 100% das chamadas de `GET /api/crm/pipelines` (ver seção "CRM: pipelines e etapas") |
 | `20260721f_reminder_whatsapp_alert.sql` | aplicada e verificada em 22/07/2026 | coluna `imf_agenda.whatsapp_alert_sent_at` — marca lembrete já alertado por WhatsApp |
 | `20260721g_visit_broker_notification.sql` | aplicada e verificada em 22/07/2026 | flags de visita do chatbot, one-shot do WhatsApp e telefone pessoal de notificação |
+| `20260722a_n8n_agenda_guardrails.sql` | versionada; aplicação não confirmada nesta auditoria | reduz exposição e restringe operações de agenda usadas pelo N8N |
+| `20260724_scale_hot_path_indexes.sql` | versionada; aplicação não confirmada nesta auditoria | índices dos hot paths de escala e filas |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -1282,24 +1324,26 @@ arquivo usa `BEGIN`/`COMMIT`: qualquer erro durante a aplicação desfaz o bloco
 completo, evitando hardening parcial.
 
 `20260721_agent_scheduled_followups.sql` foi executada manualmente pelo
-usuário em 21/07/2026, antes do código dependente (`schedule_followup`) ter
-sido commitado/publicado. A consulta pós-migration confirmou as três
-condições: tabela `imf_agent_scheduled_followups` presente, RLS ativo
+usuário em 21/07/2026. A consulta pós-migration confirmou as três condições:
+tabela `imf_agent_scheduled_followups` presente, RLS ativo
 (`relrowsecurity=true`) e a policy `broker_own_agent_scheduled_followups`
-criada. Como o código ainda está pendente de commit (ver PROGRESS.md/
-NEXT_TASK.md), a tabela existe no banco mas nenhuma linha será gravada nela
-até o deploy acontecer.
+criada. O código dependente (`schedule_followup`) já foi publicado e o job
+correspondente roda no scheduler singleton.
 
 ## 15. Pendências e critérios de lançamento
 
 ### Bloqueadores antes de credenciais reais
 
-- Confirmar no Fly a `UAZAPI_PLATFORM_SESSION`; sem ela, recuperação de senha
-  por WhatsApp não envia mensagem.
-- Confirmar secrets de produção de Supabase, UAZAPI, Asaas, webhook Asaas,
-  N8N, proxy LLM, criptografia, Sentry e Redis conforme a topologia escolhida.
+- Confirmar operacionalmente a `UAZAPI_PLATFORM_SESSION`; sem ela,
+  recuperação de senha por WhatsApp não envia mensagem.
+- Configurar Sentry se a decisão de observabilidade exigir; ele não está
+  configurado na produção auditada.
+- Separar `N8N_WEBHOOK_TOKEN` de `INTERNAL_PROXY_TOKEN` e confirmar Header Auth,
+  credenciais, isolamento de memória e deduplicação no workflow N8N.
+- Confirmar manualmente a aplicação das migrations `20260722a` e `20260724`.
 - Não trocar `ASAAS_ENV`/chaves reais antes do QA completo em sandbox.
-- Confirmar qual commit/imagem está efetivamente no app `imobiflow-v2`.
+- Repetir a conferência de commit/release antes do lançamento; em 27/07/2026 o
+  app estava no commit `8e3ed27`, release `v180`.
 
 ### QA autenticado obrigatório
 
@@ -1348,6 +1392,7 @@ resposta multimodal abaixo precisa de repetição após o novo deploy:
 ### Checklist técnico por alteração
 
 ```powershell
+npm test
 npx knip
 npx tsc --noEmit
 npm run build
@@ -1434,6 +1479,8 @@ pelo N8N, passa a devolver esse valor em `agent_name`; `broker_agents.agent_name
 `$('Buscar Agente IA').item.json.agent_name` do prompt acompanha o nome que o
 corretor escolheu na interface.
 
-Nenhuma migration é necessária. Até o novo prompt ser colado e ativado no N8N,
-somente o alinhamento do nome no endpoint poderá produzir efeito após uma
-publicação do backend.
+Nenhuma migration é necessária apenas para o texto do prompt. A auditoria de
+27/07/2026 não confirmou qual revisão está ativa dentro do N8N; comparar o
+workflow com este arquivo antes de declarar a instalação concluída. O modelo
+do agente vem do endpoint (`N8N_AGENT_MODEL`, padrão
+`google/gemini-2.5-flash`) e não deve ficar divergente em nodes isolados.

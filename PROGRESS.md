@@ -1,5 +1,62 @@
 # Estado do projeto
 
+## Etapa 1 do cadastro vira cards de plano (2026-07-27)
+
+- Pedido do usuário com print de referência (pricing estilo Zapier: 3 cards,
+  destaque "mais popular", toggle Mensal/Anual) + print da nossa Etapa 1
+  atual ("Você é" em lista de radio buttons).
+- `src/pages/Signup.tsx`: a lista de `ACCOUNT_TYPES` virou 3 cards de plano —
+  preço real via `GET /api/config/plan` (rota pública já existente, mesma
+  usada por `PaymentPending.tsx`), checklist de 5 features base + a feature
+  extra de WhatsApp por membro da equipe (imobiliária/incorporadora), badge
+  "mais popular" no Corretor autônomo, toggle Mensal/Anual decorativo (Anual
+  mostra aviso "chega em breve", nunca muda o preço exibido).
+- Nenhuma mudança de backend/preço real: os 3 planos cobram o mesmo valor
+  hoje — só apresentação. Decisão registrada em DECISIONS.md.
+- Primeira versão alargava o card do wizard só na Etapa 1 (`max-w-3xl`) pra
+  caber os 3 cards lado a lado; usuário testou no localhost e reportou que o
+  salto de largura ao avançar pra Etapa 2 prejudicava a UX. Corrigido:
+  largura do card fica constante (`max-w-3xl`) nas 3 etapas, e as Etapas 2/3
+  centralizam os campos numa faixa `max-w-md` dentro desse card largo — sem
+  outro alargamento condicional.
+- Verificado com o usuário rodando `npm run dev` local de verdade (não só
+  Browser pane automatizado) antes do commit — checklist técnico
+  (`tsc`/`knip`/`build`/`git diff --check`) limpo em todas as rodadas.
+- Commit `5431ad1` (versão inicial) + ajustes seguintes na mesma branch antes
+  do push.
+
+## Estado consolidado em 27/07/2026
+
+Esta seção é a fotografia atual. As entradas datadas abaixo são histórico de
+implementação e podem citar topologias, modelos ou pendências que eram verdade
+naquele dia, mas já foram substituídas.
+
+- Branch `v2` sincronizada com produção no commit `8e3ed27`; release Fly
+  `v180`.
+- Três `web` ativas e saudáveis, um `scheduler` singleton ativo e um `worker`
+  ativo; a segunda Machine de worker está em standby parada.
+- Redis Upstash ativo para rate limit distribuído, com PING real, timeouts
+  curtos, preferência IPv6 no host Fly/Upstash e fail-open.
+- Scheduler executa 11 jobs: aos oito originais somaram-se retenção das filas,
+  guardião de webhook e backfill de mídia recebida.
+- Conversas recebeu persistência/reprodução de anexos e mídia recebida,
+  backfill, autocura de webhook, auto-scroll e várias correções de estabilidade
+  do composer/teclado no mobile.
+- CRM e menus mobile foram contidos no viewport; temas Dia/Noite estão
+  habilitados e receberam correções de contraste e responsividade.
+- Vitrines públicas e landing pages de imóveis/lançamentos receberam as
+  rodadas mais recentes de apresentação; preços legados têm normalização.
+- Hot paths receberam cache/menos round-trips, índices versionados e escala
+  horizontal da web. A aplicação da migration
+  `20260724_scale_hot_path_indexes.sql` ainda precisa de confirmação manual.
+- Agente interno usa `xiaomi/mimo-v2.5`; agente externo do N8N usa, por padrão,
+  `google/gemini-2.5-flash`; mídia usa
+  `google/gemini-2.5-flash-lite`; texto auxiliar usa `openai/gpt-4o-mini`.
+- O painel Admin expõe saúde de filas, Redis, N8N, memória e ações idempotentes
+  de intervenção. Redis aparece ativo; Sentry continua não configurado.
+- Restam QA autenticado multi-tenant, teste de carga em staging, confirmação
+  do hardening/deduplicação no N8N e observabilidade de produção.
+
 ## Redesign da área de Conversas: inbox mobile+desktop (2026-07-23)
 
 - Usuário mostrou 3 screenshots do mobile real: lista e thread empilhadas
@@ -187,12 +244,9 @@
   `--warning`/`--danger` (reagem ao tema, zero edição por arquivo); fundo escuro
   `from-slate-900 via-blue-950 to-indigo-900` -> `.app-bg` (19x/14 arquivos).
   `GlassCard` (`ui.tsx`) recolorido cascateia todos os cards.
-- `tsc`/`knip`/`build` verdes. **Toggle travado em Noite** por ora
-  (`THEME_TOGGLE_ENABLED=false` em ExperienceShell) — modo Dia só é exposto
-  após passada de latão nos valores R$ + QA visual.
-- Pendências: latão nos valores em R$ (Dashboard/Relatórios/Financeiro/
-  Lançamentos); QA visual dos 2 temas; reativar o toggle; revisar páginas
-  públicas editoriais (landing/vitrine) que também foram tokenizadas.
+- Naquele commit, `tsc`/`knip`/`build` ficaram verdes e o toggle ainda estava
+  travado em Noite aguardando QA. **Estado atual:** as rodadas seguintes
+  concluíram o polimento e habilitaram `THEME_TOGGLE_ENABLED=true`.
 
 
 ## Hardening contra prompt injection publicado (2026-07-22)
@@ -239,9 +293,11 @@
   legado `appback.criate.online`. Ela foi reapontada e confirmada em
   `https://imobiflow-v2.fly.dev/api/wpp-shim/inbound/:instanceId`, sem acessar
   nem alterar o n8n.
-- Próximo gate de escala: criar staging/conta sintética, executar o mix
-  autenticado e webhooks sob carga, configurar Redis e só então testar
-  `web=2`. Nenhuma carga pesada foi executada em produção.
+- Gate definido naquela data: criar staging/conta sintética, executar o mix
+  autenticado e webhooks sob carga, configurar Redis e só então testar escala
+  da web. **Atualização:** Redis foi ativado e a produção passou a três web;
+  o teste de carga em staging continua pendente, portanto a capacidade ainda
+  não está certificada.
 
 ## Feature: notificar corretor quando a IA de atendimento marca visita (2026-07-21)
 
@@ -551,7 +607,9 @@
   schedulers restantes do Express não podem rodar duplicados com segurança, a
   correção `45b41e0` adicionou `--ha=false` e `flyctl scale count web=1` ao
   workflow. GitHub Actions run `29853031218` aprovado; uma `web` foi removida,
-  ficando uma `web` ativa, uma `worker` ativa e a standby parada do worker.
+  ficando, naquela release histórica, uma `web` ativa, uma `worker` ativa e a
+  standby parada do worker. **Estado atual:** três web, um worker ativo, um
+  worker standby e scheduler singleton.
 - Smoke final: `/`, `/login` e `/app` HTTP 200; inbox/outbox sem itens
   `pending`, `processing` ou `dead`.
 
@@ -631,16 +689,21 @@
 
 ## Pendências de QA
 
-- Instalar manualmente o novo prompt no N8N e testar nome/instruções do corretor.
-- Testar PTT e imagem novos em conversa privada após o deploy já publicado.
+- Confirmar no workflow N8N online Header Auth, credenciais, memória isolada,
+  prompt vigente e deduplicação por `event_id`.
+- Testar texto, PTT, imagem e documento em conversa privada na topologia atual.
 - Confirmar isolamento titular/membro e operações críticas do CRM em produção.
 - Validar IA desativada/human takeover e ausência de duplicação/vazamento nos
   logs.
+- Executar o plano de carga em staging e confirmar a migration de índices de
+  24/07 no Supabase.
 
 ## Limitações conhecidas
 
 - A instância N8N exige sessão autenticada com acesso de edição; instalação do
   prompt permanece manual.
-- Vídeo, documento, sticker e mídia de grupos não são processados pelo agente.
-- `flyctl` local bloqueado; deploy ocorre pelo GitHub Actions.
+- Vídeo, sticker e mídia de grupos continuam fora do processamento do agente;
+  documentos suportados podem aparecer como anexo no chat.
+- Deploy normal ocorre pelo GitHub Actions; `flyctl` é usado para diagnóstico
+  e intervenções operacionais conscientes.
 - Testes físicos mobile dependem do usuário.

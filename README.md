@@ -1,146 +1,149 @@
-# ImobiFlow
+# ImobiFlow V2
 
-Plataforma B2B SaaS para o mercado imobiliário brasileiro — corretor autônomo, imobiliária ou incorporadora, todos servidos pelo mesmo produto. A proposta: **"pague e, minutos depois, tenha um funcionário de IA no seu WhatsApp"** — não um sistema que você opera, um agente que você supervisiona.
+SaaS B2B brasileiro para corretores autônomos, imobiliárias e incorporadoras.
+O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
+agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
+para a operação diária.
 
-> Este é o app **v2** (`imobiflow-v2.fly.dev`, branch `v2`) — o projeto principal e alvo de todo desenvolvimento ativo desde 2026-07-13. O app v1 (`imobiflow.fly.dev`, branch `main`) existe só como rede de segurança e não recebe mais features. Detalhe técnico completo e histórico de decisões em [`DOCUMENTACAO.md`](./DOCUMENTACAO.md).
+> Estado auditado em 27/07/2026: branch `v2`, commit `8e3ed27`, release Fly
+> `v180`, em `https://imobiflow-v2.fly.dev`. A V1 (`main` e app
+> `imobiflow`) está congelada e não recebe alterações.
 
----
+## Arquitetura em produção
 
-## Stack
+| Camada | Estado atual |
+| --- | --- |
+| Frontend | React 19, TypeScript, Tailwind CSS 4, Vite 6 e Motion |
+| Backend | Node.js, Express e TypeScript executado com `tsx` |
+| Dados | Supabase Auth, PostgreSQL e Storage privado; backend usa `service_role` |
+| WhatsApp | UAZAPI direta por conta/membro |
+| Agente externo | N8N + OpenRouter; modelo padrão entregue pelo backend: `google/gemini-2.5-flash` |
+| Assistente interno | OpenRouter; modelo atual em código: `xiaomi/mimo-v2.5` |
+| IA de mídia | OpenRouter; `google/gemini-2.5-flash-lite` para transcrição/visão |
+| IA de texto auxiliar | OpenRouter; `openai/gpt-4o-mini` |
+| Cache/rate limit | Redis Upstash ativo; falha de Redis não derruba a API |
+| Fila durável | Inbox/outbox no PostgreSQL, com retry, lease, DLQ e `event_id` |
+| Assinatura SaaS | Asaas; operações financeiras de clientes ficam desativadas por padrão |
+| Deploy | GitHub Actions para Fly.io, região `gru` |
 
-| Camada | Tecnologia |
-|---|---|
-| Frontend | React 19 + TypeScript + Tailwind CSS v4 + Vite 6 + Framer Motion |
-| Backend | Node.js + Express + TypeScript, modularizado sob `server/` (rodado via `tsx`, sem etapa de build) |
-| Banco de dados | Supabase (PostgreSQL) — instância compartilhada com outros produtos da Criate, tabelas núcleo com prefixo `imf_` |
-| Autenticação | Supabase Auth (JWT real — nunca confia em header de identidade) |
-| Storage | Supabase Storage (fotos de imóveis) |
-| IA — agente/texto | OpenRouter (`gpt-4o-mini`) |
-| IA — voz | Google Gemini (`gemini-2.0-flash`, multimodal) transcreve áudio gravado no navegador |
-| WhatsApp | UAZAPI nativa — provisionamento direto por corretor/membro, sem intermediário |
-| Automação do agente do WhatsApp | N8N (`212n8n.criate.online`) — conversa com o cliente final, separado do Assistente interno do app |
-| Pagamentos | Asaas (checkout + assinatura recorrente + cobrança de excedente) |
-| Deploy | Fly.io — app `imobiflow-v2`, região `gru` (São Paulo), deploy manual (`fly deploy --remote-only`) |
+Topologia Fly confirmada na release `v180`:
 
----
+- `web`: 3 Machines `shared-cpu-1x`, 1 GB, todas iniciadas e saudáveis;
+- `worker`: quantidade configurada 2, sendo 1 ativa e 1 standby parada;
+- `scheduler`: 1 Machine singleton, 512 MB, iniciada;
+- serviço HTTP somente no grupo `web`, porta interna 3000;
+- `min_machines_running=2`, auto-stop desligado, concorrência soft 80/hard 150;
+- Redis conectado; Sentry não configurado no ambiente auditado.
 
-## A ideia central: um agente, não um painel
+Essa topologia melhora disponibilidade, mas não constitui prova de capacidade
+para 100 ou mais corretores simultâneos. Os gates estão em
+[`SCALABILITY_TEST_PLAN.md`](./SCALABILITY_TEST_PLAN.md).
 
-O diferencial do produto é a **Assistente IA** (`src/experience/CommandBar.tsx` + `server/services/agent.ts`) — uma barra de comando em linguagem natural que substitui boa parte da navegação por telas. O corretor fala (digitando, colando ou **por voz**) e o agente decide e executa: cadastra imóvel, agenda/cancela/remarca visita (avisando o cliente por WhatsApp se pedido), manda mensagem, cadastra lead, consulta a agenda, navega pra qualquer área do sistema. Cada resposta pode:
+## Produto e personas
 
-- **Responder, navegar e consultar diretamente** em qualquer modo,
-- **Propor e esperar confirmação** para toda mutação, inclusive no modo
-  *piloto* (proteção contra prompt injection),
-- Ou simplesmente responder, sem ação nenhuma.
+As três personas usam a mesma experiência em `/app`, com permissões distintas
+para titular e membros:
 
-Fotos podem ser anexadas na própria conversa (sobem pro Storage antes de qualquer coisa; o modelo nunca "vê" a imagem, só sabe que existe um anexo). O histórico da conversa é persistido por usuário (`imf_agent_log`) e sobrevive a fechar o chat ou recarregar a página — com um botão "Nova conversa" pra recomeçar do zero quando quiser.
+- **Corretor:** Hoje, Conversas, Assistente IA, Carteira, Negócios, Agenda,
+  Contatos, Lembretes, Divulgação, Relatórios e Config;
+- **Imobiliária:** acrescenta Locação, Financeiro e Equipe;
+- **Incorporadora:** acrescenta Lançamentos, Financeiro e Equipe.
 
-**Importante:** este agente interno (o "cérebro" que o corretor usa dentro do app) é **diferente** do agente que atende os *clientes finais* pelo WhatsApp — esse roda inteiramente no N8N (`212n8n.criate.online`), lendo o catálogo real do corretor via API e agendando/cancelando visitas com o fuso de Brasília sempre correto.
+O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
+pagamentos de clientes permanece desligada por
+`CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e pela flag Vite equivalente.
 
----
+## Dois agentes diferentes
 
-## As 3 personas, as mesmas telas
+1. A **Assistente IA interna** atende o corretor dentro do app. Consulta o
+   snapshot autorizado da conta, navega e responde; qualquer mutação exige
+   confirmação humana, inclusive no modo piloto.
+2. O **agente de atendimento do WhatsApp** roda no N8N e conversa com clientes
+   finais. O backend expõe catálogo/configuração sob autenticação interna e
+   envia `event_id` estável para deduplicação.
 
-Corretor autônomo, imobiliária e incorporadora usam a **mesma arquitetura de superfícies** (`src/experience/`), que se adapta ao porte da conta:
+Dados de clientes, descrições, CRM e mensagens são tratados como conteúdo não
+confiável. A saída estruturada do agente interno passa por schema Zod estrito.
 
-| Superfície fixa | Papel |
-|---|---|
-| **Hoje** | Cockpit/briefing — a tela que abre |
-| **Conversas** | Inbox unificada do WhatsApp (abas IA atendendo / aguardando você / encerrado), com handover humano |
-| **Carteira** | Imóveis (ou empreendimentos/unidades, no dialeto da incorporadora) |
-| **Negócios** | Funil de leads |
-| **Agenda** | Visitas agendadas via IA ou manualmente |
-| **Contatos** | Contatos capturados automaticamente do WhatsApp (nome do perfil detectado) |
+## Mensagens e mídia
 
-Módulos que acendem por porte de conta: **Locação** (contratos, cobrança de aluguel via Asaas), **Lançamentos** (unidades, reservas, vitrine pública), **Financeiro**, **Equipe** (múltiplos membros por conta, cada um podendo ter WhatsApp próprio ou compartilhado), **Relatórios**, **Divulgação** (landing pages públicas por imóvel).
+O inbound da UAZAPI é persistido antes do ACK. Um worker separado processa
+inbox e outbox; texto e mídia seguem ao N8N com entrega at-least-once. Áudios,
+imagens e documentos suportados ficam acessíveis na conversa por URL de
+Storage, e um job de backfill tenta recuperar mídia histórica incompleta.
+Outro job reafirma periodicamente os webhooks UAZAPI.
 
----
+## Estrutura principal
 
-## Estrutura de pastas
-
-```
+```text
 imob.criate/
-├── server.ts                       # Bootstrap do Express (monta os routers, cron jobs)
+├── server.ts                       # bootstrap HTTP/Express e SPA
+├── webhook-worker.ts               # worker de inbox/outbox
+├── scheduler-worker.ts             # 11 jobs periódicos singleton
 ├── server/
-│   ├── config.ts                   # Todas as env vars
-│   ├── supabase.ts                 # Cliente Supabase (service_role)
-│   ├── lib/                        # crypto, http e infraestrutura compartilhada
-│   ├── middleware/                 # auth (requireUser/getBrokerId/isBrokerOwner), validate (zod)
-│   ├── services/
-│   │   ├── agent.ts                # O "cérebro" do Assistente IA — snapshot da conta + Gemini/OpenRouter
-│   │   ├── uazapi.ts                # Envio/recebimento WhatsApp e roteamento por instância
-│   │   ├── billing.ts / rentalBilling.ts
-│   │   ├── followup.ts             # Reengajamento automático de leads silenciosos
-│   │   └── provisioning.ts         # Provisiona instância UAZAPI no signup/convite
-│   └── routes/                     # Um arquivo por domínio: auth, brokers, properties, agent, ai,
-│                                    # agenda, leads, contacts, equipe, locacao, lancamentos,
-│                                    # financeiro, relatorios, vitrine, conversations, admin, billing...
+│   ├── config.ts                   # configuração centralizada
+│   ├── lib/                        # Redis, Sentry e infraestrutura comum
+│   ├── middleware/                 # autenticação, tenant e validação
+│   ├── routes/                     # APIs por domínio
+│   ├── security/                   # guardrails do agente
+│   └── services/                   # domínio e integrações
 ├── src/
-│   ├── experience/                 # A UI real (v2): CommandBar, ExperienceShell, *Area.tsx por superfície
-│   ├── components/                 # PropertyForm, MagicWandTextarea (formulário manual + IA de texto)
-│   ├── pages/                      # Login, Signup, Dashboard (shell), Admin, PropertyLanding, etc.
-│   ├── services/                   # auth.ts (sessão JWT)
-│   └── lib/                        # money.ts (máscara de preço), phone.ts, document.ts (CPF/CNPJ)
-├── supabase/migrations/            # SQL versionado (rodado manualmente no Supabase, não automático)
-├── .env.example                    # Template de variáveis (versionado)
-├── fly.toml                        # App "imobiflow-v2", região gru
-└── DOCUMENTACAO.md                 # Fonte de verdade técnica — arquitetura, decisões, histórico de bugs
+│   ├── experience/                 # cockpit V2 e áreas operacionais
+│   ├── components/
+│   ├── pages/                      # auth, admin e páginas públicas
+│   └── lib/
+├── supabase/migrations/            # SQL versionado, aplicado manualmente
+├── fly.toml
+└── DOCUMENTACAO.md                 # referência técnica detalhada
 ```
 
----
-
-## Banco de dados (Supabase)
-
-Instância **compartilhada** com outros produtos da Criate — tabelas núcleo deste projeto usam prefixo `imf_` (`imf_brokers`, `imf_properties`, `imf_agenda`, `imf_leads`... também `leads`, `followup_conversations` sem prefixo, legado). **Sempre filtrar por `broker_id` derivado do JWT** — o backend usa `service_role` (ignora RLS), então isolamento multi-tenant é responsabilidade do código de aplicação em toda rota.
-
-Lista completa de tabelas, colunas e RPCs: [`DOCUMENTACAO.md` §14.4](./DOCUMENTACAO.md).
-
----
-
-## Rodar localmente
+## Executar localmente
 
 ```bash
-npm install
-cp .env.example .env
-# preencher .env com os valores reais (Supabase, Gemini, UAZAPI, Asaas, N8N...)
+npm ci
+# copiar .env.example para .env e preencher somente no ambiente local
+npm run dev
 
-npm run dev      # tsx --max-old-space-size=1024 server.ts — Express + Vite juntos, porta 3000
-npm test         # concorrência/lifecycle dos jobs + invariantes da topologia
-npm run lint     # tsc --noEmit — sempre rodar antes de commitar
-npm run build    # vite build → dist/
+npm test
+npm run lint
+npx knip
+npm run build
+git diff --check
 ```
 
-O Vite roda como middleware do Express — não precisa de processo separado.
+O Vite roda como middleware do Express em desenvolvimento; a porta padrão é
+3000. Não versionar `.env` nem chaves reais.
 
----
+## Publicação
 
-## Deploy (Fly.io)
+O fluxo normal é automático: um push em `v2` dispara
+`.github/workflows/deploy-v2.yml`, que executa instalação limpa, testes,
+TypeScript, Knip e build antes de publicar no app `imobiflow-v2`.
 
-```bash
-npm test && npm run lint && npm run build
-fly deploy -a imobiflow-v2 --config fly.toml --remote-only
-fly logs -a imobiflow-v2               # acompanhar
-```
+Comandos `fly status`, `fly checks list`, `fly releases` e `fly logs` são
+diagnósticos. `fly deploy` manual é apenas recuperação operacional consciente,
+não o caminho normal do projeto. Migrations nunca são aplicadas pelo deploy.
 
-A V2 é publicada automaticamente por GitHub Actions em todo push na branch
-`v2`, após testes, TypeScript, Knip e build. O Fly executa três process groups:
-`web`, `worker` e `scheduler` singleton.
+## Segurança essencial
 
-App em produção: `https://imobiflow-v2.fly.dev`
+- JWT Supabase é validado no backend; `broker_id` vem da sessão, não do cliente;
+- toda rota com `service_role` filtra tenant e pertencimento explicitamente;
+- rotas internas do N8N usam Bearer token; o token dedicado de entrada ainda
+  precisa de confirmação/configuração no workflow;
+- webhook UAZAPI valida o token da instância;
+- Storage sensível é privado e usa URL assinada;
+- Redis é usado para rate limit distribuído e opera em modo fail-open;
+- Sentry permanece opcional e não está configurado na produção auditada;
+- migrations são manuais e devem ser verificadas antes de código dependente.
 
----
+## Fontes de verdade
 
-## Segurança — pontos-chave
-
-- Autenticação sempre via JWT do Supabase Auth validado no backend (`requireUser`) — nenhuma rota confia em header de identidade do cliente.
-- Rotas internas chamadas pelo N8N exigem `Authorization: Bearer INTERNAL_PROXY_TOKEN`.
-- Webhook inbound da UAZAPI exige `body.token === uazapi_instance_token` da instância.
-- `.env` no `.gitignore` — nunca versionado.
-- Detalhe completo de auditorias de segurança e itens pendentes: `DOCUMENTACAO.md` §14.16+ (hardening) e memória `project_imobiflow_security`.
-
----
-
-## Onde ler mais
-
-- [`DOCUMENTACAO.md`](./DOCUMENTACAO.md) — arquitetura completa, modelo de dados, todos os endpoints, decisões arquiteturais, e um changelog técnico detalhado de cada rodada de trabalho (o que quebrou, causa raiz, o que foi corrigido).
-- `UX_MASTERPLAN.md` — roteiro de produto por trás da arquitetura de superfícies/personas.
+- [`PROJECT.md`](./PROJECT.md): escopo e regras permanentes;
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md): mapa técnico atual;
+- [`DOCUMENTACAO.md`](./DOCUMENTACAO.md): referência completa;
+- [`PROGRESS.md`](./PROGRESS.md): histórico e estado consolidado;
+- [`DECISIONS.md`](./DECISIONS.md): decisões vigentes;
+- [`NEXT_TASK.md`](./NEXT_TASK.md): próximos gates reais;
+- [`WEBHOOK_QUEUE_ROLLOUT.md`](./WEBHOOK_QUEUE_ROLLOUT.md): operação da fila;
+- [`docs/N8N_SECURITY_HARDENING.md`](./docs/N8N_SECURITY_HARDENING.md):
+  hardening do workflow que exige validação manual no N8N.

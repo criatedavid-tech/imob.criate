@@ -12,6 +12,11 @@
   TypeScript, Knip e build antes de publicar. Não há gate manual posterior.
 - **Migrations manuais.** O usuário sempre executa SQL no Supabase; deploy não
   aplica banco.
+- **Baseline operacional auditado em 27/07/2026.** O commit `8e3ed27` está na
+  release Fly `v180`: três `web` ativas, um `scheduler` singleton ativo, um
+  `worker` ativo e uma segunda Machine de worker em standby. Redis está ativo;
+  Sentry não está configurado. Essa topologia é disponibilidade/capacidade
+  potencial, não certificação de carga.
 
 ## Segurança e dados
 
@@ -39,6 +44,21 @@
 
 ## Produto e experiência
 
+- **Etapa 1 do cadastro vira cards de plano, sem preço diferenciado ainda
+  (2026-07-27).** Pedido do usuário com referência visual (pricing estilo
+  Zapier). Decisões confirmadas com o usuário (AskUserQuestion): preço fica
+  "na sandbox" — os 3 planos (Corretor autônomo/Imobiliária/Incorporadora)
+  mostram o mesmo valor real de `GET /api/config/plan`, sem cobrança
+  diferente por tier ainda; o fluxo do wizard continua o mesmo (só a Etapa 1
+  mudou de aparência); "mais popular" no Corretor autônomo; toggle
+  Mensal/Anual é decorativo (Anual mostra "chega em breve", não muda preço
+  nem ciclo de cobrança). Único diferencial real entre planos: o add-on de
+  WhatsApp por membro da equipe (já existente, só pra imobiliária/
+  incorporadora). Ajuste posterior: a largura do card do wizard (`max-w-3xl`)
+  ficou constante nas 3 etapas — uma primeira versão alargava só a Etapa 1 e
+  o usuário reportou que o salto de largura ao avançar de etapa prejudicava
+  a UX; corrigido mantendo a largura fixa e centralizando os campos das
+  Etapas 2/3 (`max-w-md mx-auto`) dentro do card largo.
 - **Conversas é inbox, não Kanban de arrastar (2026-07-23).** Perguntado
   explicitamente ao usuário (AskUserQuestion) antes de reescrever a tela:
   Kanban literal (colunas + drag-and-drop, como `NegociosArea.tsx`) vs inbox
@@ -83,8 +103,8 @@
   reagem ao tema; (b) um codemod trocou os neutros `text/bg/border-white/x` por
   tokens. Latão é reservado a dinheiro (R$/VGV) + selo premium, nunca área
   grande. O toggle (`src/lib/theme.ts` + `ThemeToggle.tsx`, padrão Noite,
-  localStorage) fica OCULTO (`THEME_TOGGLE_ENABLED=false`) até o modo Dia
-  passar por latão + QA visual — não publicar o claro com cantos quebrados.
+  localStorage) está habilitado (`THEME_TOGGLE_ENABLED=true`) depois das
+  rodadas de QA e correções de contraste/responsividade do modo Dia.
   ⚠️ `@theme` do Tailwind v4 não aceita comentário dentro do bloco, e cuidado
   com `*/` em comentários CSS (fecha cedo).
 
@@ -104,11 +124,17 @@
 - **URL pública única e versionada (2026-07-21).** A V2 usa somente
   `PUBLIC_APP_URL`, definida no `fly.toml`. Links, redirects e webhooks não
   aceitam fallback para endereço externo armazenado em secret.
-- **Scheduler dedicado antes de escalar a API (2026-07-22).** Os oito jobs
+- **Scheduler dedicado antes de escalar a API (2026-07-22).** Os jobs
   periódicos saíram de `server.ts` e passaram a `scheduler-worker.ts`, com
   prevenção de sobreposição, recuperação após erro e drenagem no SIGTERM. O
-  Fly mantém `scheduler=1`; `web` fica em 1 somente até teste de carga e Redis
-  compartilhado. O `worker` continua escalável de forma independente.
+  Fly mantém `scheduler=1`. Em 27/07/2026 há 11 jobs, três `web`, Redis
+  compartilhado e um worker ativo; o `worker` continua escalável de forma
+  independente conforme backlog medido.
+- **Redis protege a escala, não carrega a fila (2026-07-24).** Redis Upstash é
+  usado para rate limit distribuído entre as três web. Inbox/outbox continuam
+  duráveis no PostgreSQL. A conexão usa timeouts curtos e fail-open: uma falha
+  do Redis reduz temporariamente a proteção distribuída, mas não deve derrubar
+  a plataforma. Para o endpoint Upstash/Fly, a implementação prefere IPv6.
 - **Carga pesada nunca direto em produção (2026-07-22).** O harness bloqueia
   `imobiflow-v2.fly.dev` por padrão. Testes realistas usam staging/conta de
   teste com provedores isolados; produção recebe apenas smoke curto e
@@ -127,9 +153,11 @@
 - **Política de privacidade atualizada.** A lista de operadores menciona apenas
   os fornecedores efetivamente usados. `TERMS_VERSION=2026-07-21` exige novo
   aceite dos usuários depois do deploy.
-- **Mídia convertida no backend.** PTT e imagem privados viram texto antes do
-  N8N; base64 não é persistido; falhas geram fallback e mensagens duplicadas são
-  rejeitadas por `provider_message_id`.
+- **Mídia processada e reproduzível no backend.** PTT e imagem privados viram
+  texto antes do N8N; áudio, imagem e documentos suportados podem persistir
+  uma URL de Storage para reprodução no chat. Base64 bruto não é persistido,
+  falhas geram fallback, `provider_message_id` evita duplicação e um job de
+  backfill tenta completar mídia histórica sem URL.
 - **Prompt em duas camadas.** `PROMPT-AGENTE-WHATSAPP.md` contém regras-base
   protegidas; `broker_agents.system_prompt` contém preferências complementares.
   Personalização não pode reduzir privacidade, veracidade ou segurança de tools.

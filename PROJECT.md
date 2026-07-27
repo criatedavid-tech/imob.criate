@@ -15,6 +15,9 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 
 - V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
   `imobiflow-v2`.
+- Referência auditada em 27/07/2026: commit `8e3ed27`, release Fly `v180`,
+  região `gru`; três `web`, um `scheduler` e um `worker` ativo com uma segunda
+  Machine em standby.
 - V1: branch `main`, `https://imobiflow.fly.dev`; congelada como rollback e
   nunca deve ser alterada.
 - Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
@@ -39,6 +42,7 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 | WhatsApp | UAZAPI direta |
 | IA | OpenRouter; N8N orquestra o atendimento externo |
 | Assinatura SaaS | Asaas |
+| Cache/rate limit | Redis Upstash ativo; PostgreSQL continua sendo a fila durável |
 | Deploy | Fly.io `gru`, process groups `web`/`worker`/`scheduler`, via GitHub Actions |
 
 ## Regras permanentes

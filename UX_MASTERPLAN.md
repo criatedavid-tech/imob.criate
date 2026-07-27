@@ -1,9 +1,32 @@
 # ImobiFlow — Masterplan de UX & Interface Generativa
 
-> Fonte de verdade do novo paradigma de produto. Complementa `DOCUMENTACAO.md §14`
-> (backend/infra). Aqui vive a **experiência**: como a IA molda a interface, a
-> lista completa de funções, e o roadmap de execução por etapas.
-> Criado em 2026-07-02. Modelo de referência: Opus 4.8.
+> Documento estratégico e histórico da experiência, criado em 2026-07-02.
+> `ARCHITECTURE.md` e `DOCUMENTACAO.md` são as fontes do estado operacional
+> vigente. Entradas datadas abaixo podem citar modelos, topologia ou pendências
+> que eram verdade no momento do registro e já foram substituídas.
+
+## Estado atual da experiência — 27/07/2026
+
+- `/app` atende corretor, imobiliária e incorporadora, com escopo diferente
+  para titular e membros.
+- Tema Cristal Dia/Noite está habilitado; contraste, tokens e responsividade
+  receberam correções nas áreas operacionais e formulários.
+- Conversas é uma inbox responsiva, com lista/thread, handover, CRM, notas,
+  tags, anexos, mídia reproduzível e composer estabilizado para teclado móvel.
+- Dropdowns e modais do CRM foram contidos no viewport; digitação e envio não
+  devem redimensionar o bloco do chat nem sobrepor o botão do agente.
+- CRM configurável, Carteira, Agenda, Contatos, Lembretes, Divulgação,
+  Relatórios, Equipe, Locação, Lançamentos e Financeiro usam APIs reais conforme
+  a persona. Operações financeiras de clientes continuam desativadas.
+- Vitrines públicas de imóveis e lançamentos estão ativas.
+- A Assistente IA interna exige confirmação para toda mutação. O agente do
+  WhatsApp é separado e orquestrado pelo N8N.
+- Estado de infraestrutura relacionado à experiência: Redis ativo, três web,
+  scheduler singleton e um worker ativo mais um standby.
+
+O roadmap continua válido como memória de produto. Menções antigas a “mock”,
+“não deployado”, modelos anteriores ou topologias anteriores são histórico,
+não pendências atuais automáticas.
 
 ---
 
@@ -380,8 +403,10 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   as DUAS chaves de LLM deste ambiente estão inutilizáveis: `GEMINI_API_KEY`
   local está com cota free-tier = 0 (429 em qualquer chamada, os dois modelos),
   e `OPENROUTER_API_KEY` local não é uma chave OpenRouter válida (39 chars, sem
-  prefixo `sk-or-`). O agente usa `gemini-2.0-flash-lite`, o MESMO modelo do
-  `enhance-text` (`ai.ts`) que já roda em produção — então a chave Gemini de
+  prefixo `sk-or-`). Naquela implementação, o agente usava
+  `gemini-2.0-flash-lite`, o mesmo modelo do `enhance-text` daquele momento —
+  configuração depois substituída pelos modelos atuais documentados em
+  `ARCHITECTURE.md`. A chave Gemini de
   PRODUÇÃO (no Fly) provavelmente tem cota e faz funcionar lá. Erro de cota
   agora devolve mensagem honesta e distinta ("a IA atingiu o limite de uso da
   chave"), não some como bug genérico. **Decisão do operador antes de confiar:**
@@ -628,7 +653,8 @@ Cada etapa é vendável e testável isolada; a Etapa 0/1 já mostra o paradigma.
   navegar errado (a separação por `account_type` está reforçada até no
   system prompt da IA, não só no menu visual). 2 falsos alarmes descartados
   (não eram bugs): rota `/api/equipe/summary` testada errada (a real é
-  `/api/equipe/goal`, funciona); acento corrompido ("Goiânia"→"Goi�nia") era
+  `/api/equipe/goal`, funciona); acento corrompido ("Goiânia" aparecia com
+  caractere inválido) era
   o terminal Windows/Git Bash mangling o argumento do curl, não o app —
   confirmado via `fetch` direto no Node que o UTF-8 é salvo perfeitamente.
 - **Estado atual (2026-07-08, fim de sessão):** `v2` no commit `8556623`,

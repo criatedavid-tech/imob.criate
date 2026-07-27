@@ -1,110 +1,156 @@
 # Arquitetura — ImobiFlow V2
 
-## Aplicação
+> Fotografia técnica auditada em 27/07/2026 contra a branch `v2` no commit
+> `8e3ed27` e a release Fly `v180`.
 
-- Frontend V2: `src/experience/*`, interface única em `/app`.
-- Backend: `server/routes/*.ts` + `server/services/*.ts`; `server.ts` monta os
-  routers.
-- `DOCUMENTACAO.md` é a referência técnica completa da V2.
+## Visão geral
 
-## Autenticação e multi-tenant
+```text
+Navegador / UAZAPI / Asaas / N8N
+                │ HTTPS
+                ▼
+Fly Proxy ──► web × 3 (Express + SPA)
+                │
+                ├── Supabase Auth/PostgreSQL/Storage
+                ├── Redis Upstash (rate limit distribuído)
+                ├── UAZAPI / Asaas / OpenRouter / N8N
+                └── inbox/outbox PostgreSQL
+                         ▲              │
+                         └── worker × 1 ativo (+ 1 standby)
 
-- `server/middleware/auth.ts` valida o Bearer token e resolve `user_id` e
+scheduler × 1 ──► 11 jobs periódicos singleton
+```
+
+Todos os processos ficam em `gru`. Somente `web` recebe tráfego HTTP na porta
+interna 3000. O estado durável continua no PostgreSQL/Storage; nenhuma Machine
+Fly deve guardar sessão ou dado de negócio localmente.
+
+## Topologia Fly confirmada
+
+| Grupo | Quantidade observada | Tamanho | Responsabilidade |
+| --- | ---: | --- | --- |
+| `web` | 3 ativas | shared CPU 1, 1 GB | HTTP, autenticação, APIs e SPA |
+| `worker` | 1 ativa + 1 standby | shared CPU 1, 1 GB | inbox/outbox e processamento de mídia |
+| `scheduler` | 1 ativa | shared CPU 1, 512 MB | jobs periódicos singleton |
+
+As três `web` estavam com health check passando. `auto_stop_machines` está
+desligado, `min_machines_running=2` e a concorrência HTTP é soft 80/hard 150.
+A segunda Machine do worker é standby de host: não amplia throughput enquanto
+estiver parada.
+
+## Aplicação e autenticação
+
+- Frontend V2 em `src/experience/*`, servido em `/app`; páginas públicas e
+  administrativas ficam em `src/pages/*`.
+- `server.ts` inicializa Express, segurança, routers e SPA. Não registra jobs.
+- `server/middleware/auth.ts` valida JWT Supabase e resolve `user_id` e
   `broker_id` no servidor.
-- Toda rota com `service_role` aplica filtro de tenant e pertencimento.
-- Titular administra configurações e pipelines; membros operam apenas recursos
-  permitidos e veem Pipelines em modo leitura.
-- RPCs `SECURITY DEFINER` do CRM são exclusivas da `service_role`; clientes
-  autenticados acessam as rotas Express.
+- O backend usa `service_role`, portanto toda rota filtra tenant, posse e
+  permissões explicitamente; RLS é defesa adicional.
+- Titulares administram a conta e membros recebem apenas o escopo autorizado.
 
-## Banco e CRM
+## Dados e CRM
 
-- Supabase compartilhado; núcleo ImobiFlow usa prefixo `imf_`. Tabelas legadas
-  sem prefixo ainda incluem `leads`, `broker_agents`, `followup_config` e
-  `webhook_logs`.
-- CRM: `imf_crm_pipelines` e `imf_crm_pipeline_stages`; cada broker tem um
-  pipeline padrão e etapas ordenadas com `stage_type=open|won|lost`.
-- `leads.pipeline_id` e `pipeline_stage_id` são a fonte do Kanban.
-  `leads.status`/`closed_at` permanecem sincronizados por trigger para
-  relatórios e integrações legadas.
-- Pipelines/etapas ligados a leads não são apagados silenciosamente. FKs de
-  leads não usam CASCADE; pipelines e etapas usam CASCADE somente na exclusão
-  integral do broker.
-- Mutações críticas do CRM usam RPCs transacionais; a migration
-  `20260720b_crm_security_hardening.sql` está aplicada e verificada.
+- Supabase é compartilhado; novas tabelas do produto usam prefixo `imf_`.
+- Valores monetários persistem em centavos inteiros e datas em ISO/UTC.
+- CRM usa `imf_crm_pipelines` e `imf_crm_pipeline_stages`; pipelines são por
+  broker e as etapas têm `stage_type=open|won|lost`.
+- `leads.pipeline_id`/`pipeline_stage_id` são a fonte do funil. Trigger mantém
+  `leads.status`/`closed_at` para relatórios e compatibilidade.
+- Mutações críticas do CRM usam RPCs transacionais restritas à `service_role`.
+- Migrations ficam versionadas, mas são aplicadas manualmente no Supabase.
 
-## WhatsApp e agente externo
+## WhatsApp, filas e mídia
 
-- A V2 usa UAZAPI diretamente, sem intermediário de mensagens.
-- Inbound: `POST /api/wpp-shim/inbound/:instanceId`; mensagens privadas de
-  texto, PTT e imagem são persistidas e encaminhadas ao N8N.
-- O inbound confirma a UAZAPI somente depois do INSERT em
-  `imf_webhook_inbox`. Claims atômicos com lease processam cada conversa em
-  ordem; `imf_webhook_outbox` repassa ao N8N com retry e DLQ. O contrato é
-  at-least-once e inclui `event_id` estável para deduplicação no workflow.
-- O Fly usa três process groups: `web` executa `server.ts` e recebe HTTP;
-  `worker` executa `webhook-worker.ts`, processa inbox/outbox e converte
-  áudio/imagem; `scheduler` executa `scheduler-worker.ts` e concentra os jobs
-  periódicos. O serviço HTTP é ligado somente a `web`. Claims com
-  `SKIP LOCKED` permitem aumentar `worker`; `scheduler` permanece singleton.
-- Áudio e imagem são baixados em base64 pela UAZAPI e convertidos em texto pelo
-  OpenRouter antes do N8N. Base64/URLs temporárias não são persistidos. Vídeo,
-  documento, sticker e mídia de grupos permanecem fora do escopo.
-- Falhas multimodais geram fallback; `provider_message_id` evita duplicação.
-- O N8N obtém configuração por `GET /api/brokers/:id/agent`, autenticado com
-  `INTERNAL_PROXY_TOKEN`.
-- Nome público: `imf_brokers.ai_name`; instruções complementares:
-  `broker_agents.system_prompt`.
-- Prompt padrão versionado: `PROMPT-AGENTE-WHATSAPP.md`. Regras protegidas
-  prevalecem sobre personalizações do corretor. A instalação no N8N é manual.
-- Ordem de deploy e consultas operacionais: `WEBHOOK_QUEUE_ROLLOUT.md`.
+- A V2 integra UAZAPI diretamente por conta ou membro.
+- O inbound `POST /api/wpp-shim/inbound/:instanceId` persiste o evento em
+  `imf_webhook_inbox` antes de responder ao provedor.
+- Claims atômicos, `FOR UPDATE SKIP LOCKED`, lease, retry e DLQ protegem o
+  processamento; `imf_webhook_outbox` entrega ao N8N em modo at-least-once.
+- `event_id` estável segue em header e payload. Deduplicação dos efeitos finais
+  precisa existir também no workflow N8N.
+- Inbox e outbox são processadas em ciclos independentes, para uma falha não
+  bloquear o avanço da outra.
+- Mensagens recebidas podem persistir `media_url` no Storage para reprodução
+  de áudio, imagem e documentos suportados. Transcrição/visão usa
+  `google/gemini-2.5-flash-lite` via OpenRouter.
+- O backfill periódico recupera mídia recebida sem URL; o guardião reafirma a
+  configuração dos webhooks UAZAPI.
 
-## Assistente interno do app
+Redis não substitui essas filas. Ele é usado para rate limit compartilhado
+entre as três `web`. A integração força IPv6 para o host Upstash/Fly quando
+necessário, usa timeouts curtos e opera em fail-open: indisponibilidade do
+Redis reduz a proteção distribuída, mas não derruba a API.
 
-- `server/services/agent.ts` atende comandos do corretor dentro do ImobiFlow,
-  separado do agente externo de WhatsApp.
-- Usa OpenRouter e snapshot autorizado do tenant. Regras fixas ficam no
-  `system`; snapshot, mensagens de clientes e demais textos variáveis seguem
-  num bloco JSON `UNTRUSTED_ACCOUNT_CONTEXT`, separado e limitado.
-- A saída do modelo passa por `server/security/agentGuardrails.ts` (Zod
-  estrito, sem campos extras). `answer`, `navigate` e `query_agenda` podem
-  seguir direto; toda criação, alteração, cancelamento ou envio exige
-  confirmação humana, inclusive quando a interface está em modo piloto.
-- Duas ações agendadas: `create_reminder` (lembrete em `imf_agenda`, sem
-  enviar nada) e `schedule_followup` (grava em `imf_agent_scheduled_followups`
-  e um job de 60s em `server/services/agentScheduledFollowups.ts` manda o
-  WhatsApp real quando o prazo vence). Prazo relativo ("24h", "2 dias") nunca é
-  calculado pelo modelo — só número+unidade; o `due_at` é determinístico em
-  código.
-- As duas têm tela própria: área **Lembretes** (`src/experience/
-  LembretesArea.tsx`, 3 personas), separada da Agenda. `imf_agenda.event_type`
-  (`'visita'|'lembrete'`) distingue lembrete de visita real; todo consumidor
-  que conta/lista visitas (snapshot do Assistente IA, Relatórios, Dashboard
-  1.0, lista do agente externo de WhatsApp) filtra `event_type='visita'`.
+## IA
+
+Existem três usos separados:
+
+| Uso | Modelo/configuração atual |
+| --- | --- |
+| Assistente interno do corretor | `xiaomi/mimo-v2.5` em `server/services/agent.ts` |
+| Agente externo do WhatsApp/N8N | `N8N_AGENT_MODEL`, padrão `google/gemini-2.5-flash` |
+| Texto auxiliar | `openai/gpt-4o-mini` |
+| Mídia recebida | `google/gemini-2.5-flash-lite` |
+
+O agente interno recebe um snapshot autorizado do tenant. Textos variáveis
+ficam em `UNTRUSTED_ACCOUNT_CONTEXT`; a saída passa por Zod estrito. Consultas
+e navegação podem ser imediatas, mas qualquer criação, edição, cancelamento ou
+envio exige confirmação humana, inclusive no modo piloto.
+
+O N8N busca configuração pelo backend e pode trocar o modelo por secret sem
+editar o workflow. Na produção auditada não existe secret
+`N8N_AGENT_MODEL`, então vale o padrão do código. `N8N_WEBHOOK_TOKEN` também
+não está dedicado no Fly; o código usa temporariamente o fallback
+`INTERNAL_PROXY_TOKEN`. O hardening manual está descrito em
+[`docs/N8N_SECURITY_HARDENING.md`](./docs/N8N_SECURITY_HARDENING.md).
+
+## Jobs periódicos
+
+`scheduler-worker.ts` executa 11 jobs: follow-up inteligente, follow-up
+agendado do assistente, alerta de lembrete, alerta de visita, preparação de
+billing, reconciliação de billing, expiração de reserva PIX, retenção de logs,
+retenção das filas, guardião de webhook e backfill de mídia recebida.
+
+O scheduler previne sobreposição local, tolera erro de tick e drena jobs no
+SIGTERM. Ele deve permanecer singleton. O worker pode ser escalado conforme
+idade/backlog da fila; a web pode escalar horizontalmente porque jobs e rate
+limit já foram separados.
 
 ## Frontend e mobile
 
-- Kanban usa `@dnd-kit/core`, `MouseSensor` e `TouchSensor`; confirmado em
-  Android e iPhone.
-- Upload mobile usa `input[type=file]` transparente sobre o ícone, pois cliques
-  programáticos e inputs ocultos falham no Chrome Android.
-- Transcrição aceita data URL de áudio com base64 válido e deriva o formato do
-  conteúdo; não confia no MIME informado pelo navegador.
+- Tema Cristal Dia/Noite está habilitado e persiste a preferência local.
+- Conversas usa padrão inbox no desktop e navegação lista/thread no mobile.
+- Chat suporta texto, nota interna e anexos, com composer estabilizado para
+  teclado virtual e viewport móvel.
+- CRM mobile usa menus e ações contidos na largura do aparelho.
+- Kanban de Negócios usa `@dnd-kit/core` com sensores de mouse e toque.
+- Upload móvel usa input transparente diretamente clicável.
+- Vitrine pública de imóveis e lançamentos está implementada e recebe ajustes
+  de apresentação sem alterar o isolamento dos dados.
 
-## Financeiro e deploy
+## Operação e observabilidade
 
-- Asaas cobra apenas a assinatura SaaS.
-- Operações financeiras dos clientes ficam desligadas por
-  `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e flag Vite equivalente; telas
-  apenas registram e exibem valores/status.
-- Push em `v2` executa GitHub Actions: `npm ci`, testes automatizados,
-  TypeScript, Knip, build e
-  deploy no Fly. `flyctl` local está bloqueado pelo Windows Smart App Control.
-- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a única origem pública e é
-  versionada no `fly.toml`; links e webhooks não dependem de secret de URL.
-- A topologia de transição mantém uma Machine `web` (1 GB), uma `worker`
-  (1 GB) e uma `scheduler` (512 MB) ativas. O workflow reafirma
-  `scheduler=1`. A web permanece em uma instância até teste de carga e Redis
-  distribuído; os jobs já não impedem escala horizontal da API.
-- `SCALABILITY_TEST_PLAN.md` define baseline, proteção contra carga acidental
-  em produção, cenários e critérios para subir de 100 a milhares de contas.
+- `/api/health` é o liveness barato usado pelo Fly.
+- O painel Admin exibe saúde de inbox/outbox, atendimento, Redis, N8N, memória
+  e ações manuais idempotentes de recuperação.
+- Redis estava ativo na auditoria; Sentry não possuía secret e aparece como não
+  configurado.
+- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a origem canônica.
+- Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
+  automático pelo GitHub Actions.
+
+## Limites ainda não comprovados
+
+- Três Machines web não provam capacidade para 100 corretores simultâneos;
+  faltam testes autenticados e de webhook em staging.
+- O worker standby não adiciona capacidade ativa.
+- Deduplicação e Header Auth do N8N precisam de verificação manual no workflow.
+- A aplicação de `20260724_scale_hot_path_indexes.sql` no banco de produção não
+  foi confirmada nesta auditoria; o arquivo está versionado e exige verificação
+  manual antes de ser declarado aplicado.
+- Sentry continua sem configuração.
+
+Consulte [`SCALABILITY_TEST_PLAN.md`](./SCALABILITY_TEST_PLAN.md) para os
+critérios de carga e [`DOCUMENTACAO.md`](./DOCUMENTACAO.md) para o detalhe por
+domínio.
