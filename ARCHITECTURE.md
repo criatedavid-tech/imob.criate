@@ -1,7 +1,7 @@
 # Arquitetura — ImobiFlow V2
 
 > Fotografia técnica do baseline funcional auditado em 27/07/2026: branch
-> `v2`, commit `8aae185`, release Fly `v181`. Releases exclusivamente
+> `v2`, commit `4ee40d6`, release Fly `v185`. Releases exclusivamente
 > documentais posteriores não mudam esta topologia/código.
 
 ## Visão geral
@@ -138,8 +138,10 @@ limit já foram separados.
 - `/api/health` é o liveness barato usado pelo Fly.
 - O painel Admin exibe saúde de inbox/outbox, atendimento, Redis, N8N, memória
   e ações manuais idempotentes de recuperação.
-- Redis estava ativo na auditoria; Sentry não possuía secret e aparece como não
-  configurado.
+- Redis e Sentry estavam ativos na auditoria. O Sentry recebe apenas eventos de
+  erro sanitizados: sem PII, corpo, cabeçalhos, cookies, query string, IP,
+  contexto de usuário, variáveis locais ou breadcrumbs de console; tracing
+  permanece desativado.
 - `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a origem canônica.
 - Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
   automático pelo GitHub Actions.
@@ -153,7 +155,9 @@ limit já foram separados.
 - A aplicação de `20260724_scale_hot_path_indexes.sql` no banco de produção não
   foi confirmada nesta auditoria; o arquivo está versionado e exige verificação
   manual antes de ser declarado aplicado.
-- Sentry continua sem configuração.
+- A entrega de um evento artificial sem dados de cliente foi confirmada pelo
+  SDK em 27/07/2026. A inspeção visual da lista de issues ainda depende de abrir
+  o Sentry sem bloqueador de conteúdo no navegador.
 
 Consulte [`SCALABILITY_TEST_PLAN.md`](./SCALABILITY_TEST_PLAN.md) para os
 critérios de carga e [`DOCUMENTACAO.md`](./DOCUMENTACAO.md) para o detalhe por

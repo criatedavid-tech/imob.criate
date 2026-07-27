@@ -5,8 +5,8 @@ O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
 agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
 para a operação diária.
 
-> Baseline funcional auditado em 27/07/2026: branch `v2`, commit `8aae185`,
-> release Fly `v181`, em `https://imobiflow-v2.fly.dev`. Releases posteriores
+> Baseline funcional auditado em 27/07/2026: branch `v2`, commit `4ee40d6`,
+> release Fly `v185`, em `https://imobiflow-v2.fly.dev`. Releases posteriores
 > que alterem somente documentação preservam esse mesmo código. A V1 (`main`
 > e app `imobiflow`) está congelada e não recebe alterações.
 
@@ -27,14 +27,14 @@ para a operação diária.
 | Assinatura SaaS | Asaas; operações financeiras de clientes ficam desativadas por padrão |
 | Deploy | GitHub Actions para Fly.io, região `gru` |
 
-Topologia Fly confirmada no baseline funcional da release `v181`:
+Topologia Fly confirmada no baseline funcional da release `v185`:
 
 - `web`: 3 Machines `shared-cpu-1x`, 1 GB, todas iniciadas e saudáveis;
 - `worker`: quantidade configurada 2, sendo 1 ativa e 1 standby parada;
 - `scheduler`: 1 Machine singleton, 512 MB, iniciada;
 - serviço HTTP somente no grupo `web`, porta interna 3000;
 - `min_machines_running=2`, auto-stop desligado, concorrência soft 80/hard 150;
-- Redis conectado; Sentry não configurado no ambiente auditado.
+- Redis conectado; Sentry ativo para erros, sem PII e sem tracing.
 
 Essa topologia melhora disponibilidade, mas não constitui prova de capacidade
 para 100 ou mais corretores simultâneos. Os gates estão em
@@ -139,7 +139,8 @@ não o caminho normal do projeto. Migrations nunca são aplicadas pelo deploy.
 - webhook UAZAPI valida o token da instância;
 - Storage sensível é privado e usa URL assinada;
 - Redis é usado para rate limit distribuído e opera em modo fail-open;
-- Sentry permanece opcional e não está configurado na produção auditada;
+- Sentry está ativo com `sendDefaultPii: false`, sem corpos, cabeçalhos,
+  cookies, query strings, IP, dados de usuário ou variáveis locais;
 - migrations são manuais e devem ser verificadas antes de código dependente.
 
 ## Fontes de verdade

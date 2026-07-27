@@ -1,5 +1,20 @@
 # Estado do projeto
 
+## Sentry ativado com privacidade (2026-07-27)
+
+- Integração publicada no commit `4ee40d6`: inicialização central no backend,
+  captura de respostas HTTP 5xx e error handler do Express.
+- Produção atualizada na release Fly `v185`; três Machines `web` com health
+  check passando, `scheduler` e `worker` ativos e segunda worker em standby.
+- `SENTRY_DSN` cadastrado como secret da Fly. O valor não é versionado nem
+  registrado na documentação.
+- Privacidade: `sendDefaultPii: false`, variáveis locais e tracing desativados;
+  evento remove usuário, extras, corpo, query, cookies, cabeçalhos, IP,
+  breadcrumbs de console e parâmetros/fragmentos de URL.
+- Evento artificial `ImobiFlow Sentry validation`, sem dados de clientes, foi
+  aceito pelo SDK. A página de issues exibiu bloqueio local de extensão no
+  navegador usado na validação, sem impacto no transporte do evento.
+
 ## Etapa 1 do cadastro vira cards de plano (2026-07-27)
 
 - Pedido do usuário com print de referência (pricing estilo Zapier: 3 cards,
@@ -35,7 +50,7 @@ implementação e podem citar topologias, modelos ou pendências que eram verdad
 naquele dia, mas já foram substituídas.
 
 - Baseline funcional da branch `v2` sincronizado com produção no commit
-  `8aae185`, release Fly `v181`; o pacote seguinte é exclusivamente
+  `4ee40d6`, release Fly `v185`; o pacote seguinte é exclusivamente
   documental e não altera a aplicação.
 - Três `web` ativas e saudáveis, um `scheduler` singleton ativo e um `worker`
   ativo; a segunda Machine de worker está em standby parada.
@@ -57,9 +72,9 @@ naquele dia, mas já foram substituídas.
   `google/gemini-2.5-flash`; mídia usa
   `google/gemini-2.5-flash-lite`; texto auxiliar usa `openai/gpt-4o-mini`.
 - O painel Admin expõe saúde de filas, Redis, N8N, memória e ações idempotentes
-  de intervenção. Redis aparece ativo; Sentry continua não configurado.
+  de intervenção. Redis e Sentry estão ativos.
 - Restam QA autenticado multi-tenant, teste de carga em staging, confirmação
-  do hardening/deduplicação no N8N e observabilidade de produção.
+  do hardening/deduplicação no N8N e alertas operacionais complementares.
 
 ## Redesign da área de Conversas: inbox mobile+desktop (2026-07-23)
 

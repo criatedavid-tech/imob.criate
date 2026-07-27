@@ -33,17 +33,16 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 
 O deploy é publicado automaticamente pelo workflow `deploy-v2.yml` a partir
 do HEAD da branch `v2`. O baseline funcional auditado em 27/07/2026 estava no
-commit `8aae185`, release Fly `v181`, imagem
-`deployment-01KYJJ152S0EK576FR7WF0VMQJ`, região `gru`. O pacote documental
+commit `4ee40d6`, release Fly `v185`, imagem
+`deployment-01KYJM7KMYQV7899GVAAZWEVR4`, região `gru`. O pacote documental
 posterior preserva esse mesmo código; consultar Fly/GitHub para o número da
 release documental mais recente.
 
 A topologia observada possui três Machines `web` iniciadas e saudáveis, uma
 Machine `scheduler` iniciada e o grupo `worker` com uma Machine ativa e uma
 standby parada. A segunda worker fornece failover de host, não throughput
-adicional enquanto parada. O Redis Upstash está ativo; Sentry não possui
-secret no ambiente auditado. O painel Admin confirma saúde de filas, N8N e
-Redis e oferece intervenções idempotentes.
+adicional enquanto parada. Redis Upstash e Sentry estão ativos. O painel Admin
+confirma saúde de filas, N8N e Redis e oferece intervenções idempotentes.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
 `imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
@@ -81,7 +80,7 @@ Supabase
        ├── OpenRouter/proxy LLM
        ├── Asaas ─── assinatura, aluguel e sinal PIX
        ├── Redis ─── rate limit distribuído (ativo)
-       └── Sentry ── observabilidade opcional (não configurado)
+       └── Sentry ── erros sanitizados, sem PII/tracing (ativo)
 ```
 
 ### Stack
@@ -90,7 +89,8 @@ Supabase
 - build/dev: Vite 6, TypeScript 5.8 e `tsx`;
 - backend: Express 4, Zod, Helmet e `express-rate-limit`;
 - dados/autenticação: Supabase Auth, PostgreSQL e Supabase Storage;
-- infraestrutura: Redis/ioredis ativo; Sentry opcional e não configurado;
+- infraestrutura: Redis/ioredis e Sentry ativos; Sentry restrito a erros
+  sanitizados, sem PII e sem tracing;
 - produção: container Docker no Fly.io; HTTP na porta interna 3000 apenas no
   process group `web`.
 
@@ -1194,8 +1194,10 @@ Controles existentes:
 - criptografia AES-256-GCM para chaves OpenRouter/Asaas por tenant;
 - Storage privado e URL assinada para documentos de reserva;
 - idempotência e reconciliação nos fluxos de cobrança;
-- Sentry opcional (não configurado no ambiente auditado) e retenção de 90 dias
-  dos logs de webhook.
+- Sentry ativo com `sendDefaultPii: false`, sem variáveis locais ou tracing;
+  antes do envio são removidos usuário, extras, corpo, query, cookies,
+  cabeçalhos, IP e breadcrumbs de console. Logs de webhook têm retenção de
+  90 dias.
 
 Pendências de segurança/infraestrutura:
 
@@ -1265,11 +1267,11 @@ e uma standby parada. Ver `SCALABILITY_TEST_PLAN.md` antes de alterar escala.
 - operação: `REDIS_URL`, `SENTRY_DSN`, `NODE_ENV`.
 
 Em 27/07/2026, os nomes de secrets do Fly confirmaram Supabase, UAZAPI, Asaas,
-N8N, proxy LLM, criptografia e `REDIS_URL`. Não havia `SENTRY_DSN`,
-`N8N_AGENT_MODEL` nem `N8N_WEBHOOK_TOKEN`. Assim, Sentry fica desligado, o
-agente N8N usa o modelo padrão do código e o token da entrada do webhook usa o
-fallback temporário `INTERNAL_PROXY_TOKEN`. A origem pública permanece somente
-no `PUBLIC_APP_URL` versionado.
+N8N, proxy LLM, criptografia, `REDIS_URL` e `SENTRY_DSN`. Não havia
+`N8N_AGENT_MODEL` nem `N8N_WEBHOOK_TOKEN`; o agente N8N usa o modelo padrão do
+código e o token da entrada do webhook usa o fallback temporário
+`INTERNAL_PROXY_TOKEN`. A origem pública permanece somente no
+`PUBLIC_APP_URL` versionado. O valor do DSN nunca deve ser documentado.
 
 `server/config.ts` aceita a URL Supabase pública como fallback conhecido, mas
 recusa iniciar sem `SUPABASE_SERVICE_ROLE_KEY`. Não criar fallback `VITE_*`
@@ -1341,14 +1343,14 @@ correspondente roda no scheduler singleton.
 
 - Confirmar operacionalmente a `UAZAPI_PLATFORM_SESSION`; sem ela,
   recuperação de senha por WhatsApp não envia mensagem.
-- Configurar Sentry se a decisão de observabilidade exigir; ele não está
-  configurado na produção auditada.
+- Confirmar visualmente o evento artificial no painel do Sentry sem bloqueador
+  de conteúdo e revisar alertas/retenção; o SDK confirmou o envio em produção.
 - Separar `N8N_WEBHOOK_TOKEN` de `INTERNAL_PROXY_TOKEN` e confirmar Header Auth,
   credenciais, isolamento de memória e deduplicação no workflow N8N.
 - Confirmar manualmente a aplicação das migrations `20260722a` e `20260724`.
 - Não trocar `ASAAS_ENV`/chaves reais antes do QA completo em sandbox.
 - Repetir a conferência de commit/release antes do lançamento; em 27/07/2026 o
-  app estava no commit `8aae185`, release `v181`.
+  baseline funcional estava no commit `4ee40d6`, release `v185`.
 
 ### QA autenticado obrigatório
 

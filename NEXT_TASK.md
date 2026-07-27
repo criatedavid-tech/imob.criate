@@ -1,8 +1,8 @@
 # Próximas tarefas — ImobiFlow V2
 
 > Atualizado em 27/07/2026. Este arquivo substitui as listas antigas de
-> alterações funcionais pendentes: o baseline funcional `8aae185` está
-> versionado na branch `v2` e foi validado na release Fly `v181`. O pacote
+> alterações funcionais pendentes: o baseline funcional `4ee40d6` está
+> versionado na branch `v2` e foi validado na release Fly `v185`. O pacote
 > documental posterior não muda o código do produto.
 >
 > A nova Etapa 1 do cadastro com cards de plano foi confirmada em produção:
@@ -15,13 +15,14 @@
 - Checkout canônico:
   `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
 - Branch: `v2`; não trabalhar em `main` nem no checkout antigo.
-- Baseline funcional da produção: release `v181`, commit `8aae185`, em
+- Baseline funcional da produção: release `v185`, commit `4ee40d6`, em
   `https://imobiflow-v2.fly.dev`; consultar Fly/GitHub para o número da release
   documental mais recente.
 - Fly: 3 `web` ativas e saudáveis, 1 `scheduler` ativo, 1 `worker` ativo e 1
   `worker` standby.
 - Redis: ativo e respondendo; rate limit distribuído com fail-open.
-- Sentry: não configurado.
+- Sentry: ativo para erros, sem PII, corpos, cabeçalhos, cookies, query strings,
+  IP, variáveis locais ou tracing; evento artificial aceito pelo SDK.
 - N8N: integração ativa. O modelo padrão vem de `server/config.ts`
   (`google/gemini-2.5-flash`) porque não há secret `N8N_AGENT_MODEL`.
 - Deploy: automático em todo push para `v2`; migrations permanecem manuais.
@@ -87,8 +88,8 @@ batches.
 
 ## Prioridade 5 — observabilidade e lançamento
 
-- Configurar `SENTRY_DSN` quando houver decisão operacional e validar captura
-  com evento de teste controlado.
+- Confirmar visualmente o evento de validação no painel do Sentry com o
+  bloqueador de conteúdo desativado e revisar a política de retenção do projeto.
 - Criar alertas de fila `dead`, idade acima de 60 s, erro HTTP, reinício e uso
   de memória.
 - Repetir isolamento com dois tenants e titular/membro.

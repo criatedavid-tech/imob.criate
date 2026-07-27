@@ -15,10 +15,10 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
 
 - V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
   `imobiflow-v2`.
-- Baseline funcional auditado em 27/07/2026: commit `8aae185`, release Fly
-  `v181`, região `gru`; três `web`, um `scheduler` e um `worker` ativo com uma
-  segunda Machine em standby. Releases posteriores exclusivamente documentais
-  preservam esse mesmo código funcional.
+- Baseline funcional auditado em 27/07/2026: commit `4ee40d6`, release Fly
+  `v185`, região `gru`; três `web`, um `scheduler` e um `worker` ativo com uma
+  segunda Machine em standby. Redis e Sentry estão ativos; a captura do Sentry
+  exclui PII, corpo, cabeçalhos, cookies e parâmetros de URL.
 - V1: branch `main`, `https://imobiflow.fly.dev`; congelada como rollback e
   nunca deve ser alterada.
 - Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
