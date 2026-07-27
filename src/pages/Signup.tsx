@@ -260,7 +260,7 @@ export default function Signup() {
                         placeholder="Seu nome completo" />
                     </div>
                   </div>
-                  <button type="submit" className={btnPrimary}>
+                  <button type="submit" className={`${btnPrimary} w-full`}>
                     Continuar <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                   </button>
                 </div>
