@@ -5,7 +5,11 @@ import { createServer as createViteServer } from "vite";
 import helmet from "helmet";
 
 import { SUPABASE_URL } from "./server/config";
-import { closeInfra } from "./server/lib/infra"; // o import também inicializa Sentry/Redis se configurados
+import {
+  closeInfra,
+  sentryHttp5xxMonitor,
+  setupSentryExpressErrorHandler,
+} from "./server/lib/infra"; // o import também inicializa Sentry/Redis se configurados
 
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
@@ -136,6 +140,10 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+  // Registra respostas 5xx tratadas pelas próprias rotas. Não coleta body,
+  // query, headers, parâmetros concretos nem conteúdo da resposta.
+  app.use(sentryHttp5xxMonitor);
+
   // --- Rotas — uma por domínio, cada uma em server/routes/ (ver UX_MASTERPLAN.md) ---
   app.use(authRouter);
   app.use(brokersRouter);
@@ -201,6 +209,10 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Precisa vir depois de todas as rotas e antes do handler padrão do Express.
+  // Exceções que chegam via next(error) preservam o stack trace no Sentry.
+  setupSentryExpressErrorHandler(app);
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

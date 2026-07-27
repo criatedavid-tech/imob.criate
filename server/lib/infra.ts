@@ -1,12 +1,94 @@
 import * as Sentry from "@sentry/node";
+import type { Express, NextFunction, Request, Response } from "express";
 import Redis from "ioredis";
 import { SENTRY_DSN, REDIS_URL } from "../config";
+import { sanitizeSentryEvent } from "./sentryPrivacy";
 
 // ─── SENTRY (opcional — error tracking) ──────────────────────────────────────
+const SENTRY_EXCEPTION_CAPTURED = "__imobiflowSentryExceptionCaptured";
+
 if (SENTRY_DSN) {
-  Sentry.init({ dsn: SENTRY_DSN, tracesSampleRate: 0.1 });
-  process.on('unhandledRejection', (reason) => Sentry.captureException(reason));
-  console.log('[Sentry] inicializado');
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || "development",
+    sendDefaultPii: false,
+    includeLocalVariables: false,
+    // Nesta primeira etapa o objetivo é error tracking. Omitir sampling de
+    // traces desliga performance tracing e evita consumo/custo desnecessário.
+    tracesSampleRate: 0,
+    integrations(defaultIntegrations) {
+      return defaultIntegrations
+        // O Console vira breadcrumb por padrão e pode carregar texto do CRM.
+        // RequestData, por padrão, inclui body, cookies, headers e query string.
+        .filter(({ name }) => name !== "Console" && name !== "RequestData")
+        .concat(Sentry.requestDataIntegration({
+          include: {
+            url: true,
+            headers: false,
+            cookies: false,
+            data: false,
+            query_string: false,
+            ip: false,
+          },
+        }));
+    },
+    beforeSend: sanitizeSentryEvent,
+  });
+  // UncaughtException e UnhandledRejection já são integrações padrão do SDK.
+  // Registrar outro listener aqui duplicava eventos de rejeição.
+  console.log('[Sentry] inicializado em modo error tracking (sem PII)');
+}
+
+/**
+ * Monitora respostas 5xx que foram tratadas dentro das próprias rotas.
+ *
+ * Grande parte das rotas do projeto usa `catch` e responde com status 500 em
+ * vez de chamar `next(error)`. O error handler oficial do Sentry não recebe
+ * essas exceções. Este monitor gera um evento seguro (status, método e template
+ * da rota), sem corpo, URL concreta, parâmetros ou resposta.
+ */
+export function sentryHttp5xxMonitor(req: Request, res: Response, next: NextFunction): void {
+  if (!SENTRY_DSN) {
+    next();
+    return;
+  }
+
+  res.once("finish", () => {
+    if (
+      res.statusCode < 500
+      || res.statusCode >= 600
+      || res.locals[SENTRY_EXCEPTION_CAPTURED]
+    ) return;
+
+    const routePath = req.route?.path;
+    const route = typeof routePath === "string"
+      ? `${req.baseUrl || ""}${routePath}`
+      : "<unmatched>";
+    const method = req.method.toUpperCase();
+
+    Sentry.withScope((scope) => {
+      scope.setLevel("error");
+      scope.setTag("http.method", method);
+      scope.setTag("http.route", route);
+      scope.setTag("http.status_code", String(res.statusCode));
+      scope.setFingerprint(["http-5xx", method, route, String(res.statusCode)]);
+      Sentry.captureMessage(`HTTP ${res.statusCode} em ${method} ${route}`);
+    });
+  });
+
+  next();
+}
+
+/** Registra a captura de exceções Express depois de todas as rotas. */
+export function setupSentryExpressErrorHandler(app: Express): void {
+  if (!SENTRY_DSN) return;
+
+  // Evita duplicar o evento no monitor de respostas 5xx acima.
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    res.locals[SENTRY_EXCEPTION_CAPTURED] = true;
+    next(error);
+  });
+  Sentry.setupExpressErrorHandler(app);
 }
 
 // ─── REDIS (opcional — rate limiting distribuído multi-máquina) ───────────────
