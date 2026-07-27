@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff, Building2, Landmark } from 'lucide-react';
+import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff, Building2, Landmark, Check } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import Copyright from '../components/Copyright';
@@ -9,11 +9,24 @@ const STEPS = ['Seu perfil', 'Telefone', 'Acesso'];
 
 // O tipo define o "mundo" que a conta enxerga (menus + cockpit). Escolhido aqui,
 // no cadastro, e gravado em imf_brokers.account_type — não é mais um toggle no app.
+// `popular` só controla o destaque visual do card (Etapa 1); não muda preço.
 const ACCOUNT_TYPES = [
-  { value: 'corretor',      label: 'Corretor autônomo', desc: 'Trabalho por conta própria',        icon: User },
-  { value: 'imobiliaria',   label: 'Imobiliária',       desc: 'Equipe, locação e carteira',        icon: Building2 },
-  { value: 'incorporadora', label: 'Incorporadora',     desc: 'Lançamentos e espelho de vendas',   icon: Landmark },
+  { value: 'corretor',      label: 'Corretor autônomo', desc: 'Trabalho por conta própria',        icon: User,      popular: true  },
+  { value: 'imobiliaria',   label: 'Imobiliária',       desc: 'Equipe, locação e carteira',        icon: Building2, popular: false },
+  { value: 'incorporadora', label: 'Incorporadora',     desc: 'Lançamentos e espelho de vendas',   icon: Landmark,  popular: false },
 ] as const;
+
+// Preço/features ainda não diferem por plano de verdade (ver DECISIONS.md) —
+// os 3 planos mostram o mesmo preço real vindo de /api/config/plan e a mesma
+// lista base de benefícios; só imobiliária/incorporadora ganham a linha extra
+// do add-on de WhatsApp por membro, que já existe de verdade no backend.
+const PLAN_BASE_FEATURES = [
+  'Imóveis ilimitados com landing page exclusiva',
+  'Leads capturados automaticamente no CRM',
+  'Agente IA respondendo seu WhatsApp 24h',
+  'Dashboard com métricas em tempo real',
+  '100 atendimentos de IA inclusos por mês',
+];
 
 const inputClass =
   'block w-full py-3.5 rounded-2xl outline-none transition-all text-sm font-medium ' +
@@ -40,7 +53,22 @@ export default function Signup() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [planPriceDisplay, setPlanPriceDisplay] = useState('49,90');
+  const [slotPriceDisplay, setSlotPriceDisplay] = useState('0,00');
+  const [billingCycle, setBillingCycle] = useState<'mensal' | 'anual'>('mensal');
   const navigate = useNavigate();
+
+  // Rota pública (sem auth) — preço real vem do backend, nunca hardcoded aqui,
+  // mesma fonte que PaymentPending.tsx usa depois do cadastro.
+  useEffect(() => {
+    fetch('/api/config/plan')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.priceDisplay) setPlanPriceDisplay(d.priceDisplay);
+        if (d?.memberWhatsappSlotPriceDisplay) setSlotPriceDisplay(d.memberWhatsappSlotPriceDisplay);
+      })
+      .catch(() => {});
+  }, []);
 
   const progress = (step / STEPS.length) * 100;
   const next = () => { setError(''); setStep(s => s + 1); };
@@ -153,26 +181,69 @@ export default function Signup() {
                 initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
                 transition={{ duration: 0.2 }} onSubmit={handleStep1} className="space-y-5">
                 <div>
-                  <label className="block text-[10px] font-bold text-[var(--text-low)] mb-2 uppercase tracking-widest pl-1">Você é</label>
-                  <div className="space-y-2">
-                    {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon }) => {
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                    <label className="block text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest pl-1">Escolha seu plano</label>
+                    <div className="inline-flex items-center rounded-full p-1 bg-[var(--control-fill)] border border-[var(--hairline)] shrink-0">
+                      <button type="button" onClick={() => setBillingCycle('mensal')}
+                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+                          billingCycle === 'mensal' ? 'bg-gradient-to-r from-violet-500 to-blue-400 text-white' : 'text-[var(--text-low)]'
+                        }`}>
+                        Mensal
+                      </button>
+                      <button type="button" onClick={() => setBillingCycle('anual')}
+                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+                          billingCycle === 'anual' ? 'bg-gradient-to-r from-violet-500 to-blue-400 text-white' : 'text-[var(--text-low)]'
+                        }`}>
+                        Anual
+                      </button>
+                    </div>
+                  </div>
+                  {billingCycle === 'anual' && (
+                    <p className="text-[11px] text-[var(--text-low)] mb-3 pl-1">
+                      Cobrança anual chega em breve — hoje é só mensal.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 gap-3">
+                    {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon, popular }) => {
                       const selected = formData.account_type === value;
+                      const features = value === 'corretor'
+                        ? PLAN_BASE_FEATURES
+                        : [...PLAN_BASE_FEATURES, `WhatsApp próprio por corretor da equipe (a partir de R$ ${slotPriceDisplay}/mês)`];
                       return (
                         <button key={value} type="button"
                           onClick={() => setFormData({ ...formData, account_type: value })}
-                          className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
+                          className={`relative flex flex-col gap-3 p-4 rounded-2xl border text-left transition-all ${
                             selected
                               ? 'bg-[var(--control-fill-hover)] border-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
                               : 'bg-[var(--control-fill)] border-[var(--hairline-strong)] hover:bg-white/12'
-                          }`}>
-                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-violet-500/40' : 'bg-[var(--control-fill-hover)]'}`}>
-                            <Icon className="w-4.5 h-4.5 text-[var(--text-hi)]" />
-                          </span>
-                          <span className="min-w-0">
+                          } ${popular ? 'border-violet-400/50 ring-1 ring-violet-400/30 shadow-[0_8px_24px_rgba(124,58,237,0.25)]' : ''}`}>
+                          {popular && (
+                            <span className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white bg-gradient-to-r from-violet-500 to-blue-400 shadow-[0_2px_8px_rgba(124,58,237,0.4)]">
+                              Mais popular
+                            </span>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-violet-500/40' : 'bg-[var(--control-fill-hover)]'}`}>
+                              <Icon className="w-4 h-4 text-[var(--text-hi)]" />
+                            </span>
+                            <span className={`w-4 h-4 rounded-full border shrink-0 ${selected ? 'bg-violet-400 border-violet-300' : 'border-[var(--glass-border-strong)]'}`} />
+                          </div>
+                          <div>
                             <span className="block text-sm font-bold text-[var(--text-hi)]">{label}</span>
-                            <span className="block text-[11px] text-[var(--text-low)] truncate">{desc}</span>
-                          </span>
-                          <span className={`ml-auto w-4 h-4 rounded-full border shrink-0 ${selected ? 'bg-violet-400 border-violet-300' : 'border-[var(--glass-border-strong)]'}`} />
+                            <span className="block text-[11px] text-[var(--text-low)]">{desc}</span>
+                          </div>
+                          <div>
+                            <span className="text-xl font-black text-[var(--text-hi)]">R$ {planPriceDisplay}</span>
+                            <span className="text-[11px] text-[var(--text-low)]">/mês</span>
+                          </div>
+                          <ul className="space-y-1.5">
+                            {features.map(f => (
+                              <li key={f} className="flex items-start gap-1.5 text-[11px] text-[var(--text-mid)] leading-snug">
+                                <Check className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                                <span>{f}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </button>
                       );
                     })}
