@@ -7,10 +7,12 @@ import Copyright from '../components/Copyright';
 const RAZAO_SOCIAL  = 'Criate Tecnologia em Marketing e Vendas LTDA';
 const CNPJ          = '54.236.008/0001-80';
 const ENDERECO      = 'Rua 14, nº 201, Quadra B8, Lote 20, Sala 02, Setor Oeste, Goiânia/GO, CEP 74120-070';
+const NOME_DPO      = 'Hiago Vieira';
+const CARGO_DPO     = 'Proprietário';
 const EMAIL_DPO     = 'criateoficial@gmail.com';
 const EMAIL_CONTATO = 'criateoficial@gmail.com';
 const CIDADE_ESTADO = 'Goiânia/GO';
-const DATA_VIGENCIA = '1º de julho de 2026';
+const DATA_VIGENCIA = '28 de julho de 2026';
 
 export default function Privacidade() {
   const navigate = useNavigate();
@@ -53,14 +55,14 @@ export default function Privacidade() {
             <h2>1. Controlador e Encarregado pelo Tratamento (DPO)</h2>
             <p>
               <strong>{RAZAO_SOCIAL}</strong>, CNPJ {CNPJ}, {ENDERECO}, é a{' '}
-              <strong>controladora</strong> dos dados pessoais tratados na Plataforma Criate, nos termos do art. 5º,
+              <strong>controladora</strong> dos dados pessoais tratados na Plataforma ImobiFlow, nos termos do art. 5º,
               VI da <strong>Lei nº 13.709/2018</strong> (LGPD).
             </p>
             <p className="mt-2">
-              <strong>Encarregado pelo Tratamento de Dados (DPO):</strong>{' '}
-              <a href={`mailto:${EMAIL_DPO}`} className="underline">{EMAIL_DPO}</a> — responsável por atender
+              <strong>Encarregado pelo Tratamento de Dados (DPO):</strong> {NOME_DPO}, {CARGO_DPO}. Contato:{' '}
+              <a href={`mailto:${EMAIL_DPO}`} className="underline">{EMAIL_DPO}</a>. O Encarregado é responsável por atender
               solicitações de titulares, comunicar-se com a ANPD e orientar internamente o cumprimento da LGPD
-              (art. 41). O Encarregado pode ser pessoa física ou jurídica.
+              (art. 41 da LGPD e Resolução CD/ANPD nº 18/2024).
             </p>
           </section>
 
@@ -68,7 +70,8 @@ export default function Privacidade() {
             <h2>2. Âmbito de Aplicação e Papéis de Tratamento</h2>
             <p>
               Esta Política aplica-se a todos os dados pessoais tratados no contexto da Plataforma, incluindo dados
-              de: (a) corretores e usuários cadastrados; (b) representantes de corretoras; (c) visitantes das
+              de: (a) corretores e demais usuários cadastrados; (b) representantes e integrantes de imobiliárias e
+              incorporadoras; (c) visitantes das
               landing pages de imóveis geradas pela Plataforma.
             </p>
             <p className="mt-2">
@@ -82,11 +85,12 @@ export default function Privacidade() {
           <section>
             <h2>3. Dados Pessoais Coletados</h2>
             <p>
-              <strong>3.1 Identificação e contato:</strong> nome completo, CPF/CNPJ, e-mail, número de
-              telefone/WhatsApp, foto de perfil (opcional).
+              <strong>3.1 Identificação e contato:</strong> nome, e-mail, número de telefone/WhatsApp e tipo de conta.
+              CPF/CNPJ e endereço podem ser solicitados no fluxo de contratação e pagamento.
             </p>
             <p className="mt-2">
-              <strong>3.2 Dados profissionais:</strong> número de registro no CRECI, nome e endereço da corretora.
+              <strong>3.2 Dados profissionais e organizacionais:</strong> nome, endereço e informações de configuração
+              da corretora, imobiliária ou incorporadora, quando fornecidos pelo usuário.
             </p>
             <p className="mt-2">
               <strong>3.3 Dados de pagamento:</strong> processados e armazenados diretamente pelo{' '}
@@ -94,14 +98,16 @@ export default function Privacidade() {
               assinatura). O número completo do cartão de crédito <strong>nunca é armazenado</strong> pela Criate.
             </p>
             <p className="mt-2">
-              <strong>3.4 Dados de conexão (Marco Civil, arts. 10 e 15):</strong> endereço IP, data e hora de
-              início/fim de sessão, identificador de sessão, tipo de dispositivo e navegador. Mantidos por no mínimo{' '}
-              <strong>6 meses</strong> (prazo legal obrigatório) e por até <strong>1 ano</strong> para fins de
-              segurança e auditoria interna (Decreto nº 8.771/2016, art. 13).
+              <strong>3.4 Dados técnicos e de acesso:</strong> endereço IP, data e hora de acesso, rota acessada,
+              identificadores técnicos de sessão, tipo de dispositivo e navegador, quando gerados pela aplicação ou
+              por seus provedores de infraestrutura para autenticação, segurança, prevenção de abuso e cumprimento
+              de obrigações legais.
             </p>
             <p className="mt-2">
               <strong>3.5 Dados gerados pelo uso:</strong> imóveis cadastrados, configurações de IA e de follow-up,
-              histórico de conversas de leads (armazenado como operadora).
+              agenda, contatos, histórico de conversas de leads, mensagens, notas, arquivos, imagens, áudios e
+              transcrições necessários às funcionalidades utilizadas (armazenados como operadora quando relativos
+              aos leads e clientes do usuário).
             </p>
             <p className="mt-2">
               <strong>3.6 Chave de API de terceiros:</strong> chave OpenRouter do corretor, armazenada em formato{' '}
@@ -119,7 +125,7 @@ export default function Privacidade() {
                 automatizado por IA.
               </li>
               <li>
-                <strong>Cumprimento de obrigação legal (art. 7º, II):</strong> guarda de registros de conexão (Marco
+                <strong>Cumprimento de obrigação legal (art. 7º, II):</strong> guarda de registros de acesso (Marco
                 Civil art. 15); emissão e arquivamento de documentos fiscais; atendimento de determinações judiciais
                 ou administrativas.
               </li>
@@ -130,8 +136,9 @@ export default function Privacidade() {
                 (art. 10, §1º).
               </li>
               <li>
-                <strong>Consentimento (art. 7º, I):</strong> envio de comunicações de marketing; uso de cookies não
-                essenciais. O consentimento pode ser revogado a qualquer tempo, sem prejuízo do tratamento já
+                <strong>Consentimento (art. 7º, I):</strong> envio de comunicações de marketing e outras finalidades
+                opcionais que venham a ser apresentadas de forma destacada. O consentimento pode ser revogado a
+                qualquer tempo, sem prejuízo do tratamento já
                 realizado com base nele (art. 8º, §5º).
               </li>
             </ul>
@@ -151,36 +158,31 @@ export default function Privacidade() {
           <section>
             <h2>6. Proteção de Crianças e Adolescentes (LGPD art. 14)</h2>
             <p>
-              A Plataforma é destinada exclusivamente a profissionais registrados no CRECI, sendo{' '}
-              <strong>proibido o cadastro de menores de 18 anos</strong>. Dados de crianças identificados serão
-              imediatamente excluídos. O tratamento de dados de menores em conversas de leads exige que o corretor
-              obtenha consentimento específico dos responsáveis legais, conforme art. 14 da LGPD e art. 227 da
-              Constituição Federal.
+              A Plataforma é destinada a profissionais e representantes de empresas do setor imobiliário, sendo{' '}
+              <strong>proibido o cadastro de menores de 18 anos</strong>. Caso dados de crianças ou adolescentes sejam
+              inseridos em conversas ou cadastros de leads, o usuário controlador deverá observar o melhor interesse
+              do titular e possuir base legal adequada, nos termos do art. 14 da LGPD.
             </p>
           </section>
 
           <section>
             <h2>7. Registros de Conexão e Acesso — Marco Civil da Internet</h2>
             <p>
-              Em conformidade com os <strong>arts. 10, 11 e 15 da Lei nº 12.965/2014</strong> e arts. 13–17 do{' '}
+              Em conformidade com os <strong>arts. 10, 11 e 15 da Lei nº 12.965/2014</strong> e com o{' '}
               <strong>Decreto nº 8.771/2016</strong>:
             </p>
             <ul>
               <li>
-                <strong>Registros de conexão</strong> (data/hora, IP, porta lógica) são mantidos por no mínimo{' '}
-                <strong>6 meses</strong>;
-              </li>
-              <li>
-                <strong>Registros de acesso a aplicações</strong> são mantidos por no mínimo{' '}
-                <strong>6 meses</strong>, podendo ser retidos por até <strong>1 ano</strong> para fins de segurança;
+                <strong>Registros de acesso à aplicação</strong>, compostos por data, hora e endereço IP, são mantidos
+                sob sigilo e em ambiente controlado pelo prazo legal de <strong>6 meses</strong>, quando aplicável;
               </li>
               <li>
                 Tais registros somente serão fornecidos a terceiros mediante <strong>ordem judicial</strong> ou
                 requisição de autoridade legalmente competente (art. 10, §1º do Marco Civil);
               </li>
               <li>
-                Os dados são armazenados em servidores hospedados no Brasil (Fly.io, região GRU — São Paulo),
-                atendendo ao <strong>art. 11 do Marco Civil</strong> quando aplicável.
+                A aplicação principal é executada na região GRU da Fly.io. Alguns operadores podem processar ou
+                armazenar dados em outras jurisdições, conforme descrito na seção 10.
               </li>
             </ul>
           </section>
@@ -188,8 +190,11 @@ export default function Privacidade() {
           <section>
             <h2>8. Decisões Automatizadas e Inteligência Artificial (LGPD art. 20)</h2>
             <p>
-              A Plataforma utiliza modelos de linguagem (LLM via OpenRouter) para geração de respostas automáticas de
-              atendimento. Em conformidade com o <strong>art. 20 da LGPD</strong>, o titular pode solicitar ao
+              A Plataforma utiliza modelos de linguagem e recursos de transcrição ou análise de mídia via OpenRouter
+              para gerar respostas e executar funcionalidades solicitadas. Conforme o recurso utilizado, mensagens,
+              imagens, áudios, transcrições e contexto do atendimento podem ser enviados ao provedor e podem conter
+              dados pessoais inseridos pelo usuário ou pelo lead. Em conformidade com o <strong>art. 20 da LGPD</strong>,
+              o titular pode solicitar ao
               Encarregado ({EMAIL_DPO}):
             </p>
             <ul>
@@ -202,8 +207,8 @@ export default function Privacidade() {
               </li>
             </ul>
             <p className="mt-2">
-              A Criate mantém registro das versões de modelos e das configurações de prompt para fins de{' '}
-              <strong>auditabilidade</strong>. O agente de IA não toma decisões que produzam efeitos jurídicos ou
+              A Criate mantém configurações técnicas necessárias à operação e à auditabilidade do agente. O agente de
+              IA não deve tomar decisões que produzam efeitos jurídicos ou
               impacto significativo sem supervisão humana do corretor.
             </p>
           </section>
@@ -211,8 +216,8 @@ export default function Privacidade() {
           <section>
             <h2>9. Compartilhamento e Operadores (LGPD art. 37)</h2>
             <p>
-              Os dados são compartilhados exclusivamente com <strong>operadores</strong> vinculados por instrumento
-              contratual (DPA) que impõe obrigações compatíveis com a LGPD (art. 37). Não vendemos dados pessoais.
+              Os dados são compartilhados com fornecedores necessários à prestação, segurança e cobrança do serviço,
+              de acordo com suas funções e instruções contratuais. A Criate não vende dados pessoais.
             </p>
             <ul>
               <li>
@@ -229,11 +234,19 @@ export default function Privacidade() {
                 <strong>UAZAPI</strong> — provisionamento de canal WhatsApp Business e entrega de mensagens;
               </li>
               <li>
-                <strong>OpenRouter Inc.</strong> — inferência de modelos de linguagem (recebe apenas o conteúdo das
-                conversas de atendimento, sem dados de identificação do Usuário);
+                <strong>OpenRouter Inc.</strong> — inferência de modelos de linguagem, transcrição e análise de mídia;
               </li>
               <li>
                 <strong>n8n / instância própria</strong> — automações de fluxo e webhooks internos.
+              </li>
+              <li>
+                <strong>Upstash / Redis</strong> — filas, coordenação de processamento, limitação de requisições e
+                armazenamento técnico temporário necessário à estabilidade do serviço;
+              </li>
+              <li>
+                <strong>Sentry</strong> — monitoramento de erros de produção. A integração é configurada para remover
+                corpo de requisição, cabeçalhos, cookies, parâmetros de consulta, endereço IP e identificação do usuário
+                antes do envio dos eventos.
               </li>
             </ul>
           </section>
@@ -241,24 +254,26 @@ export default function Privacidade() {
           <section>
             <h2>10. Transferência Internacional de Dados (LGPD art. 33)</h2>
             <p>
-              Alguns operadores listados na seção 9 estão sediados fora do Brasil. Em conformidade com o{' '}
-              <strong>art. 33 da LGPD</strong> e as resoluções da ANPD, essas transferências observam pelo menos
-              uma das seguintes salvaguardas:
+              Alguns operadores listados na seção 9 estão sediados fora do Brasil ou utilizam infraestrutura em outras
+              jurisdições. Essas operações caracterizam ou podem caracterizar transferência internacional de dados e
+              devem observar o <strong>art. 33 da LGPD</strong> e a{' '}
+              <strong>Resolução CD/ANPD nº 19/2024</strong>, mediante o mecanismo legal aplicável, incluindo:
             </p>
             <ul>
               <li>
-                o país ou organismo internacional oferece <strong>grau de proteção adequado</strong> reconhecido pela
-                ANPD (art. 33, I);
+                decisão de adequação reconhecida pela ANPD, quando existente e aplicável;
               </li>
               <li>
-                o operador fornece <strong>garantias suficientes</strong> por meio de cláusulas contratuais padrão
-                (SCCs) ou certificações reconhecidas (art. 33, II);
+                cláusulas-padrão contratuais aprovadas pela ANPD ou outro instrumento admitido pela regulamentação;
               </li>
               <li>
-                a transferência é necessária para a <strong>execução do contrato</strong> firmado com o titular ou
-                para a prestação de serviços em benefício do titular (art. 33, V).
+                outra hipótese prevista no art. 33 da LGPD, quando demonstrada para a operação específica.
               </li>
             </ul>
+            <p className="mt-2">
+              Informações sobre países de destino, fornecedores envolvidos e mecanismo utilizado podem ser solicitadas
+              ao Encarregado.
+            </p>
           </section>
 
           <section>
@@ -269,17 +284,24 @@ export default function Privacidade() {
                 <strong>Durante a vigência da conta:</strong> todos os dados necessários à prestação do serviço;
               </li>
               <li>
-                <strong>Após o encerramento da conta:</strong> até <strong>5 anos</strong> para cumprimento de
-                obrigações fiscais, tributárias e defesa em processos judiciais/administrativos (CTN art. 173; CC
-                art. 206; Lei nº 9.430/1996);
+                <strong>Após o encerramento da conta:</strong> o conteúdo operacional será eliminado ou anonimizado,
+                ressalvados os dados que precisem ser conservados para cumprimento de obrigação legal, exercício
+                regular de direitos e prevenção de fraude, pelos prazos aplicáveis a cada finalidade;
               </li>
               <li>
-                <strong>Registros de conexão/acesso:</strong> mínimo de <strong>6 meses</strong> (Marco Civil
-                art. 15), podendo ser retidos por até <strong>1 ano</strong>;
+                <strong>Registros de acesso à aplicação:</strong> <strong>6 meses</strong>, ressalvada ordem de
+                preservação ou outra obrigação legal aplicável (Marco Civil, art. 15);
               </li>
               <li>
-                <strong>Dados de pagamento:</strong> conforme política própria do Asaas e obrigações da
-                Resolução BCB nº 4.658/2018.
+                <strong>Dados de pagamento:</strong> conforme os prazos legais e a política própria do Asaas;
+              </li>
+              <li>
+                <strong>Dados técnicos temporários no Redis:</strong> pelo tempo necessário ao processamento da fila,
+                limitação de requisições ou expiração técnica configurada;
+              </li>
+              <li>
+                <strong>Eventos de erro no Sentry:</strong> conforme a retenção configurada no projeto de monitoramento,
+                limitada ao necessário para diagnóstico e correção.
               </li>
             </ul>
             <p className="mt-2">
@@ -297,31 +319,29 @@ export default function Privacidade() {
               <li>Criptografia em trânsito (<strong>HTTPS/TLS 1.2+</strong>) e em repouso;</li>
               <li>Senhas armazenadas com <strong>hash seguro</strong>; chaves de API com <strong>AES-256</strong>;</li>
               <li>Autenticação JWT com expiração e revogação de sessão;</li>
-              <li>
-                Isolamento por tenant — cada corretor acessa <em>exclusivamente</em> seus próprios dados (row-level
-                security no banco);
-              </li>
-              <li>Princípio do menor privilégio na service role do banco de dados;</li>
-              <li>Monitoramento contínuo de acessos e alertas de anomalia;</li>
+              <li>Isolamento lógico por conta e por usuário mediante autenticação e controles de autorização no backend;</li>
+              <li>Segredos e credenciais administrativas mantidos apenas no ambiente do servidor;</li>
+              <li>Monitoramento de erros de produção com filtros de privacidade;</li>
               <li>Rate limiting e proteção contra força bruta nos endpoints sensíveis.</li>
             </ul>
           </section>
 
           <section>
-            <h2>13. Incidentes de Segurança (LGPD art. 48; Resolução CD/ANPD nº 2/2022)</h2>
+            <h2>13. Incidentes de Segurança (LGPD art. 48; Resolução CD/ANPD nº 15/2024)</h2>
             <p>
               Em caso de incidente de segurança que possa acarretar risco ou dano relevante aos titulares, a Criate:
             </p>
             <ul>
               <li>
-                comunicará a <strong>ANPD</strong> em prazo razoável, com informações sobre a natureza dos dados
-                afetados, número de titulares impactados e medidas adotadas;
+                comunicará a <strong>ANPD</strong> e os titulares afetados no prazo de <strong>3 dias úteis</strong>,
+                contado do conhecimento do incidente pelo controlador, quando o evento puder acarretar risco ou dano
+                relevante, ressalvado prazo específico previsto em lei;
               </li>
               <li>
-                comunicará os <strong>titulares afetados</strong> de maneira clara e objetiva, com orientações sobre
-                como se proteger;
+                apresentará aos <strong>titulares afetados</strong> informações claras sobre a natureza e os riscos do
+                incidente, as medidas adotadas e orientações para proteção;
               </li>
-              <li>adotará medidas de contenção e correção imediatas.</li>
+              <li>adotará medidas de contenção e correção e manterá registro do incidente pelo prazo regulamentar mínimo de 5 anos.</li>
             </ul>
             <p className="mt-2">
               Para reportar suspeitas de incidente: <a href={`mailto:${EMAIL_DPO}`} className="underline">{EMAIL_DPO}</a>.
@@ -332,7 +352,7 @@ export default function Privacidade() {
             <h2>14. Direitos do Titular (LGPD art. 18)</h2>
             <p>
               O titular dos dados pode exercer gratuitamente os seguintes direitos, mediante solicitação ao
-              Encarregado ({EMAIL_DPO}):
+              Encarregado ({NOME_DPO}, {EMAIL_DPO}):
             </p>
             <ul>
               <li>
@@ -371,27 +391,25 @@ export default function Privacidade() {
               </li>
             </ul>
             <p className="mt-2">
-              Prazo de resposta: até <strong>15 dias úteis</strong>, conforme orientação da ANPD. Respostas podem
-              ser comunicadas ao e-mail cadastrado.
+              A confirmação e o acesso simplificado serão providenciados imediatamente quando possível. A declaração
+              clara e completa prevista no art. 19, II, da LGPD será fornecida em até <strong>15 dias corridos</strong>,
+              contados do requerimento. Os demais pedidos serão atendidos nos prazos legais ou regulamentares aplicáveis.
             </p>
           </section>
 
           <section>
             <h2>15. Cookies e Armazenamento Local</h2>
-            <p>A Plataforma utiliza:</p>
+            <p>A aplicação web utiliza:</p>
             <ul>
               <li>
-                <strong>Cookies de sessão estritamente necessários:</strong> token de autenticação JWT — sem eles o
-                serviço não funciona;
-              </li>
-              <li>
-                <strong>sessionStorage:</strong> dados de sessão para manutenção do login ativo, isolados por aba do navegador.
+                <strong>sessionStorage:</strong> token de autenticação e dados mínimos da sessão para manutenção do
+                login, isolados por aba do navegador e removidos no encerramento da sessão correspondente.
               </li>
             </ul>
             <p className="mt-2">
               A Plataforma <strong>não utiliza</strong> cookies de rastreamento de terceiros, pixels de redes sociais
-              ou ferramentas de analytics que transmitam dados a terceiros. Cookies de sessão podem ser removidos
-              pelas configurações do navegador, ciente de que isso encerrará o acesso autenticado.
+              ou ferramentas de publicidade comportamental. O Sentry é utilizado exclusivamente para diagnóstico de
+              erros, com os filtros de privacidade descritos nesta Política.
             </p>
           </section>
 
@@ -419,12 +437,13 @@ export default function Privacidade() {
             <h2>18. Foro</h2>
             <p>
               Para questões relativas a esta Política, fica eleito o foro da Comarca de{' '}
-              <strong>{CIDADE_ESTADO}</strong>, com renúncia a qualquer outro.
+              <strong>{CIDADE_ESTADO}</strong>, ressalvadas as hipóteses de competência legal obrigatória e o direito
+              do consumidor de recorrer ao foro de seu domicílio quando aplicável.
             </p>
           </section>
 
           <p className="text-[var(--text-low)] text-xs pt-4 border-t border-[var(--hairline)]">
-            Encarregado / DPO: {EMAIL_DPO} · {RAZAO_SOCIAL} · CNPJ {CNPJ} · {ENDERECO} · {EMAIL_CONTATO}
+            Encarregado / DPO: {NOME_DPO}, {CARGO_DPO} · {EMAIL_DPO} · {RAZAO_SOCIAL} · CNPJ {CNPJ} · {ENDERECO} · {EMAIL_CONTATO}
           </p>
           <Copyright />
         </div>

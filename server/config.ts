@@ -37,7 +37,7 @@ export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
 // Versão vigente dos Termos de Uso / Política de Privacidade (data de vigência).
 // Ao alterar os documentos de forma relevante, mude esta constante — usuários
 // logados com versão aceita divergente verão o modal de re-aceite (TermsGate).
-export const TERMS_VERSION = '2026-07-21';
+export const TERMS_VERSION = '2026-07-28';
 export const UAZAPI_HOST             = process.env.UAZAPI_HOST             || "https://criate.uazapi.com";
 export const UAZAPI_TOKEN            = process.env.UAZAPI_TOKEN            || "";
 export const UAZAPI_PLATFORM_SESSION = process.env.UAZAPI_PLATFORM_SESSION || "";
