@@ -4,11 +4,11 @@ import {
   MapPin, Calendar, X, Mail, User, Phone, Loader2,
   BedDouble, Bath, Maximize2, Car, CheckCircle2,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import Copyright from '../components/Copyright';
 
 // ── Reveal ────────────────────────────────────────────────────────────────
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 34 },
   show: { opacity: 1, y: 0, transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] } },
 };

@@ -201,7 +201,11 @@ export function CarteiraArea() {
 
       {showForm && (
         <PropertyForm
-          initialData={editing ? { ...editing, ...(editing.details || {}) } : undefined}
+          initialData={editing ? {
+            ...editing,
+            ...(editing.details || {}),
+            description: editing.description || editing.details?.description || '',
+          } : undefined}
           onClose={() => setShowForm(false)}
           onSuccess={() => { setShowForm(false); load(); }}
         />

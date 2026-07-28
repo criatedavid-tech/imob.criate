@@ -20,6 +20,15 @@
 
 ## Segurança e dados
 
+- **Auditoria de dependências em 28/07/2026.** `body-parser` foi atualizado para
+  `1.20.6` e `postcss` para `8.5.24`. O alerta restante do npm para
+  `react-router@7.18.1` refere-se exclusivamente às APIs RSC instáveis, que o
+  ImobiFlow não importa nem executa: a aplicação usa `BrowserRouter` como SPA.
+  Não executar `npm audit fix --force` nem rebaixar para `7.11.0`; esse
+  downgrade elimina o alerta RSC, mas reintroduz vulnerabilidades de XSS, open
+  redirect e DoS aplicáveis ao roteamento tradicional. As alterações de
+  dependências mantêm origem e integridade no registro oficial do npm e não
+  adicionam endpoints, webhooks ou scripts de instalação ao projeto.
 - **Tenant resolvido no backend.** `service_role` nunca confia em `broker_id`
   recebido do cliente.
 - **CRM transacional.** RPCs `SECURITY DEFINER` são exclusivas da

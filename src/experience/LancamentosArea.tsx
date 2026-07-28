@@ -484,7 +484,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   const [editing, setEditing] = useState(false);
   const [buyerDocument, setBuyerDocument] = useState('');
   const [signalAmountCents, setSignalAmountCents] = useState(0);
-  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  const [requestKey, setRequestKey] = useState<string>(() => crypto.randomUUID());
   const [reservation, setReservation] = useState<UnitReservationPayment | null>(null);
   const [copiedPix, setCopiedPix] = useState(false);
   const [financialAccess, setFinancialAccess] = useState(false);
