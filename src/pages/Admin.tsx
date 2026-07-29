@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Home, TrendingUp, DollarSign, Shield, CheckCircle2,
@@ -92,6 +92,7 @@ export default function Admin() {
   const [view, setView] = useState<'contas' | 'saude'>('contas');
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
   const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
+  const detailRequestIdRef = useRef(0);
 
   const headers = authService.getAuthHeaders();
 
@@ -125,22 +126,58 @@ export default function Admin() {
     }
   }
 
-  async function updateStatus(id: string, status: string) {
+  async function updateStatus(id: string, status: Broker['status']) {
+    const broker = detail?.broker?.id === id
+      ? detail.broker
+      : brokers.find((item) => item.id === id);
+    const brokerName = broker?.name || 'este corretor';
+    const confirmationByStatus: Record<Broker['status'], string> = {
+      ativo: `Ativar a conta de "${brokerName}"?`,
+      bloqueado: `Bloquear a conta de "${brokerName}"? O acesso será interrompido imediatamente.`,
+      pendente: `Desbloquear a conta de "${brokerName}" e retorná-la para pendente?`,
+    };
+    if (!confirm(confirmationByStatus[status])) return;
+
     setUpdatingId(id);
+    setActionMsg(null);
     try {
-      await fetch(`/api/admin/brokers/${id}/status`, {
+      const res = await fetch(`/api/admin/brokers/${id}/status`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Erro ao atualizar o status da conta.');
       setBrokers(prev => prev.map(b => b.id === id ? { ...b, status: status as any } : b));
       if (detail?.broker?.id === id) setDetail(d => d ? { ...d, broker: { ...d.broker, status } } : d);
+      setActionMsg({ type: 'success', text: 'Status atualizado com sucesso.' });
+    } catch (err: any) {
+      const message = err?.message || 'Erro ao atualizar o status da conta.';
+      setActionMsg({ type: 'error', text: message });
+      alert(message);
     } finally {
       setUpdatingId(null);
     }
   }
 
+  const closeDetail = useCallback(() => {
+    detailRequestIdRef.current += 1;
+    setDetail(null);
+    setLoadingDetail(false);
+    setActionMsg(null);
+  }, []);
+
+  useEffect(() => {
+    if (!detail && !loadingDetail) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDetail();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [closeDetail, detail, loadingDetail]);
+
   async function openDetail(id: string) {
+    const requestId = ++detailRequestIdRef.current;
     setLoadingDetail(true);
     setDetail(null);
     setTicketUsage(null);
@@ -153,12 +190,17 @@ export default function Admin() {
         fetch(`/api/admin/brokers/${id}`, { headers }),
         fetch(`/api/admin/brokers/${id}/ticket-usage`, { headers })
       ]);
+      if (!dRes.ok) throw new Error('Erro ao carregar os detalhes do corretor.');
       const detailData = await dRes.json();
+      if (requestId !== detailRequestIdRef.current) return;
       setDetail(detailData);
       setMemberLimitInput(String(detailData?.broker?.member_limit ?? 0));
       if (uRes.ok) setTicketUsage(await uRes.json());
+    } catch (err: any) {
+      if (requestId !== detailRequestIdRef.current) return;
+      setActionMsg({ type: 'error', text: err?.message || 'Erro ao carregar os detalhes do corretor.' });
     } finally {
-      setLoadingDetail(false);
+      if (requestId === detailRequestIdRef.current) setLoadingDetail(false);
     }
   }
 
@@ -172,6 +214,12 @@ export default function Admin() {
       setActionMsg({ type: 'error', text: 'Informe um número inteiro ≥ 0.' });
       return;
     }
+    const currentValue = Number(detail?.broker?.member_limit ?? 0);
+    if (value === currentValue) {
+      setActionMsg({ type: 'success', text: 'O limite já está com esse valor.' });
+      return;
+    }
+    if (!confirm(`Alterar o limite de WhatsApp próprio de ${currentValue} para ${value}?`)) return;
     setSavingMemberLimit(true);
     setActionMsg(null);
     try {
@@ -197,6 +245,9 @@ export default function Admin() {
       setActionMsg({ type: 'error', text: 'Informe um valor diferente de zero.' });
       return;
     }
+    const adjustmentName = adjType === 'bonus' ? 'bônus' : 'cobrança';
+    const adjustmentAction = amount > 0 ? 'Aplicar' : 'Estornar';
+    if (!confirm(`${adjustmentAction} ${Math.abs(amount)} atendimento(s) como ${adjustmentName}?`)) return;
     setApplyingAdj(true);
     setActionMsg(null);
     try {
@@ -221,6 +272,8 @@ export default function Admin() {
   }
 
   async function provisionTenant(id: string) {
+    const brokerName = detail?.broker?.name || 'este corretor';
+    if (!confirm(`Provisionar uma nova instância de WhatsApp para "${brokerName}"?`)) return;
     setUpdatingId(id);
     setActionMsg(null);
     try {
@@ -309,7 +362,7 @@ export default function Admin() {
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage:'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")'}} />
 
       {/* Header */}
-      <div className="sticky top-0 z-30 backdrop-blur-2xl bg-[var(--control-fill)] border-b border-[var(--hairline)] px-6 py-4 flex items-center justify-between shadow-[0_1px_0_rgba(255,255,255,0.08),0_4px_16px_rgba(0,0,0,0.2)]">
+      <div className="sticky top-0 z-30 backdrop-blur-2xl bg-[var(--control-fill)] border-b border-[var(--hairline)] px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 shadow-[0_1px_0_rgba(255,255,255,0.08),0_4px_16px_rgba(0,0,0,0.2)]">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center backdrop-blur-md bg-amber-500/20 border border-amber-400/30">
             <Shield className="w-4 h-4 text-amber-300" />
@@ -319,15 +372,15 @@ export default function Admin() {
             <p className="text-[10px] text-[var(--text-low)]">ImobiFlow</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => load()} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
-            <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <button type="button" aria-label="Atualizar painel" title="Atualizar" onClick={() => load()} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
+            <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Atualizar</span>
           </button>
-          <button onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
-            <Home className="w-3.5 h-3.5" /> Voltar ao app
+          <button type="button" aria-label="Voltar ao app" title="Voltar ao app" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
+            <Home className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Voltar ao app</span>
           </button>
-          <button onClick={() => authService.logout()} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
-            <LogOut className="w-3.5 h-3.5" /> Sair
+          <button type="button" aria-label="Sair da conta" title="Sair" onClick={() => authService.logout()} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-red-500/10">
+            <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sair</span>
           </button>
         </div>
       </div>
@@ -456,7 +509,7 @@ export default function Admin() {
                               Desbloquear
                             </button>
                           )}
-                          <button onClick={() => openDetail(broker.id)}
+                          <button type="button" aria-label={`Abrir detalhes de ${broker.name}`} title={`Abrir detalhes de ${broker.name}`} onClick={() => openDetail(broker.id)}
                             className="w-7 h-7 flex items-center justify-center rounded-full text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all">
                             <ChevronRight className="w-4 h-4" />
                           </button>
@@ -492,18 +545,22 @@ export default function Admin() {
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
-              onClick={() => setDetail(null)}
+              aria-hidden="true"
+              onClick={closeDetail}
             />
             <motion.div
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-broker-detail-title"
               className="fixed right-0 top-0 h-full w-full max-w-md z-50 overflow-y-auto
                 backdrop-blur-2xl bg-slate-900/95 border-l border-[var(--hairline-strong)]
                 shadow-[-8px_0_32px_rgba(0,0,0,0.5)]"
             >
               <div className="px-6 py-5 border-b border-[var(--hairline)] flex items-center justify-between sticky top-0 backdrop-blur-xl bg-[var(--control-fill)]">
-                <h3 className="text-sm font-bold text-[var(--text-hi)]">Detalhes do Corretor</h3>
-                <button onClick={() => setDetail(null)}
+                <h3 id="admin-broker-detail-title" className="text-sm font-bold text-[var(--text-hi)]">Detalhes do Corretor</h3>
+                <button type="button" aria-label="Fechar detalhes do corretor" title="Fechar" onClick={closeDetail}
                   className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all">
                   <X className="w-4 h-4" />
                 </button>
