@@ -3,9 +3,10 @@ import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
-import { authLimiter } from "../middleware/rateLimits";
+import { authLimiter, publicReadLimiter } from "../middleware/rateLimits";
 import { validateBody } from "../middleware/validate";
 import { normalizePhoneBR } from "../lib/crypto";
+import { isValidPublicInviteCode } from "../security/publicInviteCode";
 import {
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_APP_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
@@ -192,8 +193,12 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
 // conta; essas 2 rotas são públicas de propósito, como signup/login.
 
 // Antes de mostrar o formulário: valida o código e diz de qual conta é o convite.
-authRouter.get("/api/auth/join/:code", async (req, res) => {
+authRouter.get("/api/auth/join/:code", publicReadLimiter, async (req, res) => {
   try {
+    if (!isValidPublicInviteCode(req.params.code)) {
+      return res.status(404).json({ error: "Convite não encontrado." });
+    }
+
     const { data: invite } = await supabase
       .from("imf_broker_invites")
       .select("broker_id, expires_at, used_at, whatsapp_mode, imf_brokers(name)")
@@ -206,8 +211,11 @@ authRouter.get("/api/auth/join/:code", async (req, res) => {
 
     res.json({ brokerName: (invite as any).imf_brokers?.name || "a conta", whatsappMode: invite.whatsapp_mode });
   } catch (err: any) {
-    console.error("Erro GET /api/auth/join/:code:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Erro GET /api/auth/join/:code:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível verificar o convite" });
   }
 });
 
