@@ -7,6 +7,7 @@ import { authLimiter, publicReadLimiter } from "../middleware/rateLimits";
 import { validateBody } from "../middleware/validate";
 import { normalizePhoneBR } from "../lib/crypto";
 import { isValidPublicInviteCode } from "../security/publicInviteCode";
+import { isValidPublicResetToken } from "../security/publicResetToken";
 import {
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_APP_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
@@ -14,6 +15,7 @@ import {
 import { fetchWithTimeout } from "../lib/http";
 import { provisionUazapiInstanceForMember } from "../services/provisioning";
 import { compensateInviteAcceptanceFailure } from "../services/inviteAcceptance";
+import { executePasswordReset, PasswordResetTokenError } from "../services/passwordReset";
 
 export const authRouter = express.Router();
 
@@ -341,40 +343,81 @@ authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (
   }
 });
 
-// Valida token e atualiza a senha
-authRouter.post("/api/auth/reset-password", async (req, res) => {
+const resetPasswordSchema = z.object({
+  token: z.string().refine(isValidPublicResetToken, "Token inválido."),
+  newPassword: z.string().min(6, "A senha deve ter pelo menos 6 caracteres.").max(128, "Senha muito longa."),
+});
+
+// Reivindica o token de forma atômica e atualiza a senha.
+authRouter.post("/api/auth/reset-password", authLimiter, validateBody(resetPasswordSchema), async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios.' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
 
-    // Busca corretor pelo token
-    const { data: broker } = await supabase
-      .from('imf_brokers')
-      .select('id, user_id, reset_token_expires_at')
-      .eq('reset_token', token)
-      .single();
-
-    if (!broker) return res.status(400).json({ error: 'Link inválido ou já utilizado.' });
-
-    // Verifica expiração
-    if (new Date(broker.reset_token_expires_at) < new Date()) {
-      return res.status(400).json({ error: 'Link expirado. Solicite uma nova recuperação de senha.' });
-    }
-
-    // Atualiza senha via admin (service_role)
-    const { error } = await supabase.auth.admin.updateUserById(broker.user_id, { password: newPassword });
-    if (error) throw error;
-
-    // Invalida o token imediatamente
-    await supabase.from('imf_brokers').update({
-      reset_token: null,
-      reset_token_expires_at: null
-    }).eq('id', broker.id);
+    await executePasswordReset(
+      { token, newPassword, now: new Date() },
+      {
+        findCandidate: async (candidateToken) => {
+          const { data, error } = await supabase
+            .from("imf_brokers")
+            .select("id, user_id, reset_token_expires_at")
+            .eq("reset_token", candidateToken)
+            .maybeSingle();
+          if (error) throw error;
+          if (!data) return null;
+          return {
+            id: data.id,
+            userId: data.user_id,
+            expiresAt: data.reset_token_expires_at,
+          };
+        },
+        claimToken: async (candidateId, candidateToken, nowIso) => {
+          const { data, error } = await supabase
+            .from("imf_brokers")
+            .update({ reset_token: null, reset_token_expires_at: null })
+            .eq("id", candidateId)
+            .eq("reset_token", candidateToken)
+            .gt("reset_token_expires_at", nowIso)
+            .select("id")
+            .maybeSingle();
+          if (error) throw error;
+          return !!data;
+        },
+        updatePassword: async (userId, password) => {
+          const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+          if (error) throw error;
+        },
+        restoreToken: async (candidate, candidateToken) => {
+          const { error } = await supabase
+            .from("imf_brokers")
+            .update({
+              reset_token: candidateToken,
+              reset_token_expires_at: candidate.expiresAt,
+            })
+            .eq("id", candidate.id)
+            .is("reset_token", null);
+          if (error) throw error;
+        },
+        reportRestoreFailure: (restoreError: any) => {
+          console.error("Falha ao restaurar token de redefinição:", {
+            name: restoreError?.name || "Error",
+            code: restoreError?.code || "UNKNOWN",
+          });
+        },
+      },
+    );
 
     res.json({ message: 'Senha atualizada com sucesso.' });
   } catch (err: any) {
-    console.error("Reset password error:", err);
+    if (err instanceof PasswordResetTokenError) {
+      const error = err.kind === "expired"
+        ? "Link expirado. Solicite uma nova recuperação de senha."
+        : "Link inválido ou já utilizado.";
+      return res.status(400).json({ error });
+    }
+    console.error("Reset password error:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
     res.status(400).json({ error: 'Erro ao atualizar senha. Tente novamente.' });
   }
 });

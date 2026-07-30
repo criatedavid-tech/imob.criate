@@ -35,7 +35,7 @@ test("consulta pública de convite valida o código, limita leituras e não exp�
 test("aceite valida o corpo e compensa falhas antes do vínculo", async () => {
   const source = await readFile(new URL("../server/routes/auth.ts", import.meta.url), "utf8");
   const start = source.indexOf('authRouter.post("/api/auth/join"');
-  const end = source.indexOf("// Valida token e atualiza a senha", start);
+  const end = source.indexOf("const resetPasswordSchema", start);
   assert.ok(start >= 0 && end > start);
   const route = source.slice(start, end);
 
