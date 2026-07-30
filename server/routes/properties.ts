@@ -8,6 +8,7 @@ import {
   N8nInputValidationError,
   parseN8nPropertyCatalog,
 } from "../security/n8nGuardrails";
+import { isValidPublicPropertySlug } from "../security/publicPropertySlug";
 
 export const propertiesRouter = express.Router();
 
@@ -260,6 +261,10 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
 
 propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res) => {
   try {
+    if (!isValidPublicPropertySlug(req.params.slug)) {
+      return res.status(400).json({ error: "Slug de imóvel inválido" });
+    }
+
     // Landing pública — allowlist explícita do corretor embutido: o resto de
     // imf_brokers tem segredos (reset_token, uazapi_instance_token,
     // asaas_credit_card_token, is_admin), que um select('*') vazava
@@ -303,8 +308,11 @@ propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res
 
     res.json(data);
   } catch (err: any) {
-    console.error("Erro GET /api/properties/:slug:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Erro GET /api/properties/:slug:", {
+      code: err?.code || "UNKNOWN",
+      name: err?.name || "Error",
+    });
+    res.status(500).json({ error: "Não foi possível carregar o imóvel" });
   }
 });
 
