@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { publicReadLimiter } from "../middleware/rateLimits";
+import { isValidPublicBrokerId } from "../security/publicBrokerId";
 
 export const vitrineRouter = express.Router();
 
@@ -12,6 +13,9 @@ export const vitrineRouter = express.Router();
 vitrineRouter.get("/api/vitrine/:brokerId", publicReadLimiter, async (req, res) => {
   try {
     const { brokerId } = req.params;
+    if (!isValidPublicBrokerId(brokerId)) {
+      return res.status(400).json({ error: "Identificador de corretor inválido" });
+    }
 
     const { data: broker, error: brokerErr } = await supabase
       .from("imf_brokers")
@@ -52,8 +56,11 @@ vitrineRouter.get("/api/vitrine/:brokerId", publicReadLimiter, async (req, res) 
       properties,
     });
   } catch (err: any) {
-    console.error("Erro GET /api/vitrine/:brokerId:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Erro GET /api/vitrine/:brokerId:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível carregar a vitrine" });
   }
 });
 
@@ -63,6 +70,9 @@ vitrineRouter.get("/api/vitrine/:brokerId", publicReadLimiter, async (req, res) 
 vitrineRouter.get("/api/vitrine-lancamentos/:brokerId", publicReadLimiter, async (req, res) => {
   try {
     const { brokerId } = req.params;
+    if (!isValidPublicBrokerId(brokerId)) {
+      return res.status(400).json({ error: "Identificador de corretor inválido" });
+    }
 
     const { data: broker, error: brokerErr } = await supabase
       .from("imf_brokers")
@@ -100,7 +110,10 @@ vitrineRouter.get("/api/vitrine-lancamentos/:brokerId", publicReadLimiter, async
 
     res.json({ broker: { name: broker.name || "Incorporadora", address }, developments });
   } catch (err: any) {
-    console.error("Erro GET /api/vitrine-lancamentos/:brokerId:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Erro GET /api/vitrine-lancamentos/:brokerId:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível carregar a vitrine de lançamentos" });
   }
 });
