@@ -31,3 +31,18 @@ test("consulta pública de convite valida o código, limita leituras e não exp�
   assert.match(route, /status\(500\)\.json\(\{ error: "Não foi possível verificar o convite" \}\)/);
   assert.doesNotMatch(route, /json\(\{ error: err(?:\?|\.)/);
 });
+
+test("aceite valida o corpo e compensa falhas antes do vínculo", async () => {
+  const source = await readFile(new URL("../server/routes/auth.ts", import.meta.url), "utf8");
+  const start = source.indexOf('authRouter.post("/api/auth/join"');
+  const end = source.indexOf("// Valida token e atualiza a senha", start);
+  assert.ok(start >= 0 && end > start);
+  const route = source.slice(start, end);
+
+  assert.match(route, /authLimiter, validateBody\(joinSchema\)/);
+  assert.match(route, /compensateInviteAcceptanceFailure/);
+  assert.match(route, /deleteUser\(userId\)/);
+  assert.match(route, /update\(\{ used_at: null \}\)/);
+  assert.match(route, /membershipCreated = true/);
+  assert.doesNotMatch(route, /:\s*err\.message/);
+});

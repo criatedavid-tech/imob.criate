@@ -13,6 +13,7 @@ import {
 } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { provisionUazapiInstanceForMember } from "../services/provisioning";
+import { compensateInviteAcceptanceFailure } from "../services/inviteAcceptance";
 
 export const authRouter = express.Router();
 
@@ -219,12 +220,21 @@ authRouter.get("/api/auth/join/:code", publicReadLimiter, async (req, res) => {
   }
 });
 
-authRouter.post("/api/auth/join", authLimiter, async (req, res) => {
+const joinSchema = z.object({
+  code: z.string().refine(isValidPublicInviteCode, "Convite inválido."),
+  name: z.string().trim().min(1, "Nome é obrigatório.").max(120, "Nome muito longo."),
+  phone: z.string().trim().max(30, "Telefone muito longo.").optional().default(""),
+  email: z.string().trim().email("E-mail inválido."),
+  password: z.string().min(6, "Senha precisa ter pelo menos 6 caracteres.").max(128, "Senha muito longa."),
+});
+
+authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (req, res) => {
+  let claimedCode: string | null = null;
+  let createdUserId: string | null = null;
+  let membershipCreated = false;
+
   try {
     const { code, name, phone, email, password } = req.body;
-    if (!code || !email || !password || !name) {
-      return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
-    }
 
     // Reivindica o convite de forma atômica — só segue se ninguém usou antes.
     const { data: claimed, error: claimError } = await supabase
@@ -237,15 +247,17 @@ authRouter.post("/api/auth/join", authLimiter, async (req, res) => {
       .maybeSingle();
     if (claimError) throw claimError;
     if (!claimed) return res.status(410).json({ error: "Convite inválido, expirado ou já utilizado." });
+    claimedCode = code;
 
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = email.toLowerCase();
     const { data: created, error: createErr } = await supabase.auth.admin.createUser({
       email: cleanEmail,
       password,
       email_confirm: true,
     });
     if (createErr) throw createErr;
-    if (!created.user) return res.status(500).json({ error: "Falha ao criar usuário." });
+    if (!created.user) throw new Error("AUTH_USER_NOT_CREATED");
+    createdUserId = created.user.id;
 
     const { data: memberRow, error: memberError } = await supabase
       .from("imf_broker_members")
@@ -253,14 +265,28 @@ authRouter.post("/api/auth/join", authLimiter, async (req, res) => {
       .select("id")
       .single();
     if (memberError) throw memberError;
+    membershipCreated = true;
 
-    await supabase.from("imf_broker_invites").update({ used_by: created.user.id }).eq("code", code);
+    const { error: finalizeError } = await supabase
+      .from("imf_broker_invites")
+      .update({ used_by: created.user.id })
+      .eq("code", code);
+    if (finalizeError) {
+      console.error("Falha ao finalizar auditoria do convite:", {
+        code: finalizeError.code || "UNKNOWN",
+      });
+    }
 
     // Guarda nome/telefone no próprio usuário auth (não tem imf_brokers próprio) —
     // fica disponível via user_metadata pra quem listar os membros depois.
-    await supabase.auth.admin.updateUserById(created.user.id, {
+    const { error: metadataError } = await supabase.auth.admin.updateUserById(created.user.id, {
       user_metadata: { full_name: name.trim(), phone: normalizePhoneBR(phone || "") },
     });
+    if (metadataError) {
+      console.error("Falha ao atualizar metadados do membro:", {
+        code: (metadataError as any)?.code || "UNKNOWN",
+      });
+    }
 
     // Convite pedia WhatsApp próprio — provisiona agora, síncrono (mesmo
     // padrão de esperar a conclusão que o checkout já usa pra conta). Nunca
@@ -277,10 +303,40 @@ authRouter.post("/api/auth/join", authLimiter, async (req, res) => {
     }
     res.json({ user: loginData.user, session: loginData.session });
   } catch (err: any) {
-    console.error("Erro POST /api/auth/join:", err);
+    if (claimedCode && !membershipCreated) {
+      try {
+        await compensateInviteAcceptanceFailure(
+          { code: claimedCode, createdUserId, membershipCreated },
+          {
+            deleteCreatedUser: async (userId) => {
+              const { error } = await supabase.auth.admin.deleteUser(userId);
+              if (error) throw error;
+            },
+            releaseInvite: async (code) => {
+              const { error } = await supabase
+                .from("imf_broker_invites")
+                .update({ used_at: null })
+                .eq("code", code)
+                .is("used_by", null);
+              if (error) throw error;
+            },
+          },
+        );
+      } catch (rollbackError: any) {
+        console.error("Falha ao compensar aceite de convite:", {
+          name: rollbackError?.name || "Error",
+          code: rollbackError?.code || "UNKNOWN",
+        });
+      }
+    }
+
+    console.error("Erro POST /api/auth/join:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
     const msg = err.message?.includes("already registered")
       ? "Este e-mail já possui uma conta. Faça login."
-      : err.message;
+      : "Não foi possível entrar na equipe. Tente novamente.";
     res.status(400).json({ error: msg });
   }
 });
