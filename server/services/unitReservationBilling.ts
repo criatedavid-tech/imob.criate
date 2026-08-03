@@ -156,10 +156,9 @@ export async function generateUnitReservationPix(reservationId: string, buyerDoc
     return toPublicReservation(row);
   }
 
-  // Chave de cobrança: a própria da incorporadora se configurada; senão a
-  // conta global da Criate (fallback). O sinal cai na conta dona da chave.
+  // O sinal só pode ser criado na conta própria da incorporadora. A conta
+  // global da Criate é exclusiva da assinatura SaaS e nunca recebe o sinal.
   const creds = await resolveAsaasCredentials(row.broker_id);
-  if (!creds.hasKey) throw new Error("Asaas não está configurado no servidor.");
 
   const customerId = await ensureAsaasBuyerCustomer(row, creds, buyerDocument);
   let payment = row.asaas_payment_id

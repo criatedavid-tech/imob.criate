@@ -8,6 +8,7 @@ import { requireClientFinancialOperations } from "../middleware/clientFinancialO
 import { validateBody } from "../middleware/validate";
 import { reservationPaymentLimiter } from "../middleware/rateLimits";
 import { normalizePhoneBR } from "../lib/crypto";
+import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
 import {
   cancelActiveUnitReservation,
   completePaidUnitReservation,
@@ -769,8 +770,10 @@ lancamentosRouter.post(
     } catch (error: any) {
       const message = String(error?.message || "Falha ao gerar o PIX.").slice(0, 300);
       console.error("Erro POST reserva PIX da unidade:", message.replace(/\b\d{11,14}\b/g, "[documento]"));
-      const status = message.includes("nao esta configurado") || message.includes("não está configurado") ? 503 : 502;
-      res.status(status).json({ error: message });
+      if (error instanceof ClientAsaasAccountRequiredError) {
+        return res.status(409).json({ error: message, code: error.code });
+      }
+      res.status(502).json({ error: message });
     }
   },
 );

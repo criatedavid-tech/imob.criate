@@ -60,9 +60,8 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
     .single();
   if (error || !contract) throw new Error("Contrato não encontrado.");
 
-  // Chave de cobrança: a própria da imobiliária se ela configurou; senão a
-  // conta global da Criate (fallback). O dinheiro do aluguel cai na conta
-  // dona dessa chave.
+  // A cobrança só pode ser criada na conta própria da imobiliária. A conta
+  // global da Criate é exclusiva da assinatura SaaS e nunca recebe aluguel.
   const creds = await resolveAsaasCredentials(contract.broker_id);
 
   const refMonthStart = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), 1);
@@ -132,8 +131,14 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
     contract_id: contractId,
     reference_month: refMonthIso,
     asaas_payment_id: payment.id,
+    source: "asaas",
     billing_type: "BOLETO",
     amount_cents: contract.rent_amount_cents,
+    rent_amount_cents: contract.rent_amount_cents,
+    charges_cents: 0,
+    discount_cents: 0,
+    amount_paid_cents: 0,
+    line_items: [{ code: "rent", label: "Aluguel", amount_cents: contract.rent_amount_cents }],
     due_date: dueDateIso,
     status: "pending" as const,
     boleto_url: payment.bankSlipUrl || payment.invoiceUrl || null,
@@ -165,17 +170,22 @@ export async function handleRentalPaymentWebhook(event: any): Promise<boolean> {
 
   const { data: row } = await supabase
     .from("imf_rental_payments")
-    .select("id")
+    .select("id, amount_cents")
     .eq("asaas_payment_id", p.id)
     .maybeSingle();
   if (!row) return false; // não é uma cobrança de aluguel — deixa o handler de assinatura tratar
 
   if (event.event === "PAYMENT_RECEIVED" || event.event === "PAYMENT_CONFIRMED") {
-    await supabase.from("imf_rental_payments").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", row.id);
+    await supabase.from("imf_rental_payments").update({
+      status: "paid",
+      amount_paid_cents: row.amount_cents,
+      paid_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id);
   } else if (event.event === "PAYMENT_OVERDUE") {
-    await supabase.from("imf_rental_payments").update({ status: "overdue" }).eq("id", row.id);
+    await supabase.from("imf_rental_payments").update({ status: "overdue", updated_at: new Date().toISOString() }).eq("id", row.id);
   } else if (event.event === "PAYMENT_DELETED") {
-    await supabase.from("imf_rental_payments").update({ status: "failed" }).eq("id", row.id);
+    await supabase.from("imf_rental_payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", row.id);
   }
   return true;
 }

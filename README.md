@@ -66,6 +66,21 @@ o add-on já existente de WhatsApp próprio por membro.
 O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
 pagamentos de clientes permanece desligada por
 `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e pela flag Vite equivalente.
+Mesmo numa futura ativação explícita, essas cobranças exigem a integração
+própria da conta cliente: não existe fallback para a conta Asaas global da
+Criate, custódia de valores ou repasse financeiro pelo ImobiFlow.
+
+O módulo de Locação mantém contrato, garantia, encargos e reajuste e permite
+registrar competências e pagamentos realizados externamente. Esse lançamento
+é declaratório: não cria cobrança, não consulta banco e não transfere dinheiro.
+Depois que existe histórico financeiro, o contrato só pode ser encerrado, não
+apagado.
+
+Inquilinos são cadastrados uma única vez e podem ser vinculados a contratos
+sucessivos. O perfil atual pode ser atualizado sem reescrever a fotografia
+cadastral já preservada nos contratos; a interface mostra o histórico por
+inquilino e por imóvel. Vínculos de outra conta são rejeitados no backend e no
+banco.
 
 ## Dois agentes diferentes
 

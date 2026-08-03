@@ -488,6 +488,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
   const [reservation, setReservation] = useState<UnitReservationPayment | null>(null);
   const [copiedPix, setCopiedPix] = useState(false);
   const [financialAccess, setFinancialAccess] = useState(false);
+  const [paymentIntegrationConfigured, setPaymentIntegrationConfigured] = useState(false);
   const [documents, setDocuments] = useState<ReservationDocument[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentLabel, setDocumentLabel] = useState('');
@@ -534,6 +535,15 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
         }
         const body = await res.json();
         if (!cancelled) setFinancialAccess(body?.financial_access === true);
+        if (CLIENT_FINANCIAL_OPERATIONS_ENABLED && body?.financial_access === true) {
+          const integrationRes = await fetch('/api/brokers/asaas-key', {
+            headers: authService.getAuthHeaders(),
+          });
+          const integrationBody = await integrationRes.json().catch(() => ({}));
+          if (!cancelled) {
+            setPaymentIntegrationConfigured(integrationRes.ok && integrationBody?.configured === true);
+          }
+        }
         if (cancelled || !body?.reservation) return;
         const current = body.reservation as UnitReservationPayment;
         setReservation(current);
@@ -1198,7 +1208,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
             </div>
           )}
 
-          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && paymentIntegrationConfigured && ((unit.status === 'disponivel' && !reservation) || canRetryPix) && (
             <div className="space-y-3 p-3 rounded-xl bg-emerald-500/[0.05] border border-emerald-300/15">
               <div>
                 <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
@@ -1216,11 +1226,16 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               </div>
             </div>
           )}
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && !paymentIntegrationConfigured && (
+            <p className="text-[11px] text-[var(--text-low)] rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5">
+              Nenhuma conta própria conectada. O ImobiFlow não receberá o sinal; a reserva sem cobrança continua disponível.
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2 px-6 py-4 border-t border-[var(--hairline)]">
           {unit.status === 'disponivel' && !reservation && (
             <>
-              {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && (
+              {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && paymentIntegrationConfigured && (
                 <button onClick={reserveWithPix} disabled={!!saving}
                   className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}
@@ -1237,7 +1252,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
               </button>
             </>
           )}
-          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && canRetryPix && (
+          {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && paymentIntegrationConfigured && canRetryPix && (
             <button onClick={reserveWithPix} disabled={!!saving}
               className="w-full py-2.5 rounded-xl text-sm font-bold text-emerald-100 bg-emerald-500/15 border border-emerald-300/25 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
               {saving === 'pix' ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}

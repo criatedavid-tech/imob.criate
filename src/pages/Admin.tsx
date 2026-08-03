@@ -231,7 +231,7 @@ export default function Admin() {
     const current = [...(detail?.capabilities?.enabled || [])].sort().join(',');
     const desired = [...capabilitySelection].sort().join(',');
     if (current === desired) {
-      setActionMsg({ type: 'success', text: 'As funcionalidades já estão com essa configuração.' });
+      closeDetail();
       return;
     }
     if (!confirm('Atualizar as funcionalidades liberadas para esta conta?')) return;
@@ -248,7 +248,7 @@ export default function Admin() {
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar funcionalidades.');
       setDetail((value) => value ? { ...value, capabilities: data } : value);
       setCapabilitySelection(data.enabled || []);
-      setActionMsg({ type: 'success', text: 'Funcionalidades atualizadas. A conta verá a mudança ao recarregar o app.' });
+      closeDetail();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: err?.message || 'Erro ao salvar funcionalidades.' });
     } finally {

@@ -1,5 +1,4 @@
 import { supabase } from "../supabase";
-import { ASAAS_API_KEY, ASAAS_BASE_URL } from "../config";
 import { decryptKey } from "../lib/crypto";
 
 const ASAAS_PROD_URL = "https://api.asaas.com/v3";
@@ -8,44 +7,60 @@ const ASAAS_SANDBOX_URL = "https://sandbox.asaas.com/api/v3";
 export interface AsaasCreds {
   baseUrl: string;
   headers: { "Content-Type": string; access_token: string };
-  // true = chave própria da imobiliária; false = conta global da Criate.
-  ownKey: boolean;
-  hasKey: boolean;
+  // Operações financeiras dos clientes nunca usam a conta global da Criate.
+  ownKey: true;
+  hasKey: true;
+}
+
+export class ClientAsaasAccountRequiredError extends Error {
+  readonly code = "CLIENT_ASAAS_ACCOUNT_REQUIRED";
+
+  constructor(message = "Conecte a conta Asaas própria da empresa para gerar esta cobrança.") {
+    super(message);
+    this.name = "ClientAsaasAccountRequiredError";
+  }
 }
 
 export function asaasBaseUrlForEnv(env: string | null | undefined): string {
   return env === "production" ? ASAAS_PROD_URL : ASAAS_SANDBOX_URL;
 }
 
-function buildCreds(apiKey: string, baseUrl: string, ownKey: boolean): AsaasCreds {
+function buildOwnCreds(apiKey: string, baseUrl: string): AsaasCreds {
   return {
     baseUrl,
     headers: { "Content-Type": "application/json", access_token: apiKey },
-    ownKey,
-    hasKey: !!apiKey,
+    ownKey: true,
+    hasKey: true,
   };
 }
 
-// Credenciais Asaas para cobranças DO CLIENTE da imobiliária (aluguel, sinal
-// PIX de reserva). Usa a chave própria do broker se configurada; senão cai na
-// conta global da Criate (comportamento atual). NUNCA usar isto para a
-// assinatura do ImobiFlow — essa é sempre a conta da Criate (billing.ts).
+// Credenciais Asaas para cobranças DO CLIENTE da imobiliária/incorporadora
+// (aluguel e sinal PIX de reserva). Exige a conta própria do cliente. Nunca
+// existe fallback para a conta global da Criate, que é exclusiva da assinatura
+// SaaS do ImobiFlow (billing.ts).
 export async function resolveAsaasCredentials(brokerId: string): Promise<AsaasCreds> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("imf_brokers")
     .select("asaas_api_key_enc, asaas_env")
     .eq("id", brokerId)
     .maybeSingle();
 
+  if (error) {
+    throw new Error("Não foi possível verificar a integração financeira da conta.");
+  }
+
   if (data?.asaas_api_key_enc) {
     try {
       const apiKey = decryptKey(data.asaas_api_key_enc);
-      return buildCreds(apiKey, asaasBaseUrlForEnv(data.asaas_env), true);
-    } catch (err: any) {
-      // Chave corrompida/indecifrável não deve derrubar a cobrança de forma
-      // opaca — cai na conta global e loga, igual ao caso "sem chave".
-      console.error(`[Asaas] falha ao decifrar a chave do broker ${brokerId}, usando conta global:`, err?.message);
+      if (!apiKey.trim()) throw new Error("chave vazia");
+      return buildOwnCreds(apiKey, asaasBaseUrlForEnv(data.asaas_env));
+    } catch {
+      console.error("[Asaas] chave própria de cliente inválida; cobrança bloqueada.");
+      throw new ClientAsaasAccountRequiredError(
+        "A integração Asaas própria desta conta precisa ser reconectada antes de gerar cobranças.",
+      );
     }
   }
-  return buildCreds(ASAAS_API_KEY, ASAAS_BASE_URL, false);
+
+  throw new ClientAsaasAccountRequiredError();
 }

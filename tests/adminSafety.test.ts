@@ -32,3 +32,17 @@ test("drawer administrativo é acessível, cancelável e responsivo", () => {
   assert.match(adminSource, /detailRequestIdRef\.current \+= 1/);
   assert.match(adminSource, /hidden sm:inline/);
 });
+
+test("drawer fecha somente depois de salvar funcionalidades com sucesso", () => {
+  const start = adminSource.indexOf("async function saveCapabilities");
+  const end = adminSource.indexOf("async function saveMemberLimit", start);
+  assert.ok(start >= 0 && end > start);
+  const saveSource = adminSource.slice(start, end);
+
+  assert.match(saveSource, /if \(current === desired\) \{\s*closeDetail\(\);/);
+  assert.ok(
+    saveSource.indexOf("if (!res.ok) throw new Error") < saveSource.lastIndexOf("closeDetail();"),
+    "o drawer não pode fechar antes de a API confirmar a alteração",
+  );
+  assert.match(saveSource, /catch \(err: any\) \{\s*setActionMsg/);
+});

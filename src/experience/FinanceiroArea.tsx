@@ -15,7 +15,8 @@ interface PaymentRow {
   id: string;
   tenant_name: string | null;
   amount_cents: number;
-  status: 'pending' | 'paid' | 'overdue' | 'failed';
+  amount_paid_cents?: number;
+  status: 'pending' | 'partial' | 'paid' | 'overdue' | 'negotiated' | 'canceled' | 'failed';
   due_date: string;
   paid_at: string | null;
   reference_month: string;
@@ -36,14 +37,17 @@ interface Summary {
 const PAYMENT_LABEL: Record<string, { label: string; cls: string }> = {
   paid: { label: 'Pago', cls: 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20' },
   pending: { label: 'Pendente', cls: 'bg-amber-400/15 text-amber-200 border-amber-300/20' },
+  partial: { label: 'Parcial', cls: 'bg-sky-400/15 text-sky-200 border-sky-300/20' },
   overdue: { label: 'Atrasado', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
+  negotiated: { label: 'Negociado', cls: 'bg-violet-400/15 text-violet-200 border-violet-300/20' },
+  canceled: { label: 'Cancelado', cls: 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]' },
   failed: { label: 'Falhou', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
 };
 
 // Financeiro real: núcleo (Etapa 8 do UX_MASTERPLAN.md) — resumo agregando o
-// que já existe em Locação + Lançamentos, incluindo o pagamento real de
-// aluguel (imf_rental_payments, ver server/routes/financeiro.ts) — inadimplência
-// e o fluxo de caixa recente já vêm de cobrança de verdade, não de estimativa.
+// que já existe em Locação + Lançamentos, incluindo competências e pagamentos
+// externos declarados (ver server/routes/financeiro.ts). Não representa
+// conciliação bancária nem custódia pelo ImobiFlow.
 // Carteira (imf_properties) fica de fora: o preço lá é texto livre, não um
 // número confiável de somar. Ainda fora: comissão com pagamento real e
 // informe de rendimentos do proprietário (dependem de um cadastro de
@@ -103,14 +107,14 @@ export function FinanceiroArea() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <GlassCard className="!p-5">
-              <p className="text-[12px] font-medium text-[var(--text-low)]">Receita mensal de locação</p>
+              <p className="text-[12px] font-medium text-[var(--text-low)]">Carteira mensal de locação</p>
               <p className="text-2xl font-black cr-money mt-2 leading-tight break-words">{centsToReais(summary!.rental_monthly_cents)}</p>
               <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">recorrente</p>
             </GlassCard>
             <GlassCard className="!p-5">
-              <p className="text-[12px] font-medium text-[var(--text-low)]">Recebido este mês</p>
+              <p className="text-[12px] font-medium text-[var(--text-low)]">Recebimento registrado no mês</p>
               <p className="text-2xl font-black cr-money mt-2 leading-tight break-words">{centsToReais(summary!.rental_paid_this_month_cents)}</p>
-              <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">aluguel pago</p>
+              <p className="text-[11px] font-semibold mt-2 text-[var(--text-low)]">informado pela imobiliária</p>
             </GlassCard>
             <GlassCard className={`!p-5 ${summary!.rental_overdue_count > 0 ? 'ring-1 ring-red-400/25' : ''}`}>
               <p className="text-[12px] font-medium text-[var(--text-low)]">Inadimplência</p>
@@ -146,7 +150,7 @@ export function FinanceiroArea() {
 
           {payments.length > 0 && (
             <GlassCard className="!p-5 mb-6">
-              <p className="text-[12px] font-semibold text-[var(--text-low)] uppercase tracking-wide mb-3">Fluxo de caixa — aluguel (últimos meses)</p>
+              <p className="text-[12px] font-semibold text-[var(--text-low)] uppercase tracking-wide mb-3">Controle declarado — aluguel (últimos meses)</p>
               <div className="space-y-1.5">
                 {payments.map((p) => (
                   <div key={p.id} className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline)]">
@@ -158,7 +162,9 @@ export function FinanceiroArea() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2.5 shrink-0">
-                      <span className="text-[13px] font-semibold text-[var(--text-hi)]">{centsToReais(p.amount_cents)}</span>
+                      <span className="text-[13px] font-semibold text-[var(--text-hi)]">
+                        {p.amount_paid_cents ? `${centsToReais(p.amount_paid_cents)} / ` : ''}{centsToReais(p.amount_cents)}
+                      </span>
                       <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${PAYMENT_LABEL[p.status]?.cls || 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>
                         {PAYMENT_LABEL[p.status]?.label || p.status}
                       </span>

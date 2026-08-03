@@ -2,14 +2,15 @@ import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireAccountCapability } from "../services/accountCapabilities";
+import { effectiveRentalPaymentStatus, type RentalPaymentStatus } from "../services/rentalLedger";
 
 export const financeiroRouter = express.Router();
 
 financeiroRouter.use("/api/financeiro", requireUser, requireAccountCapability("finance"));
 
 // Etapa 8 do UX_MASTERPLAN.md — núcleo real: resumo agregando o que já existe
-// (contratos de locação ativos + unidades vendidas em lançamentos + pagamento
-// real de aluguel via Asaas, ver server/services/rentalBilling.ts). Carteira
+// (contratos de locação ativos + unidades vendidas em lançamentos + registros
+// de recebimentos externos; Asaas de clientes permanece desligado). Carteira
 // (imf_properties) fica de fora do agregado de propósito — o preço lá é
 // texto livre digitado pelo corretor (ex.: "R$ 450.000"), não um número
 // confiável de somar. Comissão e informe de rendimentos seguem de fora —
@@ -64,8 +65,8 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
     }
     const salesByDevelopment = Array.from(byDevMap.values()).sort((a, b) => b.sales_total_cents - a.sales_total_cents);
 
-    // Inadimplência e fluxo de caixa real — a partir das cobranças de aluguel
-    // geradas em Locação (imf_rental_payments). Enforcement lazy de "overdue"
+    // Inadimplência e fluxo declarado — a partir das competências de aluguel
+    // e recebimentos registrados em Locação. Enforcement lazy de "overdue"
     // (mesmo padrão do locacao.ts): pending com vencimento passado conta como
     // atrasado mesmo que o webhook do Asaas ainda não tenha confirmado.
     const contractIds = (contracts || []).map((c: any) => c.id);
@@ -77,24 +78,57 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
     if (contractIds.length > 0) {
       const monthStart = new Date();
       monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
       const monthIso = monthStart.toISOString().split("T")[0];
       const today = new Date().toISOString().split("T")[0];
 
       const { data: monthPayments } = await supabase
         .from("imf_rental_payments")
-        .select("status, due_date, amount_cents")
+        .select("status, due_date, amount_cents, amount_paid_cents")
         .in("contract_id", contractIds)
         .eq("reference_month", monthIso);
 
       for (const p of monthPayments || []) {
-        const effectiveStatus = p.status === "pending" && p.due_date < today ? "overdue" : p.status;
-        if (effectiveStatus === "overdue") { overdueCount++; overdueCents += p.amount_cents || 0; }
-        if (p.status === "paid") paidThisMonthCents += p.amount_cents || 0;
+        const effectiveStatus = effectiveRentalPaymentStatus(p.status as RentalPaymentStatus, p.due_date, today);
+        if (effectiveStatus === "overdue") {
+          overdueCount++;
+          overdueCents += Math.max(0, (p.amount_cents || 0) - (p.amount_paid_cents || 0));
+        }
       }
+
+      const nextMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1).toISOString();
+      const { data: monthReceipts, error: receiptsError } = await supabase
+        .from("imf_rental_payment_receipts")
+        .select("amount_cents")
+        .in("contract_id", contractIds)
+        .gte("received_at", monthStart.toISOString())
+        .lt("received_at", nextMonth);
+      if (receiptsError) throw receiptsError;
+      paidThisMonthCents = (monthReceipts || []).reduce(
+        (total: number, receipt: any) => total + (receipt.amount_cents || 0),
+        0,
+      );
+
+      // Preserva o histórico legado que foi confirmado pelo webhook da conta
+      // própria antes da trava de produto. Nunca mistura registros externos,
+      // que já foram somados pelos recibos acima.
+      const { data: legacyAsaasPaid, error: legacyAsaasError } = await supabase
+        .from("imf_rental_payments")
+        .select("amount_cents")
+        .in("contract_id", contractIds)
+        .eq("source", "asaas")
+        .eq("status", "paid")
+        .gte("paid_at", monthStart.toISOString())
+        .lt("paid_at", nextMonth);
+      if (legacyAsaasError) throw legacyAsaasError;
+      paidThisMonthCents += (legacyAsaasPaid || []).reduce(
+        (total: number, payment: any) => total + (payment.amount_cents || 0),
+        0,
+      );
 
       const { data: recent } = await supabase
         .from("imf_rental_payments")
-        .select("id, status, due_date, paid_at, amount_cents, reference_month, imf_rental_contracts(tenant_name)")
+        .select("id, status, due_date, paid_at, amount_cents, amount_paid_cents, reference_month, imf_rental_contracts(tenant_name)")
         .in("contract_id", contractIds)
         .order("reference_month", { ascending: false })
         .limit(12);
@@ -103,7 +137,8 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
         id: p.id,
         tenant_name: p.imf_rental_contracts?.tenant_name || null,
         amount_cents: p.amount_cents,
-        status: p.status === "pending" && p.due_date < today ? "overdue" : p.status,
+        amount_paid_cents: p.amount_paid_cents || 0,
+        status: effectiveRentalPaymentStatus(p.status as RentalPaymentStatus, p.due_date, today),
         due_date: p.due_date,
         paid_at: p.paid_at,
         reference_month: p.reference_month,

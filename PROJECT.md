@@ -10,6 +10,18 @@ relatórios.
 O foco é atendimento e vendas do dia a dia. O ImobiFlow não executa operações
 financeiras dos clientes: cobrança de aluguel/reserva e pagamentos ficam fora
 do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
+O código histórico de integração direta continua desativado por flag; se um
+dia for habilitado, exige a conta Asaas própria da imobiliária/incorporadora e
+nunca pode usar a conta global da Criate como fallback, custodiar saldo ou
+realizar repasses.
+
+Em Locação, "pagamento fora do produto" não impede o controle operacional: a
+imobiliária cria a competência mensal e registra no ImobiFlow o recebimento que
+já ocorreu externamente. O registro guarda valor, data, forma e recebimentos
+parciais, sem gerar PIX/boleto, movimentar saldo ou afirmar conciliação bancária.
+Inquilinos possuem cadastro reutilizável e isolado por conta; contratos mantêm
+uma fotografia dos dados da assinatura e formam o histórico do inquilino e do
+imóvel sem apagar registros anteriores.
 
 ## Escopo ativo
 

@@ -78,7 +78,7 @@ Supabase
        ├── UAZAPI ── WhatsApp por conta/membro
        ├── N8N ───── automação e agente
        ├── OpenRouter/proxy LLM
-       ├── Asaas ─── assinatura, aluguel e sinal PIX
+       ├── Asaas ─── assinatura SaaS; integrações financeiras de clientes ficam desligadas
        ├── Redis ─── rate limit distribuído (ativo)
        └── Sentry ── erros sanitizados, sem PII/tracing (ativo)
 ```
@@ -234,10 +234,17 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   (`schedule_followup`) criados pelo Assistente IA — ver "Ações agendadas do
   Assistente IA interno" adiante. Sem cadastro manual próprio ainda; tela só
   lista, conclui/apaga lembrete e cancela follow-up pendente.
-- **Locação:** contratos, vencimentos, valores para acompanhamento e exclusão
-  definitiva de contrato com as cobranças associadas em cascata
-  (`DELETE /api/locacao/contracts/:id`). A criação de boleto/PIX do cliente
-  está desativada por padrão.
+- **Locação:** contratos residenciais, comerciais ou de temporada; partes,
+  vigência, garantia única, taxa de administração, multa, juros, encargos por
+  responsável e regra de reajuste. O controle mensal cria competências
+  discriminadas e registra pagamentos feitos fora do ImobiFlow, inclusive
+  recebimentos parciais e a forma/data informada pela imobiliária. Contrato
+  sem histórico pode ser apagado; depois da primeira competência, deve ser
+  encerrado para preservar o histórico. Boleto/PIX do cliente continua
+  desativado por padrão e nenhum valor passa pela Criate. Inquilinos têm
+  cadastro independente por conta, histórico de contratos e estado
+  ativo/inativo. O contrato guarda a fotografia cadastral da vinculação; um
+  trigger impede relacionar inquilino e contrato de contas diferentes.
 - **Lançamentos:** empreendimentos, unidades, simulador, reserva operacional,
   documentos privados e venda. O PIX de sinal está desativado por padrão.
   Exclusão de unidade/empreendimento só é bloqueada quando existe reserva
@@ -1005,6 +1012,13 @@ O produto separa dois fluxos financeiros:
    histórica de aluguel e sinal PIX permanece preservada, mas bloqueada no
    backend e escondida no frontend por padrão.
 
+Não existe fallback para a conta global da Criate nesse segundo fluxo. Se as
+flags forem habilitadas futuramente, o backend exige uma conta Asaas própria
+válida da imobiliária/incorporadora; sem ela responde
+`CLIENT_ASAAS_ACCOUNT_REQUIRED` e não cria cobrança. A interface também oculta
+os comandos financeiros. O ImobiFlow apenas poderia sincronizar o status da
+cobrança externa, sem custodiar saldo ou executar repasses.
+
 `CLIENT_FINANCIAL_OPERATIONS_ENABLED` e
 `VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED` precisam ser explicitamente `true`
 para reativar os dois lados. No estado normal, novas cobranças de aluguel,
@@ -1156,7 +1170,7 @@ por trigger e pelos caminhos da interface/agente; o backfill histórico usa
 | CRM (pipelines) | `imf_crm_pipelines`, `imf_crm_pipeline_stages` (+ `leads.pipeline_id`/`pipeline_stage_id`) — schema-base e hardening `20260720b` aplicados e verificados |
 | Agenda | `imf_agenda` (coluna `event_type` `'visita'|'lembrete'` — migration `20260721c` aplicada e verificada) |
 | Conversas | `imf_conversation_tickets`, `followup_conversations`, `imf_conversation_messages`, `imf_conversation_tags`, `imf_conversation_tag_links`, `imf_conversation_notes` |
-| Locação | `imf_rental_contracts`, `imf_rental_payments` |
+| Locação | `imf_rental_tenants`, `imf_rental_contracts`, `imf_rental_payments`, `imf_rental_payment_receipts` |
 | Lançamentos | `imf_developments`, `imf_units`, `imf_unit_reservations`, `imf_reservation_documents` |
 | Billing SaaS | assinaturas, uso/excedentes, `imf_billing_lock`, `imf_billing_reconciliations` |
 | Agente | `broker_agents`, `imf_agent_log` (histórico do assistente interno) e `imf_agent_scheduled_followups` (follow-up ad-hoc agendado — aplicada e verificada, código publicado) |
@@ -1317,6 +1331,9 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260721g_visit_broker_notification.sql` | aplicada e verificada em 22/07/2026 | flags de visita do chatbot, one-shot do WhatsApp e telefone pessoal de notificação |
 | `20260722a_n8n_agenda_guardrails.sql` | versionada; aplicação não confirmada nesta auditoria | reduz exposição e restringe operações de agenda usadas pelo N8N |
 | `20260724_scale_hot_path_indexes.sql` | versionada; aplicação não confirmada nesta auditoria | índices dos hot paths de escala e filas |
+| `20260803_account_capability_overrides.sql` | aplicada e verificada pelo usuário em 03/08/2026 | combinações de Locação/Lançamentos/Financeiro/Equipe por conta |
+| `20260803b_rental_contract_management.sql` | aplicada manualmente pelo usuário em 03/08/2026 | termos completos de locação, competências mensais e recebimentos externos transacionais |
+| `20260803c_rental_tenants.sql` | aplicada manualmente pelo usuário em 03/08/2026 | cadastro reutilizável de inquilinos, backfill de contratos e defesa de vínculo entre contas |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a
@@ -1381,8 +1398,9 @@ correspondente roda no scheduler singleton.
    confirmar UUID novo, histórico separado e impossibilidade de reabrir ou
    responder no ticket encerrado.
 7. Validar Asaas próprio em sandbox: salvar, mascarar, trocar, remover e
-   confirmar que aluguel/reserva usam a conta certa; assinatura deve continuar
-   na conta global.
+   confirmar que aluguel/reserva usam exclusivamente a conta própria; sem ela,
+   devem responder `CLIENT_ASAAS_ACCOUNT_REQUIRED`. A assinatura deve continuar
+   na conta global da Criate.
 8. Validar Lançamentos Fase 3: upload, autorização, URL assinada, rejeição,
    reenvio, aprovação e bloqueio/liberação da venda.
 9. Conferir manualmente cada métrica de 3/6/12 meses com dados conhecidos para

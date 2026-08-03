@@ -115,6 +115,22 @@
   clicável; não usar `.click()` programático nem `display:none`.
 - **Escopo financeiro.** O produto registra/exibe valores, mas não cobra
   aluguel, reserva ou pagamentos de clientes. Asaas serve à assinatura SaaS.
+- **Sem custódia nem fallback financeiro.** A integração histórica de cobrança
+  de clientes permanece desligada. Se reativada de forma explícita, aluguel e
+  sinal só podem ser gerados na conta Asaas própria da imobiliária ou
+  incorporadora. Sem conta própria, a operação é bloqueada; a conta global da
+  Criate nunca recebe esses valores e o ImobiFlow não faz saldo ou repasse.
+- **Locação registra, mas não recebe.** Competências mensais e recebimentos
+  externos são registros declaratórios da imobiliária, com suporte a parcial,
+  data e forma. Eles não disparam cobrança nem representam conciliação
+  bancária. Havendo qualquer competência, o contrato deixa de admitir exclusão
+  definitiva e deve ser encerrado para preservar o histórico.
+- **Inquilino é cadastro, contrato é fotografia (2026-08-03).** O perfil do
+  inquilino é reutilizável dentro da mesma conta e pode receber dados atuais de
+  contato. Cada contrato preserva os campos cadastrais usados na vinculação e
+  continua sendo o histórico jurídico/operacional. Inquilino com contrato não
+  é apagado: deve ser marcado como inativo. Backend e trigger rejeitam vínculo
+  entre contas diferentes.
 - **Sistema de cores "Cristal" + tema Dia/Noite (2026-07-22).** A pedido do
   usuário, mudança APENAS de cores (layout/estrutura idênticos): paleta Cristal
   (grafite frio, acento azure->aqua, latão premium) via tokens CSS em

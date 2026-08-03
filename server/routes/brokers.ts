@@ -402,8 +402,8 @@ brokersRouter.post("/api/brokers/whatsapp/disconnect", requireUser, async (req, 
 
 // ─── Chave de cobrança Asaas própria da imobiliária/incorporadora ──────────
 // Usada nas cobranças dos clientes DELA (aluguel + sinal PIX de reserva). Sem
-// ela, o backend cai na conta global da Criate. A chave é guardada
-// criptografada (AES-256-GCM) e NUNCA é devolvida ao frontend — só um
+// ela, essas cobranças permanecem bloqueadas; nunca há fallback para a conta
+// global da Criate. A chave é guardada criptografada (AES-256-GCM) e NUNCA é devolvida ao frontend — só um
 // resumo (configurada?/env/últimos 4 dígitos). Só o TITULAR da conta
 // gerencia (membros de equipe não).
 
@@ -435,12 +435,20 @@ brokersRouter.get("/api/brokers/asaas-key", requireUser, async (req, res) => {
       .maybeSingle();
 
     let keyLast4: string | null = null;
+    let configured = false;
     if (data?.asaas_api_key_enc) {
-      try { keyLast4 = decryptKey(data.asaas_api_key_enc).slice(-4); } catch { keyLast4 = null; }
+      try {
+        const decrypted = decryptKey(data.asaas_api_key_enc);
+        keyLast4 = decrypted.slice(-4);
+        configured = !!decrypted.trim();
+      } catch {
+        keyLast4 = null;
+      }
     }
 
     res.json({
-      configured: !!data?.asaas_api_key_enc,
+      configured,
+      needs_reconnect: !!data?.asaas_api_key_enc && !configured,
       env: data?.asaas_env || null,
       key_last4: keyLast4,
       can_manage: await isBrokerOwner(userId, brokerId),

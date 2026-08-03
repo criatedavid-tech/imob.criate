@@ -529,9 +529,9 @@ function WhatsAppConnectCard() {
   );
 }
 
-// Conta de cobrança própria da imobiliária/incorporadora. Sem chave, as
-// cobranças (aluguel + sinal PIX) usam a conta da Criate; com chave própria,
-// o dinheiro cai na conta dela. A chave nunca é exibida — só últimos 4 dígitos.
+// Integração financeira opcional da própria imobiliária/incorporadora.
+// Sem chave válida, cobranças de aluguel e sinal permanecem bloqueadas; nunca
+// existe fallback para a conta da Criate. A chave nunca é exibida.
 interface WhatsappSlotsStatus {
   applicable: boolean;
   is_owner: boolean;
@@ -684,7 +684,7 @@ function TeamWhatsappSlotsCard() {
 }
 
 function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
-  const [status, setStatus] = useState<{ configured: boolean; env: string | null; key_last4: string | null; can_manage: boolean } | null>(null);
+  const [status, setStatus] = useState<{ configured: boolean; needs_reconnect?: boolean; env: string | null; key_last4: string | null; can_manage: boolean } | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [env, setEnv] = useState<'sandbox' | 'production'>('production');
   const [saving, setSaving] = useState(false);
@@ -729,7 +729,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
   };
 
   const remove = async () => {
-    if (!confirm('Remover a chave de cobrança? As cobranças voltam a usar a conta da Criate.')) return;
+    if (!confirm('Remover a chave de cobrança? Novas cobranças de clientes ficarão bloqueadas até conectar outra conta própria.')) return;
     setRemoving(true); setError('');
     try {
       const r = await fetch('/api/brokers/asaas-key', { method: 'DELETE', headers: authService.getAuthHeaders() });
@@ -753,7 +753,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
         <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Conta de cobrança (Asaas)</h3>
       </div>
       <p className="text-[12px] text-[var(--text-low)] mb-4">
-        Conecte sua própria conta Asaas para receber aluguéis e sinais direto na sua conta. Sem isso, as cobranças usam a conta da Criate.
+        Integração opcional com a conta Asaas da própria empresa. Os valores são recebidos diretamente nessa conta; o ImobiFlow apenas gera e acompanha o status. Sem integração própria, novas cobranças ficam bloqueadas.
       </p>
 
       {!status && <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
@@ -777,8 +777,11 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
       {status && status.configured && !status.can_manage && (
         <p className="text-[12px] text-[var(--text-low)]">Gerenciada pelo titular da conta.</p>
       )}
+      {status && status.needs_reconnect && (
+        <p className="text-[12px] text-amber-200 mb-3">A integração anterior não pode ser utilizada. O titular precisa conectar novamente a conta própria.</p>
+      )}
       {status && !status.configured && !status.can_manage && (
-        <p className="text-[12px] text-[var(--text-low)]">Nenhuma chave própria — usando a conta da Criate. Só o titular pode configurar.</p>
+        <p className="text-[12px] text-[var(--text-low)]">Nenhuma integração própria configurada. Novas cobranças estão bloqueadas; somente o titular pode conectar uma conta.</p>
       )}
 
       {showForm && (
