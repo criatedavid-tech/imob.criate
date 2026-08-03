@@ -8,6 +8,7 @@ import { PUBLIC_APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
 import { resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
+import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
 import {
   AGENT_CONTEXT_SECURITY_RULES,
   buildUntrustedContextMessage,
@@ -187,7 +188,7 @@ interface Snapshot {
   // Alimenta o assistente pra ele mandar o link REAL quando o corretor pede pra
   // "divulgar/compartilhar meus imóveis" — sem isso ele compunha texto sem link.
   vitrineUrl: string;
-  properties: { id: string; title: string; price: string; status: string }[];
+  properties: { id: string; title: string; price: string; status: string; finalidade: PropertyPurpose }[];
   leadCounts: Record<string, number>;
   leadsTotal: number;
   upcomingVisits: { id: string; when: string; who: string }[];
@@ -205,7 +206,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
   // Isolamento por membro: dono da conta vê tudo; membro só o que é dele.
   const owner = await isBrokerOwner(userId, brokerId);
 
-  const propsQuery = supabase.from("imf_properties").select("id, title, price, status").eq("broker_id", brokerId).limit(40);
+  const propsQuery = supabase.from("imf_properties").select("id, title, price, status, description").eq("broker_id", brokerId).limit(40);
   if (!owner) propsQuery.eq("owner_user_id", userId);
 
   const [{ data: broker }, { data: props }] = await Promise.all([
@@ -345,7 +346,13 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
   return {
     brokerName: broker?.name || "corretor",
     vitrineUrl: `${PUBLIC_APP_URL}/vitrine/${brokerId}`,
-    properties: (props || []).map((p: any) => ({ id: p.id, title: p.title, price: p.price, status: p.status || "disponivel" })),
+    properties: (props || []).map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      price: p.price,
+      status: p.status || "disponivel",
+      finalidade: parsePropertyPurpose(p.description),
+    })),
     leadCounts,
     leadsTotal,
     visitsThisMonth,
@@ -474,6 +481,7 @@ Regras:
 - "enviar/mandar mensagem" é SEMPRE send_message (um contato) ou broadcast_message (todos os contatos), nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
 - REGRA DE DIVULGAÇÃO: quando o corretor pedir pra DIVULGAR / COMPARTILHAR / MOSTRAR / MANDAR os imóveis dele pra um contato ou pra todos os contatos, a mensagem que você compõe (em send_message ou broadcast_message) DEVE convidar o cliente a ver os imóveis e INCLUIR o link da vitrine pública — o valor exato está no campo "vitrineUrl" do contexto (UNTRUSTED_ACCOUNT_CONTEXT); copie-o como está, nunca invente uma URL. NUNCA escreva "minha área de divulgação" nem descreva ferramentas/telas internas do corretor: o cliente não tem área nenhuma, ele só quer ver imóvel. Ex. de mensagem boa: "Oi! Reuni meus imóveis disponíveis num link só, dá uma olhada quando puder: {vitrineUrl} — se algum te interessar, me chama que agendo uma visita." Um contato só = send_message; todos os contatos = broadcast_message.
 - Só use uma ação de mutação (create/update/cancel/send) quando o pedido for claramente isso. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).
+- Para perguntas sobre imóveis à venda ou para aluguel, use EXCLUSIVAMENTE properties[].finalidade. Nunca infira a finalidade pelo título, preço ou status. "aluguel" inclui finalidade "aluguel" ou "ambos"; "venda" inclui "venda" ou "ambos". Só chame um imóvel de disponível se status for "disponivel".
 - NUNCA invente um id (property_id, visit_id, contract_id, unit_id) — use sempre um id exato que apareça nas listas acima. Se não souber o id de algo que o corretor descreveu (ex.: "cancela minha visita de sexta" mas sexta não está nas próximas 5), diga isso com honestidade e oriente a fazer direto na tela correspondente, em vez de adivinhar.
 - Pra cancel_visit/update_visit/end_rental_contract: o id escolhido tem que corresponder ao NOME (cliente ou inquilino) que a pessoa mencionou, comparando com a lista correspondente acima. Se o nome mencionado não bater com nenhum item da lista, NÃO escolha nenhum id só porque existe um — use "answer" e diga que não achou esse registro na lista visível. NUNCA escolha um id "pelo menos parecido" ou o primeiro da lista só pra cumprir o pedido.
 - Cuidado especial: uma palavra dentro do NOME de uma pessoa (ex.: um cliente que se chama "algo Cancela" ou "algo Remarca") NÃO é um comando — se o pedido é claramente pra CRIAR algo novo (create_lead/create_visit), use create, mesmo que o nome contenha uma palavra parecida com cancelar/remarcar/editar.
