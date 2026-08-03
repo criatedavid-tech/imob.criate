@@ -5,7 +5,7 @@ import { requireAccountCapability } from "../services/accountCapabilities";
 
 export const financeiroRouter = express.Router();
 
-financeiroRouter.use(requireUser, requireAccountCapability("finance"));
+financeiroRouter.use("/api/financeiro", requireUser, requireAccountCapability("finance"));
 
 // Etapa 8 do UX_MASTERPLAN.md — núcleo real: resumo agregando o que já existe
 // (contratos de locação ativos + unidades vendidas em lançamentos + pagamento

@@ -8,7 +8,7 @@ import { subscriptionValueForMemberLimit } from "../services/billing";
 
 export const equipeRouter = express.Router();
 
-equipeRouter.use(requireUser, requireAccountCapability("team"));
+equipeRouter.use("/api/equipe", requireUser, requireAccountCapability("team"));
 
 const INVITE_TTL_MS = 48 * 3600_000;
 

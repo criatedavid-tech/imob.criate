@@ -19,6 +19,10 @@
   no commit `5dd570d`. O GitHub Actions run `30849756989` aprovou validação e
   deploy; smoke pós-deploy confirmou `/api/health` HTTP 200 e tela de login sem
   erros no console.
+- Hotfix do rollout: os guards de capability dos routers foram limitados aos
+  respectivos prefixos `/api/locacao`, `/api/lancamentos`, `/api/financeiro` e
+  `/api/equipe`. Isso impede que uma sessão ausente/expirada intercepte `/` ou
+  `/login`; o teste de regressão exige explicitamente os quatro prefixos.
 
 ## Sentry ativado com privacidade (2026-07-27)
 

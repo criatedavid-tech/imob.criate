@@ -17,7 +17,7 @@ import {
 
 export const lancamentosRouter = express.Router();
 
-lancamentosRouter.use(requireUser, requireAccountCapability("developments"));
+lancamentosRouter.use("/api/lancamentos", requireUser, requireAccountCapability("developments"));
 
 function hasValidCpfCnpjChecksum(raw: string): boolean {
   const digits = raw.replace(/\D/g, "");

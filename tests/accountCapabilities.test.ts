@@ -36,10 +36,10 @@ test("backend protege rotas especializadas e nao confia na persona do navegador"
     readFile(new URL("../server/routes/agent.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(locacao, /requireAccountCapability\("rentals"\)/);
-  assert.match(lancamentos, /requireAccountCapability\("developments"\)/);
-  assert.match(financeiro, /requireAccountCapability\("finance"\)/);
-  assert.match(equipe, /requireAccountCapability\("team"\)/);
+  assert.match(locacao, /use\("\/api\/locacao", requireUser, requireAccountCapability\("rentals"\)\)/);
+  assert.match(lancamentos, /use\("\/api\/lancamentos", requireUser, requireAccountCapability\("developments"\)\)/);
+  assert.match(financeiro, /use\("\/api\/financeiro", requireUser, requireAccountCapability\("finance"\)\)/);
+  assert.match(equipe, /use\("\/api\/equipe", requireUser, requireAccountCapability\("team"\)\)/);
   assert.match(agentRoute, /const effectivePersona = entitlement\.isAdmin/);
   assert.match(agentRoute, /requiredCapabilityForAgentAction/);
 });
