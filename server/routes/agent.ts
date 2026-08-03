@@ -1,7 +1,10 @@
 import express from "express";
+import { z } from "zod";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
 import { runAgent, executeAction, type Autonomy, type AgentAction } from "../services/agent";
 import { supabase } from "../supabase";
+import { normalizePhoneBR } from "../lib/crypto";
 import { parseConfirmedAgentAction } from "../security/agentGuardrails";
 import {
   getDefaultAccountCapabilities,
@@ -11,6 +14,27 @@ import {
 } from "../services/accountCapabilities";
 
 export const agentRouter = express.Router();
+
+const futureDateTime = z.string().datetime({ offset: true }).refine(
+  (value) => new Date(value).getTime() > Date.now(),
+  "A data e o horario precisam estar no futuro.",
+);
+const editablePhone = z.string().trim().max(30).refine(
+  (value) => /^\d{10,13}$/.test(value.replace(/\D/g, "")),
+  "Telefone invalido.",
+);
+const reminderEditSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  client_name: z.string().trim().min(1).max(200),
+  client_phone: editablePhone.nullable().optional(),
+  scheduled_at: futureDateTime,
+}).strict();
+const scheduledFollowupEditSchema = z.object({
+  contact_name: z.string().trim().min(1).max(200),
+  contact_phone: editablePhone,
+  message: z.string().trim().min(1).max(2_000),
+  due_at: futureDateTime,
+}).strict();
 
 // Histórico do Assistente IA — antes vivia só no estado local do React
 // (CommandBar.tsx), sumia ao fechar o chat ou recarregar a página.
@@ -190,6 +214,89 @@ agentRouter.get("/api/agent/scheduled-followups", requireUser, async (req, res) 
     res.status(500).json({ error: err.message });
   }
 });
+
+// PATCH /api/agent/reminders/:id — edita somente lembretes ainda pendentes
+// criados pela IA. Visitas reais e itens concluídos permanecem imutáveis por
+// esta rota, preservando o histórico exibido ao corretor.
+agentRouter.patch(
+  "/api/agent/reminders/:id",
+  requireUser,
+  validateBody(reminderEditSchema),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+      const { title, client_name, client_phone, scheduled_at } = req.body;
+      let query = supabase
+        .from("imf_agenda")
+        .update({
+          title,
+          client_name,
+          client_phone: client_phone ? normalizePhoneBR(client_phone) : null,
+          scheduled_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", req.params.id)
+        .eq("broker_id", brokerId)
+        .eq("event_type", "lembrete")
+        .eq("status", "pendente");
+      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq("owner_user_id", userId);
+
+      const { data, error } = await query
+        .select("id, client_name, client_phone, scheduled_at, title, status")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ error: "Lembrete não encontrado ou já concluído." });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Erro PATCH /api/agent/reminders/:id:", err);
+      res.status(400).json({ error: err.message });
+    }
+  },
+);
+
+// PATCH /api/agent/scheduled-followups/:id — permite corrigir destinatário,
+// texto e horário enquanto o envio ainda está pendente. O WHERE de status é
+// a garantia de que uma mensagem já enviada nunca terá o histórico reescrito.
+agentRouter.patch(
+  "/api/agent/scheduled-followups/:id",
+  requireUser,
+  validateBody(scheduledFollowupEditSchema),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+
+      const { contact_name, contact_phone, message, due_at } = req.body;
+      let query = supabase
+        .from("imf_agent_scheduled_followups")
+        .update({
+          contact_name,
+          contact_phone: normalizePhoneBR(contact_phone),
+          message,
+          due_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", req.params.id)
+        .eq("broker_id", brokerId)
+        .eq("status", "pending");
+      if (!(await isBrokerOwner(userId, brokerId))) query = query.eq("owner_user_id", userId);
+
+      const { data, error } = await query
+        .select("id, contact_name, contact_phone, message, due_at, status, sent_at, last_error")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ error: "Follow-up não encontrado ou já processado." });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Erro PATCH /api/agent/scheduled-followups/:id:", err);
+      res.status(400).json({ error: err.message });
+    }
+  },
+);
 
 // DELETE /api/agent/scheduled-followups/:id — cancela um follow-up agendado
 // ainda pendente. Nunca cancela um que já foi enviado (status != 'pending'

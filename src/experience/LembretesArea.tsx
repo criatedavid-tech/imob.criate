@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Bell, Send, Trash2 } from 'lucide-react';
+import { Loader2, Bell, Send, Trash2, Pencil, X } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -23,6 +23,24 @@ interface ScheduledFollowup {
   last_error: string | null;
 }
 
+type EditState =
+  | {
+      kind: 'reminder';
+      id: string;
+      title: string;
+      name: string;
+      phone: string;
+      when: string;
+    }
+  | {
+      kind: 'followup';
+      id: string;
+      name: string;
+      phone: string;
+      message: string;
+      when: string;
+    };
+
 const FOLLOWUP_STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: 'Aguardando envio', cls: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/20' },
   sent: { label: 'Enviado', cls: 'bg-green-500/20 text-green-300 border-green-400/20' },
@@ -34,12 +52,20 @@ function formatWhen(iso: string) {
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function toLocalDateTimeInput(iso: string) {
+  const date = new Date(iso);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 export function LembretesArea() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [followups, setFollowups] = useState<ScheduledFollowup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -60,6 +86,90 @@ export function LembretesArea() {
   }
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!editing) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !savingEdit) setEditing(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [editing, savingEdit]);
+
+  function editReminder(reminder: Reminder) {
+    setError(null);
+    setEditing({
+      kind: 'reminder',
+      id: reminder.id,
+      title: reminder.title || 'Lembrete',
+      name: reminder.client_name || '',
+      phone: reminder.client_phone || '',
+      when: toLocalDateTimeInput(reminder.scheduled_at),
+    });
+  }
+
+  function editFollowup(followup: ScheduledFollowup) {
+    setError(null);
+    setEditing({
+      kind: 'followup',
+      id: followup.id,
+      name: followup.contact_name,
+      phone: followup.contact_phone,
+      message: followup.message,
+      when: toLocalDateTimeInput(followup.due_at),
+    });
+  }
+
+  async function saveEdit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+
+    const scheduledAt = new Date(editing.when);
+    if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+      setError('Escolha uma data e um horário no futuro.');
+      return;
+    }
+
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const isReminder = editing.kind === 'reminder';
+      const endpoint = isReminder
+        ? `/api/agent/reminders/${editing.id}`
+        : `/api/agent/scheduled-followups/${editing.id}`;
+      const body = isReminder
+        ? {
+            title: editing.title,
+            client_name: editing.name,
+            client_phone: editing.phone.trim() || null,
+            scheduled_at: scheduledAt.toISOString(),
+          }
+        : {
+            contact_name: editing.name,
+            contact_phone: editing.phone,
+            message: editing.message,
+            due_at: scheduledAt.toISOString(),
+          };
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível salvar a edição.');
+
+      if (isReminder) {
+        setReminders((prev) => prev.map((item) => (item.id === editing.id ? { ...item, ...data } : item)));
+      } else {
+        setFollowups((prev) => prev.map((item) => (item.id === editing.id ? { ...item, ...data } : item)));
+      }
+      setEditing(null);
+    } catch (err: any) {
+      setError(err.message || 'Não foi possível salvar a edição.');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function completeReminder(id: string) {
     setBusyId(id);
@@ -150,6 +260,15 @@ export function LembretesArea() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
+                      onClick={() => editReminder(r)}
+                      disabled={busyId === r.id}
+                      aria-label="Editar lembrete"
+                      title="Editar lembrete"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:bg-blue-500/15 hover:text-blue-300 transition-colors disabled:opacity-40"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       onClick={() => completeReminder(r.id)}
                       disabled={busyId === r.id}
                       className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-green-500/20 text-green-300 border border-green-400/20 hover:bg-green-500/30 transition-colors disabled:opacity-40"
@@ -213,13 +332,26 @@ export function LembretesArea() {
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${cfg.cls}`}>{cfg.label}</span>
                         {f.status === 'pending' && (
-                          <button
-                            onClick={() => cancelFollowup(f.id)}
-                            disabled={busyId === f.id}
-                            className="p-2 rounded-xl text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
-                          >
-                            {busyId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => editFollowup(f)}
+                              disabled={busyId === f.id}
+                              aria-label="Editar follow-up"
+                              title="Editar follow-up"
+                              className="p-2 rounded-xl text-[var(--text-low)] hover:bg-blue-500/15 hover:text-blue-300 transition-colors disabled:opacity-40"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => cancelFollowup(f.id)}
+                              disabled={busyId === f.id}
+                              aria-label="Cancelar follow-up"
+                              title="Cancelar follow-up"
+                              className="p-2 rounded-xl text-[var(--text-low)] hover:bg-red-500/15 hover:text-red-300 transition-colors disabled:opacity-40"
+                            >
+                              {busyId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -234,6 +366,133 @@ export function LembretesArea() {
           </div>
         )}
       </section>
+
+      {editing && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingEdit) setEditing(null);
+          }}
+        >
+          <form
+            onSubmit={saveEdit}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-scheduled-card-title"
+            className="w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto rounded-t-[28px] sm:rounded-[28px] border border-[var(--hairline)] bg-[var(--bg-elevated)] shadow-2xl p-5 sm:p-6"
+          >
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 id="edit-scheduled-card-title" className="text-lg font-black text-[var(--text-hi)]">
+                  {editing.kind === 'reminder' ? 'Editar lembrete' : 'Editar follow-up'}
+                </h3>
+                <p className="text-xs text-[var(--text-low)] mt-1">A alteração só é aceita enquanto o item estiver pendente.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                disabled={savingEdit}
+                aria-label="Fechar edição"
+                className="p-2 rounded-xl text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] disabled:opacity-40"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-400/20 text-xs text-red-300">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {editing.kind === 'reminder' && (
+                <label className="block">
+                  <span className="block text-xs font-bold text-[var(--text-mid)] mb-1.5">Lembrete</span>
+                  <input
+                    value={editing.title}
+                    onChange={(event) => setEditing({ ...editing, title: event.target.value })}
+                    maxLength={300}
+                    required
+                    className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5 text-sm text-[var(--text-hi)] outline-none focus:border-blue-400/60"
+                  />
+                </label>
+              )}
+
+              <label className="block">
+                <span className="block text-xs font-bold text-[var(--text-mid)] mb-1.5">Contato</span>
+                <input
+                  value={editing.name}
+                  onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                  maxLength={200}
+                  required
+                  className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5 text-sm text-[var(--text-hi)] outline-none focus:border-blue-400/60"
+                />
+              </label>
+
+              <label className="block">
+                <span className="block text-xs font-bold text-[var(--text-mid)] mb-1.5">
+                  Telefone {editing.kind === 'reminder' ? '(opcional)' : ''}
+                </span>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={editing.phone}
+                  onChange={(event) => setEditing({ ...editing, phone: event.target.value })}
+                  maxLength={30}
+                  required={editing.kind === 'followup'}
+                  className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5 text-sm text-[var(--text-hi)] outline-none focus:border-blue-400/60"
+                />
+              </label>
+
+              {editing.kind === 'followup' && (
+                <label className="block">
+                  <span className="block text-xs font-bold text-[var(--text-mid)] mb-1.5">Mensagem</span>
+                  <textarea
+                    value={editing.message}
+                    onChange={(event) => setEditing({ ...editing, message: event.target.value })}
+                    maxLength={2000}
+                    rows={5}
+                    required
+                    className="w-full resize-y rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5 text-sm text-[var(--text-hi)] outline-none focus:border-blue-400/60"
+                  />
+                </label>
+              )}
+
+              <label className="block">
+                <span className="block text-xs font-bold text-[var(--text-mid)] mb-1.5">Data e horário</span>
+                <input
+                  type="datetime-local"
+                  value={editing.when}
+                  min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
+                  onChange={(event) => setEditing({ ...editing, when: event.target.value })}
+                  required
+                  className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5 text-sm text-[var(--text-hi)] outline-none focus:border-blue-400/60"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                disabled={savingEdit}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-mid)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold bg-blue-500 text-white hover:bg-blue-400 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingEdit && <Loader2 className="w-4 h-4 animate-spin" />}
+                Salvar alterações
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
