@@ -5,8 +5,8 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { AREAS } from './engine';
-import type { Persona } from './types';
+import { areasForCapabilities } from './engine';
+import type { AccountCapability } from './types';
 import { authService } from '../services/auth';
 import { usePolling } from '../lib/usePolling';
 
@@ -104,15 +104,15 @@ const ICONS: Record<string, React.ReactNode> = {
 // Abaixo de md vira menu hamburger (drawer) — o rail fixo de 92px não cabe em
 // tela de celular sem espremer o conteúdo (era o que estava acontecendo).
 export function ManualRail({
-  persona, active, onSelect, mobileOpen, onMobileClose,
+  capabilities, active, onSelect, mobileOpen, onMobileClose,
 }: {
-  persona: Persona;
+  capabilities: AccountCapability[];
   active: string;
   onSelect: (key: string) => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
-  const areas = AREAS.filter((a) => a.personas.includes(persona));
+  const areas = areasForCapabilities(capabilities);
   const lembretesDue = useDueReminderCount();
   const agendaNew = useNewChatbotVisitCount(active);
   const badgeFor = (key: string) =>

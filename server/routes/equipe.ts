@@ -2,10 +2,13 @@ import express from "express";
 import { randomBytes } from "node:crypto";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, invalidateIdentityCache } from "../middleware/auth";
+import { requireAccountCapability } from "../services/accountCapabilities";
 import { MEMBER_WHATSAPP_SLOT_MAX, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
 
 export const equipeRouter = express.Router();
+
+equipeRouter.use(requireUser, requireAccountCapability("team"));
 
 const INVITE_TTL_MS = 48 * 3600_000;
 

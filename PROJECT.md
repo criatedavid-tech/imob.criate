@@ -23,6 +23,10 @@ do produto. O Asaas permanece somente para a assinatura SaaS do ImobiFlow.
   nunca deve ser alterada.
 - Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
   permissões diferentes.
+- `account_type` é o tipo principal. Desde 03/08/2026, as funções especializadas
+  Locação, Lançamentos, Financeiro e Equipe podem ser combinadas por conta por
+  meio de capabilities administradas no backend. Sem override, os perfis
+  preservam os módulos históricos. A migration de capabilities é manual.
 - Ambiente ainda em QA, sem clientes ativos/pagantes confirmados em produção.
 
 ## Repositório

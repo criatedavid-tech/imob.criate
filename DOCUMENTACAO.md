@@ -147,6 +147,22 @@ Supabase
 
 ### Regras de visibilidade
 
+Desde 03/08/2026, `account_type` continua sendo o tipo principal da conta para
+onboarding e cockpit, mas deixou de ser a única fonte das áreas especializadas.
+A migration `20260803_account_capability_overrides.sql` adiciona overrides por
+conta para `rentals`, `developments`, `finance` e `team`. Sem override, os
+padrões antigos são preservados; com override, o admin pode combinar Locação e
+Lançamentos na mesma conta. A tabela não é acessível por `anon` ou
+`authenticated`: somente o backend com `service_role` lê e altera os registros
+por meio da RPC atômica `imf_set_account_capabilities`.
+
+`GET /api/brokers/me` devolve as funcionalidades efetivas. O rail filtra pelas
+funcionalidades, e as rotas de Locação, Lançamentos, Financeiro e Equipe repetem
+a verificação no backend. O Assistente IA ignora a persona enviada pelo browser
+para clientes comuns e deriva tipo/funções do banco; ações confirmadas de
+locação e lançamentos são revalidadas antes da execução. A migration continua
+manual e deve ser aplicada antes de o admin salvar combinações.
+
 - O titular (`imf_brokers.user_id`) vê o consolidado de sua conta.
 - Em Carteira, Leads, Agenda e Conversas, membros são filtrados por
   `owner_user_id` e só podem ver ou alterar o que lhes pertence.

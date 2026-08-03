@@ -53,6 +53,19 @@
 
 ## Produto e experiência
 
+- **Tipo principal não é pacote de funcionalidades (2026-08-03).**
+  `account_type` continua definindo onboarding e cockpit inicial, preservando
+  compatibilidade. Locação, Lançamentos, Financeiro e Equipe passam a ser
+  entitlements combináveis por conta. A ausência de override mantém os três
+  comportamentos históricos; o admin pode conceder ou retirar funções sem
+  trocar o tipo principal. O plano comercial ainda não possui tiers formais:
+  nesta etapa o ajuste é administrativo, e planos futuros devem provisionar a
+  mesma camada de capabilities em vez de criar novas condicionais de persona.
+- **Autorização de função é do servidor (2026-08-03).** O rail apenas reflete o
+  acesso. Rotas especializadas e ações confirmadas da IA revalidam a capability
+  efetiva. Clientes não podem elevar acesso alterando `persona` no request; só
+  administradores mantêm o modo de visualização “ver como”.
+
 - **Etapa 1 do cadastro vira cards de plano, sem preço diferenciado ainda
   (2026-07-27).** Pedido do usuário com referência visual (pricing estilo
   Zapier). Decisões confirmadas com o usuário (AskUserQuestion): preço fica

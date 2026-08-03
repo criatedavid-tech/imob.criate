@@ -3,6 +3,7 @@
 // O renderizador (Canvas) apenas desenha — não conhece regra de negócio.
 
 export type Persona = 'corretor' | 'imobiliaria' | 'incorporadora';
+export type AccountCapability = 'rentals' | 'developments' | 'finance' | 'team';
 
 export type WidgetType =
   | 'briefing'
@@ -48,4 +49,5 @@ export interface AreaItem {
   label: string;
   // personas que enxergam esta área (progressive disclosure por mundo)
   personas: Persona[];
+  capability?: AccountCapability;
 }

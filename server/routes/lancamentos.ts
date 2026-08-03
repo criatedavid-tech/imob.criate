@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireAccountCapability } from "../services/accountCapabilities";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { reservationPaymentLimiter } from "../middleware/rateLimits";
@@ -15,6 +16,8 @@ import {
 } from "../services/unitReservationBilling";
 
 export const lancamentosRouter = express.Router();
+
+lancamentosRouter.use(requireUser, requireAccountCapability("developments"));
 
 function hasValidCpfCnpjChecksum(raw: string): boolean {
   const digits = raw.replace(/\D/g, "");

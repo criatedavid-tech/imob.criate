@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ManualRail } from './ManualRail';
 import { Canvas } from './Canvas';
 import { CommandBar } from './CommandBar';
-import { PERSONA_LABEL, AREAS } from './engine';
+import { PERSONA_LABEL, AREAS, defaultCapabilitiesForPersona } from './engine';
 import { fetchCorretorLayout, fetchIncorporadoraLayout, fetchImobiliariaLayout } from './realData';
 import { ThemeToggle } from './ThemeToggle';
-import type { Autonomy, LayoutSpec, Persona } from './types';
+import type { AccountCapability, Autonomy, LayoutSpec, Persona } from './types';
 import { authService } from '../services/auth';
 import { cn } from '../lib/utils';
 
@@ -93,6 +93,7 @@ export function ExperienceShell() {
   const navigate = useNavigate();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [persona, setPersona] = useState<Persona>('corretor');
+  const [capabilities, setCapabilities] = useState<AccountCapability[]>([]);
   // Só admin pode trocar de persona ("ver como"); usuário normal fica travado
   // no tipo da própria conta (imf_brokers.account_type).
   const [isAdmin, setIsAdmin] = useState(false);
@@ -123,6 +124,11 @@ export function ExperienceShell() {
         if (cancelled) return;
         if (me?.account_type && (PERSONAS as string[]).includes(me.account_type)) {
           setPersona(me.account_type as Persona);
+        }
+        if (Array.isArray(me?.capabilities)) {
+          setCapabilities(me.capabilities);
+        } else if (me?.account_type && (PERSONAS as string[]).includes(me.account_type)) {
+          setCapabilities(defaultCapabilitiesForPersona(me.account_type as Persona));
         }
         setIsAdmin(!!me?.is_admin);
       })
@@ -185,7 +191,11 @@ export function ExperienceShell() {
     setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
 
   // Ao trocar de persona, volta para "Hoje" (área comum a todas).
-  const changePersona = (p: Persona) => { setPersona(p); setArea('hoje'); };
+  const changePersona = (p: Persona) => {
+    setPersona(p);
+    setCapabilities(defaultCapabilitiesForPersona(p));
+    setArea('hoje');
+  };
 
   // Quem está logado — precisa ficar visível na barra pra nunca haver dúvida
   // de "em qual conta eu estou" (foi o que causou a confusão do Diego/David).
@@ -204,7 +214,7 @@ export function ExperienceShell() {
         style={{ background: 'var(--accent-2-soft)' }} />
 
       <ManualRail
-        persona={persona}
+        capabilities={capabilities}
         active={area}
         onSelect={setArea}
         mobileOpen={mobileNavOpen}

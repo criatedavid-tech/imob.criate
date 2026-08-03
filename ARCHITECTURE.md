@@ -55,6 +55,23 @@ estiver parada.
 
 ## Dados e CRM
 
+### Funções combináveis por conta
+
+`imf_brokers.account_type` permanece como tipo principal compatível com contas
+existentes. Funções especializadas são calculadas pelo backend a partir dos
+padrões do tipo mais os registros de `imf_account_capability_overrides`:
+
+- `rentals` libera Locação;
+- `developments` libera Lançamentos;
+- `finance` libera Financeiro;
+- `team` libera Equipe.
+
+O painel admin envia o conjunto final para a RPC transacional
+`imf_set_account_capabilities`. Frontend, rotas Express e Assistente IA usam o
+mesmo conjunto efetivo; esconder o item do rail nunca substitui a autorização
+do servidor. Planos comerciais futuros podem provisionar esses mesmos
+entitlements sem alterar novamente o modelo de navegação.
+
 - Supabase é compartilhado; novas tabelas do produto usam prefixo `imf_`.
 - Valores monetários persistem em centavos inteiros e datas em ISO/UTC.
 - CRM usa `imf_crm_pipelines` e `imf_crm_pipeline_stages`; pipelines são por

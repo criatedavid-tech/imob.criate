@@ -1,5 +1,23 @@
 # Estado do projeto
 
+## Funções combináveis por conta (2026-08-03)
+
+- Mantido `account_type` como tipo principal e adicionada a camada de
+  capabilities `rentals`, `developments`, `finance` e `team`.
+- A conta conserva os módulos históricos quando não possui override; o admin
+  agora pode combinar, por exemplo, Locação e Lançamentos na mesma operação.
+- Migration criada: `20260803_account_capability_overrides.sql`, com RLS,
+  acesso exclusivo da `service_role` e RPC atômica para substituir o conjunto.
+- `GET /api/brokers/me`, rail, rotas especializadas e Assistente IA usam as
+  permissões efetivas. O backend ignora a persona enviada pelo navegador para
+  usuários comuns e revalida ações de locação/lançamentos na confirmação.
+- Painel Admin ganhou seleção das funcionalidades e informa quando a migration
+  manual ainda não foi aplicada.
+- Validação local desta rodada aprovada: 60/60 testes, TypeScript, Knip,
+  build de produção e `git diff --check` sem erros.
+- Estado operacional: alteração ainda não declarada em produção; a migration
+  precisa ser executada manualmente antes de usar o botão Salvar do admin.
+
 ## Sentry ativado com privacidade (2026-07-27)
 
 - Integração publicada no commit `4ee40d6`: inicialização central no backend,

@@ -3,8 +3,13 @@ import { supabase } from "../supabase";
 import { requireUser, getBrokerId } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { generateRentCharge } from "../services/rentalBilling";
+import { requireAccountCapability } from "../services/accountCapabilities";
 
 export const locacaoRouter = express.Router();
+
+// A interface esconder o menu nao e autorizacao. Todas as rotas de locacao
+// exigem a funcao efetivamente liberada para a conta.
+locacaoRouter.use(requireUser, requireAccountCapability("rentals"));
 
 // Etapa 6 do UX_MASTERPLAN.md — núcleo real: contrato de locação (CRUD +
 // encerrar) + cobrança real de boleto/PIX via Asaas (mesmo padrão da

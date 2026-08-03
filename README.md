@@ -50,6 +50,14 @@ para titular e membros:
 - **Imobiliária:** acrescenta Locação, Financeiro e Equipe;
 - **Incorporadora:** acrescenta Lançamentos, Financeiro e Equipe.
 
+`account_type` é o tipo principal, não um bloqueio definitivo. O backend também
+resolve as capabilities `rentals`, `developments`, `finance` e `team`, que podem
+ser combinadas por conta no painel Admin. Sem override, os três perfis mantêm
+exatamente os módulos listados acima. A migration
+`20260803_account_capability_overrides.sql` precisa ser aplicada manualmente
+antes de salvar combinações; esconder o menu não substitui a autorização das
+rotas no servidor.
+
 No cadastro, essas personas aparecem como três cards de plano. Hoje os três
 usam o mesmo preço mensal retornado por `GET /api/config/plan`; o seletor anual
 é apenas informativo e não muda a cobrança. Imobiliária e incorporadora exibem

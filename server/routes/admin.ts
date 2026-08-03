@@ -10,6 +10,11 @@ import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases }
 import { purgeResolvedQueueRows } from "../services/maintenance";
 import { runWebhookKeeperTick } from "../services/webhookKeeper";
 import { runWebhookInboxTick, runWebhookOutboxTick } from "../services/inboundWebhookQueue";
+import {
+  ACCOUNT_CAPABILITIES,
+  resolveAccountCapabilities,
+  type AccountCapability,
+} from "../services/accountCapabilities";
 
 export const adminRouter = express.Router();
 
@@ -30,7 +35,7 @@ adminRouter.get("/api/admin/brokers", async (req, res) => {
     }
     const { data, error, count } = await supabase
       .from('imf_brokers')
-      .select('id, name, email, phone, status, plan, valid_until, created_at, is_admin, asaas_customer_id, uazapi_instance_id', { count: 'exact' })
+      .select('id, name, email, phone, status, plan, account_type, valid_until, created_at, is_admin, asaas_customer_id, uazapi_instance_id', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     if (error) throw error;
@@ -125,13 +130,49 @@ adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
       supabase.from('subscriptions').select('*').eq('broker_id', req.params.id).order('created_at', { ascending: false })
     ]);
     if (brokerRes.error) throw brokerRes.error;
+    const capabilities = await resolveAccountCapabilities(req.params.id);
     res.json({
       broker: brokerRes.data,
       properties: propsRes.data || [],
-      subscriptions: subsRes.data || []
+      subscriptions: subsRes.data || [],
+      capabilities,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Define o conjunto final de funcoes da conta. A RPC grava apenas overrides
+// sobre os padroes do account_type e faz a substituicao inteira em transacao.
+adminRouter.patch("/api/admin/brokers/:id/capabilities", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const requested = req.body?.capabilities;
+    if (!Array.isArray(requested)) {
+      return res.status(400).json({ error: "capabilities precisa ser uma lista." });
+    }
+
+    const unique = Array.from(new Set(requested));
+    if (unique.some((value) => typeof value !== "string" || !ACCOUNT_CAPABILITIES.includes(value as AccountCapability))) {
+      return res.status(400).json({ error: "A lista contem uma funcionalidade invalida." });
+    }
+
+    const before = await resolveAccountCapabilities(req.params.id);
+    if (!before.migrationReady) {
+      return res.status(503).json({ error: "A migration de funcionalidades ainda nao foi aplicada no banco." });
+    }
+
+    const { error } = await supabase.rpc("imf_set_account_capabilities", {
+      p_broker_id: req.params.id,
+      p_enabled_capabilities: unique,
+      p_updated_by: (req as any).userId || null,
+    });
+    if (error) throw error;
+
+    res.json(await resolveAccountCapabilities(req.params.id));
+  } catch (err: any) {
+    console.error("Erro PATCH /api/admin/brokers/:id/capabilities:", err?.message);
+    res.status(500).json({ error: "Nao foi possivel atualizar as funcionalidades da conta." });
   }
 });
 

@@ -27,6 +27,20 @@
   (`google/gemini-2.5-flash`) porque não há secret `N8N_AGENT_MODEL`.
 - Deploy: automático em todo push para `v2`; migrations permanecem manuais.
 
+## Prioridade 0 — concluir o rollout de funções combináveis
+
+1. Revisar e executar manualmente no Supabase a migration
+   `20260803_account_capability_overrides.sql`.
+2. Antes do deploy, confirmar que uma conta de cada tipo mantém exatamente as
+   áreas antigas sem nenhum override.
+3. No Admin, liberar `developments` para uma imobiliária de teste e validar que
+   Locação e Lançamentos aparecem juntos depois do reload.
+4. Testar que retirar uma capability esconde a área e faz a API correspondente
+   retornar 403, sem apagar nenhum dado existente.
+5. Repetir os testes pelo Assistente IA: uma conta sem capability não pode
+   navegar nem confirmar ações especializadas; uma conta liberada pode.
+6. Somente após esse QA, vincular capabilities aos tiers comerciais futuros.
+
 ## Prioridade 1 — confirmar o banco da escala
 
 O arquivo `supabase/migrations/20260724_scale_hot_path_indexes.sql` está no

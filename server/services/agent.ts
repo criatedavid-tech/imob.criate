@@ -9,6 +9,7 @@ import { recordConversationMessage } from "./conversationTickets";
 import { resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
 import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
+import type { AccountCapability } from "./accountCapabilities";
 import {
   AGENT_CONTEXT_SECURITY_RULES,
   buildUntrustedContextMessage,
@@ -176,11 +177,19 @@ export interface AgentResult {
 }
 
 // Áreas navegáveis por persona (espelha engine.ts no front — mantém as duas em sincronia).
-const AREAS_BY_PERSONA: Record<string, string[]> = {
-  corretor:      ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "divulgacao", "relatorios", "config"],
-  imobiliaria:   ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "locacao", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
-  incorporadora: ["hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda", "contatos", "lembretes", "lancamentos", "financeiro", "equipe", "divulgacao", "relatorios", "config"],
-};
+const CORE_AGENT_AREAS = [
+  "hoje", "conversas", "assistente-ia", "carteira", "negocios", "agenda",
+  "contatos", "lembretes", "divulgacao", "relatorios", "config",
+];
+
+function agentAreas(capabilities: readonly AccountCapability[]): string[] {
+  const areas = [...CORE_AGENT_AREAS];
+  if (capabilities.includes("rentals")) areas.splice(8, 0, "locacao");
+  if (capabilities.includes("developments")) areas.splice(8, 0, "lancamentos");
+  if (capabilities.includes("finance")) areas.splice(areas.length - 3, 0, "financeiro");
+  if (capabilities.includes("team")) areas.splice(areas.length - 3, 0, "equipe");
+  return areas;
+}
 
 interface Snapshot {
   brokerName: string;
@@ -202,7 +211,7 @@ interface Snapshot {
   recentConversations: { phone: string; name: string | null; lastMessage: string | null; hasUpcomingVisit: boolean }[];
 }
 
-async function buildSnapshot(brokerId: string, userId: string, persona: string): Promise<Snapshot> {
+async function buildSnapshot(brokerId: string, userId: string, capabilities: readonly AccountCapability[]): Promise<Snapshot> {
   // Isolamento por membro: dono da conta vê tudo; membro só o que é dele.
   const owner = await isBrokerOwner(userId, brokerId);
 
@@ -250,7 +259,7 @@ async function buildSnapshot(brokerId: string, userId: string, persona: string):
   // Unidades de lançamento — só relevante pra persona incorporadora, evita
   // consulta desnecessária pras outras.
   let unitsData: any[] = [];
-  if (persona === "incorporadora") {
+  if (capabilities.includes("developments")) {
     const { data: devs } = await supabase.from("imf_developments").select("id, name").eq("broker_id", brokerId);
     const devIds = (devs || []).map((d: any) => d.id);
     const devNameById = new Map((devs || []).map((d: any) => [d.id, d.name]));
@@ -418,13 +427,13 @@ async function queryAgendaRange(brokerId: string, userId: string, dateFrom?: str
   return `Em ${periodo}, ${data.length} visita(s):\n${linhas.join("\n")}`;
 }
 
-function buildSystemPrompt(persona: string): string {
-  const areas = AREAS_BY_PERSONA[persona] || AREAS_BY_PERSONA.corretor;
+function buildSystemPrompt(persona: string, capabilities: readonly AccountCapability[]): string {
+  const areas = agentAreas(capabilities);
   const hoje = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   const isoHoje = new Date().toISOString().split("T")[0];
 
-  const isImobiliaria = persona === "imobiliaria";
-  const isIncorporadora = persona === "incorporadora";
+  const isImobiliaria = capabilities.includes("rentals");
+  const isIncorporadora = capabilities.includes("developments");
 
   let actionNum = 6;
   const extraActions: string[] = [];
@@ -973,6 +982,7 @@ export async function runAgent(opts: {
   userId: string;
   message: string;
   persona: string;
+  capabilities: AccountCapability[];
   autonomy: Autonomy;
   history?: AgentTurn[];
   imageUrls?: string[]; // fotos anexadas na conversa (já enviadas ao Storage)
@@ -989,8 +999,8 @@ export async function runAgent(opts: {
     return { reply: "A assistente de IA não está configurada no servidor (falta a chave da IA)." };
   }
 
-  const snap = await buildSnapshot(opts.brokerId, opts.userId, opts.persona);
-  const systemPrompt = buildSystemPrompt(opts.persona);
+  const snap = await buildSnapshot(opts.brokerId, opts.userId, opts.capabilities);
+  const systemPrompt = buildSystemPrompt(opts.persona, opts.capabilities);
   const contextMessage = buildUntrustedContextMessage({
     context_version: 1,
     persona: opts.persona,
@@ -1023,7 +1033,7 @@ export async function runAgent(opts: {
   // answer, navigate e query_agenda nunca são mutação — seguem direto, autonomia não se aplica.
   if (action.type === "answer") return { reply };
   if (action.type === "navigate") {
-    const areas = AREAS_BY_PERSONA[opts.persona] || AREAS_BY_PERSONA.corretor;
+    const areas = agentAreas(opts.capabilities);
     const area = areas.includes(action.area || "") ? action.area : undefined;
     return { reply, navigate: area };
   }

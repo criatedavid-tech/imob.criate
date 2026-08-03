@@ -38,7 +38,27 @@ interface BrokerDetail {
   broker: any;
   properties: any[];
   subscriptions: any[];
+  capabilities: AccountCapabilitySnapshot;
 }
+
+type AccountCapability = 'rentals' | 'developments' | 'finance' | 'team';
+
+interface AccountCapabilitySnapshot {
+  accountType: 'corretor' | 'imobiliaria' | 'incorporadora';
+  plan: string | null;
+  isAdmin: boolean;
+  enabled: AccountCapability[];
+  defaults: AccountCapability[];
+  overrides: Partial<Record<AccountCapability, boolean>>;
+  migrationReady: boolean;
+}
+
+const CAPABILITY_OPTIONS: { key: AccountCapability; label: string; description: string }[] = [
+  { key: 'rentals', label: 'Locação', description: 'Contratos e operação de aluguéis' },
+  { key: 'developments', label: 'Lançamentos', description: 'Empreendimentos, unidades e reservas' },
+  { key: 'finance', label: 'Financeiro', description: 'Indicadores financeiros da operação' },
+  { key: 'team', label: 'Equipe', description: 'Membros, metas e distribuição de trabalho' },
+];
 
 interface TicketUsage {
   broker_name: string;
@@ -88,6 +108,8 @@ export default function Admin() {
   const [applyingAdj, setApplyingAdj] = useState(false);
   const [memberLimitInput, setMemberLimitInput] = useState('');
   const [savingMemberLimit, setSavingMemberLimit] = useState(false);
+  const [capabilitySelection, setCapabilitySelection] = useState<AccountCapability[]>([]);
+  const [savingCapabilities, setSavingCapabilities] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
   const [view, setView] = useState<'contas' | 'saude'>('contas');
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
@@ -194,6 +216,7 @@ export default function Admin() {
       const detailData = await dRes.json();
       if (requestId !== detailRequestIdRef.current) return;
       setDetail(detailData);
+      setCapabilitySelection(Array.isArray(detailData?.capabilities?.enabled) ? detailData.capabilities.enabled : []);
       setMemberLimitInput(String(detailData?.broker?.member_limit ?? 0));
       if (uRes.ok) setTicketUsage(await uRes.json());
     } catch (err: any) {
@@ -201,6 +224,35 @@ export default function Admin() {
       setActionMsg({ type: 'error', text: err?.message || 'Erro ao carregar os detalhes do corretor.' });
     } finally {
       if (requestId === detailRequestIdRef.current) setLoadingDetail(false);
+    }
+  }
+
+  async function saveCapabilities(id: string) {
+    const current = [...(detail?.capabilities?.enabled || [])].sort().join(',');
+    const desired = [...capabilitySelection].sort().join(',');
+    if (current === desired) {
+      setActionMsg({ type: 'success', text: 'As funcionalidades já estão com essa configuração.' });
+      return;
+    }
+    if (!confirm('Atualizar as funcionalidades liberadas para esta conta?')) return;
+
+    setSavingCapabilities(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}/capabilities`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capabilities: capabilitySelection }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Erro ao salvar funcionalidades.');
+      setDetail((value) => value ? { ...value, capabilities: data } : value);
+      setCapabilitySelection(data.enabled || []);
+      setActionMsg({ type: 'success', text: 'Funcionalidades atualizadas. A conta verá a mudança ao recarregar o app.' });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err?.message || 'Erro ao salvar funcionalidades.' });
+    } finally {
+      setSavingCapabilities(false);
     }
   }
 
@@ -594,6 +646,62 @@ export default function Admin() {
                   </div>
 
                   {/* Atendimentos — ajuste manual */}
+                  <div className={`${glassCard} p-4 space-y-3`}>
+                    <div>
+                      <h4 className="text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest">
+                        Funcionalidades da conta
+                      </h4>
+                      <p className="text-[11px] text-[var(--text-low)] mt-1">
+                        Tipo principal: <span className="text-[var(--text-mid)] font-semibold">{detail.capabilities.accountType}</span>.
+                        As opções podem ser combinadas conforme o plano.
+                      </p>
+                    </div>
+
+                    {!detail.capabilities.migrationReady && (
+                      <div className="p-2.5 rounded-xl border border-amber-400/30 bg-amber-500/15 text-amber-200 text-[11px]">
+                        A migration de funcionalidades ainda precisa ser aplicada no banco antes de salvar.
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {CAPABILITY_OPTIONS.map((option) => {
+                        const checked = capabilitySelection.includes(option.key);
+                        const inherited = detail.capabilities.defaults.includes(option.key);
+                        return (
+                          <label key={option.key} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setCapabilitySelection((current) =>
+                                current.includes(option.key)
+                                  ? current.filter((item) => item !== option.key)
+                                  : [...current, option.key]
+                              )}
+                              className="w-4 h-4 accent-violet-500"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="text-[13px] font-semibold text-[var(--text-hi)] block">{option.label}</span>
+                              <span className="text-[10px] text-[var(--text-low)] block">{option.description}</span>
+                            </span>
+                            {inherited && (
+                              <span className="text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-violet-500/15 text-violet-200 border border-violet-400/20">
+                                padrão
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => saveCapabilities(detail.broker.id)}
+                      disabled={savingCapabilities || !detail.capabilities.migrationReady}
+                      className="w-full py-2.5 text-sm font-semibold rounded-xl bg-violet-500/20 border border-violet-400/30 text-violet-200 hover:bg-violet-500/30 transition-colors disabled:opacity-40"
+                    >
+                      {savingCapabilities ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar funcionalidades'}
+                    </button>
+                  </div>
+
                   {ticketUsage && (() => {
                     const { tickets_used, tickets_included, tickets_included_base, tickets_bonus, tickets_charge_adj, overage_price_per_ticket, adjustments, period_start, period_end } = ticketUsage;
                     const pct = Math.min(100, Math.round((tickets_used / tickets_included) * 100));

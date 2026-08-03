@@ -9,6 +9,7 @@ import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance, s
 import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
 import { requireInternalToken } from "../middleware/internalAuth";
 import { n8nInternalLimiter } from "../middleware/rateLimits";
+import { resolveAccountCapabilities } from "../services/accountCapabilities";
 
 export const brokersRouter = express.Router();
 
@@ -30,7 +31,12 @@ brokersRouter.get("/api/brokers/me", requireUser, async (req, res) => {
       'created_at, updated_at'
     ).eq('id', brokerId).single();
     if (error) throw error;
-    res.json(data);
+    const capabilitySnapshot = await resolveAccountCapabilities(brokerId);
+    res.json({
+      ...(data as unknown as Record<string, unknown>),
+      capabilities: capabilitySnapshot.enabled,
+      capabilities_migration_ready: capabilitySnapshot.migrationReady,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

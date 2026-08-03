@@ -3,6 +3,12 @@ import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { runAgent, executeAction, type Autonomy, type AgentAction } from "../services/agent";
 import { supabase } from "../supabase";
 import { parseConfirmedAgentAction } from "../security/agentGuardrails";
+import {
+  getDefaultAccountCapabilities,
+  requiredCapabilityForAgentAction,
+  resolveAccountCapabilities,
+  type AccountType,
+} from "../services/accountCapabilities";
 
 export const agentRouter = express.Router();
 
@@ -88,11 +94,23 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
       ? imageUrls.filter((u: any) => typeof u === "string" && u.startsWith("http")).slice(0, 15)
       : undefined;
 
+    const entitlement = await resolveAccountCapabilities(brokerId);
+    const requestedPersona = ["corretor", "imobiliaria", "incorporadora"].includes(persona)
+      ? persona as AccountType
+      : entitlement.accountType;
+    // O navegador nao decide as permissoes. Apenas a conta administrativa pode
+    // usar "ver como"; clientes sempre usam tipo e funcoes resolvidos no banco.
+    const effectivePersona = entitlement.isAdmin ? requestedPersona : entitlement.accountType;
+    const effectiveCapabilities = entitlement.isAdmin
+      ? getDefaultAccountCapabilities(effectivePersona)
+      : entitlement.enabled;
+
     const result = await runAgent({
       brokerId,
       userId,
       message: String(message).slice(0, 1000),
-      persona: typeof persona === "string" ? persona : "corretor",
+      persona: effectivePersona,
+      capabilities: effectiveCapabilities,
       // Falha segura: valor ausente/inválido nunca habilita execução automática.
       autonomy: (["piloto", "copiloto", "manual"].includes(autonomy) ? autonomy : "copiloto") as Autonomy,
       history: cleanHistory,
@@ -118,6 +136,11 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
 
     const action = parseConfirmedAgentAction(req.body?.action) as AgentAction;
+    const entitlement = await resolveAccountCapabilities(brokerId);
+    const requiredCapability = requiredCapabilityForAgentAction(action.type);
+    if (requiredCapability && !entitlement.enabled.includes(requiredCapability)) {
+      return res.status(403).json({ error: "Esta funcionalidade nao esta liberada para sua conta." });
+    }
     // Whitelist de tudo que passa por executeAction (mutações reais) — ficou
     // desatualizada quando as ações 4-12 foram adicionadas (só create_lead/
     // create_visit/send_message estavam aqui), então confirmar qualquer uma
