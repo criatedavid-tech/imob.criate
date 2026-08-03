@@ -15,8 +15,10 @@
   manual ainda não foi aplicada.
 - Validação local desta rodada aprovada: 60/60 testes, TypeScript, Knip,
   build de produção e `git diff --check` sem erros.
-- Estado operacional: alteração ainda não declarada em produção; a migration
-  precisa ser executada manualmente antes de usar o botão Salvar do admin.
+- Migration aplicada manualmente no Supabase em 03/08/2026 e código publicado
+  no commit `5dd570d`. O GitHub Actions run `30849756989` aprovou validação e
+  deploy; smoke pós-deploy confirmou `/api/health` HTTP 200 e tela de login sem
+  erros no console.
 
 ## Sentry ativado com privacidade (2026-07-27)
 

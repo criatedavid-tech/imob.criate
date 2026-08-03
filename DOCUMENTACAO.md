@@ -160,8 +160,9 @@ por meio da RPC atômica `imf_set_account_capabilities`.
 funcionalidades, e as rotas de Locação, Lançamentos, Financeiro e Equipe repetem
 a verificação no backend. O Assistente IA ignora a persona enviada pelo browser
 para clientes comuns e deriva tipo/funções do banco; ações confirmadas de
-locação e lançamentos são revalidadas antes da execução. A migration continua
-manual e deve ser aplicada antes de o admin salvar combinações.
+locação e lançamentos são revalidadas antes da execução. A migration foi
+aplicada em produção em 03/08/2026; em novos ambientes, continua sendo uma
+etapa manual obrigatória antes de o admin salvar combinações.
 
 - O titular (`imf_brokers.user_id`) vê o consolidado de sua conta.
 - Em Carteira, Leads, Agenda e Conversas, membros são filtrados por

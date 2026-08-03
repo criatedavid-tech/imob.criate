@@ -1,9 +1,8 @@
 # Próximas tarefas — ImobiFlow V2
 
-> Atualizado em 27/07/2026. Este arquivo substitui as listas antigas de
-> alterações funcionais pendentes: o baseline funcional `4ee40d6` está
-> versionado na branch `v2` e foi validado na release Fly `v185`. O pacote
-> documental posterior não muda o código do produto.
+> Atualizado em 03/08/2026. O baseline funcional `5dd570d` está versionado na
+> branch `v2`; o GitHub Actions run `30849756989` aprovou validação e deploy.
+> A migration de funções combináveis foi aplicada manualmente no Supabase.
 >
 > A nova Etapa 1 do cadastro com cards de plano foi confirmada em produção:
 > desktop em três colunas, mobile empilhado sem overflow e preço vindo de
@@ -15,9 +14,9 @@
 - Checkout canônico:
   `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
 - Branch: `v2`; não trabalhar em `main` nem no checkout antigo.
-- Baseline funcional da produção: release `v185`, commit `4ee40d6`, em
-  `https://imobiflow-v2.fly.dev`; consultar Fly/GitHub para o número da release
-  documental mais recente.
+- Baseline funcional da produção: commit `5dd570d`, em
+  `https://imobiflow-v2.fly.dev`; deploy validado no GitHub Actions run
+  `30849756989` e smoke de saúde HTTP 200.
 - Fly: 3 `web` ativas e saudáveis, 1 `scheduler` ativo, 1 `worker` ativo e 1
   `worker` standby.
 - Redis: ativo e respondendo; rate limit distribuído com fail-open.
@@ -27,19 +26,19 @@
   (`google/gemini-2.5-flash`) porque não há secret `N8N_AGENT_MODEL`.
 - Deploy: automático em todo push para `v2`; migrations permanecem manuais.
 
-## Prioridade 0 — concluir o rollout de funções combináveis
+## Prioridade 0 — QA das funções combináveis publicadas
 
-1. Revisar e executar manualmente no Supabase a migration
-   `20260803_account_capability_overrides.sql`.
-2. Antes do deploy, confirmar que uma conta de cada tipo mantém exatamente as
+Migration e deploy foram concluídos em 03/08/2026. Falta o QA autenticado:
+
+1. Confirmar que uma conta de cada tipo mantém exatamente as
    áreas antigas sem nenhum override.
-3. No Admin, liberar `developments` para uma imobiliária de teste e validar que
+2. No Admin, liberar `developments` para uma imobiliária de teste e validar que
    Locação e Lançamentos aparecem juntos depois do reload.
-4. Testar que retirar uma capability esconde a área e faz a API correspondente
+3. Testar que retirar uma capability esconde a área e faz a API correspondente
    retornar 403, sem apagar nenhum dado existente.
-5. Repetir os testes pelo Assistente IA: uma conta sem capability não pode
+4. Repetir os testes pelo Assistente IA: uma conta sem capability não pode
    navegar nem confirmar ações especializadas; uma conta liberada pode.
-6. Somente após esse QA, vincular capabilities aos tiers comerciais futuros.
+5. Somente após esse QA, vincular capabilities aos tiers comerciais futuros.
 
 ## Prioridade 1 — confirmar o banco da escala
 
