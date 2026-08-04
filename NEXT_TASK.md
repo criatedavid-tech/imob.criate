@@ -2,9 +2,11 @@
 
 ## Rollout da cota de WhatsApp nos vouchers
 
-1. Aplicar manualmente no Supabase a migration
-   `supabase/migrations/20260804b_trial_voucher_whatsapp.sql`.
-2. Depois do SQL confirmado, versionar e publicar o código na branch `v2`.
+1. ~~Aplicar manualmente no Supabase a migration
+   `supabase/migrations/20260804b_trial_voucher_whatsapp.sql`.~~ Concluído em
+   04/08/2026.
+2. ~~Depois do SQL confirmado, versionar e publicar o código na branch `v2`.~~
+   Concluído no commit `d0a5ac2`; GitHub Actions run `30913606899` aprovado.
 3. Criar um voucher descartável de imobiliária/incorporadora com, por exemplo,
    três corretores e apenas um WhatsApp próprio.
 4. Confirmar que um convite `own` reserva a vaga, que o segundo é bloqueado e

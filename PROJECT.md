@@ -45,8 +45,8 @@ imóvel sem apagar registros anteriores.
   `20260804_trial_vouchers.sql` foi aplicada manualmente no Supabase antes do
   deploy do commit `39d92ba`.
 - A extensão que separa a cota total de corretores da cota de WhatsApps próprios
-  está validada localmente e aguarda a aplicação manual de
-  `20260804b_trial_voucher_whatsapp.sql`; ainda não está publicada.
+  foi aplicada no Supabase e publicada em 04/08/2026 no commit `d0a5ac2`. A
+  migration correspondente é `20260804b_trial_voucher_whatsapp.sql`.
 
 ## Repositório
 

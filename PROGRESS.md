@@ -1,6 +1,6 @@
 # Estado do projeto
 
-## Cota de WhatsApp próprio nos vouchers (2026-08-04, aguardando rollout)
+## Cota de WhatsApp próprio nos vouchers (2026-08-04, publicada)
 
 - O Admin passa a definir separadamente quantos corretores adicionais podem ser
   convidados e quantos deles poderão conectar WhatsApp próprio. O titular não
@@ -13,9 +13,10 @@
   Ao migrar para plano pago, o checkout exige no mínimo os slots já em uso.
 - Validação local concluída: 85/85 testes, TypeScript, Knip, build de produção e
   `git diff --check` aprovados.
-- Pendente: aplicar a nova migration manualmente no Supabase; somente depois
-  versionar, publicar e executar smoke autenticado. Nenhuma alteração desta
-  seção está em produção ainda.
+- A migration foi aplicada manualmente no Supabase e o código foi publicado no
+  commit `d0a5ac2`. O GitHub Actions run `30913606899` aprovou os testes e o
+  deploy. Smoke público pós-deploy confirmou `/api/health` HTTP 200 e voucher
+  inexistente HTTP 404. Resta o smoke autenticado com vouchers descartáveis.
 
 ## Vouchers administrativos de experimentação (2026-08-04)
 

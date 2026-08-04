@@ -5,7 +5,7 @@
 - Nova aba `Vouchers` no Painel Admin, separada das contas e da saúde do
   sistema.
 - O formulário deixa explícitos modalidade, validade do convite, dias de teste
-  e número de corretores além do titular. A evolução pendente de rollout inclui
+  e número de corretores além do titular. Desde o rollout de 04/08/2026, há
   um segundo campo para definir quantos desses convidados terão WhatsApp
   próprio; ambos ficam desabilitados para corretor autônomo.
 - O link e o código completos aparecem somente logo após a criação, com ação

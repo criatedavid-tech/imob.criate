@@ -143,9 +143,9 @@ corretores podem ser convidados além do titular. O link aponta para
 `/experimentacao/:voucherCode`; o cadastro fixa a modalidade concedida e não
 passa pelo checkout.
 
-A extensão `20260804b_trial_voucher_whatsapp.sql`, validada localmente e ainda
-pendente de aplicação/publicação, separa duas cotas: `member_limit` no voucher é
-o total de corretores adicionais; `whatsapp_member_limit` é quantos desses
+A extensão `20260804b_trial_voucher_whatsapp.sql`, aplicada no Supabase e
+publicada no commit `d0a5ac2` em 04/08/2026, separa duas cotas: `member_limit`
+no voucher é o total de corretores adicionais; `whatsapp_member_limit` é quantos desses
 convidados poderão ter instância própria. O titular mantém a instância principal
 e não consome essa segunda cota. Para corretor autônomo, ambas permanecem zero.
 

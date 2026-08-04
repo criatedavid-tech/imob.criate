@@ -64,9 +64,9 @@ usam o mesmo preço mensal retornado por `GET /api/config/plan`; o seletor anual
 o add-on já existente de WhatsApp próprio por membro.
 
 Vouchers de experimentação usam cotas separadas para total de corretores
-convidados e convidados com WhatsApp próprio. A extensão correspondente está
-validada no código, mas depende da aplicação manual de
-`supabase/migrations/20260804b_trial_voucher_whatsapp.sql` antes da publicação.
+convidados e convidados com WhatsApp próprio. A migration
+`supabase/migrations/20260804b_trial_voucher_whatsapp.sql` foi aplicada e o
+código correspondente foi publicado em 04/08/2026 no commit `d0a5ac2`.
 
 O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
 pagamentos de clientes permanece desligada por
