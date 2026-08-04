@@ -49,11 +49,16 @@ async function openPaymentsFor(contractId: string) {
 // Contexto completo para o agente iniciar a conversa já sabendo de tudo.
 // Devolve texto pronto além dos números: reduz a chance de o modelo montar
 // uma frase errada com dado certo.
+// IMPORTANTE: esta rota fica no CAMINHO CRÍTICO do fluxo de atendimento — ela
+// é consultada em toda mensagem recebida para decidir se quem escreveu é
+// inquilino. Por isso ela NUNCA responde erro: qualquer falha vira
+// `is_tenant:false`, e a conversa segue no agente de vendas. Um 400/500 aqui
+// derrubaria a execução inteira no n8n e deixaria o cliente sem resposta.
 rentalAgentRouter.get("/api/locacao/n8n/context", requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
     const brokerId = String(req.query.broker_id || "");
     const phone = String(req.query.phone || "");
-    if (!brokerId || !phone) return res.status(400).json({ error: "broker_id e phone são obrigatórios." });
+    if (!brokerId || !phone) return res.json({ is_tenant: false, motivo: "parametros ausentes" });
 
     const contract = await findActiveContractByPhone(brokerId, phone);
     if (!contract) return res.json({ is_tenant: false });
@@ -100,8 +105,9 @@ rentalAgentRouter.get("/api/locacao/n8n/context", requireInternalToken, n8nInter
       },
     });
   } catch (err: any) {
-    console.error("Erro GET /api/locacao/n8n/context:", err);
-    res.status(500).json({ error: "Falha ao carregar o contexto da locação." });
+    // Degrada para "não é inquilino" em vez de derrubar o atendimento inteiro.
+    console.error("Erro GET /api/locacao/n8n/context (degradando para venda):", err?.message);
+    res.json({ is_tenant: false, motivo: "falha ao consultar" });
   }
 });
 
