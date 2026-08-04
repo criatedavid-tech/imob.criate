@@ -47,6 +47,10 @@ imóvel sem apagar registros anteriores.
 - A extensão que separa a cota total de corretores da cota de WhatsApps próprios
   foi aplicada no Supabase e publicada em 04/08/2026 no commit `d0a5ac2`. A
   migration correspondente é `20260804b_trial_voucher_whatsapp.sql`.
+- A confirmação inline de uma vaga adicional de WhatsApp em planos pagos foi
+  publicada em 04/08/2026 após a aplicação manual de
+  `20260804c_team_invite_slot_upgrade.sql`. Vouchers não compram vagas: mantêm a
+  concessão definida pelo administrador.
 
 ## Repositório
 

@@ -1,5 +1,19 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Rollout da confirmação de WhatsApp adicional no convite
+
+1. ~~Aplicar manualmente no Supabase a migration
+   `supabase/migrations/20260804c_team_invite_slot_upgrade.sql`.~~ Concluído em
+   04/08/2026.
+2. ~~Somente depois do SQL confirmado, versionar e publicar o código na `v2`.~~
+   Concluído na entrega de 04/08/2026.
+3. Em conta paga descartável com cota esgotada, selecionar WhatsApp próprio e
+   conferir preço unitário, novo total e texto de vigência antes de confirmar.
+4. Confirmar a contratação e validar que a vaga e o convite surgem juntos.
+5. Cancelar/repetir sem confirmação e validar que `member_limit` não muda.
+6. Em voucher sem cota própria, confirmar que não há oferta paga e que o convite
+   compartilhado continua disponível.
+
 ## Rollout da cota de WhatsApp nos vouchers
 
 1. ~~Aplicar manualmente no Supabase a migration

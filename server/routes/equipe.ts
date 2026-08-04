@@ -1,9 +1,10 @@
 import express from "express";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { z } from "zod";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, invalidateIdentityCache } from "../middleware/auth";
 import { requireAccountCapability } from "../services/accountCapabilities";
-import { MEMBER_WHATSAPP_SLOT_MAX, PUBLIC_APP_URL } from "../config";
+import { MEMBER_WHATSAPP_SLOT_MAX, MEMBER_WHATSAPP_SLOT_PRICE, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
 
 export const equipeRouter = express.Router();
@@ -244,53 +245,96 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
     if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode convidar membros." });
 
     // Dono escolhe, PARA ESSE convite específico, se o corretor vai ter
-    // WhatsApp próprio ou compartilhar o da conta — "própria" só até o
-    // limite contratado (member_limit, self-service em Config → Equipe
-    // desde 17/07, ou ainda ajustável manualmente pelo admin). Provisionamento
-    // de verdade só acontece no aceite (POST /api/auth/join), com o valor
-    // gravado aqui.
+    // WhatsApp próprio ou compartilhar o da conta. Quando a cota paga acabou,
+    // o primeiro request devolve a oferta; só um segundo request com confirmação
+    // explícita aumenta a assinatura e cria o convite atomicamente no banco.
     const whatsappMode = req.body?.whatsapp_mode === "own" ? "own" : "shared";
+    const confirmAddWhatsappSlot = req.body?.confirm_add_whatsapp_slot === true;
+    const requestIdInput = req.body?.request_id;
+    const parsedRequestId = requestIdInput === undefined
+      ? { success: true as const, data: randomUUID() }
+      : z.string().uuid().safeParse(requestIdInput);
+    if (!parsedRequestId.success) {
+      return res.status(400).json({ error: "Identificador da solicitação inválido." });
+    }
+    const requestId = parsedRequestId.data;
+    let brokerRow: {
+      user_id: string;
+      plan: string | null;
+      member_limit: number | null;
+      trial_whatsapp_member_limit: number | null;
+    } | null = null;
 
     if (whatsappMode === "own") {
-      const { data: brokerRow } = await supabase
+      const { data } = await supabase
         .from("imf_brokers")
         .select("user_id, plan, member_limit, trial_whatsapp_member_limit")
         .eq("id", brokerId)
         .maybeSingle();
+      brokerRow = data;
       if (!brokerRow) return res.status(404).json({ error: "Broker not found" });
-      const limit = effectiveWhatsappMemberLimit(brokerRow);
-      if (limit <= 0) {
-        return res.status(400).json({
-          error: brokerRow.plan === "experimentacao"
-            ? "Este voucher não libera WhatsApp próprio para corretores convidados."
-            : "Seu plano não inclui WhatsApp próprio para membros da equipe.",
-        });
-      }
-      const now = new Date().toISOString();
-      const [{ count: inUse, error: inUseError }, { count: pending, error: pendingError }] = await Promise.all([
-        supabase.from("imf_broker_members").select("id", { count: "exact", head: true })
-          .eq("broker_id", brokerId).neq("user_id", brokerRow.user_id).eq("whatsapp_mode", "own"),
-        supabase.from("imf_broker_invites").select("id", { count: "exact", head: true })
-          .eq("broker_id", brokerId).eq("whatsapp_mode", "own").is("used_at", null).gt("expires_at", now),
-      ]);
-      if (inUseError) throw inUseError;
-      if (pendingError) throw pendingError;
-      if ((inUse || 0) + (pending || 0) >= limit) {
-        return res.status(400).json({ error: `Limite de ${limit} corretor(es) com WhatsApp próprio já atingido no seu plano.` });
-      }
     }
 
     const code = randomBytes(16).toString("hex");
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
-    const { error } = await supabase.rpc("imf_create_broker_invite", {
+    const { data: inviteResult, error } = await supabase.rpc("imf_create_broker_invite", {
       p_broker_id: brokerId,
       p_code: code,
       p_expires_at: expiresAt,
       p_whatsapp_mode: whatsappMode,
+      p_request_id: requestId,
+      p_confirm_add_whatsapp_slot: confirmAddWhatsappSlot,
+      p_whatsapp_slot_max: MEMBER_WHATSAPP_SLOT_MAX,
     });
-    if (error) throw error;
+    if (error) {
+      const message = String(error.message || "");
+      if (message.includes("TRIAL_WHATSAPP_LIMIT_REACHED")) {
+        return res.status(409).json({
+          code: "TRIAL_WHATSAPP_LIMIT_REACHED",
+          error: "A cota de WhatsApps próprios deste voucher foi atingida. Convide com o número compartilhado ou solicite outra condição à Criate.",
+          can_use_shared: true,
+        });
+      }
+      if (message.includes("WHATSAPP_MEMBER_LIMIT_REACHED") && brokerRow) {
+        const currentLimit = Number(brokerRow.member_limit || 0);
+        const nextLimit = Math.min(currentLimit + 1, MEMBER_WHATSAPP_SLOT_MAX);
+        return res.status(409).json({
+          code: "WHATSAPP_SLOT_CONFIRMATION_REQUIRED",
+          error: "Confirme a contratação de uma vaga adicional para continuar.",
+          current_limit: currentLimit,
+          next_limit: nextLimit,
+          slot_price: MEMBER_WHATSAPP_SLOT_PRICE,
+          slot_price_display: MEMBER_WHATSAPP_SLOT_PRICE.toFixed(2).replace(".", ","),
+          next_monthly_value: subscriptionValueForMemberLimit(nextLimit),
+          can_use_shared: true,
+        });
+      }
+      if (message.includes("WHATSAPP_MEMBER_SLOT_MAX_REACHED")) {
+        return res.status(409).json({
+          code: "WHATSAPP_MEMBER_SLOT_MAX_REACHED",
+          error: `O limite máximo de ${MEMBER_WHATSAPP_SLOT_MAX} WhatsApps próprios foi atingido. Fale com a Criate para ampliar a capacidade.`,
+          can_use_shared: true,
+        });
+      }
+      throw error;
+    }
 
-    res.status(201).json({ code, url: `${PUBLIC_APP_URL}/equipe/entrar/${code}`, expires_at: expiresAt, whatsapp_mode: whatsappMode });
+    const result = Array.isArray(inviteResult) ? inviteResult[0] : inviteResult;
+    const slotAdded = Boolean(result?.slot_added);
+    const memberLimit = Number(result?.member_limit ?? brokerRow?.member_limit ?? 0);
+    const inviteCode = String(result?.invite_code || code);
+    const inviteMode = result?.invite_whatsapp_mode === "own" ? "own" : "shared";
+    const inviteExpiresAt = String(result?.invite_expires_at || expiresAt);
+
+    res.status(201).json({
+      code: inviteCode,
+      url: `${PUBLIC_APP_URL}/equipe/entrar/${inviteCode}`,
+      expires_at: inviteExpiresAt,
+      whatsapp_mode: inviteMode,
+      slot_added: slotAdded,
+      member_limit: memberLimit,
+      monthly_value: slotAdded ? subscriptionValueForMemberLimit(memberLimit) : undefined,
+    });
   } catch (err: any) {
     console.error("Erro POST /api/equipe/members/invite:", err);
     const message = String(err?.message || "");

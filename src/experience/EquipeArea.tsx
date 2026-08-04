@@ -35,6 +35,13 @@ interface Invite {
   whatsapp_mode: 'shared' | 'own';
 }
 
+interface SlotUpgradeOffer {
+  current_limit: number;
+  next_limit: number;
+  slot_price_display: string;
+  next_monthly_value: number;
+}
+
 function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   // Escolha do dono, POR CONVITE: esse corretor vai ter WhatsApp próprio
   // (dentro do limite do plano) ou vai compartilhar o número da conta?
@@ -45,24 +52,54 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [upgradeOffer, setUpgradeOffer] = useState<SlotUpgradeOffer | null>(null);
+  const [canUseShared, setCanUseShared] = useState(false);
+  const [billingNotice, setBillingNotice] = useState('');
+  const [requestId] = useState(() => crypto.randomUUID());
 
-  function generate(chosenMode: 'shared' | 'own') {
+  async function generate(chosenMode: 'shared' | 'own', confirmAddWhatsappSlot = false) {
     setMode(chosenMode);
     setLoading(true);
     setError('');
-    fetch('/api/equipe/members/invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-      body: JSON.stringify({ whatsapp_mode: chosenMode }),
-    })
-      .then(async (r) => {
-        const body = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(body?.error || 'Falha ao gerar convite.');
-        setUrl(body.url);
-        onCreated();
-      })
-      .catch((e) => setError(e.message || 'Falha ao gerar convite.'))
-      .finally(() => setLoading(false));
+    setUpgradeOffer(null);
+    setCanUseShared(false);
+    setBillingNotice('');
+    try {
+      const r = await fetch('/api/equipe/members/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({
+          whatsapp_mode: chosenMode,
+          request_id: requestId,
+          confirm_add_whatsapp_slot: confirmAddWhatsappSlot,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (body?.code === 'WHATSAPP_SLOT_CONFIRMATION_REQUIRED') {
+          setUpgradeOffer({
+            current_limit: Number(body.current_limit || 0),
+            next_limit: Number(body.next_limit || 0),
+            slot_price_display: String(body.slot_price_display || '0,00'),
+            next_monthly_value: Number(body.next_monthly_value || 0),
+          });
+          setCanUseShared(body.can_use_shared === true);
+          return;
+        }
+        setCanUseShared(body?.can_use_shared === true);
+        throw new Error(body?.error || 'Falha ao gerar convite.');
+      }
+      setUrl(body.url);
+      if (body.slot_added) {
+        const monthlyValue = Number(body.monthly_value || 0).toFixed(2).replace('.', ',');
+        setBillingNotice(`Vaga adicional liberada. O novo valor mensal será R$ ${monthlyValue} a partir do próximo ciclo.`);
+      }
+      onCreated();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao gerar convite.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   function copy() {
@@ -97,9 +134,41 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           </>
         ) : loading ? (
           <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
+        ) : upgradeOffer ? (
+          <>
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-400/10 p-4">
+              <p className="text-sm font-bold text-[var(--text-hi)]">Adicionar 1 WhatsApp próprio?</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--text-low)]">
+                Sua cota atual ({upgradeOffer.current_limit} vaga{upgradeOffer.current_limit === 1 ? '' : 's'}) está totalmente usada ou reservada.
+                A nova vaga custa <strong className="text-[var(--text-hi)]">R$ {upgradeOffer.slot_price_display}/mês</strong>.
+              </p>
+              <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-mid)]">
+                Ao confirmar, o limite passará para {upgradeOffer.next_limit}, a vaga será liberada agora e o valor mensal da assinatura passará para <strong>R$ {upgradeOffer.next_monthly_value.toFixed(2).replace('.', ',')}</strong> no próximo ciclo.
+              </p>
+            </div>
+            <button onClick={() => generate('own', true)}
+              className="mt-3 w-full rounded-xl border border-blue-400/30 bg-blue-600/80 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-600">
+              Confirmar acréscimo e gerar convite
+            </button>
+            {canUseShared && (
+              <button onClick={() => generate('shared')}
+                className="mt-2 w-full rounded-xl border border-[var(--hairline-strong)] bg-[var(--control-fill)] px-4 py-2.5 text-sm font-bold text-[var(--text-mid)] transition-colors hover:bg-[var(--control-fill-hover)]">
+                Convidar com WhatsApp compartilhado
+              </button>
+            )}
+            <button onClick={() => { setMode(null); setUpgradeOffer(null); }} className="mt-3 text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
+              ← Voltar sem alterar o plano
+            </button>
+          </>
         ) : error ? (
           <>
             <p className="text-sm text-red-300 mb-3">{error}</p>
+            {canUseShared && mode === 'own' && (
+              <button onClick={() => generate('shared')}
+                className="mb-3 w-full rounded-xl border border-[var(--hairline-strong)] bg-[var(--control-fill)] px-4 py-2.5 text-sm font-bold text-[var(--text-mid)] transition-colors hover:bg-[var(--control-fill-hover)]">
+                Convidar com WhatsApp compartilhado
+              </button>
+            )}
             <button onClick={() => setMode(null)} className="text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
               ← Escolher outra opção
             </button>
@@ -107,6 +176,11 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         ) : (
           <>
             <p className="text-[13px] text-[var(--text-low)] mb-4">Envie este link pra pessoa — ele vale por 48h e só pode ser usado uma vez.</p>
+            {billingNotice && (
+              <p className="mb-3 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-200">
+                {billingNotice}
+              </p>
+            )}
             <div className="flex items-stretch gap-2 mb-2">
               <input readOnly value={url} className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-xs text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]" />
               <button onClick={copy} className="px-3 rounded-xl bg-violet-500/20 border border-violet-300/30 text-violet-100 hover:bg-violet-500/30 transition-colors">

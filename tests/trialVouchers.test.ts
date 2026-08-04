@@ -96,6 +96,39 @@ test("voucher separa vagas da equipe da cota atomica de WhatsApp proprio", async
   assert.match(payment, /Math\.max\(memberSlotsInUse, v - 1\)/);
 });
 
+test("plano pago confirma e contrata slot junto com a criacao do convite", async () => {
+  const [migration, equipe, equipeUi] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260804c_team_invite_slot_upgrade.sql", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/equipe.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/experience/EquipeArea.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(migration, /p_confirm_add_whatsapp_slot BOOLEAN DEFAULT FALSE/);
+  assert.match(migration, /WHERE id = p_broker_id\s+FOR UPDATE/);
+  assert.match(migration, /IF NOT p_confirm_add_whatsapp_slot THEN/);
+  assert.match(migration, /UPDATE public\.imf_brokers AS broker[\s\S]*SET member_limit = v_new_member_limit/);
+  assert.match(migration, /INSERT INTO public\.imf_broker_invites/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS request_id UUID/);
+  assert.match(migration, /imf_broker_invites_request_id_unique/);
+  assert.match(migration, /invite\.request_id = p_request_id/);
+  assert.match(migration, /added_whatsapp_slot/);
+  assert.match(migration, /RETURNS TABLE \([\s\S]*invite_id UUID,[\s\S]*slot_added BOOLEAN,[\s\S]*member_limit INTEGER/);
+
+  assert.match(equipe, /p_confirm_add_whatsapp_slot: confirmAddWhatsappSlot/);
+  assert.match(equipe, /p_request_id: requestId/);
+  assert.match(equipe, /z\.string\(\)\.uuid\(\)\.safeParse\(requestIdInput\)/);
+  assert.match(equipe, /WHATSAPP_SLOT_CONFIRMATION_REQUIRED/);
+  assert.match(equipe, /slot_price: MEMBER_WHATSAPP_SLOT_PRICE/);
+  assert.match(equipe, /next_monthly_value: subscriptionValueForMemberLimit\(nextLimit\)/);
+
+  assert.match(equipeUi, /Confirmar acréscimo e gerar convite/);
+  assert.match(equipeUi, /Voltar sem alterar o plano/);
+  assert.match(equipeUi, /Convidar com WhatsApp compartilhado/);
+  assert.match(equipeUi, /confirm_add_whatsapp_slot: confirmAddWhatsappSlot/);
+  assert.match(equipeUi, /request_id: requestId/);
+  assert.match(equipeUi, /crypto\.randomUUID\(\)/);
+});
+
 test("rotas administrativas de voucher exigem admin e nunca listam codigo bruto", async () => {
   const admin = await readFile(new URL("../server/routes/admin.ts", import.meta.url), "utf8");
   for (const marker of [

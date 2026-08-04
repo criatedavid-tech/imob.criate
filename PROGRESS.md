@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Confirmação de WhatsApp adicional no convite (2026-08-04, publicada)
+
+- Em plano pago, quando todas as vagas próprias estão usadas ou reservadas, o
+  modal oferece mais uma por `MEMBER_WHATSAPP_SLOT_PRICE`, mostra o novo total e
+  exige confirmação antes de alterar a assinatura.
+- A migration `20260804c_team_invite_slot_upgrade.sql` torna atômicos o aumento
+  de `member_limit` e a criação do convite; se o convite falhar, nada é cobrado.
+- `request_id` idempotente impede duplicação de convite/vaga em duplo clique ou
+  retry após perda de conexão.
+- Em experimentação não existe compra: o modal informa o limite do voucher e
+  oferece convite com WhatsApp compartilhado.
+- Validação local concluída: 86/86 testes, TypeScript, Knip, build de produção e
+  `git diff --check` aprovados.
+- A migration foi aplicada manualmente no Supabase antes desta entrega. O código
+  dependente foi incluído na mesma publicação da `v2`; resta o smoke autenticado
+  com uma conta paga descartável.
+
 ## Cota de WhatsApp próprio nos vouchers (2026-08-04, publicada)
 
 - O Admin passa a definir separadamente quantos corretores adicionais podem ser

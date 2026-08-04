@@ -1,5 +1,19 @@
 # Decisões vigentes
 
+## WhatsApp adicional exige consentimento no convite (2026-08-04)
+
+- Plano pago nunca recebe cobrança silenciosa: ao exceder a cota de WhatsApps
+  próprios, o titular vê preço unitário, novo total mensal e vigência no próximo
+  ciclo antes de confirmar.
+- A confirmação, o aumento de `member_limit` e a criação do convite acontecem
+  numa única RPC transacional. Falha em qualquer etapa reverte toda a operação.
+- Cada tentativa leva `request_id` único; repetição por duplo clique ou perda de
+  conexão devolve o convite original e não adiciona outra vaga.
+- Voucher não compra add-on. Ao atingir a concessão administrativa, o usuário
+  pode convidar com WhatsApp compartilhado ou solicitar nova condição à Criate.
+- Convites pendentes continuam reservando vaga para impedir venda concorrente
+  acima da cota; o teto comercial vem de `MEMBER_WHATSAPP_SLOT_MAX` no servidor.
+
 ## Vouchers são concessões de acesso, não pagamentos simulados (2026-08-04)
 
 - Voucher é criado somente por administrador e tem uso único, modalidade,

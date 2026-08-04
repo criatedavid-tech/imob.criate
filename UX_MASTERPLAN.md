@@ -1,5 +1,15 @@
 # ImobiFlow — Masterplan de UX & Interface Generativa
 
+## Confirmação de WhatsApp adicional no convite (2026-08-04)
+
+- Em plano pago com a cota esgotada, escolher “WhatsApp próprio” abre uma
+  confirmação com valor adicional e novo total mensal; nenhuma alteração
+  ocorre ao voltar ou fechar.
+- Ao confirmar, a vaga é liberada imediatamente, entra no próximo ciclo e o
+  convite é criado na mesma operação atômica.
+- Em voucher, o mesmo estado nunca oferece compra: explica a concessão e mantém
+  “Convidar com WhatsApp compartilhado” como ação direta.
+
 ## Convites de experimentação administrados (2026-08-04)
 
 - Nova aba `Vouchers` no Painel Admin, separada das contas e da saúde do

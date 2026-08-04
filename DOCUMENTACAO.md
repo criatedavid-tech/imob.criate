@@ -145,9 +145,10 @@ passa pelo checkout.
 
 A extensão `20260804b_trial_voucher_whatsapp.sql`, aplicada no Supabase e
 publicada no commit `d0a5ac2` em 04/08/2026, separa duas cotas: `member_limit`
-no voucher é o total de corretores adicionais; `whatsapp_member_limit` é quantos desses
-convidados poderão ter instância própria. O titular mantém a instância principal
-e não consome essa segunda cota. Para corretor autônomo, ambas permanecem zero.
+no voucher é o total de corretores adicionais; `whatsapp_member_limit` é quantos
+desses convidados poderão ter instância própria. O titular mantém a instância
+principal e não consome essa segunda cota. Para corretor autônomo, ambas
+permanecem zero.
 
 A migration `20260804_trial_vouchers.sql` cria `imf_trial_vouchers` e os campos
 de auditoria do teste em `imf_brokers`. O código completo nunca é persistido:
@@ -179,6 +180,31 @@ publicação do commit `39d92ba`, conforme a ordem obrigatória de rollout. O
 smoke público confirmou saúde, rota da página, consulta de voucher e proteção
 da API Admin; criação, cancelamento e resgate ainda devem ser exercitados com
 uma sessão Admin e contas descartáveis.
+
+### Contratação de WhatsApp próprio durante o convite
+
+Em plano pago, quando todos os slots próprios estão usados ou reservados, a API
+de convite responde com `WHATSAPP_SLOT_CONFIRMATION_REQUIRED`, preço unitário,
+próximo limite e novo total mensal. O modal não altera nada nessa primeira
+resposta: o titular pode voltar, convidar com WhatsApp compartilhado ou confirmar
+explicitamente a vaga adicional.
+
+A migration `20260804c_team_invite_slot_upgrade.sql` amplia
+`imf_create_broker_invite` para receber a confirmação. Sob o mesmo `FOR UPDATE`
+da conta, a RPC aumenta `imf_brokers.member_limit` e insere o convite; qualquer
+falha reverte os dois efeitos. O servidor, e não o navegador, define preço e
+teto. A liberação é imediata e a sincronização com o valor da assinatura ocorre
+no próximo ciclo pelo mecanismo de billing já existente.
+
+Cada modal gera um `request_id` UUID. A tabela de convites mantém unicidade por
+conta e a RPC devolve o registro original quando a solicitação é repetida. Isso
+torna duplo clique e retry após perda de resposta seguros, sem nova vaga ou novo
+convite.
+
+Contas `plan='experimentacao'` nunca entram nesse fluxo pago: continuam presas
+à `trial_whatsapp_member_limit` concedida pelo voucher e recebem como alternativa
+o convite compartilhado. A migration foi aplicada manualmente antes da
+publicação do código dependente em 04/08/2026.
 
 ### Modelo de conta
 
