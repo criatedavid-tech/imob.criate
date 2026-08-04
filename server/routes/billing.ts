@@ -38,6 +38,13 @@ function webhookAuditPayload(event: any) {
   };
 }
 
+function subscriptionBrokerPayload(broker: any) {
+  if (!broker) return broker;
+  const payload = { ...broker };
+  delete payload.user_id;
+  return payload;
+}
+
 // Retorna configurações públicas do plano (preço atual)
 billingRouter.get("/api/config/plan", (_req, res) => {
   const price = SUBSCRIPTION_VALUE;
@@ -88,6 +95,18 @@ billingRouter.post("/api/checkout", checkoutLimiter, requireUser, validateBody(c
     // Corretor não tem Equipe — nunca contrata WhatsApp próprio de membro,
     // mesmo que o valor venha no body (nunca confiar só na validação do cliente).
     const memberLimit = broker.account_type === 'corretor' ? 0 : memberWhatsappSlots;
+    const { count: memberWhatsappInUse, error: memberWhatsappInUseError } = await supabase
+      .from('imf_broker_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('broker_id', brokerId)
+      .neq('user_id', broker.user_id)
+      .eq('whatsapp_mode', 'own');
+    if (memberWhatsappInUseError) throw memberWhatsappInUseError;
+    if (memberLimit < (memberWhatsappInUse || 0)) {
+      return res.status(409).json({
+        error: `Sua equipe já possui ${memberWhatsappInUse} corretor(es) com WhatsApp próprio. Contrate ao menos essa quantidade para continuar.`,
+      });
+    }
     const subscriptionValue = subscriptionValueForMemberLimit(memberLimit);
     const subscriptionDescription = subscriptionDescriptionForMemberLimit(memberLimit);
 
@@ -201,12 +220,24 @@ billingRouter.get("/api/subscription", requireUser, async (req, res) => {
     if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
     let { data: broker } = await supabase.from('imf_brokers')
-      .select('status, plan, valid_until, grace_until, is_admin, trial_started_at, trial_ends_at, trial_member_limit')
+      .select('user_id, status, plan, valid_until, grace_until, is_admin, account_type, member_limit, trial_started_at, trial_ends_at, trial_member_limit, trial_whatsapp_member_limit')
       .eq('id', brokerId).single();
+
+    const { count: memberWhatsappInUse, error: memberWhatsappInUseError } = await supabase
+      .from('imf_broker_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('broker_id', brokerId)
+      .neq('user_id', broker?.user_id || '')
+      .eq('whatsapp_mode', 'own');
+    if (memberWhatsappInUseError) throw memberWhatsappInUseError;
 
     // Admin tem acesso vitalício — nunca bloquear por assinatura
     if (broker?.is_admin) {
-      return res.json({ broker: { ...broker, status: 'ativo' }, lastSubscription: null });
+      return res.json({
+        broker: { ...subscriptionBrokerPayload(broker), status: 'ativo' },
+        lastSubscription: null,
+        memberWhatsappInUse: memberWhatsappInUse || 0,
+      });
     }
 
     // A experimentação não renova e não tem carência: ao terminar, a mesma
@@ -232,7 +263,7 @@ billingRouter.get("/api/subscription", requireUser, async (req, res) => {
       .select('*').eq('broker_id', brokerId)
       .order('created_at', { ascending: false }).limit(1).single();
 
-    res.json({ broker, lastSubscription: lastSub });
+    res.json({ broker: subscriptionBrokerPayload(broker), lastSubscription: lastSub, memberWhatsappInUse: memberWhatsappInUse || 0 });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

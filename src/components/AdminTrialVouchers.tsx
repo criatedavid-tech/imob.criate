@@ -12,6 +12,7 @@ type Voucher = {
   invite_expires_at: string;
   trial_days: number;
   member_limit: number;
+  whatsapp_member_limit: number;
   status: VoucherStatus;
   created_at: string;
   used_at: string | null;
@@ -61,7 +62,9 @@ export default function AdminTrialVouchers() {
     invite_expires_at: localTomorrowAtNoon(),
     trial_days: '14',
     member_limit: '10',
+    whatsapp_member_limit: '0',
   });
+  const [whatsappSlotMax, setWhatsappSlotMax] = useState(20);
 
   const headers = authService.getAuthHeaders();
 
@@ -80,7 +83,17 @@ export default function AdminTrialVouchers() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch('/api/config/plan')
+      .then((response) => response.json())
+      .then((data) => {
+        if (Number.isInteger(data?.memberWhatsappSlotMax) && data.memberWhatsappSlotMax >= 0) {
+          setWhatsappSlotMax(data.memberWhatsappSlotMax);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function createVoucher(event: React.FormEvent) {
     event.preventDefault();
@@ -96,6 +109,7 @@ export default function AdminTrialVouchers() {
           invite_expires_at: new Date(form.invite_expires_at).toISOString(),
           trial_days: Number(form.trial_days),
           member_limit: form.account_type === 'corretor' ? 0 : Number(form.member_limit),
+          whatsapp_member_limit: form.account_type === 'corretor' ? 0 : Number(form.whatsapp_member_limit),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -164,7 +178,11 @@ export default function AdminTrialVouchers() {
       <form onSubmit={createVoucher} className="rounded-2xl p-5 bg-[var(--control-fill-hover)] border border-[var(--glass-border)] space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {ACCOUNT_TYPES.map(({ value, label, icon: Icon }) => (
-            <button key={value} type="button" onClick={() => setForm((current) => ({ ...current, account_type: value }))}
+            <button key={value} type="button" onClick={() => setForm((current) => ({
+              ...current,
+              account_type: value,
+              ...(value === 'corretor' ? { member_limit: '0', whatsapp_member_limit: '0' } : {}),
+            }))}
               className={`rounded-xl border p-3 flex items-center gap-3 text-left transition-colors ${form.account_type === value ? 'border-violet-400/50 bg-violet-500/15' : 'border-[var(--hairline-strong)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)]'}`}>
               <Icon className="w-4 h-4 text-[var(--text-mid)]" />
               <span className="text-sm font-bold text-[var(--text-hi)]">{label}</span>
@@ -172,7 +190,7 @@ export default function AdminTrialVouchers() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <label className="space-y-1.5">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-low)]">Voucher válido até</span>
             <input required type="datetime-local" value={form.invite_expires_at} onChange={(event) => setForm((current) => ({ ...current, invite_expires_at: event.target.value }))} className={`${fieldClass} [color-scheme:dark]`} />
@@ -183,7 +201,16 @@ export default function AdminTrialVouchers() {
           </label>
           <label className="space-y-1.5">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-low)]">Corretores além do titular</span>
-            <input required type="number" min="0" max="100" disabled={form.account_type === 'corretor'} value={form.account_type === 'corretor' ? '0' : form.member_limit} onChange={(event) => setForm((current) => ({ ...current, member_limit: event.target.value }))} className={`${fieldClass} disabled:opacity-45`} />
+            <input required type="number" min="0" max="100" disabled={form.account_type === 'corretor'} value={form.account_type === 'corretor' ? '0' : form.member_limit} onChange={(event) => setForm((current) => {
+              const memberLimit = event.target.value;
+              const whatsappLimit = Math.min(Number(current.whatsapp_member_limit) || 0, Number(memberLimit) || 0);
+              return { ...current, member_limit: memberLimit, whatsapp_member_limit: String(whatsappLimit) };
+            })} className={`${fieldClass} disabled:opacity-45`} />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-low)]">Corretores com WhatsApp próprio</span>
+            <input required type="number" min="0" max={Math.min(whatsappSlotMax, Number(form.member_limit) || 0)} disabled={form.account_type === 'corretor'} value={form.account_type === 'corretor' ? '0' : form.whatsapp_member_limit} onChange={(event) => setForm((current) => ({ ...current, whatsapp_member_limit: event.target.value }))} className={`${fieldClass} disabled:opacity-45`} />
+            <span className="block text-[10px] leading-relaxed text-[var(--text-low)]">O titular mantém a própria instância. Aqui você define quantos convidados poderão conectar um número individual.</span>
           </label>
         </div>
 
@@ -230,7 +257,7 @@ export default function AdminTrialVouchers() {
                     </div>
                     <p className="text-xs text-[var(--text-low)] mt-1">
                       Convite até {formatDate(voucher.invite_expires_at)} · teste por {voucher.trial_days} dias
-                      {voucher.account_type !== 'corretor' ? ` · ${voucher.member_limit} corretor(es)` : ''}
+                      {voucher.account_type !== 'corretor' ? ` · ${voucher.member_limit} corretor(es) · ${voucher.whatsapp_member_limit || 0} WhatsApp(s) próprio(s)` : ''}
                     </p>
                     {voucher.used_by_account && <p className="text-xs text-blue-300/80 mt-1">Usado por {voucher.used_by_account.name} ({voucher.used_by_account.email}) em {formatDate(voucher.used_at)}</p>}
                   </div>

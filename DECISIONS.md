@@ -10,6 +10,15 @@
   Asaas. Ao término, a conta fica inativa e deve contratar um plano real.
 - O limite informado significa corretores adicionais além do titular. Para
   corretor autônomo ele é sempre zero.
+- A quantidade total de convidados e a quantidade de convidados com WhatsApp
+  próprio são cotas independentes. O titular continua na instância principal;
+  o admin pode liberar de zero até o total de corretores do voucher para terem
+  instância individual.
+- Durante `plan='experimentacao'`, a autorização de WhatsApp próprio vem de
+  `trial_whatsapp_member_limit`, nunca do add-on pago `member_limit`. Convites
+  pendentes reservam a vaga para impedir sobrecontratação concorrente.
+- Ao contratar depois do teste, a conta não pode selecionar menos slots pagos
+  do que os corretores que já utilizam WhatsApp próprio.
 - Resgate e controle de vagas ficam em RPCs transacionais com locks no banco;
   validação apenas no frontend não é considerada autorização.
 - A migration deve preceder o deploy porque cadastro e convite de equipe passam

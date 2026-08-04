@@ -63,6 +63,11 @@ usam o mesmo preço mensal retornado por `GET /api/config/plan`; o seletor anual
 é apenas informativo e não muda a cobrança. Imobiliária e incorporadora exibem
 o add-on já existente de WhatsApp próprio por membro.
 
+Vouchers de experimentação usam cotas separadas para total de corretores
+convidados e convidados com WhatsApp próprio. A extensão correspondente está
+validada no código, mas depende da aplicação manual de
+`supabase/migrations/20260804b_trial_voucher_whatsapp.sql` antes da publicação.
+
 O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
 pagamentos de clientes permanece desligada por
 `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e pela flag Vite equivalente.

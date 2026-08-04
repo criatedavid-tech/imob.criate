@@ -121,6 +121,7 @@ export default function PaymentPending() {
   const [slotMax, setSlotMax] = useState<number>(0);
   const [accountType, setAccountType] = useState<string | null>(null);
   const [memberSlots, setMemberSlots] = useState(0);
+  const [memberSlotsInUse, setMemberSlotsInUse] = useState(0);
   const [form, setForm] = useState<CardForm>({
     cpfCnpj: '', cardHolder: '', cardNumber: '',
     expiryMonth: '', expiryYear: '', cvv: ''
@@ -139,6 +140,16 @@ export default function PaymentPending() {
     fetch('/api/brokers/me', { headers: authService.getAuthHeaders() })
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (d?.account_type) setAccountType(d.account_type); })
+      .catch(() => {});
+    fetch('/api/subscription', { headers: authService.getAuthHeaders() })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        const inUse = Number(d?.memberWhatsappInUse || 0);
+        if (Number.isInteger(inUse) && inUse > 0) {
+          setMemberSlotsInUse(inUse);
+          setMemberSlots(inUse);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -290,11 +301,16 @@ export default function PaymentPending() {
             <p className="text-[12px] text-[var(--text-low)] mb-4">
               Cada corretor com número próprio custa <strong className="text-[var(--text-mid)]">R$ {slotPriceDisplay}/mês</strong>. Por padrão todos compartilham o número da conta — sem custo extra. Dá pra ajustar depois em Config.
             </p>
+            {memberSlotsInUse > 0 && (
+              <p className="text-[11px] text-amber-300/80 mb-3">
+                Sua equipe já usa {memberSlotsInUse} WhatsApp{memberSlotsInUse === 1 ? '' : 's'} próprio{memberSlotsInUse === 1 ? '' : 's'}; essa é a quantidade mínima para manter os acessos atuais.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-[12px] text-[var(--text-low)]">Quantos corretores vão ter número próprio?</span>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => setMemberSlots(v => Math.max(0, v - 1))}
-                  disabled={memberSlots <= 0}
+                <button type="button" onClick={() => setMemberSlots(v => Math.max(memberSlotsInUse, v - 1))}
+                  disabled={memberSlots <= memberSlotsInUse}
                   className="w-8 h-8 flex items-center justify-center rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] disabled:opacity-30 hover:bg-[var(--control-fill-hover)] transition-colors">
                   <Minus className="w-3.5 h-3.5" />
                 </button>

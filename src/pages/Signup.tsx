@@ -21,6 +21,7 @@ type TrialVoucher = {
   invite_expires_at: string;
   trial_days: number;
   member_limit: number;
+  whatsapp_member_limit: number;
 };
 
 // Preço/features ainda não diferem por plano de verdade (ver DECISIONS.md) —
@@ -240,7 +241,9 @@ export default function Signup() {
                 <p className="text-xs text-[var(--text-mid)] mt-1">
                   {trialVoucher.trial_days} dias sem cobrança
                   {trialVoucher.account_type !== 'corretor'
-                    ? ` · até ${trialVoucher.member_limit} corretor(es) convidado(s), além do titular`
+                    ? ` · até ${trialVoucher.member_limit} corretor(es) convidado(s), além do titular · ${trialVoucher.whatsapp_member_limit > 0
+                      ? `até ${trialVoucher.whatsapp_member_limit} com WhatsApp próprio`
+                      : 'equipe com WhatsApp compartilhado'}`
                     : ''}.
                 </p>
               </div>
@@ -283,7 +286,11 @@ export default function Signup() {
                       const selected = formData.account_type === value;
                       const features = value === 'corretor'
                         ? PLAN_BASE_FEATURES
-                        : [...PLAN_BASE_FEATURES, `WhatsApp próprio por corretor da equipe (a partir de R$ ${slotPriceDisplay}/mês)`];
+                        : [...PLAN_BASE_FEATURES, trialVoucher
+                          ? (trialVoucher.whatsapp_member_limit > 0
+                            ? `Até ${trialVoucher.whatsapp_member_limit} corretor(es) convidado(s) com WhatsApp próprio durante o teste`
+                            : 'Corretores convidados compartilham o WhatsApp da conta durante o teste')
+                          : `WhatsApp próprio por corretor da equipe (a partir de R$ ${slotPriceDisplay}/mês)`];
                       return (
                         <button key={value} type="button"
                           onClick={() => { if (!trialVoucher) setFormData({ ...formData, account_type: value }); }}

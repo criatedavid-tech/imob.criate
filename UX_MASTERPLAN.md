@@ -5,13 +5,17 @@
 - Nova aba `Vouchers` no Painel Admin, separada das contas e da saúde do
   sistema.
 - O formulário deixa explícitos modalidade, validade do convite, dias de teste
-  e número de corretores além do titular; o campo de equipe fica desabilitado
-  para corretor autônomo.
+  e número de corretores além do titular. A evolução pendente de rollout inclui
+  um segundo campo para definir quantos desses convidados terão WhatsApp
+  próprio; ambos ficam desabilitados para corretor autônomo.
 - O link e o código completos aparecem somente logo após a criação, com ação
   de copiar. O histórico mostra dica parcial, status e conta que utilizou.
 - A tela pública informa que é um convite Criate, fixa a modalidade e substitui
-  preço/ciclo por “sem cobrança durante o teste”; após o cadastro segue direto
-  para `/app`.
+  preço/ciclo por “sem cobrança durante o teste”, além de explicitar a cota de
+  WhatsApps próprios ou o uso compartilhado; após o cadastro segue direto para
+  `/app`.
+- Em Config, contas de teste apenas consultam a cota concedida pelo voucher; o
+  botão de alteração e o preço de add-on aparecem somente para planos pagos.
 - Estados inválido, utilizado, expirado e cancelado não exibem o formulário de
   criação da conta.
 

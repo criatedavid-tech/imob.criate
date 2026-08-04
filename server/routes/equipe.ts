@@ -92,6 +92,16 @@ async function isOwner(userId: string, brokerId: string): Promise<boolean> {
   return !!data;
 }
 
+function effectiveWhatsappMemberLimit(broker: {
+  plan?: string | null;
+  member_limit?: number | null;
+  trial_whatsapp_member_limit?: number | null;
+}): number {
+  return broker.plan === "experimentacao"
+    ? Number(broker.trial_whatsapp_member_limit || 0)
+    : Number(broker.member_limit || 0);
+}
+
 equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;
@@ -138,23 +148,31 @@ equipeRouter.get("/api/equipe/whatsapp-slots", requireUser, async (req, res) => 
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
-    const { data: broker } = await supabase.from("imf_brokers").select("account_type, member_limit").eq("id", brokerId).maybeSingle();
+    const { data: broker } = await supabase
+      .from("imf_brokers")
+      .select("user_id, account_type, plan, member_limit, trial_whatsapp_member_limit")
+      .eq("id", brokerId)
+      .maybeSingle();
     if (!broker) return res.status(404).json({ error: "Broker not found" });
 
     const { count: inUse } = await supabase
       .from("imf_broker_members")
       .select("id", { count: "exact", head: true })
       .eq("broker_id", brokerId)
+      .neq("user_id", broker.user_id)
       .eq("whatsapp_mode", "own");
 
-    const memberLimit = broker.member_limit || 0;
+    const isTrial = broker.plan === "experimentacao";
+    const memberLimit = effectiveWhatsappMemberLimit(broker);
     res.json({
       applicable: broker.account_type !== "corretor",
       is_owner: await isOwner(userId, brokerId),
+      is_trial: isTrial,
+      editable: !isTrial,
       member_limit: memberLimit,
       in_use: inUse || 0,
-      max_slots: MEMBER_WHATSAPP_SLOT_MAX,
-      monthly_value: subscriptionValueForMemberLimit(memberLimit),
+      max_slots: isTrial ? memberLimit : MEMBER_WHATSAPP_SLOT_MAX,
+      monthly_value: isTrial ? 0 : subscriptionValueForMemberLimit(memberLimit),
     });
   } catch (err: any) {
     console.error("Erro GET /api/equipe/whatsapp-slots:", err);
@@ -175,10 +193,13 @@ equipeRouter.patch("/api/equipe/whatsapp-slots", requireUser, async (req, res) =
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode alterar isso." });
 
-    const { data: broker } = await supabase.from("imf_brokers").select("account_type").eq("id", brokerId).maybeSingle();
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id, account_type, plan").eq("id", brokerId).maybeSingle();
     if (!broker) return res.status(404).json({ error: "Broker not found" });
     if (broker.account_type === "corretor") {
       return res.status(400).json({ error: "Corretor não tem Equipe — WhatsApp próprio por membro não se aplica." });
+    }
+    if (broker.plan === "experimentacao") {
+      return res.status(403).json({ error: "Durante a experimentação, a cota de WhatsApps próprios é definida pelo voucher." });
     }
 
     const desired = Number(req.body?.member_limit);
@@ -186,14 +207,19 @@ equipeRouter.patch("/api/equipe/whatsapp-slots", requireUser, async (req, res) =
       return res.status(400).json({ error: `Informe um número inteiro entre 0 e ${MEMBER_WHATSAPP_SLOT_MAX}.` });
     }
 
-    const { count: inUse } = await supabase
-      .from("imf_broker_members")
-      .select("id", { count: "exact", head: true })
-      .eq("broker_id", brokerId)
-      .eq("whatsapp_mode", "own");
-    if (desired < (inUse || 0)) {
+    const now = new Date().toISOString();
+    const [{ count: inUse, error: inUseError }, { count: pending, error: pendingError }] = await Promise.all([
+      supabase.from("imf_broker_members").select("id", { count: "exact", head: true })
+        .eq("broker_id", brokerId).neq("user_id", broker.user_id).eq("whatsapp_mode", "own"),
+      supabase.from("imf_broker_invites").select("id", { count: "exact", head: true })
+        .eq("broker_id", brokerId).eq("whatsapp_mode", "own").is("used_at", null).gt("expires_at", now),
+    ]);
+    if (inUseError) throw inUseError;
+    if (pendingError) throw pendingError;
+    const reserved = (inUse || 0) + (pending || 0);
+    if (desired < reserved) {
       return res.status(400).json({
-        error: `Você tem ${inUse} membro(s) usando WhatsApp próprio hoje. Troque-os para compartilhado (ou remova-os da equipe) antes de reduzir abaixo disso.`,
+        error: `Existem ${reserved} vaga(s) de WhatsApp próprio em uso ou reservadas por convite. Revogue os convites pendentes ou remova/troque membros antes de reduzir abaixo disso.`,
       });
     }
 
@@ -226,17 +252,30 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
     const whatsappMode = req.body?.whatsapp_mode === "own" ? "own" : "shared";
 
     if (whatsappMode === "own") {
-      const { data: brokerRow } = await supabase.from("imf_brokers").select("member_limit").eq("id", brokerId).maybeSingle();
-      const limit = brokerRow?.member_limit || 0;
+      const { data: brokerRow } = await supabase
+        .from("imf_brokers")
+        .select("user_id, plan, member_limit, trial_whatsapp_member_limit")
+        .eq("id", brokerId)
+        .maybeSingle();
+      if (!brokerRow) return res.status(404).json({ error: "Broker not found" });
+      const limit = effectiveWhatsappMemberLimit(brokerRow);
       if (limit <= 0) {
-        return res.status(400).json({ error: "Seu plano não inclui WhatsApp próprio para membros da equipe." });
+        return res.status(400).json({
+          error: brokerRow.plan === "experimentacao"
+            ? "Este voucher não libera WhatsApp próprio para corretores convidados."
+            : "Seu plano não inclui WhatsApp próprio para membros da equipe.",
+        });
       }
-      const { count } = await supabase
-        .from("imf_broker_members")
-        .select("id", { count: "exact", head: true })
-        .eq("broker_id", brokerId)
-        .eq("whatsapp_mode", "own");
-      if ((count || 0) >= limit) {
+      const now = new Date().toISOString();
+      const [{ count: inUse, error: inUseError }, { count: pending, error: pendingError }] = await Promise.all([
+        supabase.from("imf_broker_members").select("id", { count: "exact", head: true })
+          .eq("broker_id", brokerId).neq("user_id", brokerRow.user_id).eq("whatsapp_mode", "own"),
+        supabase.from("imf_broker_invites").select("id", { count: "exact", head: true })
+          .eq("broker_id", brokerId).eq("whatsapp_mode", "own").is("used_at", null).gt("expires_at", now),
+      ]);
+      if (inUseError) throw inUseError;
+      if (pendingError) throw pendingError;
+      if ((inUse || 0) + (pending || 0) >= limit) {
         return res.status(400).json({ error: `Limite de ${limit} corretor(es) com WhatsApp próprio já atingido no seu plano.` });
       }
     }
@@ -257,6 +296,12 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
     const message = String(err?.message || "");
     if (message.includes("TRIAL_MEMBER_LIMIT_REACHED")) {
       return res.status(409).json({ error: "O limite de corretores desta experimentação foi atingido." });
+    }
+    if (message.includes("TRIAL_WHATSAPP_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "A cota de corretores com WhatsApp próprio desta experimentação foi atingida." });
+    }
+    if (message.includes("WHATSAPP_MEMBER_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "A cota de corretores com WhatsApp próprio desta conta foi atingida." });
     }
     if (message.includes("TRIAL_EXPIRED")) {
       return res.status(403).json({ error: "O período de experimentação terminou. Contrate um plano para continuar." });

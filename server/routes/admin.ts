@@ -4,6 +4,7 @@ import { supabase } from "../supabase";
 import { invalidateAccountAccessCache, requireAdmin } from "../middleware/auth";
 import {
   UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, PUBLIC_APP_URL,
+  MEMBER_WHATSAPP_SLOT_MAX,
 } from "../config";
 import {
   generateTrialVoucherCode,
@@ -30,6 +31,15 @@ const trialVoucherCreateSchema = z.object({
   invite_expires_at: z.string().datetime({ offset: true }),
   trial_days: z.number().int().min(1).max(180),
   member_limit: z.number().int().min(0).max(100),
+  whatsapp_member_limit: z.number().int().min(0).max(Math.min(100, MEMBER_WHATSAPP_SLOT_MAX)),
+}).superRefine((input, ctx) => {
+  if (input.account_type !== "corretor" && input.whatsapp_member_limit > input.member_limit) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["whatsapp_member_limit"],
+      message: "A cota de WhatsApps próprios não pode superar a quantidade de corretores convidados.",
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -178,6 +188,7 @@ adminRouter.post("/api/admin/trial-vouchers", async (req, res) => {
 
     const code = generateTrialVoucherCode();
     const memberLimit = input.account_type === "corretor" ? 0 : input.member_limit;
+    const whatsappMemberLimit = input.account_type === "corretor" ? 0 : input.whatsapp_member_limit;
     const { data, error } = await supabase
       .from("imf_trial_vouchers")
       .insert({
@@ -187,9 +198,10 @@ adminRouter.post("/api/admin/trial-vouchers", async (req, res) => {
         invite_expires_at: expiresAt.toISOString(),
         trial_days: input.trial_days,
         member_limit: memberLimit,
+        whatsapp_member_limit: whatsappMemberLimit,
         created_by: (req as any).userId,
       })
-      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, status, created_at")
+      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, whatsapp_member_limit, status, created_at")
       .single();
     if (error) throw error;
 
@@ -220,7 +232,7 @@ adminRouter.get("/api/admin/trial-vouchers", async (req, res) => {
 
     const { data, error } = await supabase
       .from("imf_trial_vouchers")
-      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, status, created_at, used_at, broker_id, cancelled_at")
+      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, whatsapp_member_limit, status, created_at, used_at, broker_id, cancelled_at")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw error;

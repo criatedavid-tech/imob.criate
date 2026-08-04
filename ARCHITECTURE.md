@@ -52,6 +52,11 @@ estiver parada.
 - O backend usa `service_role`, portanto toda rota filtra tenant, posse e
   permissões explicitamente; RLS é defesa adicional.
 - Titulares administram a conta e membros recebem apenas o escopo autorizado.
+- Vouchers de experimentação são segredos de uso único armazenados por hash. A
+  extensão pendente `20260804b_trial_voucher_whatsapp.sql` mantém duas cotas no
+  tenant: total de membros (`trial_member_limit`) e membros com instância UAZAPI
+  própria (`trial_whatsapp_member_limit`). Emissão e aceite de convite passam
+  por RPCs com lock no broker; convites pendentes reservam ambas as vagas.
 
 ## Dados e CRM
 

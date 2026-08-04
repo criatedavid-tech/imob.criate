@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Cota de WhatsApp próprio nos vouchers (2026-08-04, aguardando rollout)
+
+- O Admin passa a definir separadamente quantos corretores adicionais podem ser
+  convidados e quantos deles poderão conectar WhatsApp próprio. O titular não
+  consome essa cota.
+- A migration aditiva `20260804b_trial_voucher_whatsapp.sql` cria
+  `whatsapp_member_limit` no voucher e `trial_whatsapp_member_limit` na conta,
+  além de substituir as RPCs de emissão/aceite por versões com lock e reserva de
+  vagas para convites pendentes.
+- Durante o teste, a cota não pode ser alterada pelo titular nem gera cobrança.
+  Ao migrar para plano pago, o checkout exige no mínimo os slots já em uso.
+- Validação local concluída: 85/85 testes, TypeScript, Knip, build de produção e
+  `git diff --check` aprovados.
+- Pendente: aplicar a nova migration manualmente no Supabase; somente depois
+  versionar, publicar e executar smoke autenticado. Nenhuma alteração desta
+  seção está em produção ainda.
+
 ## Vouchers administrativos de experimentação (2026-08-04)
 
 - Implementação publicada para corretor, imobiliária e incorporadora no commit

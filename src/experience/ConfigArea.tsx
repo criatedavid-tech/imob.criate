@@ -535,6 +535,8 @@ function WhatsAppConnectCard() {
 interface WhatsappSlotsStatus {
   applicable: boolean;
   is_owner: boolean;
+  is_trial: boolean;
+  editable: boolean;
   member_limit: number;
   in_use: number;
   max_slots: number;
@@ -617,13 +619,24 @@ function TeamWhatsappSlotsCard() {
         <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">WhatsApp próprio da equipe</h3>
       </div>
       <p className="text-[12px] text-[var(--text-low)] mb-4">
-        Por padrão os corretores compartilham o número da conta. Cada um com número próprio custa R$ {slotPriceDisplay}/mês
+        {status.is_trial
+          ? 'Na experimentação, a quantidade de corretores com número próprio é definida pelo voucher. Os demais compartilham o número da conta'
+          : <>Por padrão os corretores compartilham o número da conta. Cada um com número próprio custa R$ {slotPriceDisplay}/mês</>}
         {status.in_use > 0 && <> — {status.in_use} membro{status.in_use > 1 ? 's usam' : ' usa'} isso hoje</>}.
       </p>
 
       {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
 
-      {!status.is_owner ? (
+      {status.is_trial ? (
+        <div>
+          <p className="text-[15px] font-bold text-[var(--text-hi)]">
+            {status.member_limit} vaga{status.member_limit === 1 ? '' : 's'} de WhatsApp próprio liberada{status.member_limit === 1 ? '' : 's'} pelo voucher
+          </p>
+          <p className="text-[12px] text-[var(--text-low)] mt-0.5">
+            {status.in_use} em uso · essa cota não gera cobrança durante a experimentação e só pode ser alterada pela administração.
+          </p>
+        </div>
+      ) : !status.is_owner ? (
         <p className="text-[12px] text-[var(--text-low)]">
           {status.member_limit} slot{status.member_limit === 1 ? '' : 's'} contratado{status.member_limit === 1 ? '' : 's'} — só o titular da conta pode alterar.
         </p>
@@ -635,7 +648,7 @@ function TeamWhatsappSlotsCard() {
             </p>
             <p className="text-[12px] text-[var(--text-low)] mt-0.5">R$ {status.monthly_value.toFixed(2).replace('.', ',')}/mês no total do plano</p>
           </div>
-          <button onClick={() => setEditing(true)}
+          <button onClick={() => setEditing(true)} disabled={!status.editable}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
             Alterar
           </button>

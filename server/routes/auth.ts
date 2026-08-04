@@ -176,7 +176,7 @@ authRouter.get("/api/auth/trial-vouchers/:code", publicReadLimiter, async (req, 
 
     const { data: voucher, error } = await supabase
       .from("imf_trial_vouchers")
-      .select("id, account_type, invite_expires_at, trial_days, member_limit, status")
+      .select("id, account_type, invite_expires_at, trial_days, member_limit, whatsapp_member_limit, status")
       .eq("code_hash", hashTrialVoucherCode(code))
       .maybeSingle();
     if (error) throw error;
@@ -200,6 +200,7 @@ authRouter.get("/api/auth/trial-vouchers/:code", publicReadLimiter, async (req, 
       invite_expires_at: voucher.invite_expires_at,
       trial_days: voucher.trial_days,
       member_limit: voucher.account_type === "corretor" ? 0 : voucher.member_limit,
+      whatsapp_member_limit: voucher.account_type === "corretor" ? 0 : voucher.whatsapp_member_limit,
     });
   } catch (err: any) {
     console.error("Trial voucher lookup error:", {
@@ -452,6 +453,12 @@ authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (
     const errorText = String(err?.message || "");
     if (errorText.includes("TRIAL_MEMBER_LIMIT_REACHED")) {
       return res.status(409).json({ error: "O limite de corretores desta experimentação foi atingido." });
+    }
+    if (errorText.includes("TRIAL_WHATSAPP_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "A cota de corretores com WhatsApp próprio desta experimentação foi atingida." });
+    }
+    if (errorText.includes("WHATSAPP_MEMBER_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "A cota de corretores com WhatsApp próprio desta conta foi atingida." });
     }
     if (errorText.includes("TRIAL_EXPIRED")) {
       return res.status(403).json({ error: "O período de experimentação terminou. Contrate um plano para continuar." });

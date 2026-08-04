@@ -58,6 +58,44 @@ test("limite de membros da experimentacao e aplicado ao emitir e aceitar convite
   assert.match(auth, /rpc\("imf_claim_broker_invite"/);
 });
 
+test("voucher separa vagas da equipe da cota atomica de WhatsApp proprio", async () => {
+  const [migration, admin, auth, equipe, billing, adminUi, signup, configUi, payment] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260804b_trial_voucher_whatsapp.sql", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/admin.ts", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/equipe.ts", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/billing.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/AdminTrialVouchers.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/Signup.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/experience/ConfigArea.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/PaymentPending.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS whatsapp_member_limit INTEGER NOT NULL DEFAULT 0/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS trial_whatsapp_member_limit INTEGER/);
+  assert.match(migration, /whatsapp_member_limit <= member_limit/);
+  assert.match(migration, /trial_whatsapp_member_limit <= COALESCE\(trial_member_limit, 0\)/);
+  assert.match(migration, /trial_started_at, trial_ends_at, trial_member_limit, trial_whatsapp_member_limit/);
+  assert.match(migration, /TRIAL_WHATSAPP_LIMIT_REACHED/g);
+  assert.match(migration, /WHATSAPP_MEMBER_LIMIT_REACHED/g);
+  assert.match(migration, /i\.used_at IS NULL[\s\S]*i\.expires_at > NOW\(\)/);
+  assert.match(migration, /FOR UPDATE/);
+
+  assert.match(admin, /whatsapp_member_limit: z\.number\(\)/);
+  assert.match(admin, /whatsapp_member_limit: whatsappMemberLimit/);
+  assert.match(auth, /whatsapp_member_limit: voucher\.account_type/);
+  assert.match(equipe, /effectiveWhatsappMemberLimit/);
+  assert.match(equipe, /trial_whatsapp_member_limit/);
+  assert.match(equipe, /cota de WhatsApps próprios é definida pelo voucher/);
+  assert.match(adminUi, /Corretores com WhatsApp próprio/);
+  assert.match(signup, /equipe com WhatsApp compartilhado/);
+  assert.match(configUi, /liberada\{status\.member_limit === 1 \? '' : 's'\} pelo voucher/);
+
+  assert.match(billing, /memberLimit < \(memberWhatsappInUse \|\| 0\)/);
+  assert.match(billing, /memberWhatsappInUse:/);
+  assert.match(payment, /Math\.max\(memberSlotsInUse, v - 1\)/);
+});
+
 test("rotas administrativas de voucher exigem admin e nunca listam codigo bruto", async () => {
   const admin = await readFile(new URL("../server/routes/admin.ts", import.meta.url), "utf8");
   for (const marker of [

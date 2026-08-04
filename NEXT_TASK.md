@@ -1,5 +1,17 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Rollout da cota de WhatsApp nos vouchers
+
+1. Aplicar manualmente no Supabase a migration
+   `supabase/migrations/20260804b_trial_voucher_whatsapp.sql`.
+2. Depois do SQL confirmado, versionar e publicar o código na branch `v2`.
+3. Criar um voucher descartável de imobiliária/incorporadora com, por exemplo,
+   três corretores e apenas um WhatsApp próprio.
+4. Confirmar que um convite `own` reserva a vaga, que o segundo é bloqueado e
+   que convites `shared` continuam disponíveis até a cota total da equipe.
+5. Confirmar que o fim do teste exige no checkout ao menos o número de slots
+   próprios já em uso.
+
 ## Rollout dos vouchers de experimentação
 
 1. ~~Revisar e aplicar manualmente no Supabase a migration

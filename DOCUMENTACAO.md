@@ -143,6 +143,12 @@ corretores podem ser convidados além do titular. O link aponta para
 `/experimentacao/:voucherCode`; o cadastro fixa a modalidade concedida e não
 passa pelo checkout.
 
+A extensão `20260804b_trial_voucher_whatsapp.sql`, validada localmente e ainda
+pendente de aplicação/publicação, separa duas cotas: `member_limit` no voucher é
+o total de corretores adicionais; `whatsapp_member_limit` é quantos desses
+convidados poderão ter instância própria. O titular mantém a instância principal
+e não consome essa segunda cota. Para corretor autônomo, ambas permanecem zero.
+
 A migration `20260804_trial_vouchers.sql` cria `imf_trial_vouchers` e os campos
 de auditoria do teste em `imf_brokers`. O código completo nunca é persistido:
 o banco guarda SHA-256 e uma dica parcial, e o Admin recebe o segredo uma única
@@ -158,6 +164,15 @@ leitura mínima do perfil e aceite de termos continuam disponíveis, permitindo
 contratar um plano. A cota da equipe é validada na emissão e no aceite dos
 convites por RPCs serializadas, evitando ultrapassagem por requisições
 simultâneas.
+
+Com a extensão de WhatsApp, o resgate copia a segunda cota para
+`imf_brokers.trial_whatsapp_member_limit`; o campo pago
+`imf_brokers.member_limit` permanece zero durante a experimentação. Convites
+`own` pendentes reservam slot, e as RPCs revalidam a cota na emissão e no aceite
+sob lock da conta. A API e o frontend oferecem mensagens amigáveis, mas o banco
+é a autoridade final. O titular não pode aumentar essa cota em Config durante o
+teste. Na contratação posterior, o checkout recusa uma quantidade paga menor
+que o total de membros que já usa WhatsApp próprio.
 
 A migration foi aplicada manualmente no Supabase em 04/08/2026, antes da
 publicação do commit `39d92ba`, conforme a ordem obrigatória de rollout. O
@@ -291,6 +306,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   add-on por slot (`MEMBER_WHATSAPP_SLOT_PRICE`, valor ainda fictício) — não
   se aplica a corretor (não tem Equipe). Selecionável já no checkout
   (`PaymentPending.tsx`) ou depois em Config.
+  Em contas `experimentacao`, a cota efetiva vem de
+  `trial_whatsapp_member_limit`, definida pelo voucher, não é editável pelo
+  titular e não gera cobrança durante o teste. O add-on pago volta a ser a fonte
+  da cota após a contratação.
 - **Divulgação:** links e vitrines públicas + **prévia ao vivo da vitrine**
   (`iframe` da própria página `/vitrine/:brokerId`, same-origin, permitido pela
   CSP `frameAncestors 'self'`) — o corretor vê exatamente o que o cliente vê ao
