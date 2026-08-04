@@ -2,7 +2,8 @@
 
 ## Vouchers administrativos de experimentação (2026-08-04)
 
-- Implementação local concluída para corretor, imobiliária e incorporadora.
+- Implementação publicada para corretor, imobiliária e incorporadora no commit
+  `39d92ba` em 04/08/2026.
 - Admin define expiração do convite, 1–180 dias de teste e até 100 corretores
   adicionais; voucher pode ser cancelado e possui histórico de status.
 - Cadastro por link não cobra, ativa o plano interno `experimentacao` e fixa a
@@ -12,10 +13,17 @@
 - Expiração bloqueia frontend e APIs autenticadas, preservando apenas os
   endpoints necessários para contratar um plano.
 - Limite de equipe é protegido no banco na emissão e no aceite do convite.
-- Validação local atual: 84/84 testes, TypeScript, Knip, build de produção e
-  `git diff --check` aprovados. A migration `20260804_trial_vouchers.sql` foi
-  aplicada manualmente no Supabase em 04/08/2026; ainda faltam smoke
-  autenticado e publicação.
+- Validação local e no GitHub Actions: 84/84 testes, TypeScript, Knip, build de
+  produção e `git diff --check` aprovados. A migration
+  `20260804_trial_vouchers.sql` foi aplicada manualmente no Supabase antes do
+  deploy. Smoke pós-deploy confirmou `/api/health` HTTP 200, página pública do
+  convite HTTP 200, código inexistente HTTP 404 e rota Admin HTTP 401 sem
+  sessão. O smoke autenticado de criação/cancelamento ainda requer uma sessão
+  Admin no navegador.
+- O deploy atualizou e deixou saudáveis as quatro Machines existentes (duas
+  `web`, um `worker` e um `scheduler`). A Fly não reservou CPUs em `gru` para a
+  capacidade alvo de três `web` e dois `worker`; o workflow passou a tratar a
+  escala como melhor esforço com warning e repete a tentativa em cada deploy.
 
 ## Funções combináveis por conta (2026-08-03)
 

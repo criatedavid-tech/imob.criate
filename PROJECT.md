@@ -40,10 +40,10 @@ imóvel sem apagar registros anteriores.
   meio de capabilities administradas no backend. Sem override, os perfis
   preservam os módulos históricos. A migration de capabilities é manual.
 - Ambiente ainda em QA, sem clientes ativos/pagantes confirmados em produção.
-- Vouchers administrativos de experimentação foram implementados em 04/08/2026
+- Vouchers administrativos de experimentação estão publicados desde 04/08/2026
   para corretor, imobiliária e incorporadora. A migration
-  `20260804_trial_vouchers.sql` foi aplicada manualmente no Supabase em
-  04/08/2026; a ativação em produção depende somente da publicação do código.
+  `20260804_trial_vouchers.sql` foi aplicada manualmente no Supabase antes do
+  deploy do commit `39d92ba`.
 
 ## Repositório
 

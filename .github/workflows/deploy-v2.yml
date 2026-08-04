@@ -70,7 +70,7 @@ jobs:
       # O scheduler é obrigatoriamente singleton. A web permanece em uma
       # Machine até o teste de carga e a ativação do Redis distribuído; depois
       # disso pode aumentar sem duplicar jobs recorrentes.
-      - name: Keep scheduler singleton
+      - name: Keep scheduler singleton and request target capacity
         # web=3: com REDIS_URL configurado (24/07) os rate limiters passam a
         # contar no Redis compartilhado, então múltiplas máquinas param de
         # multiplicar os limites de login/checkout. Três máquinas dão
@@ -79,6 +79,15 @@ jobs:
         # worker=2: o claim das filas usa lease + fencing token, então rodar
         # vários workers é seguro e dobra a vazão de ingestão (o gargalo).
         # scheduler=1 é obrigatório (singleton — jobs recorrentes).
-        run: flyctl scale count web=3 worker=2 scheduler=1 --app imobiflow-v2 --yes
+        # A reserva de CPUs na região pode falhar mesmo depois de o deploy ter
+        # atualizado todas as Machines com saúde. Escala é, portanto, uma
+        # tentativa de convergir à capacidade alvo e não pode invalidar uma
+        # publicação já concluída. O warning mantém a falta de capacidade
+        # visível no run e a tentativa será repetida no próximo deploy.
+        run: |
+          if ! flyctl scale count web=3 worker=2 scheduler=1 --app imobiflow-v2 --yes; then
+            echo "::warning::Deploy concluído, mas a Fly não disponibilizou CPUs suficientes para web=3/worker=2. A capacidade atual foi preservada e a escala será tentada no próximo deploy."
+            flyctl status --app imobiflow-v2
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}

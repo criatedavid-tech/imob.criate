@@ -134,7 +134,7 @@ Supabase
 
 ## 4. Autenticação, contas e isolamento multi-tenant
 
-### Vouchers de experimentação (migration aplicada, aguardando publicação)
+### Vouchers de experimentação (publicado em 04/08/2026)
 
 O painel Admin possui uma área exclusiva para gerar vouchers de uso único nas
 modalidades `corretor`, `imobiliaria` e `incorporadora`. O administrador define
@@ -160,8 +160,10 @@ convites por RPCs serializadas, evitando ultrapassagem por requisições
 simultâneas.
 
 A migration foi aplicada manualmente no Supabase em 04/08/2026, antes da
-publicação do código, conforme a ordem obrigatória de rollout. A área só deve
-ser usada depois da confirmação do deploy e do smoke autenticado.
+publicação do commit `39d92ba`, conforme a ordem obrigatória de rollout. O
+smoke público confirmou saúde, rota da página, consulta de voucher e proteção
+da API Admin; criação, cancelamento e resgate ainda devem ser exercitados com
+uma sessão Admin e contas descartáveis.
 
 ### Modelo de conta
 
