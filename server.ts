@@ -26,6 +26,7 @@ import { adminRouter } from "./server/routes/admin";
 import { followupRouter } from "./server/routes/followup";
 import { conversationsRouter } from "./server/routes/conversations";
 import { locacaoRouter } from "./server/routes/locacao";
+import { rentalAgentRouter } from "./server/routes/rentalAgent";
 import { lancamentosRouter } from "./server/routes/lancamentos";
 import { financeiroRouter } from "./server/routes/financeiro";
 import { equipeRouter } from "./server/routes/equipe";
@@ -160,6 +161,7 @@ async function startServer() {
   app.use(followupRouter);
   app.use(conversationsRouter);
   app.use(locacaoRouter);
+  app.use(rentalAgentRouter);
   app.use(lancamentosRouter);
   app.use(financeiroRouter);
   app.use(equipeRouter);

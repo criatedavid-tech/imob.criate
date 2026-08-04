@@ -10,6 +10,11 @@ import { expireDueUnitReservations } from "./server/services/unitReservationBill
 import { purgeExpiredWebhookLogs, purgeResolvedQueueRows } from "./server/services/maintenance";
 import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
 import { runInboundMediaBackfillTick } from "./server/services/inboundMediaBackfill";
+import {
+  runRentalChargeGenerationTick,
+  runRentalDunningTick,
+  runKeyOverdueAlertTick,
+} from "./server/services/rentalAutopilot";
 
 const jobs: RecurringJob[] = [
   {
@@ -58,6 +63,29 @@ const jobs: RecurringJob[] = [
     intervalMs: 24 * 60 * 60 * 1_000,
     runOnStart: true,
     task: purgeExpiredWebhookLogs,
+  },
+  {
+    // Gera a cobrança do aluguel do mês (D-5 do vencimento). Determinístico,
+    // sem IA, e idempotente por contrato+mês.
+    name: "cobrança de aluguel (geração)",
+    intervalMs: 60 * 60 * 1_000,
+    runOnStart: true,
+    task: runRentalChargeGenerationTick,
+  },
+  {
+    // Régua de cobrança no WhatsApp do inquilino (D-5 até D+15). Respeita
+    // promessa de pagamento e horário de silêncio.
+    name: "cobrança de aluguel (régua)",
+    intervalMs: 30 * 60 * 1_000,
+    runOnStart: false,
+    task: runRentalDunningTick,
+  },
+  {
+    // Chave que passou do prazo de devolução: avisa o corretor.
+    name: "alerta de chave em atraso",
+    intervalMs: 15 * 60 * 1_000,
+    runOnStart: true,
+    task: runKeyOverdueAlertTick,
   },
   {
     // Filas: linhas já resolvidas viram peso morto. Sem retenção, os índices

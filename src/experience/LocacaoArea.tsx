@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { RentalDashboard, AvailableTab, ContractDiaryModal, type RentalDashboardData } from './LocacaoPanels';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
@@ -1012,7 +1013,9 @@ function PaymentLedgerModal({
 }
 
 export function LocacaoArea() {
-  const [view, setView] = useState<'contracts' | 'tenants'>('contracts');
+  const [view, setView] = useState<'contracts' | 'disponiveis' | 'tenants'>('contracts');
+  const [dashboard, setDashboard] = useState<RentalDashboardData | null>(null);
+  const [diaryContract, setDiaryContract] = useState<Contract | null>(null);
   const [contracts, setContracts] = useState<Contract[] | null>(null);
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
@@ -1033,9 +1036,17 @@ export function LocacaoArea() {
     CLIENT_FINANCIAL_OPERATIONS_ENABLED ? null : false,
   );
 
+  const loadDashboard = () => {
+    fetch('/api/locacao/dashboard', { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setDashboard(d))
+      .catch(() => setDashboard(null));
+  };
+
   const load = () => {
     setLoading(true);
     setError('');
+    loadDashboard();
     Promise.all([
       fetch('/api/locacao/contracts', { headers: authService.getAuthHeaders() }),
       fetch('/api/locacao/tenants', { headers: authService.getAuthHeaders() }),
@@ -1192,11 +1203,19 @@ export function LocacaoArea() {
           className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'contracts' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
           Imóveis alugados
         </button>
+        <button onClick={() => setView('disponiveis')}
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'disponiveis' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+          Para alugar
+        </button>
         <button onClick={() => setView('tenants')}
           className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'tenants' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
           Inquilinos ({tenants?.length || 0})
         </button>
       </div>
+
+      {view === 'disponiveis' && <AvailableTab />}
+
+      {view === 'contracts' && dashboard && <RentalDashboard data={dashboard} />}
 
       {view === 'contracts' && (isEmpty ? (
         <GlassCard className="!py-14 text-center">
@@ -1264,6 +1283,16 @@ export function LocacaoArea() {
                     <span className={`ml-1 px-1.5 py-0.5 rounded-full border ${PAYMENT_LABEL[c.current_month_payment_status]?.cls || ''}`}>
                       {PAYMENT_LABEL[c.current_month_payment_status]?.label || c.current_month_payment_status}
                     </span>
+                  )}
+                </button>
+
+                {/* Diário + piloto automático: onde o corretor vê o que a IA
+                    fez e liga/desliga a cobrança automática deste contrato. */}
+                <button onClick={() => setDiaryContract(c)}
+                  className="w-full mt-2 py-2.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors inline-flex items-center justify-center gap-2">
+                  <History className="w-3.5 h-3.5" /> Diário e piloto
+                  {(c as any).autopilot_enabled && (
+                    <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-emerald-300 bg-emerald-500/15">automático</span>
                   )}
                 </button>
 
@@ -1404,6 +1433,14 @@ export function LocacaoArea() {
           onClose={() => setHistoryProperty(null)}
         />
       )}
+      {diaryContract && (
+        <ContractDiaryModal
+          contract={diaryContract as any}
+          onClose={() => setDiaryContract(null)}
+          onChanged={() => { load(); }}
+        />
+      )}
+
       {ledgerContract && (
         <PaymentLedgerModal contract={ledgerContract} onClose={() => setLedgerContract(null)} onChanged={load} />
       )}

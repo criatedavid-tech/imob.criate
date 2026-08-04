@@ -5,6 +5,8 @@ import { requireUser, getBrokerId } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { generateRentCharge } from "../services/rentalBilling";
+import { getRentalAiSettings, logRentalEvent } from "../services/rentalAutopilot";
+import { normalizePhoneBR } from "../lib/crypto";
 import { requireAccountCapability } from "../services/accountCapabilities";
 import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
 import {
@@ -690,3 +692,333 @@ locacaoRouter.post(
   }
   },
 );
+
+// ═════════════════════════════════════════════════════════════════════════
+// PILOTO AUTOMÁTICO, DIÁRIO, CHAVES E DISPONÍVEIS
+// Tudo escopado por broker_id do usuário autenticado — nunca por id vindo
+// do cliente (mesma regra do resto do app).
+// ═════════════════════════════════════════════════════════════════════════
+
+// Painel da aba "Alugados": indicadores + série para os gráficos.
+locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { data: contracts } = await supabase
+      .from("imf_rental_contracts")
+      .select("id, status, rent_amount_cents, administration_fee_percent, autopilot_enabled, tenant_name, due_day, next_adjustment_date")
+      .eq("broker_id", brokerId)
+      .limit(1000);
+    const ativos = (contracts || []).filter((c: any) => c.status === "ativo");
+    const contractIds = ativos.map((c: any) => c.id);
+
+    const hoje = new Date();
+    const seisMesesAtras = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
+
+    const { data: payments } = contractIds.length
+      ? await supabase
+          .from("imf_rental_payments")
+          .select("id, contract_id, amount_cents, amount_paid_cents, due_date, status, paid_at, reference_month, dunning_step, promise_date, escalated_at")
+          .in("contract_id", contractIds)
+          .gte("reference_month", seisMesesAtras)
+          .limit(2000)
+      : { data: [] as any[] };
+
+    const hojeIso = hoje.toISOString().slice(0, 10);
+    const abertos = (payments || []).filter((p: any) => ["pending", "overdue"].includes(p.status));
+    const atrasados = abertos.filter((p: any) => p.due_date < hojeIso);
+
+    const receitaPrevista = ativos.reduce((s: number, c: any) => s + (c.rent_amount_cents || 0), 0);
+    const taxaAdmin = ativos.reduce(
+      (s: number, c: any) => s + Math.round((c.rent_amount_cents || 0) * (Number(c.administration_fee_percent) || 0) / 100), 0);
+
+    // Série dos últimos 6 meses: previsto x recebido (para o gráfico).
+    const serie: { mes: string; previsto: number; recebido: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const key = d.toISOString().slice(0, 7);
+      const doMes = (payments || []).filter((p: any) => String(p.reference_month || "").slice(0, 7) === key);
+      serie.push({
+        mes: d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""),
+        previsto: doMes.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+        recebido: doMes.filter((p: any) => p.status === "paid")
+          .reduce((s: number, p: any) => s + (p.amount_paid_cents || p.amount_cents || 0), 0),
+      });
+    }
+
+    const totalMes = serie[serie.length - 1];
+    const inadimplencia = totalMes && totalMes.previsto > 0
+      ? Math.round(((totalMes.previsto - totalMes.recebido) / totalMes.previsto) * 100)
+      : 0;
+
+    res.json({
+      contratos_ativos: ativos.length,
+      contratos_total: (contracts || []).length,
+      autopilot_ativos: ativos.filter((c: any) => c.autopilot_enabled).length,
+      receita_mensal_cents: receitaPrevista,
+      taxa_admin_mensal_cents: taxaAdmin,
+      em_aberto_qtd: abertos.length,
+      em_aberto_cents: abertos.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      atrasados_qtd: atrasados.length,
+      atrasados_cents: atrasados.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      com_promessa_qtd: abertos.filter((p: any) => p.promise_date).length,
+      escalados_qtd: abertos.filter((p: any) => p.escalated_at).length,
+      inadimplencia_percent: inadimplencia,
+      serie_6_meses: serie,
+      reajustes_proximos: ativos
+        .filter((c: any) => c.next_adjustment_date && c.next_adjustment_date <= new Date(hoje.getTime() + 60 * 86400000).toISOString().slice(0, 10))
+        .map((c: any) => ({ id: c.id, tenant_name: c.tenant_name, next_adjustment_date: c.next_adjustment_date })),
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/locacao/dashboard:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Diário do contrato: tudo que aconteceu, do sistema, da IA e do humano.
+locacaoRouter.get("/api/locacao/contracts/:id/events", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    const { data, error } = await supabase
+      .from("imf_rental_events")
+      .select("id, event_type, actor, description, metadata, created_at")
+      .eq("broker_id", brokerId)
+      .eq("contract_id", req.params.id)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Liga/desliga o piloto automático de UM contrato (kill-switch individual —
+// é o que permite pilotar um contrato antes de liberar a carteira toda).
+locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    const enabled = !!req.body?.enabled;
+
+    const { data, error } = await supabase
+      .from("imf_rental_contracts")
+      .update({ autopilot_enabled: enabled, updated_at: new Date().toISOString() })
+      .eq("id", req.params.id)
+      .eq("broker_id", brokerId)
+      .select("id, autopilot_enabled")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Contrato não encontrado." });
+
+    await logRentalEvent({
+      brokerId,
+      contractId: req.params.id,
+      type: enabled ? "autopilot_ligado" : "autopilot_desligado",
+      actor: "humano",
+      description: enabled
+        ? "Piloto automático ligado: cobrança e régua passam a rodar sozinhas."
+        : "Piloto automático desligado: nenhuma cobrança automática será enviada.",
+    });
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Alçada da IA de cobrança (o que ela pode fazer sem perguntar).
+locacaoRouter.get("/api/locacao/ai-settings", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    res.json(await getRentalAiSettings(brokerId));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const allowed = [
+      "enabled", "charge_generation_enabled", "dunning_enabled", "can_send_second_copy",
+      "can_register_promise", "max_promise_days", "can_offer_discount", "max_discount_percent",
+      "can_offer_installments", "escalate_after_silent_steps", "quiet_hours_start", "quiet_hours_end",
+    ] as const;
+    const payload: Record<string, any> = { broker_id: brokerId, updated_at: new Date().toISOString() };
+    for (const key of allowed) if (req.body?.[key] !== undefined) payload[key] = req.body[key];
+
+    const { data, error } = await supabase
+      .from("imf_rental_ai_settings")
+      .upsert(payload, { onConflict: "broker_id" })
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Aba "Disponíveis": funil do imóvel vago ────────────────────────────────
+locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { data: properties } = await supabase
+      .from("imf_properties")
+      .select("id, title, location, price, status, image_url, created_at, slug")
+      .eq("broker_id", brokerId)
+      .eq("status", "disponivel")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    const list = properties || [];
+    if (!list.length) return res.json([]);
+
+    const ids = list.map((p: any) => p.id);
+    const nowIso = new Date().toISOString();
+
+    const [{ data: leads }, { data: visits }, { data: keys }] = await Promise.all([
+      supabase.from("leads").select("id, property_id, name, phone, status, created_at").in("property_id", ids).limit(2000),
+      supabase.from("imf_agenda").select("id, property_id, client_name, scheduled_at, status")
+        .in("property_id", ids).gte("scheduled_at", nowIso).limit(500),
+      supabase.from("imf_property_keys").select("id, property_id, holder_name, holder_phone, due_at, taken_at, purpose")
+        .in("property_id", ids).is("returned_at", null).limit(200),
+    ]);
+
+    const byProp = (rows: any[] | null): Map<string, any[]> => {
+      const m = new Map<string, any[]>();
+      for (const r of rows || []) {
+        const arr = m.get(r.property_id) || [];
+        arr.push(r);
+        m.set(r.property_id, arr);
+      }
+      return m;
+    };
+    const leadsMap = byProp(leads as any);
+    const visitsMap = byProp(visits as any);
+    const keysMap = byProp(keys as any);
+
+    res.json(list.map((p: any) => {
+      const propLeads = leadsMap.get(p.id) || [];
+      const propVisits = (visitsMap.get(p.id) || []).sort(
+        (a: any, b: any) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      const key = (keysMap.get(p.id) || [])[0] || null;
+      const diasVago = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86_400_000);
+      const ultimoLead = propLeads.length
+        ? propLeads.map((l: any) => l.created_at).sort().reverse()[0]
+        : null;
+
+      return {
+        id: p.id,
+        title: p.title,
+        location: p.location,
+        price: p.price,
+        slug: p.slug,
+        image_url: p.image_url,
+        dias_vago: diasVago,
+        interessados: propLeads.length,
+        dias_sem_lead: ultimoLead ? Math.floor((Date.now() - new Date(ultimoLead).getTime()) / 86_400_000) : null,
+        visitas_agendadas: propVisits.length,
+        proxima_visita: propVisits[0]
+          ? { quando: propVisits[0].scheduled_at, cliente: propVisits[0].client_name }
+          : null,
+        chave: key
+          ? {
+              id: key.id,
+              com: key.holder_name,
+              telefone: key.holder_phone,
+              finalidade: key.purpose,
+              retirada_em: key.taken_at,
+              prevista_para: key.due_at,
+              atrasada: !!key.due_at && key.due_at < nowIso,
+            }
+          : null,
+      };
+    }));
+  } catch (err: any) {
+    console.error("Erro GET /api/locacao/available:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Controle de chaves ─────────────────────────────────────────────────────
+locacaoRouter.post("/api/locacao/keys", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const { property_id, holder_name, holder_phone, purpose, due_at, notes } = req.body || {};
+    if (!property_id || !holder_name?.trim()) {
+      return res.status(400).json({ error: "Informe o imóvel e com quem está a chave." });
+    }
+    const { data: property } = await supabase
+      .from("imf_properties").select("id").eq("id", property_id).eq("broker_id", brokerId).maybeSingle();
+    if (!property) return res.status(404).json({ error: "Imóvel não encontrado." });
+
+    const { data, error } = await supabase.from("imf_property_keys").insert({
+      broker_id: brokerId,
+      property_id,
+      holder_name: String(holder_name).trim().slice(0, 120),
+      holder_phone: holder_phone ? normalizePhoneBR(String(holder_phone)) : null,
+      purpose: ["visita", "vistoria", "obra", "outro"].includes(purpose) ? purpose : "visita",
+      due_at: due_at || null,
+      notes: notes ? String(notes).slice(0, 500) : null,
+    }).select().single();
+
+    if (error) {
+      // O índice único garante uma chave em aberto por imóvel: sem isso, dois
+      // registros simultâneos fariam a chave "estar" em dois lugares.
+      if ((error as any).code === "23505") {
+        return res.status(409).json({ error: "Já existe uma chave em aberto para este imóvel. Registre a devolução antes." });
+      }
+      throw error;
+    }
+    res.status(201).json(data);
+  } catch (err: any) {
+    console.error("Erro POST /api/locacao/keys:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+locacaoRouter.patch("/api/locacao/keys/:id/return", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    const { data, error } = await supabase
+      .from("imf_property_keys")
+      .update({ returned_at: new Date().toISOString() })
+      .eq("id", req.params.id)
+      .eq("broker_id", brokerId)
+      .is("returned_at", null)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Registro de chave não encontrado ou já devolvido." });
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Histórico de chaves de um imóvel (quem teve acesso, quando).
+locacaoRouter.get("/api/locacao/keys", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    let query = supabase.from("imf_property_keys")
+      .select("id, property_id, holder_name, holder_phone, purpose, taken_at, due_at, returned_at, notes")
+      .eq("broker_id", brokerId);
+    if (typeof req.query.property_id === "string") query = query.eq("property_id", req.query.property_id);
+    const { data, error } = await query.order("taken_at", { ascending: false }).limit(200);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
