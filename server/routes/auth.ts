@@ -8,6 +8,7 @@ import { validateBody } from "../middleware/validate";
 import { normalizePhoneBR } from "../lib/crypto";
 import { isValidPublicInviteCode } from "../security/publicInviteCode";
 import { isValidPublicResetToken } from "../security/publicResetToken";
+import { hashTrialVoucherCode, isValidTrialVoucherCode } from "../security/trialVoucherCode";
 import {
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_APP_URL,
   UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
@@ -33,11 +34,17 @@ const signupSchema = z.object({
   name: z.string().trim().min(1, "Nome é obrigatório."),
   phone: z.string().optional(),
   account_type: z.string().optional(),
+  voucher_code: z.string().optional().refine(
+    (value) => value === undefined || isValidTrialVoucherCode(value),
+    "Voucher de experimentação inválido.",
+  ),
 });
 
 authRouter.post("/api/auth/signup", authLimiter, validateBody(signupSchema), async (req, res) => {
+  let createdUserId: string | null = null;
+  let accountCreated = false;
   try {
-    const { email, password, name, phone, account_type } = req.body;
+    const { email, password, name, phone, account_type, voucher_code } = req.body;
     // Tipo da conta define o "mundo" que o app mostra (menus + cockpit).
     // Valida contra a lista fechada; valor inválido cai no padrão (corretor).
     const VALID_TYPES = ['corretor', 'imobiliaria', 'incorporadora'];
@@ -51,6 +58,22 @@ authRouter.post("/api/auth/signup", authLimiter, validateBody(signupSchema), asy
 
     const cleanEmail = email.toLowerCase().trim();
 
+    // Preflight melhora a mensagem e evita criar auth.users quando o voucher
+    // já está indisponível. A garantia contra corrida fica na RPC transacional.
+    if (voucher_code) {
+      const { data: voucher, error: voucherError } = await supabase
+        .from("imf_trial_vouchers")
+        .select("id")
+        .eq("code_hash", hashTrialVoucherCode(voucher_code))
+        .eq("status", "active")
+        .gt("invite_expires_at", new Date().toISOString())
+        .maybeSingle();
+      if (voucherError) throw voucherError;
+      if (!voucher) {
+        return res.status(410).json({ error: "Este voucher é inválido, expirou ou já foi utilizado." });
+      }
+    }
+
     // Cria o usuário JÁ confirmado (via admin/service_role) — evita a race
     // condition de confirmar o e-mail depois e não conseguir a sessão na hora.
     const { data: created, error: createErr } = await supabase.auth.admin.createUser({
@@ -61,39 +84,129 @@ authRouter.post("/api/auth/signup", authLimiter, validateBody(signupSchema), asy
     if (createErr) throw createErr;
 
     if (created.user) {
-      const { error: profileError } = await supabase.from('imf_brokers').insert([{
-        user_id: created.user.id,
-        name: name.trim(),
-        phone: normalizePhoneBR(phone),
-        email: cleanEmail,
-        ai_name: 'Minha Assistente IA',
-        broker_address: '',
-        account_type: accountType,
-        status: 'pendente'
-      }]);
-      if (profileError) console.error("Error creating profile:", profileError);
+      createdUserId = created.user.id;
+      let trial: any = null;
+
+      if (voucher_code) {
+        const { data, error } = await supabase.rpc("imf_redeem_trial_voucher", {
+          p_code_hash: hashTrialVoucherCode(voucher_code),
+          p_user_id: created.user.id,
+          p_name: name.trim(),
+          p_phone: normalizePhoneBR(phone),
+          p_email: cleanEmail,
+        });
+        if (error || !data?.[0]) throw error || new Error("TRIAL_VOUCHER_REDEMPTION_FAILED");
+        trial = data[0];
+        accountCreated = true;
+      } else {
+        const { data: profile, error: profileError } = await supabase.from('imf_brokers').insert([{
+          user_id: created.user.id,
+          name: name.trim(),
+          phone: normalizePhoneBR(phone),
+          email: cleanEmail,
+          ai_name: 'Minha Assistente IA',
+          broker_address: '',
+          account_type: accountType,
+          status: 'pendente'
+        }]).select("id").single();
+        if (profileError || !profile) throw profileError || new Error("PROFILE_NOT_CREATED");
+
+        const { error: membershipError } = await supabase
+          .from("imf_broker_members")
+          .insert({ broker_id: profile.id, user_id: created.user.id });
+        if (membershipError) throw membershipError;
+        accountCreated = true;
+      }
 
       // Usuário já nasce confirmado → signInWithPassword retorna a sessão na hora
       const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data: loginData, error: loginErr } = await authClient.auth
-        .signInWithPassword({ email: cleanEmail, password });
+      try {
+        const { data: loginData, error: loginErr } = await authClient.auth
+          .signInWithPassword({ email: cleanEmail, password });
 
-      if (loginErr || !loginData?.session) {
-        console.error("Signup auto-login falhou:", loginErr);
-        // Conta criada, mas sem sessão — frontend redireciona para login
-        return res.json({ user: created.user, session: null });
+        if (loginErr || !loginData?.session) {
+          console.error("Signup auto-login falhou:", loginErr);
+          // A conta já está íntegra; o frontend pode fazer login explícito.
+          return res.json({ user: created.user, session: null, trial });
+        }
+
+        return res.json({ user: loginData.user, session: loginData.session, trial });
+      } catch (loginError: any) {
+        console.error("Signup auto-login indisponível:", {
+          name: loginError?.name || "Error",
+          code: loginError?.code || "UNKNOWN",
+        });
+        return res.json({ user: created.user, session: null, trial });
       }
-
-      return res.json({ user: loginData.user, session: loginData.session });
     }
 
     res.json({ user: created.user, session: null });
   } catch (err: any) {
+    // Evita identidades órfãs quando perfil, membership ou resgate falham.
+    if (createdUserId && !accountCreated) {
+      try {
+        await supabase.from("imf_brokers").delete().eq("user_id", createdUserId);
+        await supabase.auth.admin.deleteUser(createdUserId);
+      } catch (rollbackError: any) {
+        console.error("Signup rollback failed:", {
+          name: rollbackError?.name || "Error",
+          code: rollbackError?.code || "UNKNOWN",
+        });
+      }
+    }
     console.error("Auth Signup Error:", err);
-    const msg = err.message?.includes('already registered')
+    const errorText = String(err?.message || "");
+    const msg = errorText.includes('already registered')
       ? 'Este e-mail já possui uma conta. Faça login ou recupere sua senha.'
-      : err.message;
+      : errorText.includes("TRIAL_")
+        ? 'Este voucher é inválido, expirou ou já foi utilizado.'
+        : 'Não foi possível criar a conta. Tente novamente.';
     res.status(400).json({ error: msg });
+  }
+});
+
+// Consulta pública mínima para montar a tela do convite. Não retorna hash,
+// criador, usuário que resgatou nem qualquer dado da conta.
+authRouter.get("/api/auth/trial-vouchers/:code", publicReadLimiter, async (req, res) => {
+  try {
+    const code = req.params.code;
+    if (!isValidTrialVoucherCode(code)) {
+      return res.status(404).json({ error: "Voucher não encontrado." });
+    }
+
+    const { data: voucher, error } = await supabase
+      .from("imf_trial_vouchers")
+      .select("id, account_type, invite_expires_at, trial_days, member_limit, status")
+      .eq("code_hash", hashTrialVoucherCode(code))
+      .maybeSingle();
+    if (error) throw error;
+    if (!voucher) return res.status(404).json({ error: "Voucher não encontrado." });
+
+    if (voucher.status === "active" && new Date(voucher.invite_expires_at) <= new Date()) {
+      await supabase
+        .from("imf_trial_vouchers")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("id", voucher.id)
+        .eq("status", "active");
+      voucher.status = "expired";
+    }
+
+    if (voucher.status !== "active") {
+      return res.status(410).json({ error: "Este voucher expirou ou já foi utilizado." });
+    }
+
+    res.json({
+      account_type: voucher.account_type,
+      invite_expires_at: voucher.invite_expires_at,
+      trial_days: voucher.trial_days,
+      member_limit: voucher.account_type === "corretor" ? 0 : voucher.member_limit,
+    });
+  } catch (err: any) {
+    console.error("Trial voucher lookup error:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível verificar o voucher." });
   }
 });
 
@@ -204,7 +317,7 @@ authRouter.get("/api/auth/join/:code", publicReadLimiter, async (req, res) => {
 
     const { data: invite } = await supabase
       .from("imf_broker_invites")
-      .select("broker_id, expires_at, used_at, whatsapp_mode, imf_brokers(name)")
+      .select("broker_id, expires_at, used_at, whatsapp_mode, imf_brokers(name, plan, trial_ends_at)")
       .eq("code", req.params.code)
       .maybeSingle();
 
@@ -212,7 +325,12 @@ authRouter.get("/api/auth/join/:code", publicReadLimiter, async (req, res) => {
     if (invite.used_at) return res.status(410).json({ error: "Este convite já foi utilizado." });
     if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "Este convite expirou." });
 
-    res.json({ brokerName: (invite as any).imf_brokers?.name || "a conta", whatsappMode: invite.whatsapp_mode });
+    const broker = (invite as any).imf_brokers;
+    if (broker?.plan === "experimentacao" && (!broker?.trial_ends_at || new Date(broker.trial_ends_at) <= new Date())) {
+      return res.status(410).json({ error: "O período de experimentação desta conta terminou." });
+    }
+
+    res.json({ brokerName: broker?.name || "a conta", whatsappMode: invite.whatsapp_mode });
   } catch (err: any) {
     console.error("Erro GET /api/auth/join/:code:", {
       name: err?.name || "Error",
@@ -239,14 +357,9 @@ authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (
     const { code, name, phone, email, password } = req.body;
 
     // Reivindica o convite de forma atômica — só segue se ninguém usou antes.
-    const { data: claimed, error: claimError } = await supabase
-      .from("imf_broker_invites")
-      .update({ used_at: new Date().toISOString() })
-      .eq("code", code)
-      .is("used_at", null)
-      .gt("expires_at", new Date().toISOString())
-      .select("broker_id, whatsapp_mode")
-      .maybeSingle();
+    const { data: claimedRows, error: claimError } = await supabase
+      .rpc("imf_claim_broker_invite", { p_code: code });
+    const claimed = claimedRows?.[0] || null;
     if (claimError) throw claimError;
     if (!claimed) return res.status(410).json({ error: "Convite inválido, expirado ou já utilizado." });
     claimedCode = code;
@@ -336,7 +449,14 @@ authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (
       name: err?.name || "Error",
       code: err?.code || "UNKNOWN",
     });
-    const msg = err.message?.includes("already registered")
+    const errorText = String(err?.message || "");
+    if (errorText.includes("TRIAL_MEMBER_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "O limite de corretores desta experimentação foi atingido." });
+    }
+    if (errorText.includes("TRIAL_EXPIRED")) {
+      return res.status(403).json({ error: "O período de experimentação terminou. Contrate um plano para continuar." });
+    }
+    const msg = errorText.includes("already registered")
       ? "Este e-mail já possui uma conta. Faça login."
       : "Não foi possível entrar na equipe. Tente novamente.";
     res.status(400).json({ error: msg });

@@ -2,7 +2,11 @@ import type { ErrorEvent } from "@sentry/node";
 
 function withoutQueryOrFragment(url: string | undefined): string | undefined {
   if (!url) return url;
-  return url.split(/[?#]/, 1)[0];
+  return url
+    .split(/[?#]/, 1)[0]
+    // O voucher é uma credencial de uso único transportada no path. Remover
+    // query não basta: nunca enviar o segredo concreto ao Sentry/breadcrumbs.
+    .replace(/\/(experimentacao|api\/auth\/trial-vouchers)\/[^/]+/g, "/$1/:voucher");
 }
 
 /**

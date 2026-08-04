@@ -36,14 +36,22 @@ function cacheGet<V>(map: Map<string, { value: V; expires: number }>, key: strin
 // autenticada. Mudança de equipe/posse é rara; 60s de defasagem é aceitável.
 const brokerIdCache = new Map<string, { value: string | null; expires: number }>();
 const ownerCache = new Map<string, { value: boolean; expires: number }>();
+const accountAccessCache = new Map<string, { value: boolean; expires: number }>();
 const IDENTITY_TTL_MS = 60_000;
+const ACCOUNT_ACCESS_TTL_MS = 15_000;
 
 // Chamar quando a composição da equipe muda (convite aceito, membro removido),
 // pra não esperar o TTL.
 export function invalidateIdentityCache(userId?: string) {
-  if (!userId) { brokerIdCache.clear(); ownerCache.clear(); return; }
+  if (!userId) { brokerIdCache.clear(); ownerCache.clear(); accountAccessCache.clear(); return; }
   brokerIdCache.delete(userId);
+  accountAccessCache.delete(userId);
   for (const k of ownerCache.keys()) if (k.startsWith(`${userId}:`)) ownerCache.delete(k);
+}
+
+export function invalidateAccountAccessCache(userId?: string) {
+  if (!userId) accountAccessCache.clear();
+  else accountAccessCache.delete(userId);
 }
 
 async function verifyAccessToken(req: Request): Promise<string | null> {
@@ -69,6 +77,50 @@ export async function requireUser(req: any, res: any, next: any) {
   const userId = await verifyAccessToken(req);
   if (!userId) return res.status(401).json({ error: 'Sessão inválida ou expirada. Faça login novamente.' });
   req.userId = userId;
+
+  // Estas rotas precisam continuar acessíveis para uma conta pendente ou com
+  // teste encerrado conseguir consultar a situação e contratar um plano.
+  const accessBypass = new Set([
+    "GET /api/subscription",
+    "POST /api/checkout",
+    "GET /api/brokers/me",
+    "POST /api/terms/accept",
+  ]);
+  if (accessBypass.has(`${req.method} ${req.path}`)) return next();
+
+  const cachedAccess = cacheGet(accountAccessCache, userId);
+  if (cachedAccess === true) return next();
+  if (cachedAccess === false) {
+    return res.status(402).json({ error: 'Contrate um plano para continuar utilizando a plataforma.' });
+  }
+
+  const brokerId = await getBrokerId(userId);
+  if (!brokerId) return res.status(403).json({ error: 'Perfil não encontrado.' });
+  let { data: broker } = await supabase
+    .from("imf_brokers")
+    .select("status, plan, trial_ends_at, is_admin")
+    .eq("id", brokerId)
+    .maybeSingle();
+
+  if (
+    broker?.status === "ativo"
+    && broker?.plan === "experimentacao"
+    && broker?.trial_ends_at
+    && new Date(broker.trial_ends_at) <= new Date()
+  ) {
+    await supabase
+      .from("imf_brokers")
+      .update({ status: "inativo" })
+      .eq("id", brokerId)
+      .eq("plan", "experimentacao");
+    broker = { ...broker, status: "inativo" };
+  }
+
+  const hasAccess = Boolean(broker?.is_admin || broker?.status === "ativo");
+  cacheSet(accountAccessCache, userId, hasAccess, ACCOUNT_ACCESS_TTL_MS);
+  if (!hasAccess) {
+    return res.status(402).json({ error: 'Contrate um plano para continuar utilizando a plataforma.' });
+  }
   next();
 }
 

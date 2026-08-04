@@ -1,9 +1,15 @@
 import express from "express";
+import { z } from "zod";
 import { supabase } from "../supabase";
-import { requireAdmin } from "../middleware/auth";
+import { invalidateAccountAccessCache, requireAdmin } from "../middleware/auth";
 import {
-  UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE,
+  UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, PUBLIC_APP_URL,
 } from "../config";
+import {
+  generateTrialVoucherCode,
+  hashTrialVoucherCode,
+  trialVoucherCodeHint,
+} from "../security/trialVoucherCode";
 import { cancelAsaasSubscription } from "../services/billing";
 import { provisionUazapiInstanceNative, ensureBrokerInstance } from "../services/provisioning";
 import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases } from "../services/systemHealth";
@@ -19,6 +25,12 @@ import {
 export const adminRouter = express.Router();
 
 const MAX_PAGINATION_OFFSET = 10_000_000;
+const trialVoucherCreateSchema = z.object({
+  account_type: z.enum(["corretor", "imobiliaria", "incorporadora"]),
+  invite_expires_at: z.string().datetime({ offset: true }),
+  trial_days: z.number().int().min(1).max(180),
+  member_limit: z.number().int().min(0).max(100),
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // PAINEL ADMIN
@@ -83,6 +95,7 @@ adminRouter.patch("/api/admin/brokers/:id/status", async (req, res) => {
     const { data, error } = await supabase
       .from('imf_brokers').update({ status }).eq('id', req.params.id).select().single();
     if (error) throw error;
+    invalidateAccountAccessCache(data.user_id);
 
     // Ativação manual (sandbox/teste, sem passar pelo checkout real) não
     // provisionava WhatsApp — a conta ficava com "instância ainda sendo
@@ -139,6 +152,126 @@ adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Vouchers de experimentação. O segredo bruto só volta nesta criação; a
+// listagem guarda apenas uma dica visual e o hash irreversível no banco.
+adminRouter.post("/api/admin/trial-vouchers", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const parsed = trialVoucherCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Dados inválidos.",
+        details: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+      });
+    }
+
+    const input = parsed.data;
+    const expiresAt = new Date(input.invite_expires_at);
+    const now = new Date();
+    const latestAllowed = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+    if (expiresAt <= now || expiresAt > latestAllowed) {
+      return res.status(400).json({ error: "A validade do convite deve estar entre agora e 365 dias." });
+    }
+
+    const code = generateTrialVoucherCode();
+    const memberLimit = input.account_type === "corretor" ? 0 : input.member_limit;
+    const { data, error } = await supabase
+      .from("imf_trial_vouchers")
+      .insert({
+        code_hash: hashTrialVoucherCode(code),
+        code_hint: trialVoucherCodeHint(code),
+        account_type: input.account_type,
+        invite_expires_at: expiresAt.toISOString(),
+        trial_days: input.trial_days,
+        member_limit: memberLimit,
+        created_by: (req as any).userId,
+      })
+      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, status, created_at")
+      .single();
+    if (error) throw error;
+
+    res.status(201).json({
+      ...data,
+      code,
+      url: `${PUBLIC_APP_URL}/experimentacao/${encodeURIComponent(code)}`,
+    });
+  } catch (err: any) {
+    console.error("Erro POST /api/admin/trial-vouchers:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível gerar o voucher." });
+  }
+});
+
+adminRouter.get("/api/admin/trial-vouchers", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const now = new Date().toISOString();
+    const { error: expiryError } = await supabase
+      .from("imf_trial_vouchers")
+      .update({ status: "expired", updated_at: now })
+      .eq("status", "active")
+      .lte("invite_expires_at", now);
+    if (expiryError) throw expiryError;
+
+    const { data, error } = await supabase
+      .from("imf_trial_vouchers")
+      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, status, created_at, used_at, broker_id, cancelled_at")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+
+    const brokerIds = Array.from(new Set((data || []).map((row: any) => row.broker_id).filter(Boolean)));
+    const brokersById = new Map<string, { name: string; email: string }>();
+    if (brokerIds.length > 0) {
+      const { data: brokerRows, error: brokerError } = await supabase
+        .from("imf_brokers")
+        .select("id, name, email")
+        .in("id", brokerIds);
+      if (brokerError) throw brokerError;
+      for (const broker of brokerRows || []) brokersById.set(broker.id, { name: broker.name, email: broker.email });
+    }
+
+    res.json((data || []).map((row: any) => ({
+      ...row,
+      used_by_account: row.broker_id ? brokersById.get(row.broker_id) || null : null,
+    })));
+  } catch (err: any) {
+    console.error("Erro GET /api/admin/trial-vouchers:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível listar os vouchers." });
+  }
+});
+
+adminRouter.patch("/api/admin/trial-vouchers/:id/cancel", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    if (!z.string().uuid().safeParse(req.params.id).success) {
+      return res.status(400).json({ error: "Voucher inválido." });
+    }
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("imf_trial_vouchers")
+      .update({ status: "cancelled", cancelled_at: now, cancelled_by: (req as any).userId, updated_at: now })
+      .eq("id", req.params.id)
+      .eq("status", "active")
+      .select("id, status, cancelled_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(409).json({ error: "Somente vouchers ativos podem ser cancelados." });
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/admin/trial-vouchers/:id/cancel:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível cancelar o voucher." });
   }
 });
 

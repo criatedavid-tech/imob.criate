@@ -1,5 +1,20 @@
 # Decisões vigentes
 
+## Vouchers são concessões de acesso, não pagamentos simulados (2026-08-04)
+
+- Voucher é criado somente por administrador e tem uso único, modalidade,
+  validade do link, duração do teste e limite de corretores convidados.
+- O código bruto é mostrado uma vez e nunca salvo; persiste-se apenas SHA-256
+  e uma dica parcial para auditoria.
+- O resgate cria `plan='experimentacao'` sem cliente, assinatura ou cobrança no
+  Asaas. Ao término, a conta fica inativa e deve contratar um plano real.
+- O limite informado significa corretores adicionais além do titular. Para
+  corretor autônomo ele é sempre zero.
+- Resgate e controle de vagas ficam em RPCs transacionais com locks no banco;
+  validação apenas no frontend não é considerada autorização.
+- A migration deve preceder o deploy porque cadastro e convite de equipe passam
+  a depender das novas RPCs.
+
 ## Projeto e entrega
 
 - **V2 é o único produto ativo.** Branch `v2` e app Fly `imobiflow-v2`; V1/main

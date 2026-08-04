@@ -11,6 +11,7 @@ import Copyright from '../components/Copyright';
 
 // Painel pesado e usado só quando há incidente — carregado sob demanda.
 const AdminHealth = lazy(() => import('../components/AdminHealth'));
+const AdminTrialVouchers = lazy(() => import('../components/AdminTrialVouchers'));
 
 interface Broker {
   id: string;
@@ -111,7 +112,7 @@ export default function Admin() {
   const [capabilitySelection, setCapabilitySelection] = useState<AccountCapability[]>([]);
   const [savingCapabilities, setSavingCapabilities] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
-  const [view, setView] = useState<'contas' | 'saude'>('contas');
+  const [view, setView] = useState<'contas' | 'vouchers' | 'saude'>('contas');
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
   const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
   const detailRequestIdRef = useRef(0);
@@ -438,10 +439,9 @@ export default function Admin() {
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-8">
-        {/* Duas visões: as CONTAS (assinatura, cobrança) e a SAÚDE do sistema
-            (filas, WhatsApp por corretor, intervenção manual em incidente). */}
+        {/* Contas, concessões de experimentação e saúde operacional. */}
         <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-6">
-          {([['contas', 'Contas'], ['saude', 'Saúde do sistema']] as const).map(([key, label]) => (
+          {([['contas', 'Contas'], ['vouchers', 'Vouchers'], ['saude', 'Saúde do sistema']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setView(key)}
@@ -454,7 +454,11 @@ export default function Admin() {
           ))}
         </div>
 
-        {view === 'saude' ? (
+        {view === 'vouchers' ? (
+          <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
+            <AdminTrialVouchers />
+          </Suspense>
+        ) : view === 'saude' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
             <AdminHealth />
           </Suspense>

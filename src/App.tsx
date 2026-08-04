@@ -57,7 +57,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (status === 'pendente') return <Navigate to="/payment" replace />;
+  if (status !== 'ativo') return <Navigate to="/payment" replace />;
 
   return <><TermsGate />{children}</>;
 }
@@ -71,6 +71,7 @@ export default function App() {
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/experimentacao/:voucherCode" element={<Signup />} />
           <Route path="/equipe/entrar/:code" element={<JoinTeam />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />

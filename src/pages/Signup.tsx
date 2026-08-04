@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff, Building2, Landmark, Check } from 'lucide-react';
+import { useNavigate, Link, useParams } from 'react-router-dom';
+import { Home, Mail, Lock, User, Phone, Loader2, ArrowRight, ArrowLeft, Eye, EyeOff, Building2, Landmark, Check, Gift } from 'lucide-react';
 import { authService } from '../services/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import Copyright from '../components/Copyright';
@@ -15,6 +15,13 @@ const ACCOUNT_TYPES = [
   { value: 'imobiliaria',   label: 'Imobiliária',       desc: 'Equipe, locação e carteira',        icon: Building2, popular: false },
   { value: 'incorporadora', label: 'Incorporadora',     desc: 'Lançamentos e espelho de vendas',   icon: Landmark,  popular: false },
 ] as const;
+
+type TrialVoucher = {
+  account_type: 'corretor' | 'imobiliaria' | 'incorporadora';
+  invite_expires_at: string;
+  trial_days: number;
+  member_limit: number;
+};
 
 // Preço/features ainda não diferem por plano de verdade (ver DECISIONS.md) —
 // os 3 planos mostram o mesmo preço real vindo de /api/config/plan e a mesma
@@ -44,6 +51,7 @@ const btnBack =
   'bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all';
 
 export default function Signup() {
+  const { voucherCode } = useParams<{ voucherCode?: string }>();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '', phone: '', email: '', password: '', confirmPassword: '', account_type: 'corretor'
@@ -56,7 +64,27 @@ export default function Signup() {
   const [planPriceDisplay, setPlanPriceDisplay] = useState('49,90');
   const [slotPriceDisplay, setSlotPriceDisplay] = useState('0,00');
   const [billingCycle, setBillingCycle] = useState<'mensal' | 'anual'>('mensal');
+  const [trialVoucher, setTrialVoucher] = useState<TrialVoucher | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(Boolean(voucherCode));
+  const [voucherError, setVoucherError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!voucherCode) return;
+    setVoucherLoading(true);
+    fetch(`/api/auth/trial-vouchers/${encodeURIComponent(voucherCode)}`)
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Voucher inválido.');
+        return data as TrialVoucher;
+      })
+      .then((voucher) => {
+        setTrialVoucher(voucher);
+        setFormData((current) => ({ ...current, account_type: voucher.account_type }));
+      })
+      .catch((err: any) => setVoucherError(err?.message || 'Não foi possível validar este convite.'))
+      .finally(() => setVoucherLoading(false));
+  }, [voucherCode]);
 
   // Rota pública (sem auth) — preço real vem do backend, nunca hardcoded aqui,
   // mesma fonte que PaymentPending.tsx usa depois do cadastro.
@@ -95,7 +123,14 @@ export default function Signup() {
     setLoading(true);
     setError('');
     try {
-      await authService.signup(formData.email, formData.password, formData.name, formData.phone, formData.account_type);
+      await authService.signup(
+        formData.email,
+        formData.password,
+        formData.name,
+        formData.phone,
+        formData.account_type,
+        voucherCode,
+      );
 
       // Se o auto-login do signup falhou (session null), faz login explícito
       if (!authService.isLoggedIn()) {
@@ -108,7 +143,7 @@ export default function Signup() {
         await fetch('/api/terms/accept', { method: 'POST', headers: authService.getAuthHeaders() });
       } catch { /* noop */ }
 
-      window.location.replace('/payment');
+      window.location.replace(voucherCode ? '/app' : '/payment');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -123,6 +158,29 @@ export default function Signup() {
     if (d.length <= 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
     return v;
   };
+
+  if (voucherCode && voucherLoading) {
+    return (
+      <div className="min-h-screen app-bg flex items-center justify-center">
+        <Loader2 className="w-7 h-7 animate-spin text-[var(--text-mid)]" />
+      </div>
+    );
+  }
+
+  if (voucherCode && voucherError) {
+    return (
+      <div className="min-h-screen app-bg flex items-center justify-center px-4">
+        <div className="max-w-md w-full rounded-3xl p-8 text-center bg-[var(--control-fill-hover)] border border-[var(--glass-border)]">
+          <Gift className="w-10 h-10 text-amber-300 mx-auto mb-4" />
+          <h1 className="text-xl font-black text-[var(--text-hi)] mb-2">Convite indisponível</h1>
+          <p className="text-sm text-[var(--text-mid)] mb-6">{voucherError}</p>
+          <Link to="/login" className="inline-flex h-11 px-5 items-center justify-center rounded-xl font-bold text-sm bg-[var(--control-fill-hover)] border border-[var(--glass-border-strong)] text-[var(--text-hi)]">
+            Ir para o login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen app-bg flex flex-col items-center justify-center py-12 px-4 font-sans relative overflow-hidden">
@@ -174,6 +232,21 @@ export default function Signup() {
             </div>
           )}
 
+          {trialVoucher && (
+            <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 flex items-start gap-3">
+              <Gift className="w-5 h-5 text-emerald-300 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-[var(--text-hi)]">Convite de experimentação Criate</p>
+                <p className="text-xs text-[var(--text-mid)] mt-1">
+                  {trialVoucher.trial_days} dias sem cobrança
+                  {trialVoucher.account_type !== 'corretor'
+                    ? ` · até ${trialVoucher.member_limit} corretor(es) convidado(s), além do titular`
+                    : ''}.
+                </p>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {/* STEP 1 — Nome */}
             {step === 1 && (
@@ -182,8 +255,10 @@ export default function Signup() {
                 transition={{ duration: 0.2 }} onSubmit={handleStep1} className="space-y-5">
                 <div>
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                    <label className="block text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest pl-1">Escolha seu plano</label>
-                    <div className="inline-flex items-center rounded-full p-1 bg-[var(--control-fill)] border border-[var(--hairline)] shrink-0">
+                    <label className="block text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest pl-1">
+                      {trialVoucher ? 'Modalidade do convite' : 'Escolha seu plano'}
+                    </label>
+                    {!trialVoucher && <div className="inline-flex items-center rounded-full p-1 bg-[var(--control-fill)] border border-[var(--hairline)] shrink-0">
                       <button type="button" onClick={() => setBillingCycle('mensal')}
                         className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
                           billingCycle === 'mensal' ? 'bg-gradient-to-r from-violet-500 to-blue-400 text-white' : 'text-[var(--text-low)]'
@@ -196,28 +271,28 @@ export default function Signup() {
                         }`}>
                         Anual
                       </button>
-                    </div>
+                    </div>}
                   </div>
                   {billingCycle === 'anual' && (
                     <p className="text-[11px] text-[var(--text-low)] mb-3 pl-1">
                       Cobrança anual chega em breve — hoje é só mensal.
                     </p>
                   )}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {ACCOUNT_TYPES.map(({ value, label, desc, icon: Icon, popular }) => {
+                  <div className={`grid grid-cols-1 gap-3 ${trialVoucher ? '' : 'md:grid-cols-3'}`}>
+                    {ACCOUNT_TYPES.filter(({ value }) => !trialVoucher || value === trialVoucher.account_type).map(({ value, label, desc, icon: Icon, popular }) => {
                       const selected = formData.account_type === value;
                       const features = value === 'corretor'
                         ? PLAN_BASE_FEATURES
                         : [...PLAN_BASE_FEATURES, `WhatsApp próprio por corretor da equipe (a partir de R$ ${slotPriceDisplay}/mês)`];
                       return (
                         <button key={value} type="button"
-                          onClick={() => setFormData({ ...formData, account_type: value })}
+                          onClick={() => { if (!trialVoucher) setFormData({ ...formData, account_type: value }); }}
                           className={`relative flex flex-col gap-3 p-4 rounded-2xl border text-left transition-all ${
                             selected
                               ? 'bg-[var(--control-fill-hover)] border-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
                               : 'bg-[var(--control-fill)] border-[var(--hairline-strong)] hover:bg-white/12'
-                          } ${popular ? 'border-violet-400/50 ring-1 ring-violet-400/30 shadow-[0_8px_24px_rgba(124,58,237,0.25)]' : ''}`}>
-                          {popular && (
+                          } ${popular && !trialVoucher ? 'border-violet-400/50 ring-1 ring-violet-400/30 shadow-[0_8px_24px_rgba(124,58,237,0.25)]' : ''}`}>
+                          {popular && !trialVoucher && (
                             <span className="absolute -top-2.5 left-4 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white bg-gradient-to-r from-violet-500 to-blue-400 shadow-[0_2px_8px_rgba(124,58,237,0.4)]">
                               Mais popular
                             </span>
@@ -232,10 +307,14 @@ export default function Signup() {
                             <span className="block text-sm font-bold text-[var(--text-hi)]">{label}</span>
                             <span className="block text-[11px] text-[var(--text-low)]">{desc}</span>
                           </div>
-                          <div>
-                            <span className="text-xl font-black text-[var(--text-hi)]">R$ {planPriceDisplay}</span>
-                            <span className="text-[11px] text-[var(--text-low)]">/mês</span>
-                          </div>
+                          {trialVoucher ? (
+                            <div className="text-sm font-bold text-emerald-300">Sem cobrança durante o teste</div>
+                          ) : (
+                            <div>
+                              <span className="text-xl font-black text-[var(--text-hi)]">R$ {planPriceDisplay}</span>
+                              <span className="text-[11px] text-[var(--text-low)]">/mês</span>
+                            </div>
+                          )}
                           <ul className="space-y-1.5">
                             {features.map(f => (
                               <li key={f} className="flex items-start gap-1.5 text-[11px] text-[var(--text-mid)] leading-snug">

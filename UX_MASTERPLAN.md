@@ -1,5 +1,20 @@
 # ImobiFlow — Masterplan de UX & Interface Generativa
 
+## Convites de experimentação administrados (2026-08-04)
+
+- Nova aba `Vouchers` no Painel Admin, separada das contas e da saúde do
+  sistema.
+- O formulário deixa explícitos modalidade, validade do convite, dias de teste
+  e número de corretores além do titular; o campo de equipe fica desabilitado
+  para corretor autônomo.
+- O link e o código completos aparecem somente logo após a criação, com ação
+  de copiar. O histórico mostra dica parcial, status e conta que utilizou.
+- A tela pública informa que é um convite Criate, fixa a modalidade e substitui
+  preço/ciclo por “sem cobrança durante o teste”; após o cadastro segue direto
+  para `/app`.
+- Estados inválido, utilizado, expirado e cancelado não exibem o formulário de
+  criação da conta.
+
 > Documento estratégico e histórico da experiência, criado em 2026-07-02.
 > `ARCHITECTURE.md` e `DOCUMENTACAO.md` são as fontes do estado operacional
 > vigente. Entradas datadas abaixo podem citar modelos, topologia ou pendências

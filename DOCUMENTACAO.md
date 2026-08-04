@@ -134,6 +134,35 @@ Supabase
 
 ## 4. Autenticação, contas e isolamento multi-tenant
 
+### Vouchers de experimentação (migration aplicada, aguardando publicação)
+
+O painel Admin possui uma área exclusiva para gerar vouchers de uso único nas
+modalidades `corretor`, `imobiliaria` e `incorporadora`. O administrador define
+a validade do convite, a duração do teste e, para contas com equipe, quantos
+corretores podem ser convidados além do titular. O link aponta para
+`/experimentacao/:voucherCode`; o cadastro fixa a modalidade concedida e não
+passa pelo checkout.
+
+A migration `20260804_trial_vouchers.sql` cria `imf_trial_vouchers` e os campos
+de auditoria do teste em `imf_brokers`. O código completo nunca é persistido:
+o banco guarda SHA-256 e uma dica parcial, e o Admin recebe o segredo uma única
+vez na criação. O resgate bloqueia a linha com `FOR UPDATE` e cria perfil,
+membership do titular e consumo do voucher na mesma transação. RLS e grants
+impedem acesso por `anon`/`authenticated`; somente a `service_role` executa as
+RPCs.
+
+Durante o teste, a conta usa `plan='experimentacao'`, `status='ativo'` e
+`trial_ends_at`. Ao vencer, `/api/subscription` e o middleware autenticado
+mudam a conta para `inativo`; somente consulta de assinatura, checkout,
+leitura mínima do perfil e aceite de termos continuam disponíveis, permitindo
+contratar um plano. A cota da equipe é validada na emissão e no aceite dos
+convites por RPCs serializadas, evitando ultrapassagem por requisições
+simultâneas.
+
+A migration foi aplicada manualmente no Supabase em 04/08/2026, antes da
+publicação do código, conforme a ordem obrigatória de rollout. A área só deve
+ser usada depois da confirmação do deploy e do smoke autenticado.
+
 ### Modelo de conta
 
 - `imf_brokers` representa a conta/tenant e guarda o titular em `user_id`.

@@ -243,15 +243,25 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
 
     const code = randomBytes(16).toString("hex");
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
-    const { error } = await supabase
-      .from("imf_broker_invites")
-      .insert({ broker_id: brokerId, code, expires_at: expiresAt, whatsapp_mode: whatsappMode });
+    const { error } = await supabase.rpc("imf_create_broker_invite", {
+      p_broker_id: brokerId,
+      p_code: code,
+      p_expires_at: expiresAt,
+      p_whatsapp_mode: whatsappMode,
+    });
     if (error) throw error;
 
     res.status(201).json({ code, url: `${PUBLIC_APP_URL}/equipe/entrar/${code}`, expires_at: expiresAt, whatsapp_mode: whatsappMode });
   } catch (err: any) {
     console.error("Erro POST /api/equipe/members/invite:", err);
-    res.status(500).json({ error: err.message });
+    const message = String(err?.message || "");
+    if (message.includes("TRIAL_MEMBER_LIMIT_REACHED")) {
+      return res.status(409).json({ error: "O limite de corretores desta experimentação foi atingido." });
+    }
+    if (message.includes("TRIAL_EXPIRED")) {
+      return res.status(403).json({ error: "O período de experimentação terminou. Contrate um plano para continuar." });
+    }
+    res.status(500).json({ error: "Não foi possível criar o convite." });
   }
 });
 

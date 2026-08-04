@@ -1,5 +1,16 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Rollout dos vouchers de experimentação
+
+1. ~~Revisar e aplicar manualmente no Supabase a migration
+   `supabase/migrations/20260804_trial_vouchers.sql`.~~ Concluído em 04/08/2026.
+2. Publicar o código, agora que o SQL e as novas RPCs já estão disponíveis.
+3. Fazer smoke com um voucher de cada modalidade: validar link, cadastrar,
+   acessar `/app`, convidar até a cota e confirmar bloqueio da vaga excedente.
+4. Cancelar um voucher ainda ativo e confirmar HTTP 410 no link.
+5. Em conta descartável, usar teste curto/controlado para validar o
+   redirecionamento ao pagamento após `trial_ends_at`.
+
 > Atualizado em 03/08/2026. O baseline funcional `5dd570d` está versionado na
 > branch `v2`; o GitHub Actions run `30849756989` aprovou validação e deploy.
 > A migration de funções combináveis foi aplicada manualmente no Supabase.

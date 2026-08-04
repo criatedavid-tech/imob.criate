@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Vouchers administrativos de experimentação (2026-08-04)
+
+- Implementação local concluída para corretor, imobiliária e incorporadora.
+- Admin define expiração do convite, 1–180 dias de teste e até 100 corretores
+  adicionais; voucher pode ser cancelado e possui histórico de status.
+- Cadastro por link não cobra, ativa o plano interno `experimentacao` e fixa a
+  modalidade escolhida pelo admin.
+- Código armazenado somente como hash; resgate, perfil e membership são
+  atômicos; falha remove o usuário Auth recém-criado.
+- Expiração bloqueia frontend e APIs autenticadas, preservando apenas os
+  endpoints necessários para contratar um plano.
+- Limite de equipe é protegido no banco na emissão e no aceite do convite.
+- Validação local atual: 84/84 testes, TypeScript, Knip, build de produção e
+  `git diff --check` aprovados. A migration `20260804_trial_vouchers.sql` foi
+  aplicada manualmente no Supabase em 04/08/2026; ainda faltam smoke
+  autenticado e publicação.
+
 ## Funções combináveis por conta (2026-08-03)
 
 - Mantido `account_type` como tipo principal e adicionada a camada de

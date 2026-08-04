@@ -39,3 +39,17 @@ test("Sentry remove dados de cliente e segredos antes do envio", () => {
     },
   ]);
 });
+
+test("Sentry remove voucher transportado no caminho da URL", () => {
+  const code = "imf_trial_01234567890123456789012345678901";
+  const event = sanitizeSentryEvent({
+    type: undefined,
+    request: { url: `https://imobiflow-v2.fly.dev/api/auth/trial-vouchers/${code}?x=1` },
+    breadcrumbs: [
+      { category: "http", data: { url: `https://imobiflow-v2.fly.dev/experimentacao/${code}` } },
+    ],
+  });
+
+  assert.equal(event.request?.url, "https://imobiflow-v2.fly.dev/api/auth/trial-vouchers/:voucher");
+  assert.equal(event.breadcrumbs?.[0]?.data?.url, "https://imobiflow-v2.fly.dev/experimentacao/:voucher");
+});

@@ -201,12 +201,24 @@ billingRouter.get("/api/subscription", requireUser, async (req, res) => {
     if (!brokerId) return res.status(404).json({ error: "Perfil não encontrado." });
 
     let { data: broker } = await supabase.from('imf_brokers')
-      .select('status, plan, valid_until, grace_until, is_admin')
+      .select('status, plan, valid_until, grace_until, is_admin, trial_started_at, trial_ends_at, trial_member_limit')
       .eq('id', brokerId).single();
 
     // Admin tem acesso vitalício — nunca bloquear por assinatura
     if (broker?.is_admin) {
       return res.json({ broker: { ...broker, status: 'ativo' }, lastSubscription: null });
+    }
+
+    // A experimentação não renova e não tem carência: ao terminar, a mesma
+    // rota usada pelo guard do app bloqueia o acesso até a contratação.
+    if (
+      broker?.status === 'ativo'
+      && broker?.plan === 'experimentacao'
+      && broker?.trial_ends_at
+      && new Date(broker.trial_ends_at) <= new Date()
+    ) {
+      await supabase.from('imf_brokers').update({ status: 'inativo' }).eq('id', brokerId).eq('plan', 'experimentacao');
+      broker = { ...broker, status: 'inativo' };
     }
 
     // Enforcement lazy do grace period: se passou de grace_until e ainda está

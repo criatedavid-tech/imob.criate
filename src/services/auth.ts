@@ -83,11 +83,11 @@ class AuthService {
     return data;
   }
 
-  async signup(email: string, password: string, name: string, phone: string, account_type?: string) {
+  async signup(email: string, password: string, name: string, phone: string, account_type?: string, voucher_code?: string) {
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name, phone, account_type })
+      body: JSON.stringify({ email, password, name, phone, account_type, voucher_code })
     });
 
     if (!res.ok) {
