@@ -36,7 +36,14 @@ export const locacaoRouter = express.Router();
 
 // A interface esconder o menu nao e autorizacao. Todas as rotas de locacao
 // exigem a funcao efetivamente liberada para a conta.
-locacaoRouter.use("/api/locacao", requireUser, requireAccountCapability("rentals"));
+// Excecao: /api/locacao/n8n/* vive em rentalAgent.ts com autenticacao propria
+// por token interno (requireInternalToken) para chamadas maquina-a-maquina do
+// n8n, sem sessao de usuario. next('router') sai do middleware stack deste
+// router e deixa o app.use(rentalAgentRouter) seguinte tratar a rota.
+locacaoRouter.use("/api/locacao", (req, res, next) => {
+  if (req.path.startsWith("/n8n/")) return next("router");
+  next();
+}, requireUser, requireAccountCapability("rentals"));
 
 const nullableText = (max: number) => z.string().trim().max(max).nullable().optional();
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data invalida.");
