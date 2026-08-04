@@ -1,6 +1,13 @@
 import { supabase } from "../supabase";
 import { sendUazapiText, resolveOutboundInstanceToken } from "./uazapi";
 import { generateRentCharge } from "./rentalBilling";
+import {
+  getRentalLadder,
+  renderRentalMessage,
+  LEGACY_STEP_OFFSETS,
+  EARLIEST_REMINDER_OFFSET,
+  type LadderStep,
+} from "./rentalTemplates";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Piloto automático da locação
@@ -136,7 +143,7 @@ async function sendToTenant(brokerId: string, phone: string, text: string): Prom
 }
 
 // ─── 1) Geração da cobrança do mês ──────────────────────────────────────────
-const CHARGE_LEAD_DAYS = 5;
+export const CHARGE_LEAD_DAYS = 5;
 
 export async function runRentalChargeGenerationTick(): Promise<void> {
   const { data: locked } = await supabase.rpc("try_billing_lock", {
@@ -206,54 +213,36 @@ export async function runRentalChargeGenerationTick(): Promise<void> {
 
 // ─── 2) Régua de cobrança ───────────────────────────────────────────────────
 // Cada degrau manda no MÁXIMO uma mensagem. O estado fica na própria
-// competência (dunning_step), então reiniciar o processo não reenvia nada.
-type DunningStep = "pre_5" | "pre_1" | "due" | "late_1" | "late_3" | "late_7" | "escalated";
+// competência (dunning_step_offset), então reiniciar o processo não reenvia
+// nada — e o corretor pode mudar os dias sem risco de a régua "voltar".
+//
+// Os dias e os textos vêm de rentalTemplates.ts (padrão do código + o que o
+// corretor editou na tela). Aqui só se escolhe QUAL degrau se aplica hoje.
 
-const STEP_ORDER: DunningStep[] = ["pre_5", "pre_1", "due", "late_1", "late_3", "late_7", "escalated"];
-
-function stepForDayOffset(daysFromDue: number): DunningStep | null {
-  if (daysFromDue <= -5 && daysFromDue > -6) return "pre_5";
-  if (daysFromDue === -1) return "pre_1";
-  if (daysFromDue === 0) return "due";
-  if (daysFromDue >= 1 && daysFromDue < 3) return "late_1";
-  if (daysFromDue >= 3 && daysFromDue < 7) return "late_3";
-  if (daysFromDue >= 7 && daysFromDue < 15) return "late_7";
-  if (daysFromDue >= 15) return "escalated";
-  return null;
+/**
+ * Degrau vigente = o de maior dia que já passou. Se o robô ficou um dia sem
+ * rodar, ele não pula o degrau: manda o que era devido, e só uma vez.
+ */
+export function pickLadderStep(daysFromDue: number, ladder: LadderStep[]): LadderStep | null {
+  let chosen: LadderStep | null = null;
+  for (const step of ladder) {
+    if (!step.enabled) continue;
+    // Degrau sem texto não manda nada — exceto o último, cuja função é
+    // entregar para uma pessoa (a mensagem ao inquilino é opcional).
+    if (!step.hands_over && !step.body.trim()) continue;
+    if (step.offset_days > daysFromDue) continue;
+    if (!chosen || step.offset_days > chosen.offset_days) chosen = step;
+  }
+  return chosen;
 }
 
-function messageForStep(step: DunningStep, ctx: {
-  tenantName: string;
-  amountCents: number;
-  dueDate: string;
-  pix: string | null;
-  boleto: string | null;
-  lateFeeCents: number;
-  interestCents: number;
-  daysLate: number;
-}): string {
-  const first = (ctx.tenantName || "").trim().split(/\s+/)[0] || "";
-  const oi = first ? `Oi, ${first}!` : "Oi!";
-  const venc = ctx.dueDate.split("-").reverse().join("/");
-  const linhaPix = ctx.pix ? `\n\nPIX copia e cola:\n${ctx.pix}` : "";
-  const linhaBoleto = ctx.boleto ? `\n\nBoleto: ${ctx.boleto}` : "";
-
-  switch (step) {
-    case "pre_5":
-      return `${oi} Tudo bem? Seu aluguel de ${formatBRL(ctx.amountCents)} vence dia ${venc}. Já deixo aqui pra facilitar.${linhaPix}${linhaBoleto}`;
-    case "pre_1":
-      return `${oi} Passando pra lembrar: o aluguel de ${formatBRL(ctx.amountCents)} vence amanhã (${venc}).${linhaPix}`;
-    case "due":
-      return `${oi} O aluguel de ${formatBRL(ctx.amountCents)} vence hoje. Se já pagou, pode desconsiderar.${linhaPix}`;
-    case "late_1":
-      return `${oi} O aluguel de ${venc} consta em aberto. Com multa e juros, o valor atualizado é ${formatBRL(ctx.amountCents)}. Se precisar de ajuda ou já pagou, é só me falar por aqui.${linhaPix}`;
-    case "late_3":
-      return `${oi} O aluguel de ${venc} segue em aberto (${ctx.daysLate} dias). Valor atualizado: ${formatBRL(ctx.amountCents)}. Consegue me dizer uma data pra regularizar?${linhaPix}`;
-    case "late_7":
-      return `${oi} Ainda não localizamos o pagamento do aluguel de ${venc}. Hoje o valor atualizado está em ${formatBRL(ctx.amountCents)}. Me chama por aqui pra combinarmos uma solução.${linhaPix}`;
-    default:
-      return `${oi} Sobre o aluguel de ${venc}: vou pedir para um responsável falar com você para resolvermos juntos.`;
+/** Até onde a competência já andou na régua, em dias. */
+export function lastSentOffset(payment: { dunning_step?: string | null; dunning_step_offset?: number | null }): number | null {
+  if (typeof payment.dunning_step_offset === "number") return payment.dunning_step_offset;
+  if (payment.dunning_step && payment.dunning_step in LEGACY_STEP_OFFSETS) {
+    return LEGACY_STEP_OFFSETS[payment.dunning_step];
   }
+  return null;
 }
 
 export async function runRentalDunningTick(): Promise<void> {
@@ -265,11 +254,13 @@ export async function runRentalDunningTick(): Promise<void> {
 
   try {
     const today = todayInBrasilia();
-    const horizon = new Date(today.getTime() + 6 * 86_400_000).toISOString().slice(0, 10);
+    // Alcance da busca = o lembrete mais antecipado que a régua permite.
+    const horizonDays = Math.abs(EARLIEST_REMINDER_OFFSET) + 1;
+    const horizon = new Date(today.getTime() + horizonDays * 86_400_000).toISOString().slice(0, 10);
 
     const { data: payments, error } = await supabase
       .from("imf_rental_payments")
-      .select("id, contract_id, amount_cents, due_date, status, boleto_url, pix_copy_paste, dunning_step, promise_date, reference_month")
+      .select("id, contract_id, amount_cents, due_date, status, boleto_url, pix_copy_paste, dunning_step, dunning_step_offset, promise_date, reference_month")
       .in("status", ["pending", "overdue"])
       .lte("due_date", horizon)
       .order("due_date", { ascending: true })
@@ -279,6 +270,8 @@ export async function runRentalDunningTick(): Promise<void> {
 
     const contractCache = new Map<string, any>();
     const settingsCache = new Map<string, RentalAiSettings>();
+    const ladderCache = new Map<string, LadderStep[]>();
+    const propertyCache = new Map<string, string>();
 
     for (const payment of payments as any[]) {
       try {
@@ -286,7 +279,7 @@ export async function runRentalDunningTick(): Promise<void> {
         if (!contract) {
           const { data } = await supabase
             .from("imf_rental_contracts")
-            .select("id, broker_id, tenant_name, tenant_phone, autopilot_enabled, status, late_fee_percent, monthly_interest_percent")
+            .select("id, broker_id, tenant_name, tenant_phone, autopilot_enabled, status, late_fee_percent, monthly_interest_percent, property_id")
             .eq("id", payment.contract_id)
             .maybeSingle();
           contract = data;
@@ -310,16 +303,21 @@ export async function runRentalDunningTick(): Promise<void> {
         // humana — e evita cobrar quem já se comprometeu.
         if (payment.promise_date && payment.promise_date >= today.toISOString().slice(0, 10)) continue;
 
+        let ladder = ladderCache.get(contract.broker_id);
+        if (!ladder) {
+          ladder = await getRentalLadder(contract.broker_id);
+          ladderCache.set(contract.broker_id, ladder);
+        }
+
         const daysFromDue = Math.floor(
           (today.getTime() - new Date(`${payment.due_date}T00:00:00-03:00`).getTime()) / 86_400_000,
         );
-        const step = stepForDayOffset(daysFromDue);
+        const step = pickLadderStep(daysFromDue, ladder);
         if (!step) continue;
 
         // Já passou por este degrau (ou por um posterior)? Não repete.
-        const currentIndex = payment.dunning_step ? STEP_ORDER.indexOf(payment.dunning_step) : -1;
-        const nextIndex = STEP_ORDER.indexOf(step);
-        if (nextIndex <= currentIndex) continue;
+        const alreadySent = lastSentOffset(payment);
+        if (alreadySent !== null && step.offset_days <= alreadySent) continue;
 
         const late = computeLateAmount(
           payment.amount_cents,
@@ -329,38 +327,56 @@ export async function runRentalDunningTick(): Promise<void> {
           today,
         );
 
-        if (step === "escalated") {
+        let propertyTitle = contract.property_id ? propertyCache.get(contract.property_id) : "";
+        if (contract.property_id && propertyTitle === undefined) {
+          const { data: prop } = await supabase
+            .from("imf_properties").select("title").eq("id", contract.property_id).maybeSingle();
+          propertyTitle = prop?.title || "";
+          propertyCache.set(contract.property_id, propertyTitle);
+        }
+
+        const text = renderRentalMessage(step.body, {
+          tenantName: contract.tenant_name,
+          amountCents: late.daysLate > 0 ? late.totalCents : payment.amount_cents,
+          originalCents: payment.amount_cents,
+          lateFeeCents: late.lateFeeCents,
+          interestCents: late.interestCents,
+          daysLate: late.daysLate,
+          dueDate: payment.due_date,
+          referenceMonth: payment.reference_month,
+          propertyTitle,
+          pix: payment.pix_copy_paste,
+          boleto: payment.boleto_url,
+        });
+
+        // Só marca o degrau como vencido depois de a mensagem sair de fato;
+        // falha de envio faz o próximo tick tentar de novo o mesmo degrau.
+        if (text) {
+          const ok = await sendToTenant(contract.broker_id, contract.tenant_phone, text);
+          if (!ok) {
+            console.warn(`[Locação] envio da régua falhou (contrato ${contract.id}, degrau ${step.step})`);
+            continue;
+          }
+        }
+
+        const reachedAt = new Date().toISOString();
+        await supabase.from("imf_rental_payments")
+          .update({
+            dunning_step: step.step,
+            dunning_step_offset: step.offset_days,
+            dunning_last_sent_at: reachedAt,
+            ...(step.hands_over ? { escalated_at: reachedAt } : {}),
+          })
+          .eq("id", payment.id);
+
+        if (step.hands_over) {
           await escalateContractToHuman(
             contract,
             payment.id,
             `Aluguel de ${payment.due_date} em aberto há ${late.daysLate} dias (${formatBRL(late.totalCents)}).`,
           );
-          await supabase.from("imf_rental_payments")
-            .update({ dunning_step: "escalated", escalated_at: new Date().toISOString() })
-            .eq("id", payment.id);
           continue;
         }
-
-        const text = messageForStep(step, {
-          tenantName: contract.tenant_name,
-          amountCents: late.daysLate > 0 ? late.totalCents : payment.amount_cents,
-          dueDate: payment.due_date,
-          pix: payment.pix_copy_paste,
-          boleto: payment.boleto_url,
-          lateFeeCents: late.lateFeeCents,
-          interestCents: late.interestCents,
-          daysLate: late.daysLate,
-        });
-
-        const ok = await sendToTenant(contract.broker_id, contract.tenant_phone, text);
-        if (!ok) {
-          console.warn(`[Locação] envio da régua falhou (contrato ${contract.id}, degrau ${step})`);
-          continue;
-        }
-
-        await supabase.from("imf_rental_payments")
-          .update({ dunning_step: step, dunning_last_sent_at: new Date().toISOString() })
-          .eq("id", payment.id);
 
         await logRentalEvent({
           brokerId: contract.broker_id,
@@ -368,8 +384,8 @@ export async function runRentalDunningTick(): Promise<void> {
           paymentId: payment.id,
           type: "cobranca_enviada",
           actor: "sistema",
-          description: `Mensagem de cobrança enviada (${step}) — ${formatBRL(late.daysLate > 0 ? late.totalCents : payment.amount_cents)}.`,
-          metadata: { step, days_late: late.daysLate },
+          description: `Mensagem de cobrança enviada (${step.title}) — ${formatBRL(late.daysLate > 0 ? late.totalCents : payment.amount_cents)}.`,
+          metadata: { step: step.step, offset_days: step.offset_days, days_late: late.daysLate },
         });
       } catch (e: any) {
         console.error(`[Locação] falha na régua da competência ${payment.id}:`, e?.message);

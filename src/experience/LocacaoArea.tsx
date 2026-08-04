@@ -3,6 +3,7 @@ import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, P
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { RentalDashboard, AvailableTab, ContractDiaryModal, type RentalDashboardData } from './LocacaoPanels';
+import { CobrancaTab } from './CobrancaPanel';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
 import { centsFromMaskInput, maskFromCents, centsToReais } from '../lib/money';
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
@@ -1013,7 +1014,7 @@ function PaymentLedgerModal({
 }
 
 export function LocacaoArea() {
-  const [view, setView] = useState<'contracts' | 'disponiveis' | 'tenants'>('contracts');
+  const [view, setView] = useState<'contracts' | 'disponiveis' | 'cobranca' | 'tenants'>('contracts');
   const [dashboard, setDashboard] = useState<RentalDashboardData | null>(null);
   const [diaryContract, setDiaryContract] = useState<Contract | null>(null);
   const [contracts, setContracts] = useState<Contract[] | null>(null);
@@ -1191,29 +1192,39 @@ export function LocacaoArea() {
           <h2 className="text-2xl font-black text-[var(--text-hi)]">Aluguéis</h2>
           <p className="text-[12px] text-[var(--text-low)] mt-1">Contratos, inquilinos e histórico dos imóveis alugados.</p>
         </div>
-        <button onClick={() => view === 'contracts' ? setShowCreate(true) : setShowTenantCreate(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
-            bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
-          <Plus className="w-4 h-4" /> {view === 'contracts' ? 'Novo contrato' : 'Novo inquilino'}
-        </button>
+        {view !== 'cobranca' && view !== 'disponiveis' && (
+          <button onClick={() => view === 'contracts' ? setShowCreate(true) : setShowTenantCreate(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
+              bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
+            <Plus className="w-4 h-4" /> {view === 'contracts' ? 'Novo contrato' : 'Novo inquilino'}
+          </button>
+        )}
       </div>
 
-      <div className="inline-flex w-full sm:w-auto p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] mb-6">
+      {/* 4 abas não cabem lado a lado no celular: quebra em duas linhas em vez
+          de espremer o texto. */}
+      <div className="inline-flex flex-wrap gap-1 w-full sm:w-auto p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] mb-6">
         <button onClick={() => setView('contracts')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'contracts' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'contracts' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
           Imóveis alugados
         </button>
         <button onClick={() => setView('disponiveis')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'disponiveis' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'disponiveis' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
           Para alugar
         </button>
+        <button onClick={() => setView('cobranca')}
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'cobranca' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+          Cobrança automática
+        </button>
         <button onClick={() => setView('tenants')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold transition-colors ${view === 'tenants' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'tenants' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
           Inquilinos ({tenants?.length || 0})
         </button>
       </div>
 
       {view === 'disponiveis' && <AvailableTab />}
+
+      {view === 'cobranca' && <CobrancaTab />}
 
       {view === 'contracts' && dashboard && <RentalDashboard data={dashboard} />}
 

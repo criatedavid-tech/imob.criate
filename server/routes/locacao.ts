@@ -5,7 +5,24 @@ import { requireUser, getBrokerId } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { generateRentCharge } from "../services/rentalBilling";
-import { getRentalAiSettings, logRentalEvent } from "../services/rentalAutopilot";
+import {
+  getRentalAiSettings,
+  logRentalEvent,
+  computeLateAmount,
+  pickLadderStep,
+  lastSentOffset,
+  CHARGE_LEAD_DAYS,
+} from "../services/rentalAutopilot";
+import {
+  getRentalLadder,
+  saveRentalLadder,
+  renderRentalMessage,
+  unknownVariables,
+  TEMPLATE_VARIABLES,
+  EARLIEST_REMINDER_OFFSET,
+  type RenderContext,
+} from "../services/rentalTemplates";
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 import { normalizePhoneBR } from "../lib/crypto";
 import { requireAccountCapability } from "../services/accountCapabilities";
 import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
@@ -1018,6 +1035,357 @@ locacaoRouter.get("/api/locacao/keys", requireUser, async (req, res) => {
     const { data, error } = await query.order("taken_at", { ascending: false }).limit(200);
     if (error) throw error;
     res.json(data || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Régua de cobrança: ver e controlar QUAL mensagem sai e EM QUE DIA.
+//
+// A dúvida que estas rotas respondem é "a IA vai mesmo cobrar por mim, e com
+// que texto?". Por isso a prévia e a agenda usam o MESMO renderizador do motor
+// de envio — o que aparece na tela é literalmente o que o inquilino recebe.
+// ─────────────────────────────────────────────────────────────────────────
+
+const PREVIEW_PIX = "(o código PIX da cobrança entra aqui)";
+const PREVIEW_BOLETO = "(o link do boleto entra aqui)";
+
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(iso: string, days: number): string {
+  return isoDay(new Date(new Date(`${iso}T12:00:00Z`).getTime() + days * 86_400_000));
+}
+
+function todayIso(): string {
+  return isoDay(new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" })));
+}
+
+// Contrato de exemplo para a prévia: um real, quando existe. Ver o próprio
+// inquilino no texto é o que dá confiança de que a mensagem está certa.
+async function previewContract(brokerId: string) {
+  const { data } = await supabase
+    .from("imf_rental_contracts")
+    .select("id, tenant_name, rent_amount_cents, due_day, late_fee_percent, monthly_interest_percent, property_id")
+    .eq("broker_id", brokerId)
+    .eq("status", "ativo")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const contract = data?.[0];
+  if (!contract) {
+    return {
+      tenant_name: "Marcos Almeida",
+      rent_amount_cents: 240_000,
+      due_day: 10,
+      late_fee_percent: 2,
+      monthly_interest_percent: 1,
+      property_title: "Apartamento 302 — Setor Bueno",
+      real: false,
+    };
+  }
+  let property_title = "";
+  if (contract.property_id) {
+    const { data: prop } = await supabase.from("imf_properties").select("title").eq("id", contract.property_id).maybeSingle();
+    property_title = prop?.title || "";
+  }
+  return { ...contract, property_title, real: true };
+}
+
+function contextForOffset(
+  contract: { tenant_name: string; rent_amount_cents: number; late_fee_percent: number; monthly_interest_percent: number; property_title?: string },
+  offsetDays: number,
+  extras?: { pix?: string | null; boleto?: string | null; dueDate?: string; referenceMonth?: string | null },
+): RenderContext {
+  const dueDate = extras?.dueDate || addDays(todayIso(), -offsetDays);
+  const late = computeLateAmount(
+    contract.rent_amount_cents,
+    dueDate,
+    contract.late_fee_percent,
+    contract.monthly_interest_percent,
+    new Date(`${addDays(dueDate, offsetDays)}T12:00:00-03:00`),
+  );
+  return {
+    tenantName: contract.tenant_name,
+    amountCents: late.daysLate > 0 ? late.totalCents : contract.rent_amount_cents,
+    originalCents: contract.rent_amount_cents,
+    lateFeeCents: late.lateFeeCents,
+    interestCents: late.interestCents,
+    daysLate: late.daysLate,
+    dueDate,
+    referenceMonth: extras?.referenceMonth ?? `${dueDate.slice(0, 8)}01`,
+    propertyTitle: contract.property_title || "",
+    pix: extras?.pix === undefined ? PREVIEW_PIX : extras.pix,
+    boleto: extras?.boleto === undefined ? PREVIEW_BOLETO : extras.boleto,
+  };
+}
+
+locacaoRouter.get("/api/locacao/regua", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const [ladder, settings, contract] = await Promise.all([
+      getRentalLadder(brokerId),
+      getRentalAiSettings(brokerId),
+      previewContract(brokerId),
+    ]);
+
+    res.json({
+      passos: ladder.map((step) => ({
+        ...step,
+        // Prévia já renderizada: a tela abre mostrando o texto final, não o
+        // template cru com {{chaves}}.
+        preview: renderRentalMessage(step.body, contextForOffset(contract as any, step.offset_days)),
+      })),
+      variaveis: TEMPLATE_VARIABLES,
+      exemplo: { inquilino: contract.tenant_name, real: (contract as any).real === true },
+      geracao_dias_antes: CHARGE_LEAD_DAYS,
+      horario_silencio: { inicio: settings.quiet_hours_start, fim: settings.quiet_hours_end },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+locacaoRouter.put("/api/locacao/regua", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const passos = Array.isArray(req.body?.passos) ? req.body.passos : null;
+    if (!passos?.length) return res.status(400).json({ error: "Nenhum passo enviado." });
+    if (passos.length > 20) return res.status(400).json({ error: "Passos demais." });
+
+    const result = await saveRentalLadder(brokerId, passos);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ passos: result.ladder });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Prévia ao vivo enquanto o corretor digita.
+locacaoRouter.post("/api/locacao/regua/preview", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const body = String(req.body?.body ?? "").slice(0, 1500);
+    const offset = Math.trunc(Number(req.body?.offset_days));
+    const contract = await previewContract(brokerId);
+    const texto = renderRentalMessage(body, contextForOffset(contract as any, Number.isFinite(offset) ? offset : 0));
+
+    res.json({
+      texto,
+      caracteres: texto.length,
+      variaveis_invalidas: unknownVariables(body),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Agenda: o que será enviado, dia a dia ──────────────────────────────────
+const AGENDA_MAX_ITEMS = 250;
+
+locacaoRouter.get("/api/locacao/agenda", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+    // Simulação: mostra também o que aconteceria nos contratos que ainda estão
+    // fora do piloto. É como o corretor confere a régua antes de ligar.
+    const simular = req.query.simular === "1" || req.query.simular === "true";
+
+    const hoje = todayIso();
+    const limite = addDays(hoje, days);
+
+    const [ladder, settings] = await Promise.all([getRentalLadder(brokerId), getRentalAiSettings(brokerId)]);
+
+    const { data: contractRows } = await supabase
+      .from("imf_rental_contracts")
+      .select("id, tenant_name, tenant_phone, rent_amount_cents, due_day, late_fee_percent, monthly_interest_percent, autopilot_enabled, property_id")
+      .eq("broker_id", brokerId)
+      .eq("status", "ativo")
+      .limit(300);
+
+    const contracts = (contractRows || []).filter((c: any) => simular || c.autopilot_enabled);
+    const ativo = {
+      global: CLIENT_FINANCIAL_OPERATIONS_ENABLED,
+      geracao_conta: settings.charge_generation_enabled,
+      regua_conta: settings.dunning_enabled,
+      contratos_ativos: (contractRows || []).length,
+      contratos_no_piloto: (contractRows || []).filter((c: any) => c.autopilot_enabled).length,
+      horario_silencio: { inicio: settings.quiet_hours_start, fim: settings.quiet_hours_end },
+    };
+
+    if (!contracts.length) return res.json({ hoje, dias_janela: days, simulando: simular, ativo, truncado: false, dias: [] });
+
+    const titles = new Map<string, string>();
+    const propIds = [...new Set(contracts.map((c: any) => c.property_id).filter(Boolean))];
+    if (propIds.length) {
+      const { data: props } = await supabase.from("imf_properties").select("id, title").in("id", propIds);
+      for (const p of props || []) titles.set(p.id, p.title || "");
+    }
+
+    const { data: paymentRows } = await supabase
+      .from("imf_rental_payments")
+      .select("id, contract_id, amount_cents, due_date, status, boleto_url, pix_copy_paste, dunning_step, dunning_step_offset, promise_date, reference_month")
+      .in("contract_id", contracts.map((c: any) => c.id))
+      .in("status", ["pending", "overdue"])
+      .limit(500);
+
+    const paymentsByContract = new Map<string, any[]>();
+    for (const p of paymentRows || []) {
+      const list = paymentsByContract.get(p.contract_id) || [];
+      list.push(p);
+      paymentsByContract.set(p.contract_id, list);
+    }
+
+    const itens: any[] = [];
+    let truncado = false;
+
+    for (const contract of contracts as any[]) {
+      const propertyTitle = contract.property_id ? titles.get(contract.property_id) || "" : "";
+      const base = { ...contract, property_title: propertyTitle };
+      const abertos = paymentsByContract.get(contract.id) || [];
+
+      // Competências reais (cobranças já emitidas) + a projeção da próxima,
+      // para o corretor enxergar o mês que ainda vai ser gerado.
+      const competencias: { dueDate: string; payment: any | null }[] = abertos.map((p: any) => ({ dueDate: p.due_date, payment: p }));
+
+      const dia = Math.min(contract.due_day || 1, 28);
+      const ref = new Date(`${hoje}T12:00:00Z`);
+      for (let m = 0; m <= 2; m++) {
+        const d = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() + m, dia, 12));
+        const iso = isoDay(d);
+        if (iso < hoje) continue;
+        if (iso > addDays(limite, Math.abs(EARLIEST_REMINDER_OFFSET))) break;
+        if (competencias.some((c) => c.dueDate === iso)) continue;
+        competencias.push({ dueDate: iso, payment: null });
+      }
+
+      for (const comp of competencias) {
+        const jaEnviado = comp.payment ? lastSentOffset(comp.payment) : null;
+
+        // Dia em que a cobrança é emitida (só faz sentido para o que ainda não existe).
+        if (!comp.payment) {
+          const emissao = addDays(comp.dueDate, -CHARGE_LEAD_DAYS);
+          if (emissao >= hoje && emissao <= limite) {
+            itens.push({
+              data: emissao,
+              tipo: "geracao",
+              contract_id: contract.id,
+              tenant_name: contract.tenant_name,
+              imovel: propertyTitle,
+              titulo: "Emissão da cobrança",
+              step: "geracao",
+              valor_cents: contract.rent_amount_cents,
+              status: !contract.autopilot_enabled ? "simulado"
+                : !ativo.geracao_conta ? "bloqueado" : "programado",
+              mensagem: "",
+            });
+          }
+        }
+
+        for (const step of ladder) {
+          if (!step.enabled) continue;
+          const data = addDays(comp.dueDate, step.offset_days);
+          if (data < hoje || data > limite) continue;
+          if (!step.hands_over && !step.body.trim()) continue;
+
+          const ctx = contextForOffset(base, step.offset_days, {
+            dueDate: comp.dueDate,
+            referenceMonth: comp.payment?.reference_month ?? `${comp.dueDate.slice(0, 8)}01`,
+            pix: comp.payment ? comp.payment.pix_copy_paste : PREVIEW_PIX,
+            boleto: comp.payment ? comp.payment.boleto_url : PREVIEW_BOLETO,
+          });
+
+          const promessaAtiva = comp.payment?.promise_date && comp.payment.promise_date >= data;
+          const status = jaEnviado !== null && step.offset_days <= jaEnviado ? "enviado"
+            : !contract.autopilot_enabled ? "simulado"
+            : promessaAtiva ? "pausado"
+            : !ativo.regua_conta ? "bloqueado"
+            : !contract.tenant_phone ? "sem_telefone"
+            : "programado";
+
+          itens.push({
+            data,
+            tipo: step.hands_over ? "humano" : "mensagem",
+            contract_id: contract.id,
+            tenant_name: contract.tenant_name,
+            imovel: propertyTitle,
+            titulo: step.title,
+            step: step.step,
+            valor_cents: ctx.amountCents,
+            status,
+            mensagem: renderRentalMessage(step.body, ctx),
+          });
+        }
+      }
+
+      if (itens.length > AGENDA_MAX_ITEMS) { truncado = true; break; }
+    }
+
+    itens.sort((a, b) => (a.data === b.data ? a.tenant_name.localeCompare(b.tenant_name) : a.data.localeCompare(b.data)));
+    const porDia = new Map<string, any[]>();
+    for (const item of itens.slice(0, AGENDA_MAX_ITEMS)) {
+      const list = porDia.get(item.data) || [];
+      list.push(item);
+      porDia.set(item.data, list);
+    }
+
+    res.json({
+      hoje,
+      dias_janela: days,
+      simulando: simular,
+      ativo,
+      truncado,
+      dias: [...porDia.entries()].map(([data, lista]) => ({ data, itens: lista })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Estado atual da cobrança de um contrato: em que degrau está e qual o próximo.
+locacaoRouter.get("/api/locacao/contracts/:id/cobranca", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await ownsContract(brokerId, req.params.id))) return res.status(404).json({ error: "Contrato não encontrado." });
+
+    const ladder = await getRentalLadder(brokerId);
+    const { data: payment } = await supabase
+      .from("imf_rental_payments")
+      .select("id, due_date, amount_cents, status, dunning_step, dunning_step_offset, promise_date")
+      .eq("contract_id", req.params.id)
+      .in("status", ["pending", "overdue"])
+      .order("due_date", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!payment) return res.json({ tem_cobranca_aberta: false, degrau_atual: null, proximo: null });
+
+    const hoje = todayIso();
+    const diasDoVencimento = Math.floor(
+      (new Date(`${hoje}T12:00:00Z`).getTime() - new Date(`${payment.due_date}T12:00:00Z`).getTime()) / 86_400_000,
+    );
+    const atual = pickLadderStep(diasDoVencimento, ladder);
+    const enviadoAte = lastSentOffset(payment);
+    const proximo = ladder.find((s) => s.enabled && s.offset_days > (enviadoAte ?? -99));
+
+    res.json({
+      tem_cobranca_aberta: true,
+      vencimento: payment.due_date,
+      promessa_ate: payment.promise_date,
+      degrau_atual: atual ? { step: atual.step, titulo: atual.title } : null,
+      enviado_ate_dia: enviadoAte,
+      proximo: proximo ? { step: proximo.step, titulo: proximo.title, data: addDays(payment.due_date, proximo.offset_days) } : null,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
