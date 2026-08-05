@@ -11,7 +11,9 @@ const REPORT_STAGES = new Set(["new", "contato", "visita", "proposta", "fechado"
 
 type PageResult = { data: any[] | null; error: any };
 
-async function collectPages(
+// Exportados pra server/routes/equipe.ts reaproveitar (GET /api/equipe/
+// performance) sem duplicar paginação/janela de período.
+export async function collectPages(
   fetchPage: (from: number, to: number) => PromiseLike<PageResult>,
   context: string,
 ): Promise<any[]> {
@@ -28,7 +30,7 @@ async function collectPages(
   return rows;
 }
 
-async function collectForIds(
+export async function collectForIds(
   ids: string[],
   fetchChunk: (idsChunk: string[], from: number, to: number) => PromiseLike<PageResult>,
   context: string,
@@ -51,7 +53,7 @@ function brYearMonth(date: Date): { year: number; month: number } {
   return { year: Number(values.year), month: Number(values.month) };
 }
 
-function reportPeriod(months: number, now = new Date()) {
+export function reportPeriod(months: number, now = new Date()) {
   const current = brYearMonth(now);
   // São Paulo está em UTC-3. O início fica em 00:00 BRT do primeiro mês
   // incluído; o fim é o instante atual, portanto visitas futuras não entram.

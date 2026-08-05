@@ -27,6 +27,7 @@ const LocacaoArea = lazy(() => import('./LocacaoArea').then((m) => ({ default: m
 const LancamentosArea = lazy(() => import('./LancamentosArea').then((m) => ({ default: m.LancamentosArea })));
 const FinanceiroArea = lazy(() => import('./FinanceiroArea').then((m) => ({ default: m.FinanceiroArea })));
 const EquipeArea = lazy(() => import('./EquipeArea').then((m) => ({ default: m.EquipeArea })));
+const DesempenhoArea = lazy(() => import('./DesempenhoArea').then((m) => ({ default: m.DesempenhoArea })));
 const RelatoriosArea = lazy(() => import('./RelatoriosArea').then((m) => ({ default: m.RelatoriosArea })));
 const DivulgacaoArea = lazy(() => import('./DivulgacaoArea').then((m) => ({ default: m.DivulgacaoArea })));
 const ConfigArea = lazy(() => import('./ConfigArea').then((m) => ({ default: m.ConfigArea })));
@@ -360,6 +361,8 @@ export function ExperienceShell() {
             <FinanceiroArea />
           ) : area === 'equipe' ? (
             <EquipeArea onOpenMemberReport={(m) => { setReportMember(m); setArea('relatorios'); }} />
+          ) : area === 'desempenho' ? (
+            <DesempenhoArea onOpenMemberReport={(m) => { setReportMember(m); setArea('relatorios'); }} />
           ) : area === 'relatorios' ? (
             <RelatoriosArea member={reportMember} onClearMember={() => setReportMember(null)} />
           ) : area === 'divulgacao' ? (

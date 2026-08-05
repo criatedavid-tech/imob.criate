@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Home, Sparkles, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
   Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
+  TrendingUp,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -95,6 +96,7 @@ const ICONS: Record<string, React.ReactNode> = {
   lancamentos: <Layers className="w-[18px] h-[18px]" />,
   financeiro: <Wallet className="w-[18px] h-[18px]" />,
   equipe: <Users className="w-[18px] h-[18px]" />,
+  desempenho: <TrendingUp className="w-[18px] h-[18px]" />,
   divulgacao: <Megaphone className="w-[18px] h-[18px]" />,
   relatorios: <BarChart3 className="w-[18px] h-[18px]" />,
   config: <Settings className="w-[18px] h-[18px]" />,

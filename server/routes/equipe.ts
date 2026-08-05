@@ -7,6 +7,7 @@ import { requireAccountCapability } from "../services/accountCapabilities";
 import { MEMBER_WHATSAPP_SLOT_MAX, MEMBER_WHATSAPP_SLOT_PRICE, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
 import { disconnectUazapiInstance } from "../services/provisioning";
+import { collectPages, collectForIds, reportPeriod } from "./relatorios";
 
 export const equipeRouter = express.Router();
 
@@ -738,6 +739,123 @@ equipeRouter.get("/api/equipe/ranking", requireUser, async (req, res) => {
     res.json({ month, ranking });
   } catch (err: any) {
     console.error("Erro GET /api/equipe/ranking:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Desempenho de TODA a equipe num período (aba "Desempenho") — diferente do
+// /ranking acima (mês corrente, 2 métricas): aqui é o mesmo período
+// selecionável (3/6/12 meses) e as mesmas métricas que /api/relatorios/
+// summary?member_user_id= já calcula pra UM membro, só que batidas pra
+// todos de uma vez (reaproveita collectPages/collectForIds/reportPeriod de
+// relatorios.ts, sem duplicar paginação). Inclui membros suspensos
+// (marcados), pra não sumir o histórico deles do período.
+equipeRouter.get("/api/equipe/performance", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta vê o desempenho da equipe." });
+
+    const requestedMonths = Number(req.query.months);
+    const months = [3, 6, 12].includes(requestedMonths) ? requestedMonths : 6;
+    const { start, end } = reportPeriod(months);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id, name").eq("id", brokerId).maybeSingle();
+    const { data: memberRows } = await supabase
+      .from("imf_broker_members")
+      .select("user_id, created_at, suspended_at")
+      .eq("broker_id", brokerId)
+      .order("created_at", { ascending: true });
+
+    const properties = await collectPages(
+      (from, to) => supabase.from("imf_properties").select("id").eq("broker_id", brokerId).order("id").range(from, to),
+      "Falha ao consultar os imóveis",
+    );
+    const propertyIds = properties.map((p: any) => p.id as string);
+
+    // Mesma convenção de "leads captados" que relatorios.ts já usa: só leads
+    // presos a um imóvel do broker (.in("property_id", ids)) — não inclui o
+    // caminho alternativo por broker_id direto que a reatribuição usa noutro
+    // contexto. Fechamento é cohort separada por closed_at (inclui lead
+    // captado antes da janela), igual ao summary.
+    const capturedLeads = propertyIds.length ? await collectForIds(propertyIds, (ids, from, to) =>
+      supabase.from("leads").select("id, owner_user_id")
+        .in("property_id", ids)
+        .gte("created_at", startIso).lte("created_at", endIso)
+        .order("id").range(from, to), "Falha ao consultar os leads captados da equipe") : [];
+
+    const closedDeals = propertyIds.length ? await collectForIds(propertyIds, (ids, from, to) =>
+      supabase.from("leads").select("id, owner_user_id")
+        .in("property_id", ids)
+        .not("closed_at", "is", null)
+        .gte("closed_at", startIso).lte("closed_at", endIso)
+        .order("id").range(from, to), "Falha ao consultar os negócios fechados da equipe") : [];
+
+    const developments = await collectPages(
+      (from, to) => supabase.from("imf_developments").select("id").eq("broker_id", brokerId).order("id").range(from, to),
+      "Falha ao consultar os empreendimentos",
+    );
+    const developmentIds = developments.map((d: any) => d.id as string);
+
+    const soldUnits = developmentIds.length ? await collectForIds(developmentIds, (ids, from, to) =>
+      supabase.from("imf_units").select("id, price_cents, sold_by_user_id")
+        .in("development_id", ids)
+        .eq("status", "vendido")
+        .not("sold_at", "is", null)
+        .gte("sold_at", startIso).lte("sold_at", endIso)
+        .order("id").range(from, to), "Falha ao consultar as unidades vendidas da equipe") : [];
+
+    const totalByUser = new Map<string, number>();
+    for (const l of capturedLeads) if (l.owner_user_id) totalByUser.set(l.owner_user_id, (totalByUser.get(l.owner_user_id) || 0) + 1);
+
+    const closedByUser = new Map<string, number>();
+    for (const l of closedDeals) if (l.owner_user_id) closedByUser.set(l.owner_user_id, (closedByUser.get(l.owner_user_id) || 0) + 1);
+
+    const salesByUser = new Map<string, { count: number; totalCents: number }>();
+    for (const u of soldUnits) {
+      if (!u.sold_by_user_id) continue;
+      const cur = salesByUser.get(u.sold_by_user_id) || { count: 0, totalCents: 0 };
+      cur.count += 1;
+      cur.totalCents += u.price_cents || 0;
+      salesByUser.set(u.sold_by_user_id, cur);
+    }
+
+    const members = await Promise.all((memberRows || []).map(async (m: any) => {
+      const isOwnerRow = m.user_id === broker?.user_id;
+      let name = "Membro";
+      if (isOwnerRow) {
+        name = broker?.name || "Administrador";
+      } else {
+        const { data: userData } = await supabase.auth.admin.getUserById(m.user_id).catch(() => ({ data: { user: null } } as any));
+        name = userData?.user?.user_metadata?.full_name || userData?.user?.email?.split("@")[0] || "Membro";
+      }
+      const totalLeads = totalByUser.get(m.user_id) || 0;
+      const closedLeads = closedByUser.get(m.user_id) || 0;
+      const sales = salesByUser.get(m.user_id) || { count: 0, totalCents: 0 };
+      const conversionRate = totalLeads > 0 ? Math.round((closedLeads / totalLeads) * 100) : 0;
+      const returnPerLeadCents = totalLeads > 0 ? Math.round(sales.totalCents / totalLeads) : 0;
+      return {
+        user_id: m.user_id,
+        name,
+        is_owner: isOwnerRow,
+        suspended_at: m.suspended_at ?? null,
+        total_leads: totalLeads,
+        closed_leads: closedLeads,
+        conversion_rate: conversionRate,
+        sales_count: sales.count,
+        sales_total_cents: sales.totalCents,
+        return_per_lead_cents: returnPerLeadCents,
+      };
+    }));
+
+    members.sort((a, b) => (b.sales_total_cents - a.sales_total_cents) || (b.conversion_rate - a.conversion_rate));
+
+    res.json({ months, periodStart: startIso, periodEnd: endIso, members });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/performance:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -244,6 +244,13 @@ pode:
   null = meta da conta): `POST /api/equipe/goal` agora exige titularidade
   pra gravar a meta da conta inteira — antes qualquer membro conseguia
   reescrever a meta de todo mundo sem querer.
+- **Aba "Desempenho"** (menu lateral, capability `team`,
+  `src/experience/DesempenhoArea.tsx`): lista toda a equipe de uma vez
+  (`GET /api/equipe/performance?months=`), com leads recebidos/fechados,
+  conversão e retorno por lead (R$ vendido ÷ leads recebidos) por pessoa —
+  clicar num corretor abre o mesmo drill-down por `member_user_id` do item
+  acima. Indicador de retorno usa só dado já existente (sem custo/salário
+  cadastrado, por escolha do usuário).
 
 ### Regras de visibilidade
 

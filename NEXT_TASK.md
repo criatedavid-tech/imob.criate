@@ -1,13 +1,33 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Conta administradora (imobiliária/incorporadora) — pendente: autorização de commit
+## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — pendente: autorização de commit
 
-Implementado e testado localmente (05/08/2026) via HTTP contra o banco real
+Implementado e testado localmente (05/08/2026), mesmo padrão de conta de
+teste isolada da rodada anterior. 3 asserções via HTTP, todas passaram de
+primeira (inclusive a janela de período excluindo/incluindo lead antigo
+corretamente). Detalhe completo em PROGRESS.md.
+
+1. `GET /api/equipe/performance?months=` (novo, `equipe.ts`, titular-only) —
+   por corretor: leads recebidos, fechados, conversão, vendido, retorno por
+   lead. Reaproveita `collectPages`/`collectForIds`/`reportPeriod`,
+   exportados de `relatorios.ts` pra não duplicar paginação.
+2. Aba nova "Desempenho" no menu lateral (`engine.ts` + `ManualRail.tsx`,
+   ícone `TrendingUp`), mesma capability `team` de Equipe.
+3. `src/experience/DesempenhoArea.tsx` (novo): lista os corretores
+   ordenados por venda, clique abre o drill-down por membro em Relatórios
+   já construído na rodada anterior (`onOpenMemberReport`).
+4. **Aguardando autorização de commit/push**.
+5. Depois do deploy: conferir a aba com dado real de vários corretores.
+
+## Conta administradora (imobiliária/incorporadora) — ROLLOUT CONCLUÍDO (05/08/2026)
+
+Commit `60466b8`, deploy validado (health-check 200, GitHub Actions run
+aprovado). Testado localmente antes do deploy via HTTP contra o banco real
 (conta de teste isolada, criada e depois apagada) — 18+ asserções, todas
 passaram na primeira tentativa. Detalhe completo em PROGRESS.md/DECISIONS.md.
 
-1. **Migrations** (aguardando aplicação — já aplicadas nesta sessão pelo
-   usuário direto no SQL Editor, antes do teste local):
+1. **Migrations** (aplicadas pelo usuário direto no SQL Editor, antes do
+   teste local):
    `20260805b_broker_member_suspension.sql`,
    `20260805c_broker_goals_per_member.sql`.
 2. Reatribuir dados (leads/imóveis/agenda) de um corretor pra outro membro

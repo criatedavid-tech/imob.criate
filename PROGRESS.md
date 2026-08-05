@@ -1,5 +1,55 @@
 # Estado do projeto
 
+## Aba "Desempenho": ver o retorno de cada corretor (2026-08-05)
+
+- Pedido do usuário depois de ver a tela de Equipe no ar: uma aba dedicada
+  pra navegar o desempenho de toda a equipe (hoje o drill-down por membro
+  só existia clicando um por vez em Equipe, sem visão de conjunto).
+- Confirmado com o usuário (2 perguntas diretas): o "ROI" usa só dado que
+  já existe hoje (retorno por lead + conversão), sem pedir custo/salário
+  cadastrado; e vai ser aba nova no menu, não alteração da tela de Equipe.
+- **Backend**: `GET /api/equipe/performance?months=3|6|12` (novo, em
+  `equipe.ts`, titular-only — mesmo padrão de `GET /api/equipe/ranking`).
+  Por corretor (inclusive suspensos, marcados): leads recebidos no período,
+  fechados (cohort separada por `closed_at`, mesmo padrão de
+  `relatorios.ts`), taxa de conversão, unidades vendidas e
+  `retorno por lead` (R$ vendido ÷ leads recebidos). Ordenado por venda,
+  como o ranking já faz. **Não mexe em `GET /api/equipe/ranking`** — outro
+  consumidor (o card pequeno dentro de Equipe) continua exatamente igual.
+- Pra não duplicar paginação: `collectPages`/`collectForIds`/`reportPeriod`
+  saíram de privados pra `export` em `relatorios.ts` e agora são
+  importados em `equipe.ts` — zero lógica de paginação nova escrita.
+- **Frontend**: aba nova "Desempenho" no menu lateral
+  (`src/experience/engine.ts` + `ManualRail.tsx`, ícone `TrendingUp`,
+  mesma capability `team` de Equipe/Financeiro/Locação/Lançamentos —
+  filtro real do menu é só por capability, o campo `personas` de cada
+  item é decorativo, não usado em runtime). Novo componente
+  `src/experience/DesempenhoArea.tsx`: lista os corretores ordenados por
+  venda com toggle 3/6/12 meses (mesma UX de Relatórios), cada linha
+  clicável abre o drill-down daquele corretor em Relatórios (reaproveita
+  literalmente o mesmo `onOpenMemberReport`/`setReportMember` já
+  conectado pelo ícone de gráfico em Equipe na rodada anterior — zero
+  mudança extra em `ExperienceShell.tsx` além de registrar a área nova).
+- Achado ao mapear o menu: **não existe nenhum arquivo compartilhado entre
+  backend e frontend pra capabilities/áreas** — `AccountCapability` é
+  redeclarada à mão em `src/experience/types.ts`, sincronizada manualmente
+  com `server/services/accountCapabilities.ts`. Reaproveitei a capability
+  `team` já existente, sem criar nova, mas fica registrado como um ponto
+  frágil do projeto (fácil dessincronizar ao criar capability nova no
+  futuro).
+- **Testado localmente**: conta de teste isolada (mesmo padrão da rodada
+  anterior), com leads em datas diferentes (dentro/fora da janela de 3
+  meses) e uma unidade vendida. 3 asserções via HTTP, todas corretas de
+  primeira: 6 meses inclui um lead captado há 4 meses (3 leads, conversão
+  33%), 3 meses exclui esse mesmo lead (2 leads, conversão 50%, mesma
+  venda), e membro comum recebe 403 ao tentar chamar o endpoint. Dados de
+  teste apagados depois. `tsc`/`npm test`/`knip`/`build`/`git diff --check`
+  limpos (mesma falha local pré-existente de sempre, CRLF do Windows,
+  confirmada que passa no CI/Linux). Aguardando autorização de commit/push.
+- Fora de escopo (documentado, não construído): ROI "de verdade" com
+  custo/salário cadastrado por corretor — usuário escolheu explicitamente
+  a opção sem custo nesta rodada.
+
 ## Conta administradora: imobiliária/incorporadora gerencia sua equipe (2026-08-05)
 
 - Pedido do usuário: a conta de imobiliária/incorporadora funcionar como
