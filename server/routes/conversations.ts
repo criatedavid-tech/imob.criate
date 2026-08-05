@@ -12,12 +12,19 @@ import {
 import { resolveNewLeadStage } from "../services/crmPipelines";
 import { enqueueUazapiWebhook, runWebhookInboxTick } from "../services/inboundWebhookQueue";
 import { requireInternalToken } from "../middleware/internalAuth";
+import { splitReplyIntoBubbles, sanitizeReply, typingDelayMs } from "../services/replyChunks";
 import { n8nInternalLimiter, inboundWebhookLimiter } from "../middleware/rateLimits";
 import {
   isValidNormalizedBrazilianPhone,
   N8nInputValidationError,
   parseN8nAiReply,
 } from "../security/n8nGuardrails";
+
+// Resposta em balões: ver server/services/replyChunks.ts. Desligar volta ao
+// bloco único de antes.
+const AI_REPLY_BUBBLES = process.env.AI_REPLY_BUBBLES !== "off";
+const AI_REPLY_MAX_BUBBLES = Math.min(Math.max(Number(process.env.AI_REPLY_MAX_BUBBLES) || 3, 1), 4);
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const conversationsRouter = express.Router();
 
@@ -91,24 +98,35 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInte
       return res.status(503).json({ error: "Instância WhatsApp não configurada pra este corretor ainda." });
     }
 
-    const sent = await sendUazapiText(instanceToken, customerPhone, text);
+    // A resposta sai em balões, como uma pessoa escreve. Ver replyChunks.ts.
+    const bubbles = AI_REPLY_BUBBLES ? splitReplyIntoBubbles(text, AI_REPLY_MAX_BUBBLES) : [sanitizeReply(text)];
+    if (!bubbles.length) return res.status(400).json({ error: "Resposta vazia." });
 
-    if (!sent.ok) {
-      console.warn(`[WhatsApp] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
-      return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
+    let enviados = 0;
+    for (const [index, bubble] of bubbles.entries()) {
+      if (index > 0) await delay(typingDelayMs(bubble));
+      const sent = await sendUazapiText(instanceToken, customerPhone, bubble);
+      if (!sent.ok) {
+        console.warn(`[WhatsApp] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
+        // Falhar no PRIMEIRO balão é seguro para o n8n tentar de novo: nada
+        // saiu ainda. Falhar depois, não — repetir mandaria o primeiro balão
+        // duas vezes para o cliente. Nesse caso reportamos sucesso parcial.
+        if (index === 0) return res.status(502).json({ error: "Falha ao enviar via UAZAPI." });
+        break;
+      }
+      enviados++;
+      await recordConversationMessage({
+        brokerId,
+        customerPhone,
+        ticketId: ticket.id,
+        direction: "out",
+        senderType: "ai",
+        body: bubble,
+        initialStatus: "open",
+      });
     }
 
-    await recordConversationMessage({
-      brokerId,
-      customerPhone,
-      ticketId: ticket.id,
-      direction: "out",
-      senderType: "ai",
-      body: text,
-      initialStatus: "open",
-    });
-
-    res.json({ ok: true });
+    res.json({ ok: true, baloes: enviados, parcial: enviados < bubbles.length });
   } catch (err: any) {
     if (err instanceof N8nInputValidationError) {
       return res.status(400).json({ error: err.message });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, MapPin, Copy, Pencil, Trash2, Loader2, Home, Check } from 'lucide-react';
+import { Plus, MapPin, Copy, Pencil, Trash2, Loader2, Home, Check, AlertTriangle, ChevronDown, ChevronRight, Bot } from 'lucide-react';
 import { authService } from '../services/auth';
 import { formatPriceDisplay } from '../lib/money';
 import PropertyForm from '../components/PropertyForm';
@@ -30,6 +30,93 @@ const STATUS_LABEL: Record<string, string> = {
 
 // Carteira real: lista os imóveis do corretor logado (GET /api/properties) e
 // reaproveita o PropertyForm já existente (cadastro por foto + IA) para criar/editar.
+
+// ─── Saúde do cadastro ──────────────────────────────────────────────────────
+// A IA de atendimento só é tão boa quanto o cadastro: um imóvel com "quartos:
+// 0" faz ela errar o número na frente do cliente, e descrição genérica repetida
+// faz ela falar igual de todos. Este bloco mostra exatamente o que arrumar —
+// é o item de maior retorno da carteira inteira.
+
+interface QualidadeImovel {
+  id: string; titulo: string; local: string; preco: string | null;
+  problemas: { campo: string; gravidade: 'alta' | 'media'; problema: string; sugestao: string }[];
+  campos_incertos: string[];
+}
+
+interface QualidadeResumo {
+  total: number; com_problema: number; graves: number;
+  mais_comuns: { problema: string; vezes: number }[];
+  imoveis: QualidadeImovel[];
+}
+
+function SaudeDoCadastro() {
+  const [dados, setDados] = useState<QualidadeResumo | null>(null);
+  const [aberto, setAberto] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/properties/qualidade', { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDados)
+      .catch(() => setDados(null));
+  }, []);
+
+  if (!dados || dados.com_problema === 0) return null;
+
+  return (
+    <GlassCard className="!p-4 mb-5 border-amber-400/25">
+      <button onClick={() => setAberto(!aberto)} className="w-full flex items-start gap-3 text-left">
+        <span className="w-9 h-9 rounded-xl bg-amber-500/12 border border-amber-400/25 flex items-center justify-center shrink-0">
+          <AlertTriangle className="w-4 h-4 text-amber-300" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-bold text-[var(--text-hi)]">
+            {dados.com_problema} de {dados.total} imóveis com cadastro incompleto
+          </span>
+          <span className="block text-[11.5px] text-[var(--text-low)] mt-0.5 leading-relaxed">
+            <Bot className="w-3 h-3 inline mr-1 -mt-0.5" />
+            A IA não afirma dado que está faltando ou contraditório — nesses imóveis ela precisa
+            desconversar em vez de responder.
+          </span>
+        </span>
+        {aberto ? <ChevronDown className="w-4 h-4 text-[var(--text-low)] shrink-0 mt-1" />
+          : <ChevronRight className="w-4 h-4 text-[var(--text-low)] shrink-0 mt-1" />}
+      </button>
+
+      {aberto && (
+        <div className="mt-4 pt-3 border-t border-[var(--hairline)]">
+          {dados.mais_comuns.length > 0 && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)] mb-1.5">
+                Comece por aqui
+              </p>
+              {dados.mais_comuns.map((m) => (
+                <p key={m.problema} className="text-[12px] text-[var(--text-mid)]">
+                  <span className="tabular-nums font-bold text-amber-300">{m.vezes}×</span> {m.problema}
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="space-y-3 max-h-[420px] overflow-y-auto">
+            {dados.imoveis.map((im) => (
+              <div key={im.id} className="rounded-xl bg-[var(--control-fill)] p-3">
+                <p className="text-[12.5px] font-bold text-[var(--text-hi)]">
+                  {im.titulo} <span className="font-normal text-[var(--text-low)]">{im.local}</span>
+                </p>
+                {im.problemas.map((pr, i) => (
+                  <p key={i} className="text-[11.5px] text-[var(--text-mid)] mt-1 leading-relaxed">
+                    <span className={pr.gravidade === 'alta' ? 'text-red-300' : 'text-amber-300'}>•</span>{' '}
+                    {pr.problema} <span className="text-[var(--text-low)]">{pr.sugestao}</span>
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 export function CarteiraArea() {
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +190,8 @@ export function CarteiraArea() {
           <Plus className="w-4 h-4" /> Novo imóvel
         </button>
       </div>
+
+      <SaudeDoCadastro />
 
       {loading ? (
         <div className="flex justify-center pt-20">

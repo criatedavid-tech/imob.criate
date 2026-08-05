@@ -9,6 +9,7 @@ import {
   parseN8nPropertyCatalog,
 } from "../security/n8nGuardrails";
 import { isValidPublicPropertySlug } from "../security/publicPropertySlug";
+import { getBrokerCatalog, invalidateBrokerCatalog } from "../services/propertyCatalog";
 
 export const propertiesRouter = express.Router();
 
@@ -230,6 +231,10 @@ propertiesRouter.post("/api/properties", requireUser, async (req, res) => {
       data.imageUrl = data.image_url;
     }
 
+    // O catálogo do agente é cacheado por 60s; sem isto a IA continuaria
+    // oferecendo o imóvel antigo (ou ignorando o novo) por um minuto.
+    if (data?.broker_id) invalidateBrokerCatalog(data.broker_id);
+
     res.json(data);
   } catch (err: any) {
     console.error("Erro POST /api/properties:", err);
@@ -256,6 +261,49 @@ propertiesRouter.get("/api/properties/health", async (req, res) => {
       supabase_api: "ERROR",
       message: "Node.js Backend via Supabase (Error)"
     });
+  }
+});
+
+// Diagnóstico do cadastro. A IA só consegue ser boa até onde o dado deixa: um
+// imóvel com quartos:0 e descrição genérica faz ela falar igual de todos e
+// repetir número errado. Aqui o corretor vê exatamente o que precisa arrumar.
+// Precisa vir ANTES de /api/properties/:slug, senão "qualidade" vira um slug.
+propertiesRouter.get("/api/properties/qualidade", requireUser, async (req, res) => {
+  try {
+    const brokerId = await getBrokerId((req as any).userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const entries = await getBrokerCatalog(brokerId);
+    const comProblema = entries.filter((e) => e.problemas.length > 0);
+    const graves = comProblema.filter((e) => e.problemas.some((p) => p.gravidade === "alta"));
+
+    res.json({
+      total: entries.length,
+      com_problema: comProblema.length,
+      graves: graves.length,
+      // Ranking do que mais se repete: diz por onde começar a arrumar.
+      mais_comuns: Object.entries(
+        entries.flatMap((e) => e.problemas).reduce<Record<string, number>>((acc, p) => {
+          acc[p.problema] = (acc[p.problema] || 0) + 1;
+          return acc;
+        }, {}),
+      ).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([problema, vezes]) => ({ problema, vezes })),
+      imoveis: comProblema
+        .sort((a, b) =>
+          b.problemas.filter((p) => p.gravidade === "alta").length -
+          a.problemas.filter((p) => p.gravidade === "alta").length)
+        .slice(0, 60)
+        .map((e) => ({
+          id: e.id,
+          titulo: e.titulo,
+          local: e.local,
+          preco: e.precoTexto,
+          problemas: e.problemas,
+          campos_incertos: e.camposIncertos,
+        })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -333,6 +381,7 @@ propertiesRouter.delete("/api/properties/:id", requireUser, async (req, res) => 
     const { data, error } = await query.select('id');
     if (error) throw error;
     if (!data || data.length === 0) return res.status(403).json({ error: 'Acesso negado.' });
+    invalidateBrokerCatalog(brokerId);
     res.status(200).json({ success: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/properties:", err);
@@ -359,6 +408,7 @@ propertiesRouter.patch("/api/properties/:id/status", requireUser, async (req, re
 
     if (error) throw error;
     if (!data) return res.status(403).json({ error: 'Acesso negado.' });
+    invalidateBrokerCatalog(brokerId);
     res.json(data);
   } catch (err: any) {
     console.error("Erro PATCH /api/properties/:id/status:", err);
