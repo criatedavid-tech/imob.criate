@@ -3,6 +3,7 @@ import { supabase } from "../supabase";
 import { requireInternalToken } from "../middleware/internalAuth";
 import { n8nInternalLimiter } from "../middleware/rateLimits";
 import { normalizePhoneBR } from "../lib/crypto";
+import { resolveNewLeadStage, findLeadByPhone } from "../services/crmPipelines";
 import { sendUazapiText } from "../services/uazapi";
 import { getBrokerCatalog, getCatalogEntry } from "../services/propertyCatalog";
 import {
@@ -68,6 +69,51 @@ function asList(value: unknown): string[] | null {
   const text = clean(value, 240);
   if (!text) return null;
   return text.split(/[,;]/).map((v) => v.trim()).filter(Boolean);
+}
+
+/**
+ * Cria ou atualiza o card do cliente no CRM a partir do que a IA aprendeu.
+ * Nunca apaga o que já estava lá: só preenche buraco. Mesma política de
+ * `sync-lead`, que esta rota substitui.
+ */
+async function upsertCrmLead(
+  brokerId: string,
+  phone: string,
+  nome: string,
+  imovelInteresse: string | null,
+  saved: { finalidade: string | null; regiao: string | null; tipo: string | null; quartos: number | null; orcamento_max_cents: number | null },
+): Promise<string | null> {
+  const partes = [
+    saved.finalidade ? (saved.finalidade === "venda" ? "compra" : "aluguel") : null,
+    saved.regiao,
+    saved.tipo,
+    saved.quartos ? `${saved.quartos} quartos` : null,
+    saved.orcamento_max_cents ? `até ${formatCents(saved.orcamento_max_cents)}` : null,
+  ].filter(Boolean);
+  const notes = partes.length ? `Qualificação (IA): ${partes.join(" · ")}` : undefined;
+
+  const existing = await findLeadByPhone(brokerId, phone);
+  if (existing) {
+    const updates: Record<string, unknown> = {};
+    if (imovelInteresse && !existing.property_id) updates.property_id = imovelInteresse;
+    if (notes) updates.notes = notes;
+    if (Object.keys(updates).length) await supabase.from("leads").update(updates).eq("id", existing.id);
+    return existing.id;
+  }
+
+  const { pipeline_id, pipeline_stage_id } = await resolveNewLeadStage(brokerId);
+  const { data, error } = await supabase.from("leads").insert({
+    broker_id: brokerId,
+    property_id: imovelInteresse,
+    name: nome,
+    phone,
+    status: "new",
+    notes: notes || "Lead criado automaticamente pelo agente de WhatsApp",
+    pipeline_id,
+    pipeline_stage_id,
+  }).select("id").single();
+  if (error) throw error;
+  return data.id;
 }
 
 // ─── Buscar imóveis ─────────────────────────────────────────────────────────
@@ -292,7 +338,20 @@ salesAgentRouter.post("/api/crm/n8n/anotar", requireInternalToken, n8nInternalLi
     }
 
     const saved = await saveLeadKnowledge(brokerId, phone, patch);
-    res.json({ ok: true, ainda_nao_sei: missingFields(saved) });
+
+    // O card do CRM sai da MESMA chamada. Antes eram duas ferramentas quase
+    // iguais (anotar e sincronizar), e o modelo chamava uma e esquecia a outra
+    // — o corretor via o lead sem qualificação, ou a qualificação sem lead.
+    let leadId: string | null = null;
+    if (saved.nome) {
+      try {
+        leadId = await upsertCrmLead(brokerId, phone, saved.nome, imovelInteresse, saved);
+      } catch (e: any) {
+        console.warn("[Agente] lead salvo na memória mas CRM falhou:", e?.message);
+      }
+    }
+
+    res.json({ ok: true, lead_id: leadId, ainda_nao_sei: missingFields(saved) });
   } catch (err: any) {
     console.error("Erro POST /api/crm/n8n/anotar (degradando):", err?.message);
     res.json({ ok: false });
