@@ -1,5 +1,21 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Rollout do CRM automático no agente de vendas (pendente: peça do n8n)
+
+1. ~~Backend: `POST /api/crm/n8n/sync-lead` + avanço automático pra etapa
+   "Visita" em `POST /api/agenda/n8n/create`.~~ Implementado e testado ao
+   vivo contra o banco real em 05/08/2026 (ver PROGRESS.md/DECISIONS.md).
+2. **Aguardando autorização de commit/push** deste backend.
+3. **Depois do deploy:** colar no n8n (workflow do agente de vendas) o node
+   novo `sincronizar_lead` (HTTP Request Tool, mesmo formato de
+   `agendamento1`) + o trecho novo de system prompt — entregues prontos
+   pelo Claude, sem editar o workflow de produção direto pela API.
+4. Conectar o node novo como `ai_tool` do "Agente IA Corretor1" (mesma
+   conexão que os outros tools já usam).
+5. Teste real: mandar mensagem informando nome + interesse num imóvel pro
+   número de teste do Hunter, confirmar que o lead aparece/atualiza em
+   Negócios (CRM) e que a etapa avança pra "Visita" ao agendar de verdade.
+
 ## Rollout da confirmação de WhatsApp adicional no convite
 
 1. ~~Aplicar manualmente no Supabase a migration

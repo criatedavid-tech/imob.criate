@@ -1605,3 +1605,27 @@ Nenhuma migration é necessária apenas para o texto do prompt. A auditoria de
 workflow com este arquivo antes de declarar a instalação concluída. O modelo
 do agente vem do endpoint (`N8N_AGENT_MODEL`, padrão
 `google/gemini-2.5-flash`) e não deve ficar divergente em nodes isolados.
+
+### CRM automático (05/08/2026)
+
+Até 04/08/2026 o agente externo de vendas não tinha nenhuma integração com o
+CRM — qualificava o cliente e agendava visita, mas o lead nunca era criado
+nem movia de etapa. Agora:
+
+- `POST /api/crm/n8n/sync-lead` (`server/routes/crmSalesAgent.ts`,
+  `requireInternalToken`) — ferramenta nova pro agente chamar (`{broker_id,
+  phone, client_name, property_id?, qualification_note?}`) sempre que souber
+  nome/interesse/imóvel do cliente. Cria lead (dedupe por telefone, mesmo
+  padrão de `POST /api/conversas/:ticketId/create-lead`) ou atualiza o
+  existente; nunca aceita `property_id` sem validar que pertence ao broker;
+  qualificação vai pra `leads.notes` (sobrescrita, sem histórico).
+- `advanceLeadToVisitStage` (`server/services/crmPipelines.ts`), chamada
+  automaticamente por `POST /api/agenda/n8n/create` (`agenda.ts`) após uma
+  visita ser agendada de verdade — move o lead pra etapa cujo nome contém
+  "visita" (case-insensitive) no pipeline dele, só pra frente (nunca regride,
+  nunca pula won/lost). Não depende de nenhuma ferramenta nova no n8n.
+- Requer adicionar no workflow do n8n um node HTTP Request Tool novo
+  (`sincronizar_lead`, mesmo formato de `agendamento1`) conectado como
+  `ai_tool` do agente, e um trecho novo no system prompt instruindo quando
+  chamá-lo — entregue pronto, não aplicado direto via API por ser o
+  workflow de produção em atendimento real.

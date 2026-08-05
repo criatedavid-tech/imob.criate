@@ -1,5 +1,42 @@
 # Estado do projeto
 
+## CRM automático no agente de vendas do WhatsApp (2026-08-05)
+
+- Auditoria pedida pelo usuário ("Verificações e Funcionalidades da IA")
+  encontrou que o agente externo de vendas (n8n, persona configurável)
+  qualificava o cliente e agendava visitas de verdade, mas nunca tocava o
+  CRM — zero menção a lead/pipeline no system prompt (confirmado lendo o
+  prompt completo, 8773 caracteres, via API do n8n).
+- Novo `server/routes/crmSalesAgent.ts`: `POST /api/crm/n8n/sync-lead`
+  (`requireInternalToken`), mesmo princípio do agente de locação ("a IA
+  conversa, o backend decide"). Cria/atualiza lead por telefone (mesmo
+  dedupe de `create-lead` em `conversations.ts`), valida posse de
+  `property_id` antes de aceitar (nunca confia no que o modelo manda),
+  guarda a qualificação em `leads.notes` (sobrescreve com o resumo mais
+  recente, sem migration nova).
+- Nova `advanceLeadToVisitStage` em `crmPipelines.ts`, pendurada em
+  `POST /api/agenda/n8n/create` (`agenda.ts`): quando uma visita é
+  agendada de verdade pelo agente, o lead avança sozinho pra etapa
+  "Visita" do pipeline (casada por nome, nunca anda pra trás nem pula
+  won/lost) — automático, sem depender do modelo lembrar. Zero mudança no
+  workflow do n8n necessária pra essa parte.
+- Testado ao vivo contra o banco real (`npm run dev` local + curl +
+  consulta direta via Supabase, dados de teste sintéticos removidos
+  depois): criação de lead, dedupe/atualização, rejeição de `property_id`
+  de outro corretor, e avanço automático pra "Visita" — todos confirmados
+  funcionando.
+- Falta a ferramenta nova no n8n (`sincronizar_lead`, chamando o endpoint
+  acima) e o trecho novo no system prompt do "Agente IA Corretor1" —
+  entregue pronto pro usuário colar, sem editar o workflow de produção
+  direto pela API (é o agente que atende cliente real agora mesmo).
+- Fora de escopo desta rodada (documentado, não construído): mover pra
+  "Proposta"/"Fechado" automaticamente, qualificação estruturada (JSONB),
+  tags/scoring automático de lead, e qualquer coisa no agente de locação
+  (já tem sistema próprio).
+- Checklist: `npm test` (95/96 — a 1 falha é `scheduledCardEditing.test.ts`,
+  pré-existente, artefato de CRLF local no Windows, confirmado que passa
+  no CI/Linux), `tsc`/`knip`/`build`/`git diff --check` limpos.
+
 ## Confirmação de WhatsApp adicional no convite (2026-08-04, publicada)
 
 - Em plano pago, quando todas as vagas próprias estão usadas ou reservadas, o

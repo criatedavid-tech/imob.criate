@@ -1,5 +1,31 @@
 # Decisões vigentes
 
+## CRM automático no agente de vendas: gatilhos deterministas, não julgamento do modelo (2026-08-05)
+
+- O agente de vendas do WhatsApp cria/atualiza lead assim que sabe nome +
+  telefone + interesse real — decisão do usuário: o BACKEND garante isso
+  (idempotente, dedupe por telefone), a IA só relata fatos que já apurou,
+  nunca "decide" se vale criar. Endpoint `POST /api/crm/n8n/sync-lead`
+  (`server/routes/crmSalesAgent.ts`), token interno, nunca lança erro (é
+  caminho crítico de atendimento real).
+- Mover lead pra etapa "Visita" acontece automaticamente quando o agente
+  agenda uma visita de verdade (hook em `POST /api/agenda/n8n/create`) —
+  não é uma ferramenta que o modelo aciona por julgamento. Etapa é casada
+  por nome ("visita", case-insensitive) porque pipelines são customizáveis
+  por broker; se renomeada/apagada, a movimentação simplesmente não
+  acontece (não quebra nada).
+- Qualificação (região/quartos/orçamento/finalidade) vai pro `leads.notes`
+  já existente, sobrescrito com o resumo mais recente — escolha explícita
+  do usuário pra não precisar de migration nesta rodada. Filtro/relatório
+  por campo estruturado fica pra quando for pedido.
+- `property_id` vindo do modelo NUNCA é aceito sem validar que pertence ao
+  broker (mesma checagem de `agenda.ts`) — testado ao vivo: um id de outro
+  corretor foi rejeitado silenciosamente, um id real foi aceito.
+- Escopo desta rodada é só o agente de **vendas**; o agente de **locação**
+  já tem sistema equivalente próprio (contratos/régua de cobrança) e não
+  foi tocado. Mover pra "Proposta"/"Fechado" automaticamente e tags/scoring
+  de lead ficaram de fora (não pedidos, não construídos).
+
 ## WhatsApp adicional exige consentimento no convite (2026-08-04)
 
 - Plano pago nunca recebe cobrança silenciosa: ao exceder a cota de WhatsApps

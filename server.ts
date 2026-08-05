@@ -27,6 +27,7 @@ import { followupRouter } from "./server/routes/followup";
 import { conversationsRouter } from "./server/routes/conversations";
 import { locacaoRouter } from "./server/routes/locacao";
 import { rentalAgentRouter } from "./server/routes/rentalAgent";
+import { crmSalesAgentRouter } from "./server/routes/crmSalesAgent";
 import { lancamentosRouter } from "./server/routes/lancamentos";
 import { financeiroRouter } from "./server/routes/financeiro";
 import { equipeRouter } from "./server/routes/equipe";
@@ -162,6 +163,7 @@ async function startServer() {
   app.use(conversationsRouter);
   app.use(locacaoRouter);
   app.use(rentalAgentRouter);
+  app.use(crmSalesAgentRouter);
   app.use(lancamentosRouter);
   app.use(financeiroRouter);
   app.use(equipeRouter);

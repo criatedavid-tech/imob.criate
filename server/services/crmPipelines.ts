@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { normalizePhoneBR } from "../lib/crypto";
 
 export type StageType = "open" | "won" | "lost";
 
@@ -150,6 +151,67 @@ export async function resolveNewLeadStage(
     // antigo) em vez de derrubar a criação de lead. Qualquer outro erro sobe.
     if (isMissingCrmSchema(err)) return { pipeline_id: null, pipeline_stage_id: null };
     throw err;
+  }
+}
+
+export interface LeadRow {
+  id: string;
+  phone: string | null;
+  property_id: string | null;
+  notes: string | null;
+  pipeline_id: string | null;
+  pipeline_stage_id: string | null;
+}
+
+// Acha um lead do broker por telefone. Mesmo dedupe de
+// conversations.ts (create-lead): lead pertence ao broker por vínculo
+// direto (broker_id) ou por estar preso a um imóvel do broker
+// (property_id). Compara telefone normalizado em JS em vez de confiar
+// que a coluna phone está sempre gravada no mesmo formato exato — mesmo
+// espírito de findActiveContractByPhone em rentalAgent.ts.
+export async function findLeadByPhone(brokerId: string, phone: string): Promise<LeadRow | null> {
+  const normalized = normalizePhoneBR(phone);
+  const { data: propRows } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+  const propIds = (propRows || []).map((p: any) => p.id);
+
+  let query = supabase.from("leads").select("id, phone, property_id, notes, pipeline_id, pipeline_stage_id").limit(500);
+  query = propIds.length > 0
+    ? query.or(`broker_id.eq.${brokerId},property_id.in.(${propIds.join(",")})`)
+    : query.eq("broker_id", brokerId);
+
+  const { data } = await query;
+  return (data || []).find((l: any) => normalizePhoneBR(String(l.phone || "")) === normalized) || null;
+}
+
+// Avança o lead pra etapa "Visita" quando uma visita é agendada de verdade
+// pelo agente externo (POST /api/agenda/n8n/create) — automático, não
+// depende do modelo lembrar/decidir. Casa a etapa por NOME ("visita",
+// case-insensitive) porque pipelines são customizáveis por broker; se o
+// corretor renomeou/apagou essa etapa, simplesmente não move nada (loga e
+// segue) — mesma tolerância que o resto do CRM já usa. Nunca anda pra
+// trás nem pula por cima de uma etapa won/lost.
+export async function advanceLeadToVisitStage(brokerId: string, phone: string): Promise<void> {
+  try {
+    const lead = await findLeadByPhone(brokerId, phone);
+    if (!lead || !lead.pipeline_id || !lead.pipeline_stage_id) return;
+
+    const { data: stages } = await supabase
+      .from("imf_crm_pipeline_stages")
+      .select("id, name, position, stage_type")
+      .eq("pipeline_id", lead.pipeline_id)
+      .eq("active", true)
+      .order("position", { ascending: true });
+    if (!stages?.length) return;
+
+    const current = stages.find((s: any) => s.id === lead.pipeline_stage_id);
+    const visitStage = stages.find((s: any) => s.stage_type === "open" && /visita/i.test(s.name));
+    if (!current || !visitStage) return;
+    if (visitStage.position <= current.position) return;
+
+    const { error } = await supabase.from("leads").update({ pipeline_stage_id: visitStage.id }).eq("id", lead.id);
+    if (error) throw error;
+  } catch (err: any) {
+    console.error("Erro advanceLeadToVisitStage:", err?.message);
   }
 }
 

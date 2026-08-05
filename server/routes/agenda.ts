@@ -12,6 +12,7 @@ import {
   parseN8nAgendaList,
   parseN8nAgendaUpdate,
 } from "../security/n8nGuardrails";
+import { advanceLeadToVisitStage } from "../services/crmPipelines";
 
 export const agendaRouter = express.Router();
 
@@ -423,6 +424,13 @@ agendaRouter.post('/api/agenda/n8n/create', requireInternalToken, n8nInternalLim
       .single();
 
     if (error) throw error;
+
+    // Fire-and-forget honesto: avança o lead pra etapa "Visita" no CRM,
+    // automático, sem depender do modelo lembrar/decidir. Nunca bloqueia
+    // nem falha a resposta da visita (mesmo padrão do webhook fire-and-
+    // forget em leads.ts).
+    if (client_phone) advanceLeadToVisitStage(broker_id, client_phone).catch(() => {});
+
     res.status(201).json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
   } catch (err: any) {
     return n8nAgendaError(res, err, 'POST create');
