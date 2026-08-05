@@ -60,7 +60,18 @@
   node ficar "certo" no n8n. Testado localmente simulando o payload sujo
   (`property_id`/`qualification_note` com `=` na frente): saiu limpo no
   banco. Checklist completo (`tsc`/`npm test`/`knip`/`build`/
-  `git diff --check`) limpo de novo. Aguardando autorização de commit/push.
+  `git diff --check`) limpo de novo. Commit `6d81d25` em produção.
+- **Validação final ao vivo (05/08/2026):** reset da conversa "Ryan" +
+  nova mensagem + aceite de visita real. Confirmado no banco: nota da
+  qualificação saiu limpa (sem `=`), e a etapa do lead avançou sozinha
+  de "Novo" pra "Visita" no exato momento em que a visita foi criada via
+  `POST /api/agenda/n8n/create` — sem nenhuma ação manual no CRM. Rollout
+  desta rodada considerado concluído. Pendência secundária identificada:
+  a IA nunca chegou a passar `imovel_id` pro `sincronizar_lead1` em
+  nenhum teste, mesmo sabendo qual imóvel era (apareceu no título da
+  visita) — lead não fica com `property_id` vinculado. Não bloqueia nada
+  (lead cria/atualiza/avança normalmente), registrado como pendência em
+  `NEXT_TASK.md` pra investigar depois.
 
 ## Confirmação de WhatsApp adicional no convite (2026-08-04, publicada)
 

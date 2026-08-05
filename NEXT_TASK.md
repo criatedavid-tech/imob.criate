@@ -1,29 +1,34 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Rollout do CRM automático no agente de vendas
+## CRM automático no agente de vendas — ROLLOUT CONCLUÍDO (05/08/2026)
+
+Validado ponta a ponta em produção, com conversa real via WhatsApp (número
+de teste "Ryan"):
 
 1. ~~Backend: `POST /api/crm/n8n/sync-lead` + avanço automático pra etapa
-   "Visita" em `POST /api/agenda/n8n/create`.~~ Implementado, testado ao
-   vivo, commit `4852c8f` em produção desde 05/08/2026.
-2. ~~Colar no n8n o node `sincronizar_lead1` (HTTP Request Tool) + trecho
-   novo de system prompt (seção "SINCRONIZAÇÃO COM O CRM", com gatilho
-   explícito de quando chamar).~~ Feito manualmente no editor do n8n
-   (paste de JSON não funcionou nesse ambiente) e testado com mensagem
-   real ao vivo em 05/08/2026: lead "Ryan" criado corretamente em
-   "Novo" no Kanban.
-3. ~~Bug encontrado no teste ao vivo: `$fromAI` de 4 argumentos (com valor
-   padrão) vaza um `"="` literal na frente do valor resolvido — afeta
-   `property_id` e `qualification_note` (não afeta `client_name`, que usa
-   `$fromAI` de 3 argumentos sem padrão). Corrigido com sanitização
-   defensiva no backend (`cleanAiString` em `crmSalesAgent.ts`), testado
-   localmente simulando o payload sujo.~~ **Aguardando autorização de
-   commit/push** deste fix.
-4. **Depois do deploy:** repetir o teste real com telefone novo — confirmar
-   que o lead novo aparece em "Novo" com `property_id` vinculado (quando a
-   IA identificar o imóvel) e nota sem `=` sobrando.
-5. Testar o gatilho de etapa "Visita": responder topando uma visita na
-   mesma conversa de teste, confirmar que o card pula sozinho pra "Visita"
-   ao agendar de verdade.
+   "Visita" em `POST /api/agenda/n8n/create`.~~ Commit `4852c8f`.
+2. ~~Node `sincronizar_lead1` no n8n (criado manualmente — paste de JSON
+   não funcionou nesse ambiente) + seção "SINCRONIZAÇÃO COM O CRM" no
+   system prompt do "Agente IA Corretor" (gatilho explícito, sem o qual a
+   IA não chamava a tool).~~
+3. ~~Bug do `=` vazando em campos `$fromAI` de 4 argumentos (com valor
+   padrão) — corrigido com sanitização defensiva no backend
+   (`cleanAiString`, commit `6d81d25`).~~
+4. ~~Teste real confirmado: lead cria limpo, dedupe por telefone funciona
+   (achou um teste anterior "leon" com o mesmo número normalizado antes de
+   testar com número fresco), nota sem `=`, e a etapa avança sozinha pra
+   "Visita" quando a visita é agendada de verdade (visto no Kanban e no
+   banco).~~
+
+**Pendência secundária, não bloqueante:** a IA nunca passou `imovel_id`
+pro `sincronizar_lead1` nos testes, mesmo sabendo exatamente qual imóvel
+("Apartamento Centro" até apareceu no título da visita criada) — o lead
+avança de etapa e recebe a qualificação normalmente, só fica sem o
+vínculo visual do imóvel no card do CRM. Investigar se é preciso reforçar
+a instrução do `imovel_id` no system prompt (hoje só tem a descrição do
+parâmetro, sem exemplo de quando a IA já sabe o ID vindo da
+`<imoveis_disponiveis>`) ou se o modelo simplesmente não está lendo o
+campo `id` de cada imóvel na base recebida.
 
 ## Rollout da confirmação de WhatsApp adicional no convite
 
