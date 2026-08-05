@@ -62,6 +62,28 @@ test("limpa os vícios que o modelo insiste em produzir", () => {
   assert.equal(sanitizeReply("  espaco  \n  "), "espaco");
 });
 
+test("muletas do modelo somem mesmo quando o prompt nao segura", () => {
+  // Frase real da execucao 1099687, com a muleta proibida no meio.
+  assert.equal(
+    sanitizeReply("Ah, entendi, Hiago!\n\nPara eu te ajudar melhor, você busca comprar ou alugar?"),
+    "Ah, entendi, Hiago!\n\nVocê busca comprar ou alugar?",
+  );
+  assert.equal(
+    sanitizeReply("Pelo que entendi, você quer uma casa no Setor Bueno."),
+    "Você quer uma casa no Setor Bueno.",
+  );
+  assert.equal(
+    sanitizeReply("Que bom te ter por aqui! Temos duas opções."),
+    "Temos duas opções.",
+  );
+  assert.equal(sanitizeReply("Vou verificar. Posso ajudar em mais alguma coisa?"), "Vou verificar.");
+});
+
+test("remocao de muleta nao estraga texto normal", () => {
+  const normal = "Não encontrei nenhuma casa em Moema no momento.\n\nTenho opções no Setor Oeste. Quer ver?";
+  assert.equal(sanitizeReply(normal), normal);
+});
+
 test("pausa entre balões existe mas nunca vira espera longa", () => {
   assert.ok(typingDelayMs("oi") >= 350);
   assert.ok(typingDelayMs("x".repeat(5000)) <= 2_200);

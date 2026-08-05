@@ -237,6 +237,18 @@ salesAgentRouter.post("/api/crm/n8n/lead", requireInternalToken, n8nInternalLimi
     const knowledge = await readLeadKnowledge(brokerId, phone);
     const falta = missingFields(knowledge);
 
+    // "Já me apresentei?" tem que sair da conversa REAL, não do que a IA
+    // anotou. Ligando isso ao contador da memória, uma conversa em que ela
+    // ainda não aprendeu nada parecia primeiro contato a cada mensagem — e ela
+    // cumprimentava de novo, e de novo.
+    const { count: respostasAnteriores } = await supabase
+      .from("imf_conversation_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("broker_id", brokerId)
+      .eq("customer_phone", phone)
+      .eq("direction", "out");
+    const jaSeApresentou = (respostasAnteriores || 0) > 0;
+
     const [{ data: visitas }, { data: lead }] = await Promise.all([
       supabase
         .from("imf_agenda")
@@ -254,23 +266,26 @@ salesAgentRouter.post("/api/crm/n8n/lead", requireInternalToken, n8nInternalLimi
         .maybeSingle(),
     ]);
 
-    const jaConversou = (knowledge.mensagens || 0) > 0;
     const orientacao: string[] = [];
-    if (!jaConversou) {
-      orientacao.push("É a primeira conversa com esta pessoa. Não presuma nada sobre ela.");
+    if (jaSeApresentou) {
+      orientacao.push("Você JÁ se apresentou nesta conversa. NÃO cumprimente, NÃO diga seu nome e NÃO pergunte como pode ajudar: responda direto ao que a pessoa acabou de dizer.");
     } else {
-      orientacao.push("Você já falou com esta pessoa: NÃO repita as perguntas cujas respostas estão em `sei`, e não se apresente de novo.");
+      orientacao.push("Primeira mensagem desta conversa: cumprimente e apresente-se UMA vez. Depois disso, nunca mais.");
     }
     if (knowledge.hipoteses.length) {
       orientacao.push("O que está em `apenas_suposicoes` NÃO foi confirmado por ela. Confirme antes de usar como verdade.");
     }
+    // A regra que ela mais quebra: completar nome de cidade/bairro que a pessoa
+    // escreveu pela metade ("balneário" -> "Balneário Camboriú").
+    orientacao.push("Nunca complete por conta própria um nome de cidade, bairro ou valor que a pessoa deu pela metade. Pergunte.");
     if (falta.length) {
       orientacao.push(`Ainda não sabe: ${falta.join(", ")}. Descubra o próximo item que fizer sentido na conversa — uma pergunta por vez, nunca uma lista.`);
     }
 
     res.json({
       ok: true,
-      primeira_conversa: !jaConversou,
+      primeira_conversa: !jaSeApresentou,
+      ja_se_apresentou: jaSeApresentou,
       sei: {
         nome: knowledge.nome,
         finalidade: knowledge.finalidade,

@@ -11,12 +11,42 @@
 const MIN_CHUNK_CHARS = 25;
 const SINGLE_BUBBLE_UNTIL = 180;
 
+// Muletas que o modelo repete mesmo com o prompt proibindo nominalmente — e
+// que denunciam o robô na primeira linha. Proibir no prompt reduz, não elimina:
+// numa conversa longa a instrução perde peso para o histórico. Aqui é
+// determinístico. Só entram frases cuja remoção deixa a oração de pé sozinha.
+const CRUTCHES: RegExp[] = [
+  /para eu (?:te |lhe )?ajudar melhor,?\s*/gi,
+  /pelo que (?:eu )?entendi,?\s*/gi,
+  /(?:que bom te ter por aqui|que bom que me avisou|fico feliz em ajudar)[!.,]?\s*/gi,
+  /posso (?:te )?ajudar em mais alguma coisa\??\s*/gi,
+  /(?:estou|fico) (?:aqui )?(?:à|a) disposi[cç][aã]o[!.]?\s*/gi,
+  /perfeito para quem busca conforto e praticidade[!.]?\s*/gi,
+];
+
+function removeCrutches(text: string): string {
+  let out = text;
+  for (const crutch of CRUTCHES) out = out.replace(crutch, "");
+  // Nada removido: devolve intacto. A recapitalização abaixo só faz sentido
+  // para consertar a frase que perdeu a abertura — não pode mexer em texto
+  // que o modelo escreveu como quis.
+  if (out === text) return text;
+  return out
+    // Sobra de pontuação depois de tirar a muleta do meio da frase.
+    .replace(/([.!?])\s*[,;]\s*/g, "$1 ")
+    .replace(/^\s*[,;]\s*/gm, "")
+    // Reinicia a frase com maiúscula quando a muleta era a abertura.
+    .replace(/(^|[.!?]\s+)([a-zà-ú])/g, (_, prefixo: string, letra: string) => prefixo + letra.toUpperCase())
+    .replace(/[ \t]{2,}/g, " ");
+}
+
 /** Limpa vícios que o modelo insiste em produzir mesmo com o prompt pedindo o contrário. */
 export function sanitizeReply(text: string): string {
-  let out = String(text ?? "")
-    .replace(/^=+/, "")           // artefato de expressão do n8n
-    .replace(/\r\n/g, "\n")
-    .trim();
+  let out = removeCrutches(
+    String(text ?? "")
+      .replace(/^=+/, "")           // artefato de expressão do n8n
+      .replace(/\r\n/g, "\n"),
+  ).trim();
   // Resposta inteira entre aspas: o cliente vê as aspas e parece citação.
   if (out.length > 1 && /^["“'](.|\n)*["”']$/.test(out)) {
     out = out.slice(1, -1).trim();
