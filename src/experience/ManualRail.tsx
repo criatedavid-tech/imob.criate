@@ -105,16 +105,25 @@ const ICONS: Record<string, React.ReactNode> = {
 // Rail manual: acesso a TODAS as funções à mão. Progressive disclosure por persona.
 // Abaixo de md vira menu hamburger (drawer) — o rail fixo de 92px não cabe em
 // tela de celular sem espremer o conteúdo (era o que estava acontecendo).
+// Equipe e Desempenho são áreas de gestão da equipe (reatribuir dados,
+// suspender, ver o retorno de cada corretor); Locação mexe em contrato,
+// dado de inquilino (CPF/CNPJ) e cobrança sem autoria por corretor — nos
+// 3 casos só o titular da conta deve nem ver a aba no rail.
+const OWNER_ONLY_AREAS = new Set(['equipe', 'desempenho', 'locacao']);
+
 export function ManualRail({
-  capabilities, active, onSelect, mobileOpen, onMobileClose,
+  capabilities, isOwner, active, onSelect, mobileOpen, onMobileClose,
 }: {
   capabilities: AccountCapability[];
+  isOwner: boolean;
   active: string;
   onSelect: (key: string) => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
-  const areas = areasForCapabilities(capabilities);
+  const areas = areasForCapabilities(capabilities).filter(
+    (a) => isOwner || !OWNER_ONLY_AREAS.has(a.key),
+  );
   const lembretesDue = useDueReminderCount();
   const agendaNew = useNewChatbotVisitCount(active);
   const badgeFor = (key: string) =>

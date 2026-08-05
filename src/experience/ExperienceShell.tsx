@@ -98,6 +98,9 @@ export function ExperienceShell() {
   // Só admin pode trocar de persona ("ver como"); usuário normal fica travado
   // no tipo da própria conta (imf_brokers.account_type).
   const [isAdmin, setIsAdmin] = useState(false);
+  // Titular da conta vs membro convidado — Equipe e Desempenho são áreas de
+  // gestão da equipe, só o titular deve ver essas abas no rail.
+  const [isOwner, setIsOwner] = useState(true);
   const [area, setArea] = useState('hoje');
   const [autonomy, setAutonomy] = useState<Autonomy>('piloto');
   const [layout, setLayout] = useState<LayoutSpec | null>(null);
@@ -136,6 +139,7 @@ export function ExperienceShell() {
           setCapabilities(defaultCapabilitiesForPersona(me.account_type as Persona));
         }
         setIsAdmin(!!me?.is_admin);
+        setIsOwner(!!me?.is_owner);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setCheckingAuth(false); });
@@ -228,6 +232,7 @@ export function ExperienceShell() {
 
       <ManualRail
         capabilities={capabilities}
+        isOwner={isOwner}
         active={area}
         onSelect={goToArea}
         mobileOpen={mobileNavOpen}

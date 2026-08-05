@@ -1,5 +1,55 @@
 # Estado do projeto
 
+## Fix: convidado via as abas Equipe/Desempenho no menu (2026-08-05)
+
+- Usuário testou ao vivo logado como membro convidado (não titular) e
+  mandou print: a sidebar mostrava as abas "Equipe" e "Desempenho" iguais
+  às do titular. Auditoria confirmou: o rail (`AREAS`/`areasForCapabilities`
+  em `engine.ts`) sempre filtrou só por capability da conta (rentals/
+  finance/team), nunca por quem está logado — qualquer membro do broker via
+  o mesmo menu do titular. O conteúdo das duas telas já era titular-only
+  (Desempenho já dava 403 com mensagem própria; Equipe já mostrava só ações
+  de admin pra quem é titular) — só a aba em si aparecia indevidamente.
+- Fix: `GET /api/brokers/me` (`brokers.ts`) passou a devolver `is_owner`
+  (via `isBrokerOwner`, já existente). `ExperienceShell.tsx` guarda em
+  estado (`isOwner`) e repassa pra `ManualRail`, que agora filtra
+  `equipe`/`desempenho` da lista de áreas quando `!isOwner`
+  (`OWNER_ONLY_AREAS` em `ManualRail.tsx`).
+- Verificado localmente com sessão real minerada via
+  `admin.auth.admin.generateLink` (mesmo padrão das rodadas anteriores) pro
+  titular e pro membro convidado de teste: convidado deixou de ver as duas
+  abas; titular continua vendo as duas normalmente. `tsc`/`knip`/`build`
+  limpos (só os 2 erros pré-existentes de sempre em LocacaoArea/
+  LocacaoPanels, não relacionados).
+- **Segundo achado, também corrigido**: auditando o resto do menu pra
+  responder esse mesmo report, `server/routes/locacao.ts` (24 rotas —
+  contratos, inquilinos, cobranças, chaves) não tinha NENHUMA checagem de
+  titularidade, só `requireUser` — qualquer membro convidado tinha CRUD
+  completo sobre contrato de locação, dado de inquilino (CPF/CNPJ,
+  contato) e cobrança, mesmo sem ser titular. Perguntei ao usuário como
+  travar — confirmou "só titular acessa" (mesmo padrão da chave Asaas).
+  Fix: o `.use("/api/locacao", ...)` no topo do router ganhou mais um
+  middleware, depois de `requireAccountCapability("rentals")`, que resolve
+  `brokerId` e 403 se `!isBrokerOwner(userId, brokerId)` — cobre as 24
+  rotas de uma vez (exceto `/n8n/*`, que já pula pra `rentalAgent.ts` com
+  auth própria por token interno, intocado). `locacao` também entrou em
+  `OWNER_ONLY_AREAS` no `ManualRail.tsx`, junto com `equipe`/`desempenho`.
+  Verificado: `curl` direto contra `/api/locacao/contracts` com sessão real
+  do convidado devolve 403; com sessão do titular devolve 200. Na UI,
+  titular abre "Aluguéis" normal; convidado nem vê a aba, e a Home dele
+  (que chama `/api/locacao/contracts` direto, fora do rail) degrada bem —
+  o `.catch(() => [])` já existente vira lista vazia, mesma tela de "ainda
+  não há contratos" que já aparecia antes.
+- Ajustei `tests/accountCapabilities.test.ts`: o teste de regressão que
+  confere o `.use()` de `locacao.ts` esperava `requireAccountCapability
+  ("rentals")` fechando o parêntese na hora — quebrou com o middleware
+  novo no meio. Relaxei o regex (não exige mais fechamento imediato) e
+  somei uma asserção nova conferindo que `isBrokerOwner(userId, brokerId)`
+  está no arquivo, pra esse teste também vigiar contra alguém remover essa
+  checagem no futuro. `npm test`: 95/96 (o 1 que falha é o CRLF conhecido
+  do Windows em `scheduledCardEditing.test.ts`, não relacionado, passa no
+  CI/Linux).
+
 ## Aba "Desempenho": ver o retorno de cada corretor (2026-08-05)
 
 - Pedido do usuário depois de ver a tela de Equipe no ar: uma aba dedicada

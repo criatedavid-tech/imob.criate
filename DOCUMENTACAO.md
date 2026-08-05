@@ -251,6 +251,23 @@ pode:
   clicar num corretor abre o mesmo drill-down por `member_user_id` do item
   acima. Indicador de retorno usa só dado já existente (sem custo/salário
   cadastrado, por escolha do usuário).
+- **Abas "Equipe", "Desempenho" e "Locação" ficam invisíveis pra membro
+  convidado** (2026-08-05, achado ao vivo pelo usuário: um membro comum
+  via essas abas no rail iguais às do titular). O rail (`AREAS`/
+  `areasForCapabilities`, `engine.ts`) sempre filtrou só por capability da
+  conta, nunca por quem está logado. `GET /api/brokers/me` agora devolve
+  `is_owner` (via `isBrokerOwner`); `ExperienceShell.tsx` guarda em estado
+  e passa pra `ManualRail`, que tira as três da lista quando `!isOwner`
+  (`OWNER_ONLY_AREAS`). Equipe/Desempenho já eram titular-only no backend
+  antes disso (só a aba aparecia à toa); **Locação não era** — nenhuma das
+  24 rotas de `locacao.ts` checava titularidade, só sessão válida, então
+  qualquer convidado tinha CRUD completo sobre contrato, dado de inquilino
+  (CPF/CNPJ) e cobrança. Corrigido no middleware de topo do router
+  (`.use("/api/locacao", ...)`, depois de `requireAccountCapability`): 403
+  se `!isBrokerOwner(userId, brokerId)`. `imf_rental_contracts` não tem
+  coluna de corretor responsável — locação sempre foi dado da empresa
+  inteira, então "só titular" (e não um split leitura/escrita por membro)
+  foi a escolha do usuário, mesmo padrão já usado na chave Asaas.
 
 ### Regras de visibilidade
 

@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId } from "../middleware/auth";
+import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { generateRentCharge } from "../services/rentalBilling";
@@ -43,7 +43,20 @@ export const locacaoRouter = express.Router();
 locacaoRouter.use("/api/locacao", (req, res, next) => {
   if (req.path.startsWith("/n8n/")) return next("router");
   next();
-}, requireUser, requireAccountCapability("rentals"));
+}, requireUser, requireAccountCapability("rentals"), async (req, res, next) => {
+  // Contrato de aluguel, dado de inquilino (CPF/CNPJ, contato) e cobranca
+  // nao tem autor por corretor (imf_rental_contracts nao tem essa coluna) —
+  // sempre foi dado da empresa inteira. Achado 2026-08-05: nenhuma rota daqui
+  // checava titularidade, so sessao valida — qualquer membro convidado tinha
+  // CRUD completo. So o titular acessa, mesmo padrao ja usado na chave Asaas.
+  const userId = (req as any).userId as string;
+  const brokerId = await getBrokerId(userId);
+  if (!brokerId) return res.status(404).json({ error: "Broker not found" });
+  if (!(await isBrokerOwner(userId, brokerId))) {
+    return res.status(403).json({ error: "Apenas o titular da conta acessa a Locação." });
+  }
+  next();
+});
 
 const nullableText = (max: number) => z.string().trim().max(max).nullable().optional();
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data invalida.");

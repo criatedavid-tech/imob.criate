@@ -36,12 +36,16 @@ test("backend protege rotas especializadas e nao confia na persona do navegador"
     readFile(new URL("../server/routes/agent.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(locacao, /use\("\/api\/locacao",[\s\S]*?requireUser, requireAccountCapability\("rentals"\)\)/);
+  assert.match(locacao, /use\("\/api\/locacao",[\s\S]*?requireUser, requireAccountCapability\("rentals"\)/);
   // /api/locacao/n8n/* e chamada maquina-a-maquina do n8n (auth propria por
   // token interno em rentalAgent.ts) - precisa pular o guard de sessao acima
   // sem virar uma brecha geral pro resto de /api/locacao.
   assert.match(locacao, /req\.path\.startsWith\("\/n8n\/"\)/);
   assert.match(locacao, /next\("router"\)/);
+  // Contrato/inquilino/cobranca de locacao nao tem autor por corretor - so o
+  // titular acessa (achado 2026-08-05: qualquer membro convidado tinha CRUD
+  // completo por faltar essa checagem).
+  assert.match(locacao, /isBrokerOwner\(userId, brokerId\)/);
   assert.match(lancamentos, /use\("\/api\/lancamentos", requireUser, requireAccountCapability\("developments"\)\)/);
   assert.match(financeiro, /use\("\/api\/financeiro", requireUser, requireAccountCapability\("finance"\)\)/);
   assert.match(equipe, /use\("\/api\/equipe", requireUser, requireAccountCapability\("team"\)\)/);

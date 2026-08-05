@@ -1,5 +1,33 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Segurança: convidado com acesso indevido a Equipe/Desempenho/Locação — pendente: autorização de commit
+
+Dois achados no mesmo report do usuário (print mostrando o convidado com
+"acesso total à interface da imobiliária"), ambos corrigidos e testados
+localmente (05/08/2026):
+
+1. **Abas Equipe/Desempenho visíveis pra convidado**: `GET /api/brokers/me`
+   passou a devolver `is_owner`; `ManualRail.tsx` esconde `equipe`/
+   `desempenho` do rail quando quem está logado não é titular.
+2. **Locação sem checagem de titularidade nenhuma**: `server/routes/
+   locacao.ts` (contratos, inquilinos com CPF/CNPJ, cobranças, chaves — 24
+   rotas) não tinha NENHUMA checagem `isOwner`, só sessão válida — qualquer
+   convidado tinha CRUD completo. Usuário confirmou (pergunta direta): só
+   titular acessa, mesmo padrão da chave Asaas. Middleware de router
+   (`.use("/api/locacao", ...)`) agora exige `isBrokerOwner`; aba `locacao`
+   também some do rail pra convidado. Home da imobiliária
+   (`fetchImobiliariaLayout`) já degrada bem pro convidado — `/api/locacao/
+   contracts` retornando 403 vira lista vazia, sem quebrar a tela.
+
+Testado com sessão real dos dois papéis (titular vê as 3 abas e usa
+Locação normal; convidado não vê nenhuma das 3, e a Home não quebra).
+`tsc`/`knip`/`build` limpos; `npm test` 95/96 (o 1 que falha é o CRLF
+conhecido do Windows, não relacionado, passa no CI). Ajustada também a
+guarda de regressão em `tests/accountCapabilities.test.ts` (verificava o
+shape exato do `.use()` de locacao — agora também confere que o
+`isBrokerOwner` está lá). Detalhe completo em PROGRESS.md/DOCUMENTACAO.md.
+**Aguardando autorização de commit/push.**
+
 ## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — pendente: autorização de commit
 
 Implementado e testado localmente (05/08/2026), mesmo padrão de conta de

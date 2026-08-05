@@ -36,6 +36,7 @@ brokersRouter.get("/api/brokers/me", requireUser, async (req, res) => {
       ...(data as unknown as Record<string, unknown>),
       capabilities: capabilitySnapshot.enabled,
       capabilities_migration_ready: capabilitySnapshot.migrationReady,
+      is_owner: await isBrokerOwner(userId, brokerId),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
