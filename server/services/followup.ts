@@ -98,10 +98,11 @@ export async function runFollowupTick() {
           // reenvio e duplicidade no WhatsApp; fica registrada no log operacional.
           console.error(`[Follow-up] enviado, mas não persistido no ticket: ${err.message}`);
         }
-        // Após Follow 1 ou 2, reseta follow_sent para que o próximo dispare automaticamente
-        // após o delay correspondente (contado a partir de follow_sent_at, gravado pela RPC).
-        // Follow 3 (index=3) mantém follow_sent=true — sequência encerrada.
-        if (row.message_index < 3) {
+        // Após cada follow (exceto o último configurado), reseta follow_sent para
+        // que o próximo dispare automaticamente após o delay correspondente
+        // (contado a partir de follow_sent_at, gravado pela RPC). O último follow
+        // configurado (index=follow_count) mantém follow_sent=true — sequência encerrada.
+        if (row.message_index < row.follow_count) {
           await supabase.from('followup_conversations').update({
             follow_sent: false,
             updated_at: new Date().toISOString()

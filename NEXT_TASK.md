@@ -1,6 +1,6 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Segurança: convidado com acesso indevido a Equipe/Desempenho/Locação — pendente: autorização de commit
+## Segurança: convidado com acesso indevido a Equipe/Desempenho/Locação — ROLLOUT CONCLUÍDO (05/08/2026)
 
 Dois achados no mesmo report do usuário (print mostrando o convidado com
 "acesso total à interface da imobiliária"), ambos corrigidos e testados
@@ -35,7 +35,22 @@ conhecido do Windows, não relacionado, passa no CI). Ajustada também a
 guarda de regressão em `tests/accountCapabilities.test.ts` (verificava o
 shape exato do `.use()` de locacao — agora também confere que o
 `isBrokerOwner` está lá). Detalhe completo em PROGRESS.md/DOCUMENTACAO.md.
-**Aguardando autorização de commit/push.**
+Commit `f33ac7f` (Equipe/Desempenho/Locação) + `1599b08` (Financeiro),
+deploy validado (health-check 200).
+
+## Follow-Up Inteligente: de 3 passos fixos pra até 8 — pendente: autorização de commit
+
+`/app` → Assistente IA → "Follow-Up Inteligente" agora suporta até 8
+passos (era fixo em 3), revelados um a um com um "+" abaixo do último
+bloco. Dashboard antigo (`/`) fica de fora por pedido do usuário, continua
+travado em 3, sem regressão. Migration `20260806c_followup_progressive_
+steps.sql` já aplicada pelo usuário no Supabase (incluiu um `DROP FUNCTION`
+antes do `CREATE` — Postgres não deixa `CREATE OR REPLACE` trocar o tipo
+de retorno de uma função existente). Testado ao vivo: RPC testada direto
+no banco (claim correto + atomicidade), UI testada com sessão real (8
+blocos revelados, persistência confirmada com F5). `tsc`/`knip`/`build`
+limpos; `npm test` (só o CRLF conhecido). Detalhe completo em
+PROGRESS.md/DOCUMENTACAO.md. **Aguardando autorização de commit/push.**
 
 ## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — pendente: autorização de commit
 

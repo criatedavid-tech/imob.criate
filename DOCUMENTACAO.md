@@ -277,6 +277,47 @@ pode:
   inteira, então "só titular" (e não um split leitura/escrita por membro)
   foi a escolha do usuário, mesmo padrão já usado na chave Asaas.
 
+### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
+
+A régua de reativação automática de lead (`/app` → Assistente IA,
+componente `FollowUpCard` em `AssistenteIAArea.tsx`) passou de 3 passos
+sempre fixos pra até 8, configuráveis com um "+" que revela o próximo
+bloco por vez — só o Dashboard antigo (rota `/`, `src/components/
+FollowUpSettings.tsx`) ficou de fora dessa rodada por pedido explícito do
+usuário, continua travado em 3 (sem regressão, já era assim).
+
+- **Schema** (`followup_config`, migration `20260806c_followup_
+  progressive_steps.sql`, aditiva): coluna nova `follow_count` (1-8,
+  default 3 — brokers existentes não mudam de comportamento) +
+  `delay_minutes_4..8`/`message_4..8`. Tabelas `followup_config`/
+  `followup_conversations` nunca tiveram `CREATE TABLE` rastreado no repo
+  (criadas direto no Supabase antes deste histórico de migrations) — essa
+  e qualquer migration futura nelas só pode ser `ADD COLUMN IF NOT EXISTS`.
+- **RPC** `public.claim_due_followups_v2()`: ganhou 5 branches novos no
+  `WHERE` (índice 3→`delay_minutes_4` ... índice 7→`delay_minutes_8`) e
+  passou a limitar por `fc.follow_message_index < cfg.follow_count` (era
+  hardcoded `< 3`) — broker com `follow_count=3` continua funcionando
+  idêntico a antes. Como a assinatura de retorno mudou (`follow_count`
+  novo na saída), precisou `DROP FUNCTION` antes do `CREATE` — Postgres
+  não deixa `CREATE OR REPLACE` trocar o tipo de retorno de uma função
+  existente (erro `42P13`). **Existe uma função V1 irmã sem `_v2`, não
+  rastreada no repo — só vive no Supabase, não foi tocada.**
+- **Backend** `server/services/followup.ts::runFollowupTick`: único
+  hardcode de "3" do arquivo virou `row.message_index < row.follow_count`
+  (campo que a RPC agora devolve).
+- **Frontend**: `FOLLOWS` (array de metadados de cada bloco) virou
+  `[...3 objetos originais, ...5 gerados por loop]` — os 5 novos usam
+  prazo recomendado em progressão semanal (14d/21d/28d/35d/42d,
+  continuando o ritmo 24h→72h→7d já existente). Render é
+  `FOLLOWS.slice(0, cfg.follow_count)`; o "+" só soma `follow_count` no
+  estado local (sem auto-save, mesmo padrão do resto do form — persiste
+  só ao clicar "Salvar Follow-Up"). Textos que citavam "3" (subtítulo,
+  aviso de rodapé) viraram dinâmicos por `cfg.follow_count`.
+- Verificado ao vivo: RPC testada direto no banco (índice 6 → claim
+  correto do Follow 7, segunda chamada não repete — atomicidade
+  preservada); UI testada com sessão real (8 blocos revelados um a um,
+  "+" some no 8, F5 confirma que `follow_count` persistiu).
+
 ### Regras de visibilidade
 
 Desde 03/08/2026, `account_type` continua sendo o tipo principal da conta para

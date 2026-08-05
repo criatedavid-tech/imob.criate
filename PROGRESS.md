@@ -1,5 +1,44 @@
 # Estado do projeto
 
+## Follow-Up Inteligente: de 3 passos fixos pra até 8 (2026-08-06)
+
+Usuário pediu (via print da tela) expandir a régua de reativação de lead
+de 3 pra até 8 passos, revelados um por vez com um "+" abaixo do último
+bloco (não mostrar os 8 vazios de cara). Achado logo no início: a tela
+existe em 2 lugares (Dashboard antigo `/` e `/app` novo) — perguntei ao
+usuário, confirmou mexer só no `/app` (Dashboard antigo fica travado em
+3, sem regressão).
+
+- **Migration** `20260806c_followup_progressive_steps.sql` (aplicada pelo
+  usuário no SQL Editor): `follow_count` (1-8, default 3) +
+  `delay_minutes_4..8`/`message_4..8` em `followup_config`, e a RPC
+  `claim_due_followups_v2()` reescrita pra 8 passos, limitada por
+  `follow_count`. **Gotcha real**: a primeira tentativa deu erro `42P13`
+  (Postgres não deixa `CREATE OR REPLACE FUNCTION` trocar o tipo de
+  retorno de uma função existente) — corrigido adicionando `DROP FUNCTION
+  IF EXISTS` antes do `CREATE`, dentro da mesma transação (sem janela em
+  que a função "some"). Segunda tentativa aplicou limpo.
+- **Backend**: `followup.ts` (rotas) ganhou os campos novos no GET/POST;
+  `followup.ts` (serviço, `runFollowupTick`) trocou o único hardcode `< 3`
+  do arquivo por `< row.follow_count` (campo novo que a RPC devolve).
+- **Frontend** (`AssistenteIAArea.tsx`, `FollowUpCard`): `FOLLOWS` virou
+  3 objetos originais + 5 gerados por loop (prazo semanal 14d/21d/28d/
+  35d/42d); render em `FOLLOWS.slice(0, cfg.follow_count)`; botão "+"
+  tracejado abaixo do último bloco (só até 8) soma `follow_count` no
+  estado local, sem auto-save — persiste só ao clicar "Salvar Follow-Up".
+  2 textos que citavam "3" viraram dinâmicos.
+- **Testado ao vivo** (sessão real minerada, mesmo padrão de sempre):
+  `GET /api/followup/config` de um broker existente devolveu
+  `follow_count: 3` certo (sem quebrar quem nunca mexeu); UI revelou os 8
+  blocos um a um clicando "+", "+" sumiu no 8; salvou Follow 4 preenchido,
+  deu F5, continuou em 8 blocos com a mensagem do Follow 4 batendo com o
+  banco (`GET` confirmou `follow_count:8, message_4:"..."`); RPC testada
+  direto no banco com uma conversa de teste no índice 6 — 1ª chamada
+  claimou certo (`message_index:7`, `message_7`, `follow_count:8`), 2ª
+  chamada imediata não repetiu (atomicidade preservada); linha de teste e
+  configuração apagadas depois. `tsc`/`knip`/`build` limpos; `npm test`
+  (só o CRLF conhecido, não relacionado).
+
 ## Fix: Financeiro também vazava caixa de aluguel pro convidado (2026-08-05)
 
 Usuário apontou (print do ícone "Financeiro" na sidebar do convidado): "se

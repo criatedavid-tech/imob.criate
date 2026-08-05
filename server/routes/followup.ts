@@ -26,8 +26,13 @@ followupRouter.get('/api/followup/config', requireUser, async (req, res) => {
     const { data } = await supabase.from('followup_config').select('*').eq('broker_id', brokerId).maybeSingle();
     res.json(data || {
       broker_id: brokerId, enabled: false,
+      follow_count: 3,
       delay_minutes_1: 30, delay_minutes_2: 120, delay_minutes_3: 1440,
-      message_1: '', message_2: '', message_3: '', strategy: 'progressive'
+      delay_minutes_4: 20160, delay_minutes_5: 30240, delay_minutes_6: 40320,
+      delay_minutes_7: 50400, delay_minutes_8: 60480,
+      message_1: '', message_2: '', message_3: '', message_4: '', message_5: '',
+      message_6: '', message_7: '', message_8: '',
+      strategy: 'progressive'
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -41,16 +46,33 @@ followupRouter.post('/api/followup/config', requireUser, async (req, res) => {
   try {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: 'Perfil não encontrado.' });
-    const { enabled, delay_minutes_1, delay_minutes_2, delay_minutes_3, message_1, message_2, message_3, strategy } = req.body || {};
+    const {
+      enabled, follow_count,
+      delay_minutes_1, delay_minutes_2, delay_minutes_3, delay_minutes_4,
+      delay_minutes_5, delay_minutes_6, delay_minutes_7, delay_minutes_8,
+      message_1, message_2, message_3, message_4, message_5, message_6, message_7, message_8,
+      strategy
+    } = req.body || {};
     const payload: any = {
       broker_id: brokerId,
       enabled: !!enabled,
+      follow_count: Math.min(8, Math.max(1, Number(follow_count) || 3)),
       delay_minutes_1: Math.max(1, Number(delay_minutes_1) || 30),
       delay_minutes_2: Math.max(1, Number(delay_minutes_2) || 120),
       delay_minutes_3: Math.max(1, Number(delay_minutes_3) || 1440),
+      delay_minutes_4: Math.max(1, Number(delay_minutes_4) || 20160),
+      delay_minutes_5: Math.max(1, Number(delay_minutes_5) || 30240),
+      delay_minutes_6: Math.max(1, Number(delay_minutes_6) || 40320),
+      delay_minutes_7: Math.max(1, Number(delay_minutes_7) || 50400),
+      delay_minutes_8: Math.max(1, Number(delay_minutes_8) || 60480),
       message_1: message_1 ?? null,
       message_2: message_2 ?? null,
       message_3: message_3 ?? null,
+      message_4: message_4 ?? null,
+      message_5: message_5 ?? null,
+      message_6: message_6 ?? null,
+      message_7: message_7 ?? null,
+      message_8: message_8 ?? null,
       strategy: strategy || 'progressive',
       updated_at: new Date().toISOString()
     };

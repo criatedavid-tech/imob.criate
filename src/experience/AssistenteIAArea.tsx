@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, Loader2, Zap, Clock, MessageSquare } from 'lucide-react';
+import { Bot, Check, Loader2, Zap, Clock, MessageSquare, Plus } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -164,42 +164,85 @@ export function AssistenteIAArea() {
 // src/components/FollowUpSettings.tsx segue existindo pro Dashboard 1.0 (/),
 // que usa o design antigo de forma consistente — não mexer lá.
 
+type MsgKey = `message_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+type DelayKey = `delay_minutes_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+
 interface Cfg {
   enabled: boolean;
+  follow_count: number;
   delay_minutes_1: number;
   delay_minutes_2: number;
   delay_minutes_3: number;
+  delay_minutes_4: number;
+  delay_minutes_5: number;
+  delay_minutes_6: number;
+  delay_minutes_7: number;
+  delay_minutes_8: number;
   message_1: string;
   message_2: string;
   message_3: string;
+  message_4: string;
+  message_5: string;
+  message_6: string;
+  message_7: string;
+  message_8: string;
 }
 
-const FOLLOWS = [
+interface FollowMeta {
+  msgKey: MsgKey;
+  delayKey: DelayKey;
+  label: string;
+  delayLabel: string;
+  delayHint: string;
+  placeholder: string;
+}
+
+// Follow 1-3: cópia mantida como já era (mão-tunada).
+const FOLLOWS_HAND_TUNED: FollowMeta[] = [
   {
-    msgKey: 'message_1' as const,
-    delayKey: 'delay_minutes_1' as const,
+    msgKey: 'message_1',
+    delayKey: 'delay_minutes_1',
     label: 'Follow 1',
     delayLabel: 'Enviar após silêncio do cliente (minutos)',
     delayHint: 'Contado a partir da última mensagem do cliente. Produção recomendada: 1440 (24h)',
     placeholder: 'Olá! Vi que você demonstrou interesse no imóvel. Posso tirar alguma dúvida?',
   },
   {
-    msgKey: 'message_2' as const,
-    delayKey: 'delay_minutes_2' as const,
+    msgKey: 'message_2',
+    delayKey: 'delay_minutes_2',
     label: 'Follow 2',
     delayLabel: 'Enviar após o Follow 1 (minutos)',
     delayHint: 'Contado a partir de quando o Follow 1 foi enviado. Produção recomendada: 4320 (72h)',
     placeholder: 'Ainda tem interesse nesse imóvel? Posso te enviar mais detalhes.',
   },
   {
-    msgKey: 'message_3' as const,
-    delayKey: 'delay_minutes_3' as const,
+    msgKey: 'message_3',
+    delayKey: 'delay_minutes_3',
     label: 'Follow 3',
     delayLabel: 'Enviar após o Follow 2 (minutos)',
     delayHint: 'Contado a partir de quando o Follow 2 foi enviado. Produção recomendada: 10080 (7 dias)',
     placeholder: 'Esse imóvel ainda está disponível e com bastante procura. 😊',
   },
 ];
+
+// Follow 4-8: progressão semanal (14d, 21d, 28d, 35d, 42d) a partir do
+// Follow 3. Gerado pra não repetir a mesma forma 5x; texto segue o padrão
+// dos 3 primeiros.
+const EXTRA_DELAY_DAYS = [14, 21, 28, 35, 42];
+const FOLLOWS_GENERATED: FollowMeta[] = EXTRA_DELAY_DAYS.map((days, i) => {
+  const n = i + 4;
+  const prev = n - 1;
+  return {
+    msgKey: `message_${n}` as MsgKey,
+    delayKey: `delay_minutes_${n}` as DelayKey,
+    label: `Follow ${n}`,
+    delayLabel: `Enviar após o Follow ${prev} (minutos)`,
+    delayHint: `Contado a partir de quando o Follow ${prev} foi enviado. Produção recomendada: ${days * 1440} (${days} dias)`,
+    placeholder: 'Escreva aqui a mensagem deste follow-up.',
+  };
+});
+
+const FOLLOWS: FollowMeta[] = [...FOLLOWS_HAND_TUNED, ...FOLLOWS_GENERATED];
 
 const hms = (min: number) => {
   const h = Math.floor(min / 60);
@@ -214,12 +257,23 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
   const [error, setError] = useState('');
   const [cfg, setCfg] = useState<Cfg>({
     enabled: false,
+    follow_count: 3,
     delay_minutes_1: 30,
     delay_minutes_2: 120,
     delay_minutes_3: 1440,
+    delay_minutes_4: 20160,
+    delay_minutes_5: 30240,
+    delay_minutes_6: 40320,
+    delay_minutes_7: 50400,
+    delay_minutes_8: 60480,
     message_1: '',
     message_2: '',
     message_3: '',
+    message_4: '',
+    message_5: '',
+    message_6: '',
+    message_7: '',
+    message_8: '',
   });
 
   useEffect(() => {
@@ -230,12 +284,23 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
         if (cancelled || !d) return;
         setCfg({
           enabled: !!d.enabled,
+          follow_count: Math.min(8, Math.max(1, Number(d.follow_count) || 3)),
           delay_minutes_1: Number(d.delay_minutes_1) || 30,
           delay_minutes_2: Number(d.delay_minutes_2) || 120,
           delay_minutes_3: Number(d.delay_minutes_3) || 1440,
+          delay_minutes_4: Number(d.delay_minutes_4) || 20160,
+          delay_minutes_5: Number(d.delay_minutes_5) || 30240,
+          delay_minutes_6: Number(d.delay_minutes_6) || 40320,
+          delay_minutes_7: Number(d.delay_minutes_7) || 50400,
+          delay_minutes_8: Number(d.delay_minutes_8) || 60480,
           message_1: d.message_1 || '',
           message_2: d.message_2 || '',
           message_3: d.message_3 || '',
+          message_4: d.message_4 || '',
+          message_5: d.message_5 || '',
+          message_6: d.message_6 || '',
+          message_7: d.message_7 || '',
+          message_8: d.message_8 || '',
         });
       })
       .catch(() => {})
@@ -281,7 +346,8 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
             <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Follow-Up Inteligente</h3>
           </div>
           <p className="text-[12px] text-[var(--text-low)] mt-1.5">
-            Reativa automaticamente o lead que parou de responder — envia 1 mensagem por vez (Follow 1 → 2 → 3).
+            Reativa automaticamente o lead que parou de responder — envia 1 mensagem por vez
+            {cfg.follow_count > 1 ? ` (Follow 1 → ${cfg.follow_count === 2 ? '2' : `... → ${cfg.follow_count}`})` : ' (Follow 1)'}.
           </p>
         </div>
         <button
@@ -303,7 +369,7 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
       )}
 
       <div className={`space-y-4 transition-opacity ${cfg.enabled ? '' : 'opacity-50 pointer-events-none select-none'}`}>
-        {FOLLOWS.map((f) => (
+        {FOLLOWS.slice(0, cfg.follow_count).map((f) => (
           <div key={f.msgKey} className="rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] p-5 space-y-3">
             <div className="flex items-center gap-2">
               <MessageSquare size={13} className="text-[var(--text-low)]" />
@@ -341,8 +407,20 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
           </div>
         ))}
 
+        {cfg.follow_count < 8 && (
+          <button
+            type="button"
+            onClick={() => setCfg((c) => ({ ...c, follow_count: c.follow_count + 1 }))}
+            className="w-full py-3 rounded-2xl border border-dashed border-[var(--hairline-strong)] text-[var(--text-low)]
+              hover:text-[var(--text-hi)] hover:border-[var(--glass-border-strong)] transition-colors text-[13px] font-semibold
+              flex items-center justify-center gap-2"
+          >
+            <Plus size={16} /> Adicionar Follow {cfg.follow_count + 1}
+          </button>
+        )}
+
         <p className="text-[11px] text-[var(--text-low)]">
-          Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow 3, para.
+          Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow {cfg.follow_count}, para.
           Se você responder manualmente, o agente é interrompido naquela conversa.
         </p>
 
