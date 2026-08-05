@@ -298,6 +298,15 @@ function agentTextFromRecordedMessage(
   return storedBody || plainText;
 }
 
+// Pessoas escrevem picado ("oi" / "tudo bem?" / "queria ver um apartamento").
+// Sem espera, cada pedaço vira uma execução da IA e uma resposta completa — a
+// IA responde três vezes a um pensamento só, e as respostas se atropelam.
+// Segurar poucos segundos e juntar é o que faz a conversa parecer com gente.
+// Zero desliga o recurso e volta ao comportamento antigo.
+const INBOUND_DEBOUNCE_SECONDS = envInteger("INBOUND_DEBOUNCE_SECONDS", 8, 0, 60);
+// Teto absoluto: quem digita sem parar não pode adiar a resposta para sempre.
+const INBOUND_MAX_HOLD_SECONDS = envInteger("INBOUND_MAX_HOLD_SECONDS", 25, 5, 180);
+
 async function enqueueN8nOutbox(input: {
   inboxId: string;
   brokerId: string;
@@ -308,25 +317,41 @@ async function enqueueN8nOutbox(input: {
   inputType: string;
 }): Promise<void> {
   const partitionKey = `${input.brokerId}:${input.customerPhone}`;
-  const { error } = await supabase.from("imf_webhook_outbox").upsert({
-    event_type: "n8n.inbound_message",
-    aggregate_id: input.inboxId,
+  const payload = {
+    source: "imobiflow_wpp_shim",
     broker_id: input.brokerId,
-    partition_key: partitionKey,
-    payload: {
-      source: "imobiflow_wpp_shim",
-      broker_id: input.brokerId,
-      customer_phone: input.customerPhone,
-      message_id: input.providerMessageId,
-      ticket_id: input.ticketId,
-      text: input.agentText,
-      input_type: input.inputType,
-    },
-  }, {
-    onConflict: "event_type,aggregate_id",
-    ignoreDuplicates: true,
+    customer_phone: input.customerPhone,
+    message_id: input.providerMessageId,
+    ticket_id: input.ticketId,
+    text: input.agentText,
+    input_type: input.inputType,
+  };
+
+  // A junção acontece dentro do Postgres (imf_enqueue_inbound_debounced): é o
+  // único jeito de duas mensagens simultâneas não sobrescreverem o texto uma da
+  // outra. A função também respeita a idempotência do reprocessamento.
+  const { error } = await supabase.rpc("imf_enqueue_inbound_debounced", {
+    p_aggregate_id: input.inboxId,
+    p_broker_id: input.brokerId,
+    p_partition_key: partitionKey,
+    p_payload: payload,
+    p_debounce_seconds: INBOUND_DEBOUNCE_SECONDS,
+    p_max_hold_seconds: INBOUND_MAX_HOLD_SECONDS,
   });
-  if (error) throw error;
+
+  if (error) {
+    // Se a função não existir (deploy antes da migration), o inbound não pode
+    // parar: cai no caminho antigo, sem agrupamento.
+    console.warn("[Webhook Outbox] agrupamento indisponivel, enfileirando direto:", error.message);
+    const fallback = await supabase.from("imf_webhook_outbox").upsert({
+      event_type: "n8n.inbound_message",
+      aggregate_id: input.inboxId,
+      broker_id: input.brokerId,
+      partition_key: partitionKey,
+      payload,
+    }, { onConflict: "event_type,aggregate_id", ignoreDuplicates: true });
+    if (fallback.error) throw fallback.error;
+  }
 }
 
 async function processInboxRow(row: InboxRow): Promise<void> {
