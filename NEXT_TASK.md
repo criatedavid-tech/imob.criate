@@ -1,20 +1,29 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Rollout do CRM automático no agente de vendas (pendente: peça do n8n)
+## Rollout do CRM automático no agente de vendas
 
 1. ~~Backend: `POST /api/crm/n8n/sync-lead` + avanço automático pra etapa
-   "Visita" em `POST /api/agenda/n8n/create`.~~ Implementado e testado ao
-   vivo contra o banco real em 05/08/2026 (ver PROGRESS.md/DECISIONS.md).
-2. **Aguardando autorização de commit/push** deste backend.
-3. **Depois do deploy:** colar no n8n (workflow do agente de vendas) o node
-   novo `sincronizar_lead` (HTTP Request Tool, mesmo formato de
-   `agendamento1`) + o trecho novo de system prompt — entregues prontos
-   pelo Claude, sem editar o workflow de produção direto pela API.
-4. Conectar o node novo como `ai_tool` do "Agente IA Corretor1" (mesma
-   conexão que os outros tools já usam).
-5. Teste real: mandar mensagem informando nome + interesse num imóvel pro
-   número de teste do Hunter, confirmar que o lead aparece/atualiza em
-   Negócios (CRM) e que a etapa avança pra "Visita" ao agendar de verdade.
+   "Visita" em `POST /api/agenda/n8n/create`.~~ Implementado, testado ao
+   vivo, commit `4852c8f` em produção desde 05/08/2026.
+2. ~~Colar no n8n o node `sincronizar_lead1` (HTTP Request Tool) + trecho
+   novo de system prompt (seção "SINCRONIZAÇÃO COM O CRM", com gatilho
+   explícito de quando chamar).~~ Feito manualmente no editor do n8n
+   (paste de JSON não funcionou nesse ambiente) e testado com mensagem
+   real ao vivo em 05/08/2026: lead "Ryan" criado corretamente em
+   "Novo" no Kanban.
+3. ~~Bug encontrado no teste ao vivo: `$fromAI` de 4 argumentos (com valor
+   padrão) vaza um `"="` literal na frente do valor resolvido — afeta
+   `property_id` e `qualification_note` (não afeta `client_name`, que usa
+   `$fromAI` de 3 argumentos sem padrão). Corrigido com sanitização
+   defensiva no backend (`cleanAiString` em `crmSalesAgent.ts`), testado
+   localmente simulando o payload sujo.~~ **Aguardando autorização de
+   commit/push** deste fix.
+4. **Depois do deploy:** repetir o teste real com telefone novo — confirmar
+   que o lead novo aparece em "Novo" com `property_id` vinculado (quando a
+   IA identificar o imóvel) e nota sem `=` sobrando.
+5. Testar o gatilho de etapa "Visita": responder topando uma visita na
+   mesma conversa de teste, confirmar que o card pula sozinho pra "Visita"
+   ao agendar de verdade.
 
 ## Rollout da confirmação de WhatsApp adicional no convite
 

@@ -36,6 +36,31 @@
 - Checklist: `npm test` (95/96 — a 1 falha é `scheduledCardEditing.test.ts`,
   pré-existente, artefato de CRLF local no Windows, confirmado que passa
   no CI/Linux), `tsc`/`knip`/`build`/`git diff --check` limpos.
+- **Deploy e teste ao vivo (05/08/2026, mesmo dia):** commit `4852c8f` em
+  produção. Node `sincronizar_lead1` criado manualmente no n8n (o paste de
+  JSON não funcionou nesse ambiente) e conectado como `ai_tool`; faltava um
+  gatilho explícito no prompt (a lista de ferramentas descrevia a tool mas
+  não mandava chamá-la em nenhum passo — diferente de `agendamento`/
+  `verificacao`, que têm seção própria com passos numerados). Adicionada a
+  seção "SINCRONIZAÇÃO COM O CRM" no system prompt do "Agente IA Corretor"
+  com o gatilho explícito.
+- Teste real (telefone "Marcos") caiu num dedupe por telefone com um lead
+  antigo já Fechado ("leon") que tinha o mesmo número normalizado — dedupe
+  funcionando corretamente, só confundiu o teste. Segundo teste com
+  telefone novo ("Ryan") confirmou criação de lead limpa em "Novo".
+- **Bug real encontrado nesse teste:** `$fromAI` de 4 argumentos (com valor
+  padrão, usado em `property_id` e `qualification_note` pra ficarem
+  opcionais) vaza um `"="` literal na frente do valor resolvido quando a IA
+  fornece um valor de verdade — `client_name`, que usa `$fromAI` de 3
+  argumentos sem padrão, nunca apresentou o problema. Sem correção, um
+  `property_id` vindo sujo nunca bateria com `imf_properties.id`, quebrando
+  o vínculo do imóvel silenciosamente. Corrigido com sanitização defensiva
+  no backend (`cleanAiString` em `crmSalesAgent.ts`, remove `=` à esquerda
+  de todos os campos vindos do n8n antes de usar) em vez de depender do
+  node ficar "certo" no n8n. Testado localmente simulando o payload sujo
+  (`property_id`/`qualification_note` com `=` na frente): saiu limpo no
+  banco. Checklist completo (`tsc`/`npm test`/`knip`/`build`/
+  `git diff --check`) limpo de novo. Aguardando autorização de commit/push.
 
 ## Confirmação de WhatsApp adicional no convite (2026-08-04, publicada)
 

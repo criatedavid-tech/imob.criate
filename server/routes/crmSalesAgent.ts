@@ -21,6 +21,14 @@ export const crmSalesAgentRouter = express.Router();
 
 const QUALIFICATION_PREFIX = "Qualificação (IA): ";
 
+// n8n/$fromAI com valor padrao (4 argumentos) as vezes deixa vazar um "="
+// literal na frente do valor resolvido (observado em resumo_qualificacao;
+// nome_cliente, que usa $fromAI de 3 argumentos sem padrao, nunca apresentou
+// o problema). Nao vale a pena depender do node ficar "certo" para sempre -
+// limpa na entrada, no mesmo espirito de nunca confiar em valor bruto vindo
+// do modelo.
+const cleanAiString = (value: unknown): string => String(value ?? "").replace(/^=+/, "").trim();
+
 // POST /api/crm/n8n/sync-lead
 // body: { broker_id, phone, client_name, property_id?, qualification_note? }
 //
@@ -32,11 +40,12 @@ const QUALIFICATION_PREFIX = "Qualificação (IA): ";
 // caminho).
 crmSalesAgentRouter.post("/api/crm/n8n/sync-lead", requireInternalToken, n8nInternalLimiter, async (req, res) => {
   try {
-    const brokerId = String(req.body?.broker_id || "");
-    const phone = String(req.body?.phone || "");
-    const clientName = String(req.body?.client_name || "").trim();
-    const propertyId = req.body?.property_id ? String(req.body.property_id) : null;
-    const qualificationNote = req.body?.qualification_note ? String(req.body.qualification_note).trim().slice(0, 2000) : "";
+    const brokerId = cleanAiString(req.body?.broker_id);
+    const phone = cleanAiString(req.body?.phone);
+    const clientName = cleanAiString(req.body?.client_name);
+    const propertyIdInput = cleanAiString(req.body?.property_id);
+    const propertyId = propertyIdInput || null;
+    const qualificationNote = cleanAiString(req.body?.qualification_note).slice(0, 2000);
 
     if (!brokerId || !phone || !clientName) {
       return res.json({ ok: false, motivo: "broker_id, phone e client_name são obrigatórios" });
