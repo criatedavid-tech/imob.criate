@@ -37,15 +37,20 @@ function cacheGet<V>(map: Map<string, { value: V; expires: number }>, key: strin
 const brokerIdCache = new Map<string, { value: string | null; expires: number }>();
 const ownerCache = new Map<string, { value: boolean; expires: number }>();
 const accountAccessCache = new Map<string, { value: boolean; expires: number }>();
+// Suspensão de membro individual (server/routes/equipe.ts) - cache próprio,
+// nunca reaproveita accountAccessCache: senão um membro suspenso veria a
+// mensagem de "contrate um plano" em vez da mensagem certa de suspensão.
+const memberSuspendedCache = new Map<string, { value: boolean; expires: number }>();
 const IDENTITY_TTL_MS = 60_000;
 const ACCOUNT_ACCESS_TTL_MS = 15_000;
 
-// Chamar quando a composição da equipe muda (convite aceito, membro removido),
-// pra não esperar o TTL.
+// Chamar quando a composição da equipe muda (convite aceito, membro removido,
+// suspenso/reativado), pra não esperar o TTL.
 export function invalidateIdentityCache(userId?: string) {
-  if (!userId) { brokerIdCache.clear(); ownerCache.clear(); accountAccessCache.clear(); return; }
+  if (!userId) { brokerIdCache.clear(); ownerCache.clear(); accountAccessCache.clear(); memberSuspendedCache.clear(); return; }
   brokerIdCache.delete(userId);
   accountAccessCache.delete(userId);
+  memberSuspendedCache.delete(userId);
   for (const k of ownerCache.keys()) if (k.startsWith(`${userId}:`)) ownerCache.delete(k);
 }
 
@@ -114,6 +119,26 @@ export async function requireUser(req: any, res: any, next: any) {
       .eq("id", brokerId)
       .eq("plan", "experimentacao");
     broker = { ...broker, status: "inativo" };
+  }
+
+  // Suspensão de membro individual - nunca se aplica a super admin (is_admin).
+  // Checada aqui (depois do bypass de rotas e do cache de conta, antes do
+  // gate de status/plano) pra ter mensagem própria, nunca confundida com a
+  // de "contrate um plano".
+  if (!broker?.is_admin) {
+    let suspended = cacheGet(memberSuspendedCache, userId);
+    if (suspended === undefined) {
+      const { data: memberRow } = await supabase
+        .from('imf_broker_members')
+        .select('suspended_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+      suspended = !!memberRow?.suspended_at;
+      cacheSet(memberSuspendedCache, userId, suspended, IDENTITY_TTL_MS);
+    }
+    if (suspended) {
+      return res.status(403).json({ error: 'Seu acesso a esta conta foi suspenso por quem administra a equipe.' });
+    }
   }
 
   const hasAccess = Boolean(broker?.is_admin || broker?.status === "ativo");

@@ -6,6 +6,7 @@ import { requireUser, getBrokerId, invalidateIdentityCache } from "../middleware
 import { requireAccountCapability } from "../services/accountCapabilities";
 import { MEMBER_WHATSAPP_SLOT_MAX, MEMBER_WHATSAPP_SLOT_PRICE, PUBLIC_APP_URL } from "../config";
 import { subscriptionValueForMemberLimit } from "../services/billing";
+import { disconnectUazapiInstance } from "../services/provisioning";
 
 export const equipeRouter = express.Router();
 
@@ -25,73 +26,160 @@ function currentMonthStart(): string {
   return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
 }
 
-equipeRouter.get("/api/equipe/goal", requireUser, async (req, res) => {
-  try {
-    const userId = (req as any).userId as string;
-    const brokerId = await getBrokerId(userId);
-    if (!brokerId) return res.json({ goal: null, progress: 0 });
-
-    const month = currentMonthStart();
-    const { data: goalRow, error: goalError } = await supabase
-      .from("imf_broker_goals")
-      .select("deals_goal")
-      .eq("broker_id", brokerId)
-      .eq("month", month)
-      .maybeSingle();
-    if (goalError) throw goalError;
-
-    const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
-    const ids = (propIds || []).map((p: any) => p.id);
-
-    let progress = 0;
-    if (ids.length > 0) {
-      const { count, error: countError } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .in("property_id", ids)
-        .gte("closed_at", month);
-      if (countError) throw countError;
-      progress = count || 0;
-    }
-
-    res.json({ goal: goalRow?.deals_goal ?? null, progress, month });
-  } catch (err: any) {
-    console.error("Erro GET /api/equipe/goal:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-equipeRouter.post("/api/equipe/goal", requireUser, async (req, res) => {
-  try {
-    const userId = (req as any).userId as string;
-    const brokerId = await getBrokerId(userId);
-    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-
-    const { deals_goal } = req.body;
-    const goal = Number(deals_goal);
-    if (!goal || goal <= 0) return res.status(400).json({ error: "Meta precisa ser maior que zero." });
-
-    const month = currentMonthStart();
-    const { data, error } = await supabase
-      .from("imf_broker_goals")
-      .upsert({ broker_id: brokerId, month, deals_goal: goal, updated_at: new Date().toISOString() }, { onConflict: "broker_id,month" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (err: any) {
-    console.error("Erro POST /api/equipe/goal:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // Multi-usuário leve: qualquer membro vê a lista, só o dono original
 // (imf_brokers.user_id) convida ou remove — sem hierarquia além disso.
 async function isOwner(userId: string, brokerId: string): Promise<boolean> {
   const { data } = await supabase.from("imf_brokers").select("id").eq("id", brokerId).eq("user_id", userId).maybeSingle();
   return !!data;
 }
+
+// Conta o total de negócios fechados no mês para um user_id específico,
+// escopado ao broker. Um lead pertence ao broker por property_id (imóvel do
+// broker) OU, sem imóvel ainda, por broker_id direto — mesmo padrão dual de
+// leadBrokerAccess/GET /api/leads/recent (leads.ts:34-55,75-81). É um SELECT
+// de contagem, não um UPDATE, então o .or() aqui é seguro (o bug conhecido do
+// supabase-js é só .or() combinado com .update().eq()).
+async function closedDealsForUser(brokerId: string, targetUserId: string, month: string): Promise<number> {
+  const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+  const ids = (propIds || []).map((p: any) => p.id);
+
+  let query = supabase.from("leads").select("id", { count: "exact", head: true }).eq("owner_user_id", targetUserId).gte("closed_at", month);
+  query = ids.length > 0
+    ? query.or(`property_id.in.(${ids.join(",")}),and(property_id.is.null,broker_id.eq.${brokerId})`)
+    : query.eq("broker_id", brokerId).is("property_id", null);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+}
+
+// GET /goal: titular sem parâmetro vê a meta da CONTA (igual antes). Membro
+// comum sem parâmetro vê a PRÓPRIA meta pessoal (autoatendimento), com
+// fallback pra meta da conta se ainda não definiu a sua. `member_user_id` é
+// só do titular, pra abrir a meta de UM membro específico (ex.: editor na
+// tela de Equipe).
+equipeRouter.get("/api/equipe/goal", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.json({ goal: null, progress: 0 });
+
+    const owner = await isOwner(userId, brokerId);
+    const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
+    if (requestedMember && !owner) {
+      return res.status(403).json({ error: "Só o dono da conta pode ver a meta de outro membro." });
+    }
+
+    let targetUserId: string | null = null; // null = meta da conta inteira
+    if (requestedMember) {
+      const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", requestedMember).maybeSingle();
+      if (!memberRow) return res.status(404).json({ error: "Membro não encontrado nesta conta." });
+      targetUserId = requestedMember;
+    } else if (!owner) {
+      targetUserId = userId;
+    }
+
+    const month = currentMonthStart();
+    let goalQuery = supabase.from("imf_broker_goals").select("deals_goal").eq("broker_id", brokerId).eq("month", month);
+    goalQuery = targetUserId ? goalQuery.eq("user_id", targetUserId) : goalQuery.is("user_id", null);
+    const { data: goalRow, error: goalError } = await goalQuery.maybeSingle();
+    if (goalError) throw goalError;
+
+    let effectiveGoal = goalRow?.deals_goal ?? null;
+    let fallback = false;
+    if (targetUserId && effectiveGoal === null) {
+      const { data: accountGoalRow } = await supabase.from("imf_broker_goals").select("deals_goal").eq("broker_id", brokerId).eq("month", month).is("user_id", null).maybeSingle();
+      effectiveGoal = accountGoalRow?.deals_goal ?? null;
+      fallback = true;
+    }
+
+    let progress = 0;
+    if (targetUserId) {
+      progress = await closedDealsForUser(brokerId, targetUserId, month);
+    } else {
+      const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+      const ids = (propIds || []).map((p: any) => p.id);
+      if (ids.length > 0) {
+        const { count, error: countError } = await supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .in("property_id", ids)
+          .gte("closed_at", month);
+        if (countError) throw countError;
+        progress = count || 0;
+      }
+    }
+
+    res.json({ goal: effectiveGoal, progress, month, scope: targetUserId ? "member" : "account", fallback });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/goal:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /goal: sem user_id -> só titular grava a meta da conta (bug corrigido
+// aqui: antes qualquer membro conseguia reescrever a meta da conta inteira).
+// Com user_id -> titular grava a de qualquer membro; um membro comum só
+// grava a PRÓPRIA (nunca a de outro, nunca a da conta).
+equipeRouter.post("/api/equipe/goal", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+    const owner = await isOwner(userId, brokerId);
+    // Sem user_id no body: titular grava a meta da CONTA (igual antes); membro
+    // comum grava a PRÓPRIA meta pessoal (autoatendimento - é o que o card
+    // "Meta do mês" já chama hoje sem precisar de nenhuma mudança no front).
+    const rawTargetUserId = req.body?.user_id ? String(req.body.user_id) : null;
+    const targetUserId = rawTargetUserId || (owner ? null : userId);
+
+    if (targetUserId && targetUserId !== userId && !owner) {
+      return res.status(403).json({ error: "Só o dono da conta pode definir a meta de outro membro." });
+    }
+    if (targetUserId && targetUserId !== userId) {
+      const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", targetUserId).maybeSingle();
+      if (!memberRow) return res.status(404).json({ error: "Membro não encontrado nesta conta." });
+    }
+
+    const { deals_goal } = req.body;
+    const goal = Number(deals_goal);
+    if (!goal || goal <= 0) return res.status(400).json({ error: "Meta precisa ser maior que zero." });
+
+    const month = currentMonthStart();
+    // As metas de conta (user_id NULL) e de pessoa (user_id preenchido) usam
+    // dois índices únicos PARCIAIS (migration 20260805c) — o PostgREST não
+    // mira um índice parcial via upsert(onConflict), então SELECT primeiro,
+    // depois UPDATE ou INSERT (mesmo padrão já usado em properties.ts).
+    let existingQuery = supabase.from("imf_broker_goals").select("id").eq("broker_id", brokerId).eq("month", month);
+    existingQuery = targetUserId ? existingQuery.eq("user_id", targetUserId) : existingQuery.is("user_id", null);
+    const { data: existing } = await existingQuery.maybeSingle();
+
+    let data;
+    if (existing) {
+      const { data: updated, error } = await supabase
+        .from("imf_broker_goals")
+        .update({ deals_goal: goal, updated_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      data = updated;
+    } else {
+      const { data: inserted, error } = await supabase
+        .from("imf_broker_goals")
+        .insert({ broker_id: brokerId, month, user_id: targetUserId, deals_goal: goal })
+        .select()
+        .single();
+      if (error) throw error;
+      data = inserted;
+    }
+
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro POST /api/equipe/goal:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 function effectiveWhatsappMemberLimit(broker: {
   plan?: string | null;
@@ -112,7 +200,7 @@ equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
     const { data: broker } = await supabase.from("imf_brokers").select("user_id, name, email").eq("id", brokerId).maybeSingle();
     const { data: members, error } = await supabase
       .from("imf_broker_members")
-      .select("user_id, created_at")
+      .select("user_id, created_at, suspended_at")
       .eq("broker_id", brokerId)
       .order("created_at", { ascending: true });
     if (error) throw error;
@@ -120,7 +208,7 @@ equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
     const list = await Promise.all((members || []).map(async (m: any) => {
       const isOwnerRow = m.user_id === broker?.user_id;
       if (isOwnerRow) {
-        return { user_id: m.user_id, name: broker?.name || "Dono da conta", email: broker?.email || "", is_owner: true, created_at: m.created_at };
+        return { user_id: m.user_id, name: broker?.name || "Dono da conta", email: broker?.email || "", is_owner: true, created_at: m.created_at, suspended_at: m.suspended_at ?? null };
       }
       const { data: userData } = await supabase.auth.admin.getUserById(m.user_id).catch(() => ({ data: { user: null } } as any));
       const u = userData?.user;
@@ -130,6 +218,7 @@ equipeRouter.get("/api/equipe/members", requireUser, async (req, res) => {
         email: u?.email || "",
         is_owner: false,
         created_at: m.created_at,
+        suspended_at: m.suspended_at ?? null,
       };
     }));
 
@@ -424,6 +513,164 @@ equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res)
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/equipe/members/:userId:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Reatribuição de dados (leads/imóveis/agenda) ──────────────────────────
+// owner_user_id nunca muda de mãos sozinho hoje - quando um corretor sai, os
+// dados dele ficam órfãos pra sempre. Estas duas rotas dão ao titular uma
+// forma explícita de mover posse pra outro membro ativo. A ORIGEM não
+// precisa mais ser membro atual - permite tanto reatribuir antes de remover
+// quanto limpar órfãos de quem já saiu, com o mesmo endpoint.
+equipeRouter.get("/api/equipe/members/:userId/data-summary", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode ver isso." });
+
+    const targetUserId = req.params.userId;
+    const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+    const ids = (propIds || []).map((p: any) => p.id);
+
+    let leadsQuery = supabase.from("leads").select("id", { count: "exact", head: true }).eq("owner_user_id", targetUserId);
+    leadsQuery = ids.length > 0
+      ? leadsQuery.or(`property_id.in.(${ids.join(",")}),and(property_id.is.null,broker_id.eq.${brokerId})`)
+      : leadsQuery.eq("broker_id", brokerId).is("property_id", null);
+
+    const [{ count: leads, error: leadsErr }, { count: properties, error: propErr }, { count: agenda, error: agendaErr }] = await Promise.all([
+      leadsQuery,
+      supabase.from("imf_properties").select("id", { count: "exact", head: true }).eq("broker_id", brokerId).eq("owner_user_id", targetUserId),
+      supabase.from("imf_agenda").select("id", { count: "exact", head: true }).eq("broker_id", brokerId).eq("owner_user_id", targetUserId),
+    ]);
+    if (leadsErr) throw leadsErr;
+    if (propErr) throw propErr;
+    if (agendaErr) throw agendaErr;
+
+    res.json({ leads: leads || 0, properties: properties || 0, agenda: agenda || 0 });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/members/:userId/data-summary:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.post("/api/equipe/members/:userId/reassign", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode reatribuir dados." });
+
+    const fromUserId = req.params.userId;
+    const toUserId = String(req.body?.to_user_id || "");
+    if (!toUserId) return res.status(400).json({ error: "Informe o membro de destino." });
+    if (toUserId === fromUserId) return res.status(400).json({ error: "Escolha um destino diferente da origem." });
+
+    const { data: destMember } = await supabase.from("imf_broker_members").select("suspended_at").eq("broker_id", brokerId).eq("user_id", toUserId).maybeSingle();
+    if (!destMember) return res.status(400).json({ error: "O destino precisa ser um membro desta conta." });
+    if (destMember.suspended_at) return res.status(400).json({ error: "Não é possível reatribuir para um membro suspenso." });
+
+    // imf_properties e imf_agenda têm broker_id direto - update simples, sem
+    // risco do bug de .or() combinado com .update().
+    const [{ data: movedProperties, error: propError }, { data: movedAgenda, error: agendaError }] = await Promise.all([
+      supabase.from("imf_properties").update({ owner_user_id: toUserId }).eq("broker_id", brokerId).eq("owner_user_id", fromUserId).select("id"),
+      supabase.from("imf_agenda").update({ owner_user_id: toUserId }).eq("broker_id", brokerId).eq("owner_user_id", fromUserId).select("id"),
+    ]);
+    if (propError) throw propError;
+    if (agendaError) throw agendaError;
+
+    // leads: SELECT primeiro, UPDATE por id depois - nunca .or() + .update()
+    // juntos (bug conhecido do supabase-js, ver leadBrokerAccess em leads.ts).
+    const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+    const ids = (propIds || []).map((p: any) => p.id);
+    let leadsSelectQuery = supabase.from("leads").select("id").eq("owner_user_id", fromUserId);
+    leadsSelectQuery = ids.length > 0
+      ? leadsSelectQuery.or(`property_id.in.(${ids.join(",")}),and(property_id.is.null,broker_id.eq.${brokerId})`)
+      : leadsSelectQuery.eq("broker_id", brokerId).is("property_id", null);
+    const { data: leadRows, error: leadsSelectError } = await leadsSelectQuery;
+    if (leadsSelectError) throw leadsSelectError;
+    const leadIds = (leadRows || []).map((l: any) => l.id);
+
+    let movedLeadsCount = 0;
+    if (leadIds.length > 0) {
+      const { data: updatedLeads, error: leadsUpdateError } = await supabase.from("leads").update({ owner_user_id: toUserId }).in("id", leadIds).select("id");
+      if (leadsUpdateError) throw leadsUpdateError;
+      movedLeadsCount = (updatedLeads || []).length;
+    }
+
+    res.json({
+      ok: true,
+      moved: {
+        leads: movedLeadsCount,
+        properties: (movedProperties || []).length,
+        agenda: (movedAgenda || []).length,
+      },
+    });
+  } catch (err: any) {
+    console.error("Erro POST /api/equipe/members/:userId/reassign:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Suspender/reativar um membro, sem remover ─────────────────────────────
+equipeRouter.patch("/api/equipe/members/:userId/suspend", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode suspender membros." });
+
+    const { data: broker } = await supabase.from("imf_brokers").select("user_id").eq("id", brokerId).maybeSingle();
+    if (req.params.userId === broker?.user_id) {
+      return res.status(400).json({ error: "Não é possível suspender o dono da conta." });
+    }
+
+    const { data: member, error } = await supabase
+      .from("imf_broker_members")
+      .update({ suspended_at: new Date().toISOString(), suspended_by: callerId })
+      .eq("broker_id", brokerId)
+      .eq("user_id", req.params.userId)
+      .select("uazapi_instance_token, whatsapp_mode")
+      .maybeSingle();
+    if (error) throw error;
+    if (!member) return res.status(404).json({ error: "Membro não encontrado." });
+
+    // A identidade é cacheada por 60s - sem invalidar, o membro suspenso
+    // continuaria com acesso por até um minuto (mesmo padrão do DELETE acima).
+    invalidateIdentityCache(req.params.userId);
+
+    if (member.whatsapp_mode === "own" && member.uazapi_instance_token) {
+      disconnectUazapiInstance(member.uazapi_instance_token).catch((e: any) => {
+        console.error("Erro ao desconectar WhatsApp do membro suspenso:", e?.message);
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro PATCH /api/equipe/members/:userId/suspend:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.patch("/api/equipe/members/:userId/reactivate", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode reativar membros." });
+
+    const { error } = await supabase
+      .from("imf_broker_members")
+      .update({ suspended_at: null, suspended_by: null })
+      .eq("broker_id", brokerId)
+      .eq("user_id", req.params.userId);
+    if (error) throw error;
+
+    invalidateIdentityCache(req.params.userId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Erro PATCH /api/equipe/members/:userId/reactivate:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,5 +1,31 @@
 # Decisões vigentes
 
+## Conta administradora: titular gerencia a equipe, super admin fica intocado (2026-08-05)
+
+- Super admin (`is_admin`) e titular de conta continuam sendo dois conceitos
+  totalmente separados — não houve (e não precisou haver) nenhuma mudança
+  na separação existente. O que mudou foi o poder do TITULAR sobre a
+  própria equipe, não uma ponte nova entre os dois papéis.
+- As 4 lacunas fechadas nesta rodada (reatribuir dados, suspender sem
+  remover, drill-down de relatório, meta individual) foram escolhidas pelo
+  usuário dentre as encontradas na auditoria — todas marcadas como "decisão
+  de produto em aberto" no próprio código antes desta mudança.
+- Reatribuição de dados não exige que a origem ainda seja membro ativo —
+  decisão deliberada pra um único endpoint cobrir tanto "reatribuir antes
+  de remover" quanto "limpar órfãos de quem já saiu".
+- Suspender desconecta o WhatsApp próprio do membro (best-effort); reativar
+  não reconecta sozinho — o membro usa o botão "Conectar" de sempre. Decisão
+  pela opção mais simples/reversível quando havia dúvida, documentada como
+  limitação conhecida, não como pendência obrigatória.
+- Locação fica de fora do drill-down de relatório por membro (só aparece na
+  visão consolidada da conta) porque não existe autoria de locação por
+  corretor individual hoje — mostrar o caixa da empresa inteira atribuído a
+  uma pessoa seria enganoso.
+- Sistema paralelo `corretora.ts` (agrupamento por CNPJ de contas
+  independentes) ficou fora desta rodada — o usuário não reconheceu o
+  conceito ("não sei o que é isso"). Não foi tocado nem removido; fica como
+  pendência a esclarecer antes de qualquer decisão sobre ele.
+
 ## CRM automático no agente de vendas: gatilhos deterministas, não julgamento do modelo (2026-08-05)
 
 - O agente de vendas do WhatsApp cria/atualiza lead assim que sabe nome +

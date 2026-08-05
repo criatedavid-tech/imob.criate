@@ -1,5 +1,29 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Conta administradora (imobiliária/incorporadora) — pendente: autorização de commit
+
+Implementado e testado localmente (05/08/2026) via HTTP contra o banco real
+(conta de teste isolada, criada e depois apagada) — 18+ asserções, todas
+passaram na primeira tentativa. Detalhe completo em PROGRESS.md/DECISIONS.md.
+
+1. **Migrations** (aguardando aplicação — já aplicadas nesta sessão pelo
+   usuário direto no SQL Editor, antes do teste local):
+   `20260805b_broker_member_suspension.sql`,
+   `20260805c_broker_goals_per_member.sql`.
+2. Reatribuir dados (leads/imóveis/agenda) de um corretor pra outro membro
+   ativo — `GET/POST /api/equipe/members/:userId/{data-summary,reassign}`.
+3. Suspender/reativar um corretor sem remover —
+   `PATCH /api/equipe/members/:userId/{suspend,reactivate}` + gate em
+   `requireUser` (auth.ts).
+4. Drill-down de relatório por corretor específico —
+   `GET /api/relatorios/summary?member_user_id=`.
+5. Meta individual por corretor + bug corrigido (qualquer membro conseguia
+   reescrever a meta da conta inteira antes).
+6. **Aguardando autorização de commit/push** deste conjunto.
+7. Depois do deploy: usar de verdade com uma equipe real (convidar 2+
+   corretores) e confirmar a experiência ponta a ponta pela UI (o teste até
+   aqui foi via HTTP direto, não clicando na tela).
+
 ## CRM automático no agente de vendas — ROLLOUT CONCLUÍDO (05/08/2026)
 
 Validado ponta a ponta em produção, com conversa real via WhatsApp (número

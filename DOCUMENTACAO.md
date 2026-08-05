@@ -217,6 +217,34 @@ publicação do código dependente em 04/08/2026.
 - `is_admin` libera o painel administrativo global; isso é diferente de ser o
   titular de uma conta.
 
+### Titular como administrador da equipe (2026-08-05)
+
+O titular de uma conta imobiliária/incorporadora administra sua própria
+equipe de corretores, sem nenhum acesso às rotas exclusivas de `is_admin`
+(`server/routes/admin.ts` continua 100% isolado, nenhuma mudança nesta
+rodada). Além de convidar/remover membros (já existente), o titular agora
+pode:
+
+- **Reatribuir dados** (`GET/POST /api/equipe/members/:userId/
+  {data-summary,reassign}`): move `owner_user_id` de leads, imóveis e
+  eventos de agenda de um corretor pra outro membro ativo. A origem não
+  precisa ser membro atual — serve tanto pra redistribuir carga quanto pra
+  limpar dados órfãos de quem já saiu da equipe.
+- **Suspender/reativar** (`PATCH /api/equipe/members/:userId/
+  {suspend,reactivate}`): bloqueia o acesso de um membro sem removê-lo —
+  `imf_broker_members.suspended_at` (migration `20260805b`), checado em
+  `requireUser` com cache/invalidação próprios. Suspender desconecta o
+  WhatsApp próprio do membro, se houver; reativar não reconecta sozinho.
+- **Desempenho por corretor** (`GET /api/relatorios/summary?member_user_id=`):
+  o mesmo relatório que hoje só existe agregado (conta) ou pessoal (o
+  próprio chamador) ganha um terceiro escopo (`"member"`), só pro titular,
+  mirando um corretor específico. Locação nunca aparece nesse escopo (não
+  tem autoria por corretor).
+- **Meta individual** (`imf_broker_goals.user_id`, migration `20260805c`,
+  null = meta da conta): `POST /api/equipe/goal` agora exige titularidade
+  pra gravar a meta da conta inteira — antes qualquer membro conseguia
+  reescrever a meta de todo mundo sem querer.
+
 ### Regras de visibilidade
 
 Desde 03/08/2026, `account_type` continua sendo o tipo principal da conta para

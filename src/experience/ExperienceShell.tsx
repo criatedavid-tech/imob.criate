@@ -108,6 +108,10 @@ export function ExperienceShell() {
   // Bump quando a IA executa uma ação — remonta a área atual (refetch) e
   // refaz o cockpit, pra a tela nunca ficar defasada do que a IA acabou de fazer.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Drill-down de Relatórios aberto a partir de Equipe (ver membro específico).
+  // Guardado aqui (não dentro de RelatoriosArea) pra Equipe conseguir setar e
+  // pra qualquer navegação pra fora de Relatórios limpar sozinha.
+  const [reportMember, setReportMember] = useState<{ id: string; name: string } | null>(null);
 
   // /app exige login: o cockpit mostra dados reais da conta, então precisa saber
   // quem está logado. Aqui também buscamos o account_type (o "mundo" da conta) pra
@@ -190,6 +194,14 @@ export function ExperienceShell() {
   const cycleAutonomy = () =>
     setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
 
+  // Centraliza toda troca de área: sair de Relatórios por qualquer caminho
+  // (menu lateral, canvas, command bar) limpa o drill-down de membro, pra
+  // nunca ficar preso vendo o relatório de outra pessoa por engano.
+  const goToArea = (a: string) => {
+    if (a !== 'relatorios') setReportMember(null);
+    setArea(a);
+  };
+
   // Ao trocar de persona, volta para "Hoje" (área comum a todas).
   const changePersona = (p: Persona) => {
     setPersona(p);
@@ -216,7 +228,7 @@ export function ExperienceShell() {
       <ManualRail
         capabilities={capabilities}
         active={area}
-        onSelect={setArea}
+        onSelect={goToArea}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -347,9 +359,9 @@ export function ExperienceShell() {
           ) : area === 'financeiro' ? (
             <FinanceiroArea />
           ) : area === 'equipe' ? (
-            <EquipeArea />
+            <EquipeArea onOpenMemberReport={(m) => { setReportMember(m); setArea('relatorios'); }} />
           ) : area === 'relatorios' ? (
-            <RelatoriosArea />
+            <RelatoriosArea member={reportMember} onClearMember={() => setReportMember(null)} />
           ) : area === 'divulgacao' ? (
             <DivulgacaoArea />
           ) : area === 'assistente-ia' ? (
@@ -363,7 +375,7 @@ export function ExperienceShell() {
               <Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" />
             </div>
           ) : (
-            <Canvas layout={layout} onAreaClick={setArea} />
+            <Canvas layout={layout} onAreaClick={goToArea} />
           )}
           </Suspense>
         </div>
@@ -420,7 +432,7 @@ export function ExperienceShell() {
             <CommandBar
               persona={persona}
               autonomy={autonomy}
-              onNavigate={(a) => { setArea(a); setChatOpen(false); }}
+              onNavigate={(a) => { goToArea(a); setChatOpen(false); }}
               onActionDone={() => setRefreshKey((k) => k + 1)}
               onClose={() => setChatOpen(false)}
             />

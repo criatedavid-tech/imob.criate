@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, BarChart3, Sparkles } from 'lucide-react';
+import { Loader2, BarChart3, Sparkles, ArrowLeft } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { centsToReais } from '../lib/money';
@@ -8,7 +8,7 @@ interface Summary {
   months: number;
   periodStart: string;
   periodEnd: string;
-  scope: 'account' | 'personal';
+  scope: 'account' | 'personal' | 'member';
   totalLeads: number;
   closedLeads: number;
   convertedLeads: number;
@@ -50,7 +50,12 @@ function formatPeriodDate(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
-export function RelatoriosArea() {
+interface RelatoriosAreaProps {
+  member?: { id: string; name: string } | null;
+  onClearMember?: () => void;
+}
+
+export function RelatoriosArea({ member = null, onClearMember }: RelatoriosAreaProps = {}) {
   const [months, setMonths] = useState(6);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +64,10 @@ export function RelatoriosArea() {
   useEffect(() => {
     setLoading(true);
     setError('');
-    fetch(`/api/relatorios/summary?months=${months}`, { headers: authService.getAuthHeaders() })
+    const url = member
+      ? `/api/relatorios/summary?months=${months}&member_user_id=${member.id}`
+      : `/api/relatorios/summary?months=${months}`;
+    fetch(url, { headers: authService.getAuthHeaders() })
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
@@ -70,7 +78,7 @@ export function RelatoriosArea() {
       .then(setSummary)
       .catch((e) => setError(e.message || 'Erro ao carregar o relatório.'))
       .finally(() => setLoading(false));
-  }, [months]);
+  }, [months, member?.id]);
 
   if (loading) {
     return <div className="flex justify-center pt-20"><Loader2 className="w-6 h-6 text-[var(--text-low)] animate-spin" /></div>;
@@ -96,13 +104,15 @@ export function RelatoriosArea() {
     && s.visitsScheduled === 0
     && s.visitsCancelled === 0;
 
+  const scopeLabel = s.scope === 'account' ? 'visão consolidada da conta' : s.scope === 'member' ? `visão individual` : 'visão pessoal';
+
   return (
     <div className="max-w-6xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-black text-[var(--text-hi)]">Relatórios</h2>
           <p className="text-[11px] text-[var(--text-low)] mt-1">
-            {formatPeriodDate(s.periodStart)} a {formatPeriodDate(s.periodEnd)} · {s.scope === 'account' ? 'visão consolidada da conta' : 'visão pessoal'}
+            {formatPeriodDate(s.periodStart)} a {formatPeriodDate(s.periodEnd)} · {scopeLabel}
           </p>
         </div>
         <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
@@ -116,6 +126,20 @@ export function RelatoriosArea() {
           ))}
         </div>
       </div>
+
+      {member && (
+        <GlassCard className="!p-4 mb-6 flex items-center justify-between gap-3">
+          <p className="text-[13px] text-[var(--text-hi)]">
+            Relatório de <strong>{member.name}</strong>
+          </p>
+          {onClearMember && (
+            <button onClick={onClearMember}
+              className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-mid)] hover:text-[var(--text-hi)] transition-colors">
+              <ArrowLeft className="w-3.5 h-3.5" /> Ver visão geral
+            </button>
+          )}
+        </GlassCard>
+      )}
 
       {/* Resumo em linguagem natural (determinístico por enquanto) */}
       <GlassCard className="!p-6 mb-6">

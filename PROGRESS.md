@@ -1,5 +1,74 @@
 # Estado do projeto
 
+## Conta administradora: imobiliária/incorporadora gerencia sua equipe (2026-08-05)
+
+- Pedido do usuário: a conta de imobiliária/incorporadora funcionar como
+  **conta administradora** da própria equipe de corretores — controle
+  completo sobre a operação deles, sem acesso às funções exclusivas do
+  super admin da Criate (`is_admin`, isolado em `admin.ts`, já correto hoje
+  e sem nenhuma mudança necessária).
+- Auditoria (2 agentes Explore + 1 Plan em paralelo) confirmou que
+  hierarquia/reatribuição/suspensão ficaram como "decisão de produto em
+  aberto" — documentado em pelo menos 3 comentários no próprio código
+  (`equipe.ts`, `EquipeArea.tsx`, `UX_MASTERPLAN.md`). Usuário confirmou (via
+  pergunta direta) as 4 lacunas a fechar nesta rodada, todas priorizadas
+  igualmente.
+- **Migrations**: `20260805b_broker_member_suspension.sql` (`suspended_at`/
+  `suspended_by` em `imf_broker_members`); `20260805c_broker_goals_per_member.sql`
+  (`user_id` em `imf_broker_goals`, com 2 índices únicos parciais no lugar
+  do `UNIQUE(broker_id, month)` original — null = meta da conta, preenchido
+  = meta pessoal).
+- **Reatribuição de dados** (`GET/POST /api/equipe/members/:userId/
+  {data-summary,reassign}`): leads/imóveis/agenda de um corretor nunca
+  mudavam de dono sozinhos — ficavam órfãos pra sempre quando alguém saía.
+  Segue o padrão SELECT-antes-de-UPDATE já estabelecido em
+  `leadBrokerAccess`/`GET /api/leads/recent` pro caso de lead sem
+  `property_id` (bug conhecido do supabase-js com `.or()` + `.update()`).
+  A origem não precisa mais ser membro atual — dá pra limpar órfãos de quem
+  já saiu com o mesmo endpoint.
+- **Suspender/reativar** (`PATCH /api/equipe/members/:userId/
+  {suspend,reactivate}`): novo gate em `requireUser` (`auth.ts`), cache e
+  invalidação próprios (nunca reaproveita o cache de conta, senão a
+  mensagem ficaria errada — "contrate um plano" em vez de "suspenso pelo
+  administrador"). Suspender desconecta o WhatsApp próprio do membro,
+  best-effort; reativar não reconecta sozinho (limitação assumida).
+- **Drill-down de relatório** (`GET /api/relatorios/summary?member_user_id=`):
+  reaproveita literalmente a mesma query do `scope:"personal"` já existente,
+  só trocando qual `user_id` filtra. Bloco de Locação (sem autoria por
+  membro) passa a só aparecer na visão de conta, nunca no drill-down de uma
+  pessoa — pra não vazar o caixa da empresa inteira como se fosse de um
+  corretor só.
+- **Meta individual + bug corrigido**: `POST /api/equipe/goal` antes
+  aceitava qualquer membro reescrever a meta da CONTA INTEIRA (sem checar
+  titularidade) — corrigido; agora sem `user_id` no corpo, titular grava a
+  meta da conta e membro comum grava a própria (autoatendimento, sem
+  precisar de nenhuma mudança no card "Meta do mês" já existente).
+- **Frontend** (`EquipeArea.tsx`, `RelatoriosArea.tsx`, `ExperienceShell.tsx`):
+  badge "Suspenso", 4 ícones novos por membro (desempenho, meta, reatribuir,
+  suspender/reativar), `ReassignModal` novo, `GoalEditor` parametrizado por
+  membro, `handleRemove` avisando contagens órfãs antes de confirmar,
+  navegação centralizada (`goToArea`) limpando o drill-down de relatório ao
+  sair da tela.
+- **Testado localmente (não em produção)**: conta de teste isolada criada
+  via API (2 usuários reais, sessão minerada por magic-link já que
+  sign-in por senha via chave anônima falhou nesta máquina — chave de
+  serviço não é afetada), com leads/imóvel/evento de agenda de teste.
+  18+ asserções via HTTP contra o servidor local, todas passaram na
+  primeira tentativa: contagens de reatribuição batendo (inclusive lead
+  sem `property_id`), rejeição de destino suspenso, bug da meta confirmado
+  corrigido (membro não altera mais a meta da conta), bloqueio imediato ao
+  suspender (mensagem própria, não a de plano) e liberação imediata ao
+  reativar (sem esperar o TTL de 60s do cache). Dados de teste (2 contas
+  auth, 1 broker, leads/imóvel/agenda/metas) totalmente apagados depois.
+  `tsc`/`npm test`/`knip`/`build`/`git diff --check` limpos (mesma falha
+  local pré-existente de sempre em `scheduledCardEditing.test.ts`, CRLF do
+  Windows, confirmada que passa no CI/Linux). Aguardando autorização de
+  commit/push.
+- Fora de escopo desta rodada (documentado, não construído): sistema
+  paralelo `corretora.ts`/`CorretoraSettings.tsx` (agrupamento por CNPJ de
+  contas independentes — usuário não reconheceu o conceito, "não sei o que
+  é isso"; fica pendente confirmar com quem construiu antes de mexer).
+
 ## CRM automático no agente de vendas do WhatsApp (2026-08-05)
 
 - Auditoria pedida pelo usuário ("Verificações e Funcionalidades da IA")

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy, Mail } from 'lucide-react';
+import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy, Mail, PauseCircle, PlayCircle, Repeat, BarChart3 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { centsToReais } from '../lib/money';
@@ -24,6 +24,13 @@ interface Member {
   email: string;
   is_owner: boolean;
   created_at: string;
+  suspended_at: string | null;
+}
+
+interface DataSummary {
+  leads: number;
+  properties: number;
+  agenda: number;
 }
 
 interface Invite {
@@ -198,10 +205,30 @@ function InviteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   );
 }
 
-function GoalEditor({ current, onClose, onSaved }: { current: number | null; onClose: () => void; onSaved: () => void }) {
+function GoalEditor({ current, targetUserId, targetName, onClose, onSaved }: {
+  current: number | null;
+  targetUserId?: string;
+  targetName?: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [value, setValue] = useState(current ? String(current) : '');
   const [saving, setSaving] = useState(false);
+  const [loadingCurrent, setLoadingCurrent] = useState(!!targetUserId);
   const [error, setError] = useState('');
+
+  // Meta de OUTRO membro (aberta pelo dono da conta a partir da lista de
+  // Equipe): busca o próprio valor em vez de confiar em `current`, que aqui
+  // sempre viria null (o pai não tem essa informação carregada).
+  useEffect(() => {
+    if (!targetUserId) return;
+    setLoadingCurrent(true);
+    fetch(`/api/equipe/goal?member_user_id=${targetUserId}`, { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.goal) setValue(String(data.goal)); })
+      .catch(() => {})
+      .finally(() => setLoadingCurrent(false));
+  }, [targetUserId]);
 
   async function handleSave() {
     const n = Number(value);
@@ -212,7 +239,7 @@ function GoalEditor({ current, onClose, onSaved }: { current: number | null; onC
       const res = await fetch('/api/equipe/goal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
-        body: JSON.stringify({ deals_goal: n }),
+        body: JSON.stringify(targetUserId ? { deals_goal: n, user_id: targetUserId } : { deals_goal: n }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -232,15 +259,21 @@ function GoalEditor({ current, onClose, onSaved }: { current: number | null; onC
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
         shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-6">
-        <h3 className="text-lg font-bold text-[var(--text-hi)] mb-4">Meta de negócios do mês</h3>
+        <h3 className="text-lg font-bold text-[var(--text-hi)] mb-4">{targetName ? `Meta de ${targetName}` : 'Meta de negócios do mês'}</h3>
         {error && <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl px-4 py-2 mb-4">{error}</div>}
-        <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Quantos negócios fechar</label>
-        <input value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="5"
-          className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
-            focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors mb-5" />
+        {loadingCurrent ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
+        ) : (
+          <>
+            <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Quantos negócios fechar</label>
+            <input value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder="5"
+              className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)]
+                focus:outline-none focus:border-[var(--glass-border-strong)] focus:bg-white/12 transition-colors mb-5" />
+          </>
+        )}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">Cancelar</button>
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || loadingCurrent}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={16} className="animate-spin" /> : null} Salvar
           </button>
@@ -250,12 +283,111 @@ function GoalEditor({ current, onClose, onSaved }: { current: number | null; onC
   );
 }
 
+// Move posse de leads/imóveis/agenda de um membro pra outro. Chamada tanto
+// de forma avulsa (redistribuir carga) quanto sugerida antes de remover
+// alguém que ainda tem dados em nome dele.
+function ReassignModal({ member, others, onClose, onReassigned }: {
+  member: Member;
+  others: Member[];
+  onClose: () => void;
+  onReassigned: () => void;
+}) {
+  const [summary, setSummary] = useState<DataSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [toUserId, setToUserId] = useState(others[0]?.user_id || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<DataSummary | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/equipe/members/${member.user_id}/data-summary`, { headers: authService.getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setSummary)
+      .catch(() => {})
+      .finally(() => setLoadingSummary(false));
+  }, [member.user_id]);
+
+  async function handleReassign() {
+    if (!toUserId) { setError('Escolha um destino.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/equipe/members/${member.user_id}/reassign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ to_user_id: toUserId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Falha ao reatribuir.');
+      setResult(body.moved);
+      onReassigned();
+    } catch (e: any) {
+      setError(e.message || 'Falha ao reatribuir.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm rounded-3xl overflow-hidden backdrop-blur-2xl bg-white/12 border border-[var(--glass-border-strong)]
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_24px_64px_rgba(0,0,0,0.5)] p-6">
+        <h3 className="text-lg font-bold text-[var(--text-hi)] mb-2">Reatribuir dados de {member.name}</h3>
+        {loadingSummary ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-[var(--text-low)] animate-spin" /></div>
+        ) : result ? (
+          <div className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4 mb-2">
+            <p className="text-sm text-emerald-200">
+              Movidos: {result.leads} lead{result.leads === 1 ? '' : 's'}, {result.properties} imóve{result.properties === 1 ? 'l' : 'is'}, {result.agenda} evento{result.agenda === 1 ? '' : 's'} de agenda.
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="text-[13px] text-[var(--text-low)] mb-4">
+              {summary ? `${summary.leads} lead(s), ${summary.properties} imóve(is), ${summary.agenda} evento(s) de agenda.` : 'Sem dados pra reatribuir.'}
+            </p>
+            {others.length === 0 ? (
+              <p className="text-sm text-red-300 mb-4">Não há outro membro ativo pra receber esses dados.</p>
+            ) : (
+              <>
+                <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Reatribuir para</label>
+                <select value={toUserId} onChange={(e) => setToUserId(e.target.value)}
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] mb-4">
+                  {others.map((o) => <option key={o.user_id} value={o.user_id}>{o.name}</option>)}
+                </select>
+              </>
+            )}
+            {error && <p className="text-sm text-red-300 mb-3">{error}</p>}
+          </>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:bg-[var(--control-fill-hover)] transition-colors">
+            {result ? 'Fechar' : 'Cancelar'}
+          </button>
+          {!result && others.length > 0 && (
+            <button onClick={handleReassign} disabled={saving || loadingSummary}
+              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : null} Reatribuir
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Equipe real: meta pessoal do mês vs. negócios fechados de verdade
 // (leads.closed_at, ver server/routes/leads.ts) + multi-usuário leve (Etapa 9
-// revisada) — vários logins acessando a MESMA conta, mesmos dados, mesma
-// permissão. Sem hierarquia/papéis/ranking/distribuição de leads ainda —
-// isso segue como decisão de produto em aberto.
-export function EquipeArea() {
+// revisada) — vários logins acessando a MESMA conta, mesmos dados. O dono da
+// conta administra a equipe (convida, remove, suspende, reatribui dados e
+// acompanha o desempenho de cada um); um membro comum só vê e edita os
+// próprios dados. Ainda não há papéis intermediários entre esses dois.
+interface EquipeAreaProps {
+  onOpenMemberReport?: (member: { id: string; name: string }) => void;
+}
+
+export function EquipeArea({ onOpenMemberReport }: EquipeAreaProps = {}) {
   const [goal, setGoal] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -265,6 +397,10 @@ export function EquipeArea() {
   const [membersError, setMembersError] = useState('');
   const [inviting, setInviting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [suspendingId, setSuspendingId] = useState<string | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [reassigningMember, setReassigningMember] = useState<Member | null>(null);
+  const [goalEditorTarget, setGoalEditorTarget] = useState<Member | null>(null);
   const [ranking, setRanking] = useState<RankingRow[] | null>(null);
   const [invites, setInvites] = useState<Invite[] | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -341,7 +477,17 @@ export function EquipeArea() {
   }
 
   async function handleRemove(m: Member) {
-    if (!confirm(`Remover ${m.name} da equipe? A pessoa perde acesso à conta imediatamente.`)) return;
+    let message = `Remover ${m.name} da equipe? A pessoa perde acesso à conta imediatamente.`;
+    try {
+      const r = await fetch(`/api/equipe/members/${m.user_id}/data-summary`, { headers: authService.getAuthHeaders() });
+      if (r.ok) {
+        const s: DataSummary = await r.json();
+        if (s.leads + s.properties + s.agenda > 0) {
+          message = `${m.name} tem ${s.leads} lead(s), ${s.properties} imóve(is) e ${s.agenda} evento(s) de agenda. Esses dados ficam sem dono depois da remoção (dá pra reatribuir antes, pelo ícone ↻ na lista). Remover mesmo assim?`;
+        }
+      }
+    } catch { /* segue com a mensagem padrão se a contagem falhar */ }
+    if (!confirm(message)) return;
     setRemovingId(m.user_id);
     try {
       const res = await fetch(`/api/equipe/members/${m.user_id}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
@@ -354,6 +500,39 @@ export function EquipeArea() {
       alert(e.message || 'Falha ao remover membro.');
     } finally {
       setRemovingId(null);
+    }
+  }
+
+  async function handleSuspend(m: Member) {
+    if (!confirm(`Suspender ${m.name}? O acesso à conta fica bloqueado até você reativar.`)) return;
+    setSuspendingId(m.user_id);
+    try {
+      const res = await fetch(`/api/equipe/members/${m.user_id}/suspend`, { method: 'PATCH', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao suspender membro.');
+      }
+      loadMembers();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao suspender membro.');
+    } finally {
+      setSuspendingId(null);
+    }
+  }
+
+  async function handleReactivate(m: Member) {
+    setReactivatingId(m.user_id);
+    try {
+      const res = await fetch(`/api/equipe/members/${m.user_id}/reactivate`, { method: 'PATCH', headers: authService.getAuthHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Falha ao reativar membro.');
+      }
+      loadMembers();
+    } catch (e: any) {
+      alert(e.message || 'Falha ao reativar membro.');
+    } finally {
+      setReactivatingId(null);
     }
   }
 
@@ -427,17 +606,45 @@ export function EquipeArea() {
             {members.map((m) => (
               <div key={m.user_id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)]">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <p className="text-sm font-semibold text-[var(--text-hi)] truncate">{m.name}</p>
-                    {m.is_owner && <span title="Dono da conta"><Crown className="w-3.5 h-3.5 text-amber-300 shrink-0" /></span>}
+                    {m.is_owner && <span title="Administrador da conta"><Crown className="w-3.5 h-3.5 text-amber-300 shrink-0" /></span>}
+                    {m.suspended_at && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-400/15 text-amber-300 border border-amber-300/25 shrink-0">Suspenso</span>
+                    )}
                   </div>
                   <p className="text-[12px] text-[var(--text-low)] truncate">{m.email}</p>
                 </div>
                 {iAmOwner && !m.is_owner && (
-                  <button onClick={() => handleRemove(m)} disabled={removingId === m.user_id}
-                    className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-[var(--control-fill)] hover:bg-red-500/10 transition-colors disabled:opacity-50 shrink-0">
-                    {removingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => onOpenMemberReport?.({ id: m.user_id, name: m.name })} title="Ver desempenho"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                      <BarChart3 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setGoalEditorTarget(m)} title="Meta individual"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                      <Target className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setReassigningMember(m)} title="Reatribuir dados"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                      <Repeat className="w-4 h-4" />
+                    </button>
+                    {m.suspended_at ? (
+                      <button onClick={() => handleReactivate(m)} disabled={reactivatingId === m.user_id} title="Reativar"
+                        className="p-2 rounded-xl text-emerald-300/80 hover:text-emerald-300 bg-[var(--control-fill)] hover:bg-emerald-500/10 transition-colors disabled:opacity-50">
+                        {reactivatingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+                      </button>
+                    ) : (
+                      <button onClick={() => handleSuspend(m)} disabled={suspendingId === m.user_id} title="Suspender"
+                        className="p-2 rounded-xl text-amber-300/70 hover:text-amber-300 bg-[var(--control-fill)] hover:bg-amber-500/10 transition-colors disabled:opacity-50">
+                        {suspendingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PauseCircle className="w-4 h-4" />}
+                      </button>
+                    )}
+                    <button onClick={() => handleRemove(m)} disabled={removingId === m.user_id} title="Remover"
+                      className="p-2 rounded-xl text-red-300/70 hover:text-red-300 bg-[var(--control-fill)] hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                      {removingId === m.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -445,8 +652,9 @@ export function EquipeArea() {
         )}
 
         <p className="text-[11px] text-[var(--text-low)] mt-4 leading-relaxed">
-          Todo membro vê e edita os mesmos dados dele, sem hierarquia nem permissões diferentes ainda — isso é o
-          próximo passo, ainda em decisão de produto.
+          {iAmOwner
+            ? 'Como administrador, você pode ver o desempenho, definir meta, reatribuir dados e suspender ou remover qualquer corretor da equipe.'
+            : 'Você vê e edita os próprios dados. Quem administra a conta pode ver seu desempenho e reatribuir seus dados se você sair da equipe.'}
         </p>
       </GlassCard>
 
@@ -505,6 +713,23 @@ export function EquipeArea() {
 
       {editing && <GoalEditor current={goal?.goal ?? null} onClose={() => setEditing(false)} onSaved={load} />}
       {inviting && <InviteModal onClose={() => setInviting(false)} onCreated={loadInvites} />}
+      {goalEditorTarget && (
+        <GoalEditor
+          current={null}
+          targetUserId={goalEditorTarget.user_id}
+          targetName={goalEditorTarget.name}
+          onClose={() => setGoalEditorTarget(null)}
+          onSaved={() => {}}
+        />
+      )}
+      {reassigningMember && (
+        <ReassignModal
+          member={reassigningMember}
+          others={(members || []).filter((m) => m.user_id !== reassigningMember.user_id && !m.suspended_at)}
+          onClose={() => setReassigningMember(null)}
+          onReassigned={() => {}}
+        />
+      )}
     </div>
   );
 }

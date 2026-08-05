@@ -118,6 +118,23 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
     if (!brokerId) return res.json(emptySummary(months, start, end));
     const owner = await isBrokerOwner(userId, brokerId);
 
+    // Drill-down: só o titular pode pedir o relatório de OUTRO membro
+    // específico (member_user_id). Sem esse parâmetro, titular continua
+    // vendo o consolidado da conta e um membro comum vê só o próprio -
+    // exatamente como já era antes desta extensão.
+    const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
+    if (requestedMember && !owner) {
+      return res.status(403).json({ error: "Só o dono da conta pode ver o relatório de outro membro." });
+    }
+    let targetUserId: string | null = null;
+    if (requestedMember) {
+      const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", requestedMember).maybeSingle();
+      if (!memberRow) return res.status(404).json({ error: "Membro não encontrado nesta conta." });
+      targetUserId = requestedMember;
+    } else if (!owner) {
+      targetUserId = userId;
+    }
+
     const properties = await collectPages(
       (from, to) => supabase.from("imf_properties").select("id").eq("broker_id", brokerId).order("id").range(from, to),
       "Falha ao consultar os imóveis do relatório",
@@ -133,7 +150,7 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
         .in("property_id", ids)
         .gte("created_at", startIso)
         .lte("created_at", endIso);
-      if (!owner) query = query.eq("owner_user_id", userId);
+      if (targetUserId) query = query.eq("owner_user_id", targetUserId);
       return query.order("created_at").order("id").range(from, to);
     }, "Falha ao consultar os leads captados");
 
@@ -144,7 +161,7 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
         .not("closed_at", "is", null)
         .gte("closed_at", startIso)
         .lte("closed_at", endIso);
-      if (!owner) query = query.eq("owner_user_id", userId);
+      if (targetUserId) query = query.eq("owner_user_id", targetUserId);
       return query.order("closed_at").order("id").range(from, to);
     }, "Falha ao consultar os negócios fechados");
 
@@ -184,17 +201,19 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
         .not("sold_at", "is", null)
         .gte("sold_at", startIso)
         .lte("sold_at", endIso);
-      if (!owner) query = query.eq("sold_by_user_id", userId);
+      if (targetUserId) query = query.eq("sold_by_user_id", targetUserId);
       return query.order("sold_at").order("id").range(from, to);
     }, "Falha ao consultar as unidades vendidas");
     const salesTotalCents = soldUnits.reduce((sum: number, unit: any) => sum + Number(unit.price_cents || 0), 0);
 
     // Locação é financeira e hoje não possui autoria por membro. Para não
-    // vazar o consolidado da empresa, somente o titular recebe esses valores.
+    // vazar o consolidado da empresa, só aparece na visão de CONTA do titular
+    // (nunca num drill-down de um membro específico, que mostraria o caixa
+    // inteiro da empresa como se fosse daquela pessoa).
     let rentalMonthlyCents = 0;
     let rentalPaidCents = 0;
     let rentalPaymentsCount = 0;
-    if (owner) {
+    if (owner && !targetUserId) {
       const contracts = await collectPages(
         (from, to) => supabase.from("imf_rental_contracts")
           .select("id, status, rent_amount_cents")
@@ -230,7 +249,7 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
         .eq("event_type", "visita")
         .gte("scheduled_at", startIso)
         .lte("scheduled_at", endIso);
-      if (!owner) query = query.eq("owner_user_id", userId);
+      if (targetUserId) query = query.eq("owner_user_id", targetUserId);
       return query.order("scheduled_at").order("id").range(from, to);
     };
     const visits = await collectPages(visitsQueryFactory, "Falha ao consultar as visitas");
@@ -242,7 +261,7 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
       months,
       periodStart: startIso,
       periodEnd: endIso,
-      scope: owner ? "account" : "personal",
+      scope: requestedMember ? "member" : (owner ? "account" : "personal"),
       totalLeads,
       closedLeads: closedDeals.length,
       convertedLeads,
