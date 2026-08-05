@@ -251,6 +251,14 @@ pode:
   clicar num corretor abre o mesmo drill-down por `member_user_id` do item
   acima. Indicador de retorno usa só dado já existente (sem custo/salário
   cadastrado, por escolha do usuário).
+- **Financeiro** (`GET /api/financeiro/summary`, `financeiro.ts`): o bloco
+  de aluguel (contratos ativos, receita mensal, inadimplência,
+  recebimentos) só é consultado se `isBrokerOwner` — não-titular recebe
+  esses campos zerados. O bloco de venda de lançamento continua igual
+  (própria venda pra não-titular, total pra titular — desenho original,
+  não mudou). Na sidebar, a aba "Financeiro" some pra quem não é titular
+  E não tem a capability `developments` (nada sobraria pra ver ali); segue
+  visível pra corretor de incorporadora, que ainda tem a própria venda.
 - **Abas "Equipe", "Desempenho" e "Locação" ficam invisíveis pra membro
   convidado** (2026-08-05, achado ao vivo pelo usuário: um membro comum
   via essas abas no rail iguais às do titular). O rail (`AREAS`/

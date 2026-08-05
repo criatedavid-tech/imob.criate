@@ -121,9 +121,17 @@ export function ManualRail({
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
-  const areas = areasForCapabilities(capabilities).filter(
-    (a) => isOwner || !OWNER_ONLY_AREAS.has(a.key),
-  );
+  const areas = areasForCapabilities(capabilities).filter((a) => {
+    if (isOwner || !OWNER_ONLY_AREAS.has(a.key)) {
+      // Financeiro não é company-wide como as outras: aluguel é sempre
+      // dado do titular (zerado pra quem não é, direto no backend), mas
+      // venda de lançamento continua própria de quem fechou — sem
+      // 'developments' na conta não sobra nada pra um membro comum ver ali.
+      if (a.key === 'financeiro' && !isOwner) return capabilities.includes('developments');
+      return true;
+    }
+    return false;
+  });
   const lembretesDue = useDueReminderCount();
   const agendaNew = useNewChatbotVisitCount(active);
   const badgeFor = (key: string) =>

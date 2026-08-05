@@ -27,11 +27,19 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
       });
     }
 
-    const { data: contracts, error: contractsError } = await supabase
-      .from("imf_rental_contracts")
-      .select("id, rent_amount_cents")
-      .eq("broker_id", brokerId)
-      .eq("status", "ativo");
+    const owner = await isBrokerOwner(userId, brokerId);
+
+    // Aluguel (contrato/inadimplência/recebimento) não tem autor por
+    // corretor — é caixa da empresa inteira, igual ao restante de Locação
+    // (achado 2026-08-05, mesma trava aplicada lá: só titular vê). Venda de
+    // lançamento continua liberada pro corretor que fechou (bloco abaixo).
+    const { data: contracts, error: contractsError } = owner
+      ? await supabase
+          .from("imf_rental_contracts")
+          .select("id, rent_amount_cents")
+          .eq("broker_id", brokerId)
+          .eq("status", "ativo")
+      : { data: [] as { id: string; rent_amount_cents: number }[], error: null };
     if (contractsError) throw contractsError;
 
     const { data: developments, error: devError } = await supabase
@@ -48,7 +56,7 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
       // atribuída só conta pra quem fechou a venda — dono vê o total da
       // conta, corretor só a própria.
       let unitsQuery = supabase.from("imf_units").select("price_cents, development_id").in("development_id", devIds).eq("status", "vendido");
-      if (!(await isBrokerOwner(userId, brokerId))) unitsQuery = unitsQuery.eq("sold_by_user_id", userId);
+      if (!owner) unitsQuery = unitsQuery.eq("sold_by_user_id", userId);
       const { data, error } = await unitsQuery;
       if (error) throw error;
       soldUnits = data || [];

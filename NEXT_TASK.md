@@ -19,8 +19,17 @@ localmente (05/08/2026):
    (`fetchImobiliariaLayout`) já degrada bem pro convidado — `/api/locacao/
    contracts` retornando 403 vira lista vazia, sem quebrar a tela.
 
-Testado com sessão real dos dois papéis (titular vê as 3 abas e usa
-Locação normal; convidado não vê nenhuma das 3, e a Home não quebra).
+3. **Financeiro também vazava caixa de aluguel pro convidado**: o bloco de
+   aluguel em `GET /api/financeiro/summary` não checava titular nenhum —
+   corrigido igual ao de Locação (query só roda se `isBrokerOwner`, resto
+   zerado). Aba "Financeiro" só entra em `OWNER_ONLY_AREAS` (rail) se a
+   conta não tiver `developments` — preserva a visão de "minha venda" do
+   corretor de incorporadora, que é escopo diferente (self-service já
+   existia, não é company-wide como aluguel).
+
+Testado com sessão real dos dois papéis (titular vê as 4 abas e usa
+Locação/Financeiro normal; convidado não vê nenhuma das 4, e a Home não
+quebra).
 `tsc`/`knip`/`build` limpos; `npm test` 95/96 (o 1 que falha é o CRLF
 conhecido do Windows, não relacionado, passa no CI). Ajustada também a
 guarda de regressão em `tests/accountCapabilities.test.ts` (verificava o

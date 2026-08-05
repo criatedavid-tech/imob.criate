@@ -1,5 +1,34 @@
 # Estado do projeto
 
+## Fix: Financeiro também vazava caixa de aluguel pro convidado (2026-08-05)
+
+Usuário apontou (print do ícone "Financeiro" na sidebar do convidado): "se
+não tem a parte de aluguel, não deve ter esse financeiro". Auditando
+`server/routes/financeiro.ts` achei a mesma classe de bug do fix anterior:
+o bloco de aluguel (`imf_rental_contracts`, inadimplência, recebimentos)
+não tinha NENHUMA checagem de titularidade — qualquer convidado via a
+receita mensal, contratos ativos, atraso e recebimentos da empresa
+inteira via `GET /api/financeiro/summary`, mesmo sem acessar Locação
+diretamente. Só o bloco de vendas de lançamento já era corretamente
+escopado por `sold_by_user_id` pra quem não é titular (comentário original
+"dono vê o total da conta, corretor só a própria" — desenhado de propósito
+pra corretor de incorporadora ver a própria venda).
+
+Fix (preserva esse self-service, só fecha o vazamento de aluguel):
+- Backend: a query de `imf_rental_contracts` só roda se `isBrokerOwner` —
+  não-titular recebe os campos de aluguel todos zerados; o bloco de
+  vendas continua igual (própria venda pra não-titular, total pra titular).
+- Frontend (`ManualRail.tsx`): a aba "Financeiro" só entra em
+  `OWNER_ONLY_AREAS` pra quem não tem a capability `developments` — ou
+  seja, some pra convidado de conta só-aluguel (nada sobra pra ele ver
+  ali), mas continua aparecendo pra corretor de incorporadora (que ainda
+  tem a própria venda pra conferir).
+- Verificado: `curl` direto em `/api/financeiro/summary` como convidado
+  não dá mais erro nem vaza contrato (campos de aluguel zerados). Na UI,
+  convidado da conta de teste (só `rentals`, sem `developments`) parou de
+  ver a aba Financeiro; titular continua vendo normal. `tsc`/`knip`/
+  `build`/`npm test` (95/96, só o CRLF conhecido) limpos.
+
 ## Fix: convidado via as abas Equipe/Desempenho no menu (2026-08-05)
 
 - Usuário testou ao vivo logado como membro convidado (não titular) e
