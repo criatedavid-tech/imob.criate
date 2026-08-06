@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy, Mail, PauseCircle, PlayCircle, Repeat, BarChart3 } from 'lucide-react';
+import { Loader2, Target, Users, Pencil, UserPlus, Trash2, Copy, Check, Crown, Trophy, Mail, PauseCircle, PlayCircle, Repeat, BarChart3, ShieldCheck } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { centsToReais } from '../lib/money';
+import { PermissionsModal } from './PermissionsModal';
 
 interface Goal {
   goal: number | null;
@@ -400,6 +401,7 @@ export function EquipeArea({ onOpenMemberReport }: EquipeAreaProps = {}) {
   const [suspendingId, setSuspendingId] = useState<string | null>(null);
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
   const [reassigningMember, setReassigningMember] = useState<Member | null>(null);
+  const [permissionsTarget, setPermissionsTarget] = useState<Member | null>(null);
   const [goalEditorTarget, setGoalEditorTarget] = useState<Member | null>(null);
   const [ranking, setRanking] = useState<RankingRow[] | null>(null);
   const [invites, setInvites] = useState<Invite[] | null>(null);
@@ -629,6 +631,10 @@ export function EquipeArea({ onOpenMemberReport }: EquipeAreaProps = {}) {
                       className="p-2 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
                       <Repeat className="w-4 h-4" />
                     </button>
+                    <button onClick={() => setPermissionsTarget(m)} title="Permissões"
+                      className="p-2 rounded-xl text-[var(--text-low)] hover:text-[var(--text-hi)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                      <ShieldCheck className="w-4 h-4" />
+                    </button>
                     {m.suspended_at ? (
                       <button onClick={() => handleReactivate(m)} disabled={reactivatingId === m.user_id} title="Reativar"
                         className="p-2 rounded-xl text-emerald-300/80 hover:text-emerald-300 bg-[var(--control-fill)] hover:bg-emerald-500/10 transition-colors disabled:opacity-50">
@@ -729,6 +735,9 @@ export function EquipeArea({ onOpenMemberReport }: EquipeAreaProps = {}) {
           onClose={() => setReassigningMember(null)}
           onReassigned={() => {}}
         />
+      )}
+      {permissionsTarget && (
+        <PermissionsModal member={permissionsTarget} onClose={() => setPermissionsTarget(null)} />
       )}
     </div>
   );

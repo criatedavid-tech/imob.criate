@@ -12,7 +12,7 @@ const tokenCache = new Map<string, { userId: string; expires: number }>();
 // abas/dispositivos) o Map crescia sem limite. Aqui, se a purga não liberar
 // espaço, os mais antigos saem (o Map do JS preserva ordem de inserção).
 const CACHE_MAX_ENTRIES = 5_000;
-function cacheSet<V>(map: Map<string, { value: V; expires: number }>, key: string, value: V, ttlMs: number) {
+export function cacheSet<V>(map: Map<string, { value: V; expires: number }>, key: string, value: V, ttlMs: number) {
   if (map.size >= CACHE_MAX_ENTRIES) {
     const now = Date.now();
     for (const [k, v] of map) if (v.expires <= now) map.delete(k);
@@ -24,7 +24,7 @@ function cacheSet<V>(map: Map<string, { value: V; expires: number }>, key: strin
   }
   map.set(key, { value, expires: Date.now() + ttlMs });
 }
-function cacheGet<V>(map: Map<string, { value: V; expires: number }>, key: string): V | undefined {
+export function cacheGet<V>(map: Map<string, { value: V; expires: number }>, key: string): V | undefined {
   const hit = map.get(key);
   if (!hit) return undefined;
   if (hit.expires <= Date.now()) { map.delete(key); return undefined; }

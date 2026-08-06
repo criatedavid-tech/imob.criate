@@ -42,10 +42,12 @@ test("backend protege rotas especializadas e nao confia na persona do navegador"
   // sem virar uma brecha geral pro resto de /api/locacao.
   assert.match(locacao, /req\.path\.startsWith\("\/n8n\/"\)/);
   assert.match(locacao, /next\("router"\)/);
-  // Contrato/inquilino/cobranca de locacao nao tem autor por corretor - so o
-  // titular acessa (achado 2026-08-05: qualquer membro convidado tinha CRUD
-  // completo por faltar essa checagem).
-  assert.match(locacao, /isBrokerOwner\(userId, brokerId\)/);
+  // Contrato/inquilino/cobranca de locacao nao tem autor por corretor - o
+  // titular sempre acessa (hasPermission atalha por isBrokerOwner) e um
+  // membro so passa se o titular conceder o modulo locacao explicitamente
+  // (achado 2026-08-05: qualquer membro convidado tinha CRUD completo por
+  // faltar essa checagem; virou permissao granular em 2026-08-06).
+  assert.match(locacao, /hasPermission\(userId, brokerId, "locacao", action\)/);
   assert.match(lancamentos, /use\("\/api\/lancamentos", requireUser, requireAccountCapability\("developments"\)\)/);
   assert.match(financeiro, /use\("\/api\/financeiro", requireUser, requireAccountCapability\("finance"\)\)/);
   assert.match(equipe, /use\("\/api\/equipe", requireUser, requireAccountCapability\("team"\)\)/);

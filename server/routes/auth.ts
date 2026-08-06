@@ -17,6 +17,7 @@ import { fetchWithTimeout } from "../lib/http";
 import { provisionUazapiInstanceForMember } from "../services/provisioning";
 import { compensateInviteAcceptanceFailure } from "../services/inviteAcceptance";
 import { executePasswordReset, PasswordResetTokenError } from "../services/passwordReset";
+import { BASIC_ACCESS_DEFAULTS } from "../services/permissions";
 
 export const authRouter = express.Router();
 
@@ -382,6 +383,23 @@ authRouter.post("/api/auth/join", authLimiter, validateBody(joinSchema), async (
       .single();
     if (memberError) throw memberError;
     membershipCreated = true;
+
+    // Acesso básico padrão pro membro novo (não passa pela RPC de
+    // auditoria — é estado inicial da conta, não uma mudança feita por
+    // alguém). Best-effort: um membro sem nenhuma linha aqui simplesmente
+    // não tem permissão nenhuma até o titular conceder, então uma falha
+    // aqui não trava o cadastro nem deixa a conta num estado inválido.
+    const { error: permissionsSeedError } = await supabase.from("imf_member_permissions").insert(
+      BASIC_ACCESS_DEFAULTS.map((grantKey) => {
+        const [module, action] = grantKey.split(":");
+        return { broker_id: claimed.broker_id, user_id: created.user.id, module, action };
+      }),
+    );
+    if (permissionsSeedError) {
+      console.error("Falha ao semear acesso básico do membro:", {
+        code: (permissionsSeedError as any)?.code || "UNKNOWN",
+      });
+    }
 
     const { error: finalizeError } = await supabase
       .from("imf_broker_invites")

@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { hasPermission } from "../services/permissions";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
 import { TERMS_VERSION, UAZAPI_HOST, N8N_AGENT_MODEL } from "../config";
@@ -452,7 +453,7 @@ brokersRouter.get("/api/brokers/asaas-key", requireUser, async (req, res) => {
       needs_reconnect: !!data?.asaas_api_key_enc && !configured,
       env: data?.asaas_env || null,
       key_last4: keyLast4,
-      can_manage: await isBrokerOwner(userId, brokerId),
+      can_manage: await hasPermission(userId, brokerId, "integracoes", "gerenciar"),
     });
   } catch (err: any) {
     console.error("Erro GET /api/brokers/asaas-key:", err);
@@ -470,8 +471,8 @@ brokersRouter.post(
   try {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker not found" });
-    if (!(await isBrokerOwner(userId, brokerId))) {
-      return res.status(403).json({ error: "Apenas o titular da conta gerencia a chave de cobrança." });
+    if (!(await hasPermission(userId, brokerId, "integracoes", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para gerenciar a chave de cobrança." });
     }
 
     const apiKey = String(req.body?.api_key || "").trim();
@@ -508,8 +509,8 @@ brokersRouter.delete(
   try {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(404).json({ error: "Broker not found" });
-    if (!(await isBrokerOwner(userId, brokerId))) {
-      return res.status(403).json({ error: "Apenas o titular da conta gerencia a chave de cobrança." });
+    if (!(await hasPermission(userId, brokerId, "integracoes", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para gerenciar a chave de cobrança." });
     }
 
     const { error } = await supabase.from("imf_brokers").update({

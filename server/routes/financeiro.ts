@@ -1,7 +1,8 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireUser, getBrokerId } from "../middleware/auth";
 import { requireAccountCapability } from "../services/accountCapabilities";
+import { hasPermission } from "../services/permissions";
 import { effectiveRentalPaymentStatus, type RentalPaymentStatus } from "../services/rentalLedger";
 
 export const financeiroRouter = express.Router();
@@ -27,12 +28,13 @@ financeiroRouter.get("/api/financeiro/summary", requireUser, async (req, res) =>
       });
     }
 
-    const owner = await isBrokerOwner(userId, brokerId);
+    const owner = await hasPermission(userId, brokerId, "financeiro", "gerenciar");
 
     // Aluguel (contrato/inadimplência/recebimento) não tem autor por
     // corretor — é caixa da empresa inteira, igual ao restante de Locação
-    // (achado 2026-08-05, mesma trava aplicada lá: só titular vê). Venda de
-    // lançamento continua liberada pro corretor que fechou (bloco abaixo).
+    // (achado 2026-08-05, mesma trava aplicada lá: agora é financeiro:gerenciar
+    // em vez de titularidade fixa). Venda de lançamento continua liberada
+    // pro corretor que fechou (bloco abaixo).
     const { data: contracts, error: contractsError } = owner
       ? await supabase
           .from("imf_rental_contracts")

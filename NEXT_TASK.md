@@ -1,18 +1,91 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Fix: CRM (Negócios) inteiro fora do ar — pendente: autorização de commit
+## Permissões granulares por membro da equipe — pendente: autorização de commit
+
+Pedido do usuário: titular controla, por membro, o que cada um acessa —
+grade módulo × ação (Visualizar/Criar/Editar/Excluir/Gerenciar), 6 perfis
+prontos, acesso básico automático pra membro novo, histórico de
+auditoria. Pedido original citava "Contas Agregadas"/"contas vinculadas";
+investigação achou dois sistemas candidatos (Equipe, ativo, vs. Corretora
+— agrupamento por CNPJ, achado praticamente morto: 3 rotas, zero RLS,
+nenhum acesso a dado de negócio entre contas, nem aparece mais em `/app`).
+Usuário confirmou focar só em Equipe nesta rodada. Detalhe completo em
+PROGRESS.md/DOCUMENTACAO.md.
+
+- Migration nova `20260806f_member_permissions.sql` (já aplicada pelo
+  usuário): tabelas `imf_member_permissions` (normalizada, só guarda
+  linha quando concedido) e `imf_permission_audit_log` (append-only) +
+  RPCs `imf_set_member_permission`/`imf_replace_member_permissions`.
+- `server/services/permissions.ts` (novo): motor espelhando
+  `accountCapabilities.ts` — `hasPermission`, `resolveMemberPermissions`
+  (cache 60s), `BASIC_ACCESS_DEFAULTS`, `BUILT_IN_PROFILES` (6 perfis
+  fixos em código, não tabela — aplicar substitui a grade toda, nunca
+  une).
+- 5 endpoints novos em `equipe.ts`, hard-coded pro `isOwner()` local —
+  NUNCA delegável via a própria grade (nem perfil "Administrador"): se
+  desse pra delegar, um membro poderia se auto-conceder qualquer coisa.
+- 8 arquivos de rota tiveram o gate `isBrokerOwner` trocado por
+  `hasPermission`/checagem granular (equipe, locação, crmPipelines,
+  financeiro, relatórios, brokers/asaas-key, lançamentos, conversas) —
+  titular continua com acesso total idêntico a antes; membro existente
+  sem nenhuma linha concedida fica bit-a-bit igual ao de antes (zero
+  regressão, sem backfill).
+- Seed de acesso básico em `POST /api/auth/join` (aceitar convite).
+- `src/experience/PermissionsModal.tsx` (novo) + ícone na fileira de
+  ações de `EquipeArea.tsx`.
+- Testado ao vivo: 27 asserções via HTTP (dia-0 sem regressão nas 8
+  rotas, conceder/revogar com efeito imediato sem esperar cache,
+  combinação inválida rejeitada com 400, titular sem grade própria,
+  membro nunca gerencia permissão nenhuma, aplicar perfil substitui a
+  grade, auditoria registra e resolve nomes) + checagem visual na
+  interface real (grade renderiza, toggle persiste, histórico mostra o
+  registro certo). `tsc`/`knip`/`build` limpos; `npm test` só o CRLF
+  conhecido (ajustada a guarda de regressão em
+  `tests/accountCapabilities.test.ts`, que travava o texto-fonte antigo
+  de locacao.ts).
+- **Fora de escopo, registrado**: CRUD próprio em Leads/Imóveis/Agenda
+  (hoje sem checagem nenhuma pro registro do próprio membro — vira
+  revogável numa rodada futura); perfis customizados; enforcement em
+  Contatos; sistema Corretora.
+
+## Fix: exclusão de conta (admin) falhava com FK ambígua — pendente: autorização de commit
+
+Usuário tentou excluir uma conta no painel admin e bateu em `update or
+delete on table "imf_brokers" violates foreign key constraint
+"properties_broker_id_fkey"`. Causa: `DELETE /api/admin/brokers/:id`
+(`server/routes/admin.ts`) só fazia `DELETE FROM imf_brokers`, confiando
+num comentário que dizia que o CASCADE limpava tudo — não limpa. Mapeado
+o grafo completo de FKs do schema public: 8 tabelas do ImobiFlow têm
+`broker_id -> imf_brokers` SEM `ON DELETE CASCADE` (`imf_broker_goals`,
+`imf_conversation_messages`, `imf_developments`, `imf_properties`,
+`imf_rental_contracts`, `imf_reservation_documents`,
+`imf_unit_reservations`, `leads`), mais `imf_rental_payment_receipts` que
+trava contrato via `RESTRICT`. Achado à parte: `imf_agenda.broker_id` não
+tem FK NENHUMA pra `imf_brokers` — não bloqueava a exclusão, mas os
+eventos ficariam órfãos pra sempre, sem erro nenhum.
+
+Migration `20260806e_admin_delete_broker_cascade.sql` (já aplicada pelo
+usuário): função transacional `admin_delete_broker_cascade(p_broker_id)`
+que apaga as tabelas sem CASCADE na ordem certa (recibos antes do
+contrato, documentos antes da reserva — achado ao vivo numa primeira
+versão que tinha essa ordem trocada) antes do `DELETE FROM imf_brokers`
+final. `admin.ts` passou a chamar essa RPC em vez do delete direto.
+Testado ao vivo com conta descartável populada em todas as 10 tabelas
+(incluindo `imf_rental_payments`/`imf_units` como dependências) — exclusão
+100% limpa, zero linha órfã, confirmado em cada tabela. Escopo só
+ImobiFlow (`imf_`/núcleo) — nenhuma tabela de outro projeto do banco
+compartilhado é tocada. Detalhe completo em PROGRESS.md/DOCUMENTACAO.md.
+
+## Fix: CRM (Negócios) inteiro fora do ar — ROLLOUT CONCLUÍDO (06/08/2026)
 
 `GET /api/crm/pipelines` devolvia 500 pra QUALQUER conta (não só
 convidado) por um bug de coluna ambígua na RPC `imf_crm_ensure_default_
 pipeline` — bug antigo, de sessão anterior a esta, cuja migration de
 correção (`20260721d`) nunca tinha sido aplicada, e mesmo depois de
 aplicada sobrou um segundo ponto ambíguo (`ON CONFLICT`) que aquela
-correção não cobria. Migration nova `20260806d_fix_crm_ensure_default_
-pipeline_on_conflict_ambiguous.sql` já aplicada pelo usuário e testada ao
-vivo (chamada direta via supabase-js + `GET /api/crm/pipelines` via HTTP
-pros dois papéis). Nenhum código TypeScript mudou — só a migration
-precisa ser commitada, como registro do fix. Detalhe completo em
-PROGRESS.md.
+correção não cobria. Migration `20260806d_fix_crm_ensure_default_
+pipeline_on_conflict_ambiguous.sql` aplicada e testada ao vivo. Commit
+`95fd8eaf`, deploy validado. Detalhe completo em PROGRESS.md.
 
 ## Segurança: convidado com acesso indevido a Equipe/Desempenho/Locação — ROLLOUT CONCLUÍDO (05/08/2026)
 
@@ -57,7 +130,7 @@ deploy validado (health-check 200).
 Commit `55dd902`, deploy validado (health-check 200). Detalhe completo em
 PROGRESS.md/DOCUMENTACAO.md.
 
-## Follow-Up Inteligente: botão "-" + cancelamento imediato com humano — pendente: autorização de commit
+## Follow-Up Inteligente: botão "-" + cancelamento imediato com humano — ROLLOUT CONCLUÍDO (06/08/2026)
 
 Duas mudanças pequenas, mesmo dia, no seguimento direto da rodada acima:
 
@@ -80,15 +153,12 @@ Testado ao vivo (sessão real + ticket de teste no banco): "-" desce até 1
 e sobe de volta, persistência confirmada com F5; cenário de religar IA sem
 resposta nova do cliente → RPC não claimou (confirma o fix). `tsc`/`knip`/
 `build`/`npm test` limpos. Nenhuma outra parte do fluxo mexida, como
-pedido. Detalhe completo em PROGRESS.md/DOCUMENTACAO.md. **Aguardando
-validação do usuário e autorização de commit/push.**
+pedido. Commit `95fd8eaf`, deploy validado. Detalhe completo em
+PROGRESS.md/DOCUMENTACAO.md.
 
-## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — pendente: autorização de commit
+## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — ROLLOUT CONCLUÍDO (05/08/2026)
 
-Implementado e testado localmente (05/08/2026), mesmo padrão de conta de
-teste isolada da rodada anterior. 3 asserções via HTTP, todas passaram de
-primeira (inclusive a janela de período excluindo/incluindo lead antigo
-corretamente). Detalhe completo em PROGRESS.md.
+Commit `967a289`, deploy validado. Detalhe completo em PROGRESS.md.
 
 1. `GET /api/equipe/performance?months=` (novo, `equipe.ts`, titular-only) —
    por corretor: leads recebidos, fechados, conversão, vendido, retorno por
@@ -99,8 +169,6 @@ corretamente). Detalhe completo em PROGRESS.md.
 3. `src/experience/DesempenhoArea.tsx` (novo): lista os corretores
    ordenados por venda, clique abre o drill-down por membro em Relatórios
    já construído na rodada anterior (`onOpenMemberReport`).
-4. **Aguardando autorização de commit/push**.
-5. Depois do deploy: conferir a aba com dado real de vários corretores.
 
 ## Conta administradora (imobiliária/incorporadora) — ROLLOUT CONCLUÍDO (05/08/2026)
 

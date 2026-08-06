@@ -8,6 +8,22 @@ import { MEMBER_WHATSAPP_SLOT_MAX, MEMBER_WHATSAPP_SLOT_PRICE, PUBLIC_APP_URL } 
 import { subscriptionValueForMemberLimit } from "../services/billing";
 import { disconnectUazapiInstance } from "../services/provisioning";
 import { collectPages, collectForIds, reportPeriod } from "./relatorios";
+import {
+  hasPermission,
+  setMemberPermission,
+  applyPermissionProfile,
+  invalidateMemberPermissionsCache,
+  resolveMemberPermissions,
+  MODULE_ACTIONS,
+  PERMISSION_MODULES,
+  PROFILE_KEYS,
+  PROFILE_LABELS,
+  BUILT_IN_PROFILES,
+  isValidGrant,
+  type PermissionModule,
+  type PermissionAction,
+  type ProfileKey,
+} from "../services/permissions";
 
 export const equipeRouter = express.Router();
 
@@ -66,8 +82,8 @@ equipeRouter.get("/api/equipe/goal", requireUser, async (req, res) => {
 
     const owner = await isOwner(userId, brokerId);
     const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
-    if (requestedMember && !owner) {
-      return res.status(403).json({ error: "Só o dono da conta pode ver a meta de outro membro." });
+    if (requestedMember && !(await hasPermission(userId, brokerId, "equipe", "editar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver a meta de outro membro." });
     }
 
     let targetUserId: string | null = null; // null = meta da conta inteira
@@ -134,8 +150,8 @@ equipeRouter.post("/api/equipe/goal", requireUser, async (req, res) => {
     const rawTargetUserId = req.body?.user_id ? String(req.body.user_id) : null;
     const targetUserId = rawTargetUserId || (owner ? null : userId);
 
-    if (targetUserId && targetUserId !== userId && !owner) {
-      return res.status(403).json({ error: "Só o dono da conta pode definir a meta de outro membro." });
+    if (targetUserId && targetUserId !== userId && !(await hasPermission(userId, brokerId, "equipe", "editar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para definir a meta de outro membro." });
     }
     if (targetUserId && targetUserId !== userId) {
       const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", targetUserId).maybeSingle();
@@ -282,7 +298,9 @@ equipeRouter.patch("/api/equipe/whatsapp-slots", requireUser, async (req, res) =
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode alterar isso." });
+    if (!(await hasPermission(userId, brokerId, "whatsapp-conexoes", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para alterar isso." });
+    }
 
     const { data: broker } = await supabase.from("imf_brokers").select("user_id, account_type, plan").eq("id", brokerId).maybeSingle();
     if (!broker) return res.status(404).json({ error: "Broker not found" });
@@ -332,7 +350,9 @@ equipeRouter.post("/api/equipe/members/invite", requireUser, async (req, res) =>
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode convidar membros." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "criar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para convidar membros." });
+    }
 
     // Dono escolhe, PARA ESSE convite específico, se o corretor vai ter
     // WhatsApp próprio ou compartilhar o da conta. Quando a cota paga acabou,
@@ -451,7 +471,9 @@ equipeRouter.get("/api/equipe/invites", requireUser, async (req, res) => {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode ver os convites." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "criar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver os convites." });
+    }
 
     const { data, error } = await supabase
       .from("imf_broker_invites")
@@ -476,7 +498,9 @@ equipeRouter.delete("/api/equipe/invites/:id", requireUser, async (req, res) => 
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode revogar convites." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "criar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para revogar convites." });
+    }
 
     const { error } = await supabase
       .from("imf_broker_invites")
@@ -497,7 +521,9 @@ equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res)
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode remover membros." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "excluir"))) {
+      return res.status(403).json({ error: "Você não tem permissão para remover membros." });
+    }
 
     const { data: broker } = await supabase.from("imf_brokers").select("user_id").eq("id", brokerId).maybeSingle();
     if (req.params.userId === broker?.user_id) {
@@ -511,6 +537,7 @@ equipeRouter.delete("/api/equipe/members/:userId", requireUser, async (req, res)
     // esperar o TTL: sem invalidar, quem acabou de ser removido continuaria
     // enxergando a conta por até um minuto.
     invalidateIdentityCache(req.params.userId);
+    invalidateMemberPermissionsCache(brokerId, req.params.userId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro DELETE /api/equipe/members/:userId:", err);
@@ -529,7 +556,9 @@ equipeRouter.get("/api/equipe/members/:userId/data-summary", requireUser, async 
     const callerId = (req as any).userId as string;
     const brokerId = await getBrokerId(callerId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode ver isso." });
+    if (!(await hasPermission(callerId, brokerId, "equipe", "editar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver isso." });
+    }
 
     const targetUserId = req.params.userId;
     const { data: propIds } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
@@ -561,7 +590,9 @@ equipeRouter.post("/api/equipe/members/:userId/reassign", requireUser, async (re
     const callerId = (req as any).userId as string;
     const brokerId = await getBrokerId(callerId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode reatribuir dados." });
+    if (!(await hasPermission(callerId, brokerId, "equipe", "editar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para reatribuir dados." });
+    }
 
     const fromUserId = req.params.userId;
     const toUserId = String(req.body?.to_user_id || "");
@@ -620,7 +651,9 @@ equipeRouter.patch("/api/equipe/members/:userId/suspend", requireUser, async (re
     const callerId = (req as any).userId as string;
     const brokerId = await getBrokerId(callerId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode suspender membros." });
+    if (!(await hasPermission(callerId, brokerId, "equipe", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para suspender membros." });
+    }
 
     const { data: broker } = await supabase.from("imf_brokers").select("user_id").eq("id", brokerId).maybeSingle();
     if (req.params.userId === broker?.user_id) {
@@ -640,6 +673,7 @@ equipeRouter.patch("/api/equipe/members/:userId/suspend", requireUser, async (re
     // A identidade é cacheada por 60s - sem invalidar, o membro suspenso
     // continuaria com acesso por até um minuto (mesmo padrão do DELETE acima).
     invalidateIdentityCache(req.params.userId);
+    invalidateMemberPermissionsCache(brokerId, req.params.userId);
 
     if (member.whatsapp_mode === "own" && member.uazapi_instance_token) {
       disconnectUazapiInstance(member.uazapi_instance_token).catch((e: any) => {
@@ -659,7 +693,9 @@ equipeRouter.patch("/api/equipe/members/:userId/reactivate", requireUser, async 
     const callerId = (req as any).userId as string;
     const brokerId = await getBrokerId(callerId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o dono da conta pode reativar membros." });
+    if (!(await hasPermission(callerId, brokerId, "equipe", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para reativar membros." });
+    }
 
     const { error } = await supabase
       .from("imf_broker_members")
@@ -669,6 +705,7 @@ equipeRouter.patch("/api/equipe/members/:userId/reactivate", requireUser, async 
     if (error) throw error;
 
     invalidateIdentityCache(req.params.userId);
+    invalidateMemberPermissionsCache(brokerId, req.params.userId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error("Erro PATCH /api/equipe/members/:userId/reactivate:", err);
@@ -683,7 +720,9 @@ equipeRouter.get("/api/equipe/ranking", requireUser, async (req, res) => {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta vê o ranking." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver o ranking." });
+    }
 
     const { data: broker } = await supabase.from("imf_brokers").select("user_id, name").eq("id", brokerId).maybeSingle();
     const { data: members } = await supabase.from("imf_broker_members").select("user_id, created_at").eq("broker_id", brokerId);
@@ -755,7 +794,9 @@ equipeRouter.get("/api/equipe/performance", requireUser, async (req, res) => {
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isOwner(userId, brokerId))) return res.status(403).json({ error: "Só o dono da conta vê o desempenho da equipe." });
+    if (!(await hasPermission(userId, brokerId, "equipe", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver o desempenho da equipe." });
+    }
 
     const requestedMonths = Number(req.query.months);
     const months = [3, 6, 12].includes(requestedMonths) ? requestedMonths : 6;
@@ -856,6 +897,148 @@ equipeRouter.get("/api/equipe/performance", requireUser, async (req, res) => {
     res.json({ months, periodStart: startIso, periodEnd: endIso, members });
   } catch (err: any) {
     console.error("Erro GET /api/equipe/performance:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Permissões granulares por membro ──────────────────────────────────────
+// Gerenciar a grade de outro membro é hard-coded pro isOwner() local acima,
+// NUNCA pro requirePermission/hasPermission — mesmo um membro com
+// equipe:gerenciar (perfil "Administrador") não mexe aqui. Motivo: se desse
+// pra delegar via a própria grade, um membro poderia se auto-conceder
+// qualquer coisa, furando o modelo inteiro por dentro.
+
+equipeRouter.get("/api/equipe/permission-profiles", requireUser, async (_req, res) => {
+  res.json(
+    PROFILE_KEYS.map((key) => ({
+      key,
+      label: PROFILE_LABELS[key],
+      grants: BUILT_IN_PROFILES[key],
+    })),
+  );
+});
+
+async function resolveTargetMember(brokerId: string, targetUserId: string) {
+  const { data: broker } = await supabase.from("imf_brokers").select("user_id").eq("id", brokerId).maybeSingle();
+  if (targetUserId === broker?.user_id) {
+    return { error: "O titular não usa a grade de permissões — o acesso dele já é total e implícito." };
+  }
+  const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", targetUserId).maybeSingle();
+  if (!memberRow) return { error: "Membro não encontrado nesta conta." };
+  return { ok: true as const };
+}
+
+equipeRouter.get("/api/equipe/members/:userId/permissions", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o titular gerencia permissões." });
+
+    const check = await resolveTargetMember(brokerId, req.params.userId);
+    if ("error" in check) return res.status(400).json({ error: check.error });
+
+    const grants = await resolveMemberPermissions(brokerId, req.params.userId);
+    res.json({
+      module_actions: MODULE_ACTIONS,
+      modules: PERMISSION_MODULES,
+      grants: [...grants],
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/members/:userId/permissions:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.put("/api/equipe/members/:userId/permissions/:module/:action", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o titular gerencia permissões." });
+
+    const check = await resolveTargetMember(brokerId, req.params.userId);
+    if ("error" in check) return res.status(400).json({ error: check.error });
+
+    const grantKey = `${req.params.module}:${req.params.action}`;
+    if (!isValidGrant(grantKey)) {
+      return res.status(400).json({ error: "Combinação de módulo e ação inválida." });
+    }
+    const granted = req.body?.granted === true;
+
+    await setMemberPermission(
+      brokerId,
+      req.params.userId,
+      req.params.module as PermissionModule,
+      req.params.action as PermissionAction,
+      granted,
+      callerId,
+    );
+    res.json({ ok: true, granted });
+  } catch (err: any) {
+    console.error("Erro PUT /api/equipe/members/:userId/permissions/:module/:action:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.post("/api/equipe/members/:userId/apply-profile", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o titular gerencia permissões." });
+
+    const check = await resolveTargetMember(brokerId, req.params.userId);
+    if ("error" in check) return res.status(400).json({ error: check.error });
+
+    const profileKey = req.body?.profile_key as ProfileKey;
+    if (!PROFILE_KEYS.includes(profileKey)) {
+      return res.status(400).json({ error: "Perfil inválido." });
+    }
+
+    const { added, removed } = await applyPermissionProfile(brokerId, req.params.userId, profileKey, callerId);
+    res.json({ ok: true, added, removed });
+  } catch (err: any) {
+    console.error("Erro POST /api/equipe/members/:userId/apply-profile:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+equipeRouter.get("/api/equipe/members/:userId/permissions/audit", requireUser, async (req, res) => {
+  try {
+    const callerId = (req as any).userId as string;
+    const brokerId = await getBrokerId(callerId);
+    if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!(await isOwner(callerId, brokerId))) return res.status(403).json({ error: "Só o titular vê o histórico de permissões." });
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+    let query = supabase
+      .from("imf_permission_audit_log")
+      .select("id, actor_user_id, change_type, module, action, profile_key, diff, created_at")
+      .eq("broker_id", brokerId)
+      .eq("target_user_id", req.params.userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (typeof req.query.before === "string" && req.query.before) {
+      query = query.lt("created_at", req.query.before);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const actorIds = [...new Set((data || []).map((r: any) => r.actor_user_id).filter(Boolean))];
+    const actorNames = new Map<string, string>();
+    await Promise.all(actorIds.map(async (id: string) => {
+      const { data: userData } = await supabase.auth.admin.getUserById(id).catch(() => ({ data: { user: null } } as any));
+      const u = userData?.user;
+      actorNames.set(id, u?.user_metadata?.full_name || u?.email?.split("@")[0] || "Alguém");
+    }));
+
+    res.json((data || []).map((r: any) => ({
+      ...r,
+      actor_name: r.actor_user_id ? (actorNames.get(r.actor_user_id) || "Alguém") : "Sistema",
+    })));
+  } catch (err: any) {
+    console.error("Erro GET /api/equipe/members/:userId/permissions/audit:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,7 +1,8 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { sendUazapiText, sendUazapiMedia, resolveOutboundInstanceToken } from "../services/uazapi";
-import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireUser, getBrokerId } from "../middleware/auth";
+import { hasPermission } from "../services/permissions";
 import { normalizePhoneBR } from "../lib/crypto";
 import { pauseAiForHumanTakeover } from "../services/followup";
 import {
@@ -55,7 +56,7 @@ async function memberPhoneOwnership(brokerId: string): Promise<Map<string, strin
 async function canAccessTicket(userId: string, brokerId: string, ticketId: string): Promise<boolean> {
   const ticket = await getConversationTicket(brokerId, ticketId);
   if (!ticket) return false;
-  if (await isBrokerOwner(userId, brokerId)) return true;
+  if (await hasPermission(userId, brokerId, "conversas", "gerenciar")) return true;
   const ownership = await memberPhoneOwnership(brokerId);
   return ownership.get(normalizePhoneBR(ticket.customer_phone)) === userId
     || ticket.assigned_user_id === userId;
@@ -194,7 +195,7 @@ conversationsRouter.get("/api/conversas", requireUser, async (req, res) => {
     // Isolamento por membro: dono vê todas as conversas; membro vê as que
     // batem com um lead que ele possui OU que foram atribuídas a ele direto.
     let visibleConversations = conversations || [];
-    if (!(await isBrokerOwner(userId, brokerId))) {
+    if (!(await hasPermission(userId, brokerId, "conversas", "gerenciar"))) {
       const ownership = await memberPhoneOwnership(brokerId);
       visibleConversations = visibleConversations.filter((c: any) =>
         ownership.get(normalizePhoneBR(c.customer_phone)) === userId || c.assigned_user_id === userId

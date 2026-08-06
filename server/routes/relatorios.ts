@@ -1,6 +1,7 @@
 import express from "express";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { hasPermission } from "../services/permissions";
 
 export const relatoriosRouter = express.Router();
 
@@ -125,8 +126,8 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
     // vendo o consolidado da conta e um membro comum vê só o próprio -
     // exatamente como já era antes desta extensão.
     const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
-    if (requestedMember && !owner) {
-      return res.status(403).json({ error: "Só o dono da conta pode ver o relatório de outro membro." });
+    if (requestedMember && !(await hasPermission(userId, brokerId, "relatorios", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver o relatório de outro membro." });
     }
     let targetUserId: string | null = null;
     if (requestedMember) {

@@ -1,6 +1,6 @@
 import express from "express";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireUser, getBrokerId } from "../middleware/auth";
 import {
   ensureDefaultPipeline,
   resyncLeadsOnStage,
@@ -8,6 +8,7 @@ import {
   isStageType,
   StageType,
 } from "../services/crmPipelines";
+import { hasPermission } from "../services/permissions";
 
 export const crmPipelinesRouter = express.Router();
 
@@ -54,8 +55,8 @@ async function stageBrokerAccess(brokerId: string, stageId: string) {
 
 async function requireOwner(req: any, res: any, brokerId: string): Promise<boolean> {
   const userId = req.userId as string;
-  if (!(await isBrokerOwner(userId, brokerId))) {
-    res.status(403).json({ error: "Só o titular da conta gerencia pipelines." });
+  if (!(await hasPermission(userId, brokerId, "negocios", "gerenciar"))) {
+    res.status(403).json({ error: "Você não tem permissão para gerenciar pipelines." });
     return false;
   }
   return true;
@@ -93,7 +94,7 @@ crmPipelinesRouter.get("/api/crm/pipelines", requireUser, async (req, res) => {
       stagesByPipeline.get(s.pipeline_id)!.push(s);
     }
 
-    const canManage = await isBrokerOwner(userId, brokerId);
+    const canManage = await hasPermission(userId, brokerId, "negocios", "gerenciar");
     res.json((pipelines || []).map((p: any) => ({
       ...p,
       stages: stagesByPipeline.get(p.id) || [],

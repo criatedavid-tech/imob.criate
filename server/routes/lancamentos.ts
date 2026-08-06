@@ -2,8 +2,9 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireUser, getBrokerId } from "../middleware/auth";
 import { requireAccountCapability } from "../services/accountCapabilities";
+import { hasPermission } from "../services/permissions";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { reservationPaymentLimiter } from "../middleware/rateLimits";
@@ -417,7 +418,7 @@ lancamentosRouter.get("/api/lancamentos/units/:id/reservation", requireUser, asy
       return res.status(403).json({ error: "Acesso negado." });
     }
 
-    const financialAccess = await isBrokerOwner(userId, brokerId);
+    const financialAccess = await hasPermission(userId, brokerId, "lancamentos", "gerenciar");
     if (!financialAccess) return res.json({ reservation: null, financial_access: false });
     const reservation = await getActiveUnitReservation(brokerId, unit.id);
     res.json({ reservation, financial_access: true });
@@ -437,7 +438,7 @@ lancamentosRouter.get("/api/lancamentos/units/:id/documents", requireUser, async
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     if (!(await ownsUnit(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
 
-    const financialAccess = await isBrokerOwner(userId, brokerId);
+    const financialAccess = await hasPermission(userId, brokerId, "lancamentos", "gerenciar");
     if (!financialAccess) {
       return res.json({ documents: [], reservation_id: null, financial_access: false });
     }
@@ -470,8 +471,8 @@ lancamentosRouter.post(
       const userId = (req as any).userId as string;
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-      if (!(await isBrokerOwner(userId, brokerId))) {
-        return res.status(403).json({ error: "Apenas o titular da conta pode solicitar documentos." });
+      if (!(await hasPermission(userId, brokerId, "lancamentos", "gerenciar"))) {
+        return res.status(403).json({ error: "Você não tem permissão para solicitar documentos." });
       }
       if (!(await ownsUnit(brokerId, req.params.id))) return res.status(403).json({ error: "Acesso negado." });
 
@@ -507,8 +508,8 @@ lancamentosRouter.post(
       const userId = (req as any).userId as string;
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-      if (!(await isBrokerOwner(userId, brokerId))) {
-        return res.status(403).json({ error: "Apenas o titular da conta pode enviar documentos da reserva." });
+      if (!(await hasPermission(userId, brokerId, "lancamentos", "gerenciar"))) {
+        return res.status(403).json({ error: "Você não tem permissão para enviar documentos da reserva." });
       }
 
       const document = await getReservationDocument(brokerId, req.params.docId);
@@ -594,8 +595,8 @@ lancamentosRouter.patch(
       const userId = (req as any).userId as string;
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-      if (!(await isBrokerOwner(userId, brokerId))) {
-        return res.status(403).json({ error: "Apenas o titular da conta pode revisar documentos." });
+      if (!(await hasPermission(userId, brokerId, "lancamentos", "gerenciar"))) {
+        return res.status(403).json({ error: "Você não tem permissão para revisar documentos." });
       }
 
       const document = await getReservationDocument(brokerId, req.params.docId);
@@ -635,8 +636,8 @@ lancamentosRouter.get("/api/lancamentos/reservation-documents/:docId/signed-url"
     const userId = (req as any).userId as string;
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-    if (!(await isBrokerOwner(userId, brokerId))) {
-      return res.status(403).json({ error: "Apenas o titular da conta pode visualizar documentos." });
+    if (!(await hasPermission(userId, brokerId, "lancamentos", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para visualizar documentos." });
     }
 
     const document = await getReservationDocument(brokerId, req.params.docId);
@@ -666,8 +667,8 @@ lancamentosRouter.post(
       const userId = (req as any).userId as string;
       const brokerId = await getBrokerId(userId);
       if (!brokerId) return res.status(403).json({ error: "Broker not found" });
-      if (!(await isBrokerOwner(userId, brokerId))) {
-        return res.status(403).json({ error: "Apenas o titular da conta pode gerar cobrancas de reserva." });
+      if (!(await hasPermission(userId, brokerId, "lancamentos", "gerenciar"))) {
+        return res.status(403).json({ error: "Você não tem permissão para gerar cobranças de reserva." });
       }
 
       const { data: unit } = await supabase

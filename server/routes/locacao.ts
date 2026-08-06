@@ -1,7 +1,8 @@
 import express from "express";
 import { z } from "zod";
 import { supabase } from "../supabase";
-import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
+import { requireUser, getBrokerId } from "../middleware/auth";
+import { hasPermission, type PermissionAction } from "../services/permissions";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
 import { generateRentCharge } from "../services/rentalBilling";
@@ -34,6 +35,21 @@ import {
 
 export const locacaoRouter = express.Router();
 
+// Contrato de aluguel, dado de inquilino (CPF/CNPJ, contato) e cobranca nao
+// tem autor por corretor (imf_rental_contracts nao tem essa coluna) — sempre
+// foi dado da empresa inteira, sem granularidade por registro. A permissao
+// aqui e por MODULO INTEIRO (locacao:<acao>), classificada por verbo/rota —
+// nao ha como filtrar "so os meus contratos" porque essa nocao nao existe.
+function classifyLocacaoAction(req: { method: string; path: string }): PermissionAction {
+  if (req.method === "GET") return "visualizar";
+  if (req.path.includes("/ai-settings") || req.path.includes("/autopilot") || req.path.includes("/regua")) {
+    return "gerenciar";
+  }
+  if (req.method === "POST") return "criar";
+  if (req.method === "DELETE") return "excluir";
+  return "editar"; // PATCH/PUT
+}
+
 // A interface esconder o menu nao e autorizacao. Todas as rotas de locacao
 // exigem a funcao efetivamente liberada para a conta.
 // Excecao: /api/locacao/n8n/* vive em rentalAgent.ts com autenticacao propria
@@ -44,16 +60,17 @@ locacaoRouter.use("/api/locacao", (req, res, next) => {
   if (req.path.startsWith("/n8n/")) return next("router");
   next();
 }, requireUser, requireAccountCapability("rentals"), async (req, res, next) => {
-  // Contrato de aluguel, dado de inquilino (CPF/CNPJ, contato) e cobranca
-  // nao tem autor por corretor (imf_rental_contracts nao tem essa coluna) —
-  // sempre foi dado da empresa inteira. Achado 2026-08-05: nenhuma rota daqui
-  // checava titularidade, so sessao valida — qualquer membro convidado tinha
-  // CRUD completo. So o titular acessa, mesmo padrao ja usado na chave Asaas.
+  // Achado 2026-08-05: nenhuma rota daqui checava titularidade, so sessao
+  // valida — qualquer membro convidado tinha CRUD completo. Virou permissao
+  // granular (2026-08-06): titular continua com acesso total e implicito
+  // (hasPermission atalha por isBrokerOwner); membro so passa se o titular
+  // conceder o modulo locacao explicitamente.
   const userId = (req as any).userId as string;
   const brokerId = await getBrokerId(userId);
   if (!brokerId) return res.status(404).json({ error: "Broker not found" });
-  if (!(await isBrokerOwner(userId, brokerId))) {
-    return res.status(403).json({ error: "Apenas o titular da conta acessa a Locação." });
+  const action = classifyLocacaoAction(req);
+  if (!(await hasPermission(userId, brokerId, "locacao", action))) {
+    return res.status(403).json({ error: "Você não tem permissão para acessar a Locação." });
   }
   next();
 });

@@ -277,6 +277,118 @@ pode:
   inteira, então "só titular" (e não um split leitura/escrita por membro)
   foi a escolha do usuário, mesmo padrão já usado na chave Asaas.
 
+### Permissões granulares por membro da equipe (2026-08-06)
+
+Extensão do modelo acima: até aqui, um membro tinha exatamente UM nível
+de acesso (o mesmo de qualquer outro membro) — só o titular tinha algo a
+mais. O usuário pediu controle fino: escolher, por membro, quais módulos
+e quais ações (Visualizar/Criar/Editar/Excluir/Gerenciar) ele tem, com
+perfis prontos pra aplicar de uma vez e histórico de quem mudou o quê.
+Pedido original citava "Contas Agregadas"/"contas filhas ou vinculadas" —
+investigação achou um segundo sistema candidato, `corretora.ts`/
+`CorretoraSettings.tsx` (agrupa contas INDEPENDENTES por CNPJ), mas ele
+está praticamente morto (3 rotas, zero RLS, nenhum acesso a dado de
+negócio entre contas, nem aparece mais em `/app` — só sobrevive no
+Dashboard legado, `/`). Confirmado com o usuário: esta rodada é só
+Equipe; repartilhar dado entre contas independentes fica de fora.
+
+**Schema** (`imf_member_permissions`, `broker_id, user_id, module,
+action` — só guarda linha quando concedido, ausência = negado; titular
+real NUNCA tem linha aqui, acesso dele é sempre implícito via
+`isBrokerOwner`) + `imf_permission_audit_log` (append-only,
+`change_type` grant/revoke/profile_applied + `diff` jsonb). RPCs
+`imf_set_member_permission`/`imf_replace_member_permissions`
+(`RETURNS VOID` de propósito, mesmo motivo do fix de `ON CONFLICT`
+ambíguo documentado acima na seção de CRM). Os 6 perfis prontos
+(Administrador/Gestor/Corretor/Atendente/Financeiro/Só visualização)
+ficam fixos como constante TypeScript — aplicar um substitui a grade
+inteira do membro, nunca une com o que já tinha.
+
+**Módulos** (14): `carteira`, `negocios`, `contatos`, `agenda`,
+`conversas`, `locacao`, `lancamentos`, `financeiro`, `equipe`,
+`whatsapp-conexoes`, `relatorios`, `integracoes`, `configuracoes`,
+`assistente-ia`. Nem todo módulo aceita as 5 ações — `financeiro`/
+`relatorios`/`conversas`/`integracoes`/`configuracoes`/`assistente-ia`
+só têm Visualizar/Gerenciar (são resumos agregados ou configs de
+conta/toggle, sem CRUD de registro individual).
+
+**Motor** (`server/services/permissions.ts`, espelha
+`accountCapabilities.ts`): `hasPermission(userId, brokerId, module,
+action)` atalha por `isBrokerOwner` primeiro — titular sempre passa,
+comportamento idêntico a antes desta mudança. Membro só passa se tiver a
+linha concedida, checagem cacheada 60s (mesmo padrão de TTL de
+`isBrokerOwner`, invalidado explicitamente a cada escrita e nos mesmos
+pontos onde `invalidateIdentityCache` já era chamado — remover/suspender/
+reativar membro).
+
+**Quem gerencia a grade de outro membro: só o titular real, sempre
+hard-coded, nunca delegável** — nem por um membro com o perfil
+"Administrador" aplicado. Se desse pra delegar via a própria grade, um
+membro poderia se auto-conceder qualquer coisa e o modelo furaria a si
+mesmo por dentro. Os 5 endpoints novos (`GET/PUT .../permissions`,
+`POST .../apply-profile`, `GET .../permissions/audit`, `GET
+/api/equipe/permission-profiles`) usam o `isOwner()` local de
+`equipe.ts`, nunca `hasPermission`.
+
+**8 rotas que já eram hard-coded titular-only viraram configuráveis**
+(comportamento do titular idêntico a antes; membro sem grant nenhum
+também idêntico a antes — só quem ganha uma linha concedida muda de
+comportamento): `equipe.ts` (convidar/remover/reatribuir/suspender/
+reativar/ranking/performance/slots de WhatsApp), `locacao.ts` (era UM
+gate de router bloqueando tudo pro não-titular — virou um classificador
+por verbo/rota: GET→visualizar, POST→criar, PATCH/PUT→editar,
+DELETE→excluir, rotas de config/régua/autopilot→gerenciar; não dá pra
+filtrar "só os meus contratos" porque `imf_rental_contracts` não tem
+autor por corretor), `crmPipelines.ts` (`requireOwner()` →
+`negocios:gerenciar`), `financeiro.ts` (resumo de aluguel →
+`financeiro:gerenciar`), `relatorios.ts` (drill-down por membro →
+`relatorios:gerenciar`), `brokers.ts` (chave Asaas →
+`integracoes:gerenciar`), `lancamentos.ts` (7 sub-rotas
+financeiras/documentos de reserva → `lancamentos:gerenciar`),
+`conversations.ts` (bypass de dono em `canAccessTicket` →
+`conversas:gerenciar`).
+
+**Acesso básico automático pra membro novo** (seed em `POST
+/api/auth/join`, ao aceitar convite): replica exatamente o que um membro
+já conseguia fazer sem checagem nenhuma antes desta mudança — CRUD
+completo em Carteira/Negócios/Contatos/Agenda, visualizar em Conversas/
+Relatórios/Equipe/Assistente IA/Configurações, gerenciar a própria
+instância de WhatsApp. Locação/Lançamentos/Financeiro/Integrações ficam
+de fora por padrão — só liberados manualmente pelo titular, cumprindo
+literalmente o pedido ("funções administrativas, configurações
+sensíveis e integrações só liberadas manualmente").
+
+**Frontend**: `src/experience/PermissionsModal.tsx` (novo) — aba "Grade"
+(14 módulos × ações válidas, checkbox otimista com reversão em erro) +
+aba "Histórico" (auditoria paginada, nomes de ator/alvo resolvidos com o
+mesmo padrão de `supabase.auth.admin.getUserById` já usado em
+`equipe.ts`) + seletor "Aplicar perfil" com confirmação explícita
+avisando que substitui toda a grade atual. Ícone novo (`ShieldCheck`) na
+mesma fileira de ações por membro em `EquipeArea.tsx` — não criou item
+novo no menu lateral, a própria aba Equipe já é essa tela.
+
+**Verificado ao vivo**: 27 asserções via HTTP contra conta de teste
+descartável — confirmam bit-a-bit que um membro pré-existente sem
+nenhuma linha concedida se comporta IDÊNTICO a antes nas 8 rotas
+tocadas; conceder/revogar tem efeito imediato (sem esperar o TTL do
+cache); combinação inválida (`financeiro:criar`) rejeitada com 400;
+titular não tem grade própria (400); membro nunca gerencia permissão
+nenhuma, nem a própria (403 mesmo tentando); aplicar perfil substitui
+(nunca une) e gera a linha de auditoria certa; fluxo real de
+convite→entrada popula o seed corretamente. Checagem visual adicional
+com sessão real injetada no navegador: grade renderiza certo, toggle
+dispara o PUT real e persiste, histórico mostra o texto certo em
+português. `tsc`/`knip`/`build` limpos; `npm test` só o CRLF conhecido —
+precisou ajustar a guarda de regressão `tests/accountCapabilities.
+test.ts`, que travava o texto-fonte antigo de `locacao.ts`.
+
+**Fora de escopo desta rodada**: CRUD do PRÓPRIO registro em Leads/
+Imóveis/Agenda (hoje sem checagem nenhuma — revogar isso é mudança de
+comportamento maior, e as mesmas rotas também são chamadas pelo n8n
+agindo "como" um membro); perfis customizados além dos 6 fixos;
+enforcement no módulo Contatos (catalogado na taxonomia, sem rota gated
+ainda); sistema Corretora (continua só metadado, intocado).
+
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
 A régua de reativação automática de lead (`/app` → Assistente IA,
@@ -807,6 +919,30 @@ inteiro", já que os leads dele já cascadeiam junto via `imf_properties`/
 `leads` → `imf_brokers`, então nada fica órfão); e `admin.ts` agora verifica
 o erro do delete antes de responder `success`. Migration aplicada e
 verificada em 20/07/2026 (ver tabela de migrations).
+
+**Retomado e fechado de vez em 06/08/2026** — o fix de 20/07 cobriu só
+`imf_crm_pipelines`/`imf_crm_pipeline_stages`; usuário bateu de novo no
+mesmo tipo de erro (`properties_broker_id_fkey`) ao tentar excluir uma
+conta com imóvel cadastrado. Mapeamento completo do grafo de FKs (via
+`information_schema`, já que o banco é compartilhado com outros projetos
+e uma suposição errada podia tocar tabela de fora do ImobiFlow) achou
+mais 8 tabelas do núcleo sem `ON DELETE CASCADE`
+(`imf_broker_goals`, `imf_conversation_messages`, `imf_developments`,
+`imf_properties`, `imf_rental_contracts`, `imf_reservation_documents`,
+`imf_unit_reservations`, `leads`) e `imf_rental_payment_receipts`
+travando o contrato via `RESTRICT`. Achado à parte: `imf_agenda.
+broker_id` não tem FK NENHUMA pra `imf_brokers` — não bloqueava a
+exclusão, mas deixava eventos de agenda órfãos pra sempre, sem erro
+nenhum. Em vez de espalhar mais `ON DELETE CASCADE` pelo schema,
+`20260806e_admin_delete_broker_cascade.sql` criou uma função
+transacional `admin_delete_broker_cascade(p_broker_id)` que apaga essas
+tabelas na ordem certa (recibos antes do contrato; documentos de reserva
+antes da reserva, por causa de uma FK composta — achado ao vivo numa
+primeira versão da função que tinha essa ordem trocada) antes do `DELETE
+FROM imf_brokers` final; `admin.ts` passou a chamar essa RPC em vez do
+delete direto. Testado ao vivo com conta populada em todas as 10 tabelas
+relevantes — exclusão 100% limpa, zero linha órfã, confirmado tabela por
+tabela.
 
 **Limitações da fase 1:** sem Dashboard/Calendário/Ações do CRM (fica pra
 depois, conforme pedido); reorder de etapa é por botões ↑/↓ na aba
