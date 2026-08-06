@@ -1,5 +1,19 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Fix: CRM (Negócios) inteiro fora do ar — pendente: autorização de commit
+
+`GET /api/crm/pipelines` devolvia 500 pra QUALQUER conta (não só
+convidado) por um bug de coluna ambígua na RPC `imf_crm_ensure_default_
+pipeline` — bug antigo, de sessão anterior a esta, cuja migration de
+correção (`20260721d`) nunca tinha sido aplicada, e mesmo depois de
+aplicada sobrou um segundo ponto ambíguo (`ON CONFLICT`) que aquela
+correção não cobria. Migration nova `20260806d_fix_crm_ensure_default_
+pipeline_on_conflict_ambiguous.sql` já aplicada pelo usuário e testada ao
+vivo (chamada direta via supabase-js + `GET /api/crm/pipelines` via HTTP
+pros dois papéis). Nenhum código TypeScript mudou — só a migration
+precisa ser commitada, como registro do fix. Detalhe completo em
+PROGRESS.md.
+
 ## Segurança: convidado com acesso indevido a Equipe/Desempenho/Locação — ROLLOUT CONCLUÍDO (05/08/2026)
 
 Dois achados no mesmo report do usuário (print mostrando o convidado com
@@ -38,19 +52,36 @@ shape exato do `.use()` de locacao — agora também confere que o
 Commit `f33ac7f` (Equipe/Desempenho/Locação) + `1599b08` (Financeiro),
 deploy validado (health-check 200).
 
-## Follow-Up Inteligente: de 3 passos fixos pra até 8 — pendente: autorização de commit
+## Follow-Up Inteligente: de 3 passos fixos pra até 8 — ROLLOUT CONCLUÍDO (06/08/2026)
 
-`/app` → Assistente IA → "Follow-Up Inteligente" agora suporta até 8
-passos (era fixo em 3), revelados um a um com um "+" abaixo do último
-bloco. Dashboard antigo (`/`) fica de fora por pedido do usuário, continua
-travado em 3, sem regressão. Migration `20260806c_followup_progressive_
-steps.sql` já aplicada pelo usuário no Supabase (incluiu um `DROP FUNCTION`
-antes do `CREATE` — Postgres não deixa `CREATE OR REPLACE` trocar o tipo
-de retorno de uma função existente). Testado ao vivo: RPC testada direto
-no banco (claim correto + atomicidade), UI testada com sessão real (8
-blocos revelados, persistência confirmada com F5). `tsc`/`knip`/`build`
-limpos; `npm test` (só o CRLF conhecido). Detalhe completo em
-PROGRESS.md/DOCUMENTACAO.md. **Aguardando autorização de commit/push.**
+Commit `55dd902`, deploy validado (health-check 200). Detalhe completo em
+PROGRESS.md/DOCUMENTACAO.md.
+
+## Follow-Up Inteligente: botão "-" + cancelamento imediato com humano — pendente: autorização de commit
+
+Duas mudanças pequenas, mesmo dia, no seguimento direto da rodada acima:
+
+1. **Botão "-"**: usuário testou o "+" até 8 e não tinha como voltar.
+   `AssistenteIAArea.tsx` ganhou um par "-"/"+" (em vez de só "+"),
+   `follow_count` sobe/desce de 1 a 8. Nenhuma mudança de backend/migration
+   — `follow_count` já aceitava 1-8 desde a rodada anterior.
+2. **Cancelamento imediato quando humano assume**: usuário pediu revisão
+   explícita da regra — follow-up só roda com IA ativa; humano assume/
+   responde → cancela na hora; IA desligada → nunca dispara. Auditoria
+   confirmou regras 1 e 3 já garantidas pela RPC (`ai_active=TRUE`,
+   `cfg.enabled=TRUE`). Achou 2 lacunas na regra 2: `PATCH /api/conversas/
+   :ticketId/ai-toggle` e `POST /api/conversas/create` desligavam
+   `ai_active` mas não travavam `follow_sent=true` (diferente de
+   `pauseAiForHumanTakeover`, que já fazia os dois) — sem isso, religar a
+   IA sem o cliente ter mandado mensagem nova podia disparar um follow-up
+   com timing de antes da pausa. Corrigido nos 2 endpoints.
+
+Testado ao vivo (sessão real + ticket de teste no banco): "-" desce até 1
+e sobe de volta, persistência confirmada com F5; cenário de religar IA sem
+resposta nova do cliente → RPC não claimou (confirma o fix). `tsc`/`knip`/
+`build`/`npm test` limpos. Nenhuma outra parte do fluxo mexida, como
+pedido. Detalhe completo em PROGRESS.md/DOCUMENTACAO.md. **Aguardando
+validação do usuário e autorização de commit/push.**
 
 ## Aba "Desempenho" (ROI da equipe, sem custo cadastrado) — pendente: autorização de commit
 

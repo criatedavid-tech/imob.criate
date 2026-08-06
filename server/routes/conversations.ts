@@ -516,6 +516,11 @@ conversationsRouter.patch("/api/conversas/:ticketId/ai-toggle", requireUser, asy
     await supabase.from("followup_conversations").update({
       ai_active,
       human_takeover_at: ai_active ? null : updatedAt,
+      // Ao desligar, também trava o follow-up pendente (mesmo campo que
+      // pauseAiForHumanTakeover usa) — sem isso, um corretor que religasse
+      // a IA depois sem o cliente ter mandado mensagem nova podia disparar
+      // um follow-up com timing velho, de antes da pausa.
+      ...(ai_active ? {} : { follow_sent: true }),
       updated_at: updatedAt,
     }).eq("broker_id", brokerId).eq("ticket_id", ticket.id);
 
@@ -1032,6 +1037,10 @@ conversationsRouter.post("/api/conversas/create", requireUser, async (req, res) 
         ticket_id: ticket.id,
         conversation_status: "open",
         ai_active: false,
+        // Mesmo motivo do ai-toggle: trava o follow-up pendente, não só
+        // desliga a IA — sem isso, religar a IA depois sem o cliente ter
+        // mandado mensagem nova podia disparar um follow-up com timing velho.
+        follow_sent: true,
         assigned_user_id: userId,
         human_takeover_at: updatedAt,
         last_customer_message_at: updatedAt,

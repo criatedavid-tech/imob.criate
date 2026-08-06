@@ -1,5 +1,84 @@
 # Estado do projeto
 
+## Fix: CRM (aba Negócios) inteiro fora do ar por bug de coluna ambígua (2026-08-06)
+
+Usuário reportou "Erro ao carregar pipelines." na conta convidado —
+investigação mostrou que era um bug pré-existente (de sessão anterior,
+não desta), afetando **qualquer conta**, não só convidado. `GET /api/crm/
+pipelines` chama `ensureDefaultPipeline` primeiro, que chama a RPC
+`imf_crm_ensure_default_pipeline()` — essa função já tinha um bug
+conhecido de coluna ambígua (`RETURNS TABLE (pipeline_id UUID, ...)` cria
+uma variável de saída chamada `pipeline_id`, que colide com a coluna
+`pipeline_id` de `imf_crm_pipeline_stages`), e já existia uma migration
+de correção no repo (`20260721d_fix_crm_ensure_default_pipeline_ambiguous_
+column.sql`) — só que **nunca tinha sido aplicada** no Supabase.
+
+Usuário aplicou essa migration antiga — o erro continuou idêntico. Achei
+um SEGUNDO ponto ambíguo que aquela correção não cobriu: `ON CONFLICT
+(pipeline_id, position) DO NOTHING` no INSERT das etapas seed. O alvo de
+um `ON CONFLICT` aceita expressões (índices podem ser sobre expressões),
+não só nomes de coluna puros, então o Postgres aplica a MESMA resolução
+de identificador ali — e como o alvo de conflito não aceita alias
+(`stage.pipeline_id` não é válido nessa posição), não dava pra corrigir
+do mesmo jeito que o WHERE/SELECT.
+
+Nova migration `20260806d_fix_crm_ensure_default_pipeline_on_conflict_
+ambiguous.sql`: troca `ON CONFLICT DO NOTHING` por um bloco
+`BEGIN...EXCEPTION WHEN unique_violation THEN NULL; END;` — mesmo padrão
+de idempotência já usado na própria função, algumas linhas acima, pra
+criar o pipeline padrão. Evita completamente a lista de colunas do alvo
+de conflito.
+
+**Testado ao vivo**: confirmei o bug persistindo com uma chamada direta
+via `supabase-js` (conexão nova, sem cache), bypassando o servidor local,
+antes de propor a segunda correção — descartou hipótese de cache de
+conexão. Depois de aplicada, a mesma chamada direta funcionou
+(`{pipeline_id, first_stage_id}` sem erro), e `GET /api/crm/pipelines`
+via HTTP funcionou tanto pro titular quanto pro convidado. Nenhum código
+TypeScript mudou — o bug era 100% no banco; só a migration nova precisa
+ser commitada (documentação do fix, já aplicado em produção pelo usuário).
+
+## Follow-Up Inteligente: fecha brecha de disparo com timing velho (2026-08-06)
+
+Usuário pediu pra revisar a regra de cancelamento: follow-up só deve rodar
+com a IA ativa e conduzindo; se um humano assume ou responde, cancela na
+hora; com a IA desligada, nunca dispara. Auditoria em todos os lugares que
+gravam `senderType: "broker_manual"` ou mexem em `ai_active` de
+`followup_conversations` (`agent.ts` x2, `conversations.ts` reply x2,
+`followup.ts` rota `/broker-reply` do N8N, `conversas/create`, `ai-toggle`):
+
+- **Regra 1 (IA ativa) e regra 3 (IA desligada)** já funcionavam 100% —
+  a RPC `claim_due_followups_v2()` sempre exigiu `ai_active = TRUE` e
+  `cfg.enabled = TRUE` pra sequer considerar claimar uma conversa.
+- **Regra 2 (assumiu/respondeu → cancela na hora)**: os 2 caminhos que
+  passam por `pauseAiForHumanTakeover` (`agent.ts`, resposta manual em
+  `conversations.ts`, `/broker-reply` do N8N) já setavam `ai_active=false`
+  **e** `follow_sent=true` — corretos. Achei 2 que só setavam
+  `ai_active=false`, sem `follow_sent=true`: `PATCH /api/conversas/
+  :ticketId/ai-toggle` (pausar a IA numa conversa sem responder nada) e
+  `POST /api/conversas/create` (corretor abre conversa nova manualmente).
+  `ai_active=false` sozinho já bloqueia a RPC NA HORA (regra 2 cumprida
+  no sentido estrito) — mas sem `follow_sent=true`, se o corretor religasse
+  a IA depois (`ai-toggle` com `ai_active:true`) sem o cliente ter mandado
+  mensagem nova, o `follow_message_index`/`last_customer_message_at`
+  continuavam com timing de ANTES da pausa — podendo disparar um follow-up
+  na próxima checagem (60s), do nada, sem relação com o silêncio real do
+  cliente depois da IA voltar.
+- **Fix**: os 2 endpoints passaram a gravar `follow_sent=true` também
+  (só no ramo de desligar — religar não mexe nisso, fica travado até o
+  cliente mandar mensagem nova de verdade, que aí sim reseta `follow_sent`
+  via `/api/followup/inbound`, o mesmo caminho que sempre existiu).
+- **Testado ao vivo**: criei ticket+conversa de teste com `ai_active=true`
+  e horário de silêncio já vencido (1h atrás, delay configurado 30min).
+  Desliguei a IA via `ai-toggle` (sem responder nada) → `follow_sent`
+  virou `true`. Religuei a IA logo em seguida (sem o cliente mandar nada
+  novo) → `follow_sent` continuou `true`. Chamei a RPC → não claimou essa
+  conversa (confirmando que o disparo com timing velho foi bloqueado —
+  sem o fix, essa mesma sequência dispararia o Follow 1 na hora). Limpeza
+  feita depois. `tsc`/`knip`/`build`/`npm test` limpos (só o CRLF
+  conhecido, não relacionado). Nenhuma outra parte do fluxo mexida, como
+  pedido.
+
 ## Follow-Up Inteligente: de 3 passos fixos pra até 8 (2026-08-06)
 
 Usuário pediu (via print da tela) expandir a régua de reativação de lead

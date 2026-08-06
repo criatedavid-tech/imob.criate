@@ -309,14 +309,35 @@ usuário, continua travado em 3 (sem regressão, já era assim).
   `[...3 objetos originais, ...5 gerados por loop]` — os 5 novos usam
   prazo recomendado em progressão semanal (14d/21d/28d/35d/42d,
   continuando o ritmo 24h→72h→7d já existente). Render é
-  `FOLLOWS.slice(0, cfg.follow_count)`; o "+" só soma `follow_count` no
-  estado local (sem auto-save, mesmo padrão do resto do form — persiste
-  só ao clicar "Salvar Follow-Up"). Textos que citavam "3" (subtítulo,
-  aviso de rodapé) viraram dinâmicos por `cfg.follow_count`.
+  `FOLLOWS.slice(0, cfg.follow_count)`; o "+"/"-" só somam/subtraem
+  `follow_count` no estado local (1-8, sem auto-save, mesmo padrão do
+  resto do form — persiste só ao clicar "Salvar Follow-Up"; o "-" foi
+  pedido numa segunda rodada, mesmo dia, depois que o usuário testou o
+  "+" e não tinha como voltar). Textos que citavam "3" (subtítulo, aviso
+  de rodapé) viraram dinâmicos por `cfg.follow_count`.
 - Verificado ao vivo: RPC testada direto no banco (índice 6 → claim
   correto do Follow 7, segunda chamada não repete — atomicidade
   preservada); UI testada com sessão real (8 blocos revelados um a um,
-  "+" some no 8, F5 confirma que `follow_count` persistiu).
+  "+" some no 8, F5 confirma que `follow_count` persistiu; "-" desce até
+  1, botões certos aparecendo/sumindo nos dois extremos).
+- **Cancelamento imediato quando um humano assume (2026-08-06)**: regra
+  pedida explicitamente pelo usuário — follow-up só roda com IA ativa e
+  conduzindo; se um humano assume ou responde, cancela na hora; com IA
+  desligada, nunca dispara. As regras de "IA ativa"/"IA desligada" já
+  eram garantidas pela RPC (`ai_active = TRUE` e `cfg.enabled = TRUE`).
+  Auditoria achou 2 caminhos que desligavam `ai_active` sem também travar
+  `follow_sent=true` (`PATCH /api/conversas/:ticketId/ai-toggle` e
+  `POST /api/conversas/create`, em `conversations.ts`) — os outros
+  (`pauseAiForHumanTakeover`, usado por `agent.ts`, pela resposta manual
+  em `conversations.ts` e por `/api/followup/broker-reply` do N8N) já
+  travavam os dois campos. Sem `follow_sent=true`, religar a IA manualmente
+  depois (sem o cliente ter mandado mensagem nova) podia disparar um
+  follow-up com timing de ANTES da pausa. Fix: os 2 endpoints também
+  passaram a gravar `follow_sent=true` ao desligar (nunca ao religar —
+  só reseta de verdade quando o cliente manda mensagem nova, via
+  `/api/followup/inbound`, caminho que já existia). Testado ao vivo:
+  ticket de teste com silêncio já vencido, IA desligada e religada sem
+  resposta do cliente → RPC não claimou (sem o fix, teria disparado).
 
 ### Regras de visibilidade
 
@@ -640,6 +661,27 @@ desde que `20260720b` foi aplicada (20/07/2026) até a descoberta ao vivo
 (mesma função, só qualifica a referência com o alias `stage`, já usado no
 resto da própria função). Não precisa de deploy — é só a função no Postgres;
 efeito imediato após aplicar a migration manualmente.
+
+**Segundo bug, mesma função, achado em 06/08/2026:** mesmo depois de
+`20260721d` aplicada e confirmada (via `pg_get_functiondef`), `GET
+/api/crm/pipelines` continuava devolvendo 500 pra qualquer conta — usuário
+reportou a tela "Negócios" inteira fora do ar de novo (não era específico da
+conta convidado que reportou, afetava titular também). A correção anterior
+só cobriu `WHERE`/`SELECT`; sobrou uma segunda ocorrência ambígua no
+`INSERT ... ON CONFLICT (pipeline_id, position) DO NOTHING` do seed das
+etapas padrão — o alvo de um `ON CONFLICT` aceita expressões (já que índices
+podem ser sobre expressão), então o Postgres aplica ali a mesma resolução de
+identificador, e `pipeline_id` bate tanto com a coluna quanto com a variável
+de saída da função (42702 de novo). Diferente do `WHERE`/`SELECT`, o alvo de
+conflito não aceita alias (`stage.pipeline_id` é sintaxe inválida ali), então
+não dá pra qualificar — a correção troca o `ON CONFLICT DO NOTHING` por um
+bloco `BEGIN...EXCEPTION WHEN unique_violation THEN NULL; END;`, mesmo padrão
+de idempotência já usado na criação do pipeline, algumas linhas acima na
+mesma função. Corrigido em
+`20260806d_fix_crm_ensure_default_pipeline_on_conflict_ambiguous.sql`.
+Verificado ao vivo: chamada direta da RPC (sem cache de processo) e
+`GET /api/crm/pipelines` via HTTP pras duas contas de teste (titular e
+convidado) — ambas passaram a devolver pipeline/etapas reais.
 
 **O que existe agora:**
 

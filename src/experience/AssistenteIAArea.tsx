@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, Loader2, Zap, Clock, MessageSquare, Plus } from 'lucide-react';
+import { Bot, Check, Loader2, Zap, Clock, MessageSquare, Plus, Minus } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 
@@ -407,17 +407,30 @@ function FollowUpCard({ fieldCls }: { fieldCls: string }) {
           </div>
         ))}
 
-        {cfg.follow_count < 8 && (
-          <button
-            type="button"
-            onClick={() => setCfg((c) => ({ ...c, follow_count: c.follow_count + 1 }))}
-            className="w-full py-3 rounded-2xl border border-dashed border-[var(--hairline-strong)] text-[var(--text-low)]
-              hover:text-[var(--text-hi)] hover:border-[var(--glass-border-strong)] transition-colors text-[13px] font-semibold
-              flex items-center justify-center gap-2"
-          >
-            <Plus size={16} /> Adicionar Follow {cfg.follow_count + 1}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {cfg.follow_count > 1 && (
+            <button
+              type="button"
+              onClick={() => setCfg((c) => ({ ...c, follow_count: c.follow_count - 1 }))}
+              className="flex-1 py-3 rounded-2xl border border-dashed border-[var(--hairline-strong)] text-[var(--text-low)]
+                hover:text-[var(--text-hi)] hover:border-[var(--glass-border-strong)] transition-colors text-[13px] font-semibold
+                flex items-center justify-center gap-2"
+            >
+              <Minus size={16} /> Remover Follow {cfg.follow_count}
+            </button>
+          )}
+          {cfg.follow_count < 8 && (
+            <button
+              type="button"
+              onClick={() => setCfg((c) => ({ ...c, follow_count: c.follow_count + 1 }))}
+              className="flex-1 py-3 rounded-2xl border border-dashed border-[var(--hairline-strong)] text-[var(--text-low)]
+                hover:text-[var(--text-hi)] hover:border-[var(--glass-border-strong)] transition-colors text-[13px] font-semibold
+                flex items-center justify-center gap-2"
+            >
+              <Plus size={16} /> Adicionar Follow {cfg.follow_count + 1}
+            </button>
+          )}
+        </div>
 
         <p className="text-[11px] text-[var(--text-low)]">
           Se o cliente responder, o ciclo reinicia o contador e, no próximo silêncio, envia o próximo follow. Após o Follow {cfg.follow_count}, para.
