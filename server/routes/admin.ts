@@ -417,8 +417,15 @@ adminRouter.delete("/api/admin/brokers/:id", async (req, res) => {
       }
     }
 
-    // 2. Remove dados do corretor (cascade deve limpar propriedades/leads via FK)
-    const { error: deleteBrokerError } = await supabase.from('imf_brokers').delete().eq('id', req.params.id);
+    // 2. Remove dados do corretor. Nem toda tabela que referencia
+    // imf_brokers tem ON DELETE CASCADE (ex.: imf_properties, leads,
+    // imf_rental_contracts) e imf_agenda não tem FK nenhuma — por isso a
+    // limpeza roda numa função transacional (migration 20260806e) que
+    // apaga essas tabelas na ordem certa antes do broker, com rollback
+    // automático se qualquer passo falhar.
+    const { error: deleteBrokerError } = await supabase.rpc('admin_delete_broker_cascade', {
+      p_broker_id: req.params.id,
+    });
     if (deleteBrokerError) {
       console.error('[Admin] Falha ao excluir broker:', deleteBrokerError.message);
       return res.status(500).json({ error: `Não foi possível excluir a conta: ${deleteBrokerError.message}` });
