@@ -477,6 +477,20 @@ async function processInboxRow(row: InboxRow): Promise<void> {
     );
     if (contactError) throw contactError;
 
+    // O nome do perfil do WhatsApp vem no próprio webhook. Guardar aqui é o que
+    // permite a IA saber com quem fala já na PRIMEIRA mensagem, em vez de
+    // abrir a conversa com "como posso te chamar?". Fica em campo separado do
+    // nome confirmado: perfil costuma ser apelido ou nome de empresa.
+    // Melhor-esforço — nunca pode derrubar o inbound.
+    if (pushName && pushName !== customerPhone) {
+      await supabase.from("imf_lead_knowledge").upsert(
+        { broker_id: row.broker_id, phone: customerPhone, nome_whatsapp: pushName.slice(0, 120) },
+        { onConflict: "broker_id,phone" },
+      ).then(({ error }) => {
+        if (error) console.warn("[Webhook Inbox] nome do WhatsApp nao gravado:", error.message);
+      });
+    }
+
     const { error: followupError } = await supabase.from("followup_conversations").update({
       ticket_id: ticketId,
       last_customer_message_at: activityAt,

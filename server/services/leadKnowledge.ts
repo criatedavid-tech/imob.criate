@@ -25,6 +25,8 @@ export interface LeadKnowledge {
   broker_id: string;
   phone: string;
   nome: string | null;
+  /** Nome do perfil do WhatsApp — serve para se dirigir à pessoa, não é cadastro. */
+  nome_whatsapp: string | null;
   finalidade: string | null;
   regiao: string | null;
   tipo: string | null;
@@ -75,7 +77,7 @@ const FIELD_PRIORITY: { campo: keyof LeadKnowledge; rotulo: string }[] = [
 export function emptyKnowledge(brokerId: string, phone: string): LeadKnowledge {
   return {
     broker_id: brokerId, phone,
-    nome: null, finalidade: null, regiao: null, tipo: null, quartos: null,
+    nome: null, nome_whatsapp: null, finalidade: null, regiao: null, tipo: null, quartos: null,
     orcamento_min_cents: null, orcamento_max_cents: null,
     diferenciais: [], imovel_interesse: null, observacoes: null,
     hipoteses: [], resumo: null, mensagens: 0,

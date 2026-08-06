@@ -84,6 +84,20 @@ test("remocao de muleta nao estraga texto normal", () => {
   assert.equal(sanitizeReply(normal), normal);
 });
 
+test("markdown de chat vira formatacao que o WhatsApp entende", () => {
+  // Resposta real da execucao 1104165: chegava com asteriscos literais no celular.
+  const bruto = "Tenho algumas opções:\n\n*   Uma casa no **Setor Oeste**, por R$ 330.000,00.\n*   Uma casa no **Portal do Sol**.";
+  const limpo = sanitizeReply(bruto);
+  assert.ok(!limpo.includes("**"), "negrito de markdown nao pode chegar cru");
+  assert.ok(limpo.includes("*Setor Oeste*"), "negrito do WhatsApp e um asterisco so");
+  assert.ok(limpo.includes("• Uma casa"), `marcador de lista virou bolinha: ${limpo}`);
+  assert.ok(!/^\*\s/m.test(limpo), "nenhum asterisco solto sobrando");
+});
+
+test("titulo de markdown some", () => {
+  assert.equal(sanitizeReply("## Opções\n\nTenho uma casa."), "Opções\n\nTenho uma casa.");
+});
+
 test("pausa entre balões existe mas nunca vira espera longa", () => {
   assert.ok(typingDelayMs("oi") >= 350);
   assert.ok(typingDelayMs("x".repeat(5000)) <= 2_200);

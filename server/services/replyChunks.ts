@@ -24,6 +24,24 @@ const CRUTCHES: RegExp[] = [
   /perfeito para quem busca conforto e praticidade[!.]?\s*/gi,
 ];
 
+/**
+ * O modelo escreve markdown de chat (`**negrito**`, listas com `*   `,
+ * títulos com `#`). O WhatsApp não entende nada disso: `**Setor Oeste**` chega
+ * literalmente com os quatro asteriscos, e `*   Uma casa` vira um asterisco
+ * solto. Converte para o que o WhatsApp realmente renderiza.
+ */
+function toWhatsAppFormatting(text: string): string {
+  return text
+    // Item de lista (`*  `, `-  `, `1.  `) vira marcador simples.
+    .replace(/^[ \t]*[*+-][ \t]{2,}/gm, "• ")
+    .replace(/^[ \t]*[*+-][ \t]+(?=\S)/gm, "• ")
+    // Negrito de markdown -> negrito do WhatsApp (um asterisco só).
+    .replace(/\*\*(.+?)\*\*/gs, "*$1*")
+    .replace(/__(.+?)__/gs, "*$1*")
+    // Títulos não existem no WhatsApp.
+    .replace(/^#{1,6}[ \t]+/gm, "");
+}
+
 function removeCrutches(text: string): string {
   let out = text;
   for (const crutch of CRUTCHES) out = out.replace(crutch, "");
@@ -43,9 +61,11 @@ function removeCrutches(text: string): string {
 /** Limpa vícios que o modelo insiste em produzir mesmo com o prompt pedindo o contrário. */
 export function sanitizeReply(text: string): string {
   let out = removeCrutches(
-    String(text ?? "")
-      .replace(/^=+/, "")           // artefato de expressão do n8n
-      .replace(/\r\n/g, "\n"),
+    toWhatsAppFormatting(
+      String(text ?? "")
+        .replace(/^=+/, "")           // artefato de expressão do n8n
+        .replace(/\r\n/g, "\n"),
+    ),
   ).trim();
   // Resposta inteira entre aspas: o cliente vê as aspas e parece citação.
   if (out.length > 1 && /^["“'](.|\n)*["”']$/.test(out)) {

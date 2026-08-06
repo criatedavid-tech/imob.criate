@@ -124,58 +124,103 @@ salesAgentRouter.post("/api/imoveis/n8n/buscar", requireInternalToken, n8nIntern
       return res.json({ ok: false, orientacao: "Não consegui consultar o catálogo agora. Não invente imóveis: diga que vai confirmar e siga a conversa." });
     }
 
+    const regiaoPedida = clean(req.body?.regiao, 120) || null;
     const criteria: SearchCriteria = {
       finalidade: asPurpose(req.body?.finalidade),
-      regiao: clean(req.body?.regiao, 120) || null,
+      regiao: regiaoPedida,
       tipo: asKind(req.body?.tipo),
       quartosMin: req.body?.quartos_min ? Number(String(req.body.quartos_min).replace(/\D/g, "")) || null : null,
       precoMinCents: reaisToCents(req.body?.preco_min),
       precoMaxCents: reaisToCents(req.body?.preco_max),
       diferenciais: asList(req.body?.diferenciais),
-      limite: Number(req.body?.limite) || 3,
+      // Teto alto aqui é só para CONTAR quantas opções existem; o que sai na
+      // resposta é sempre UMA. Ver a explicação abaixo.
+      limite: 8,
     };
 
-    const entries = await getBrokerCatalog(brokerId);
-    if (!entries.length) {
+    // "Já mostrei essa, tem outra?" — o agente manda os ids que já apresentou.
+    const jaMostrados = new Set((asList(req.body?.excluir_ids) || []).map((id) => id.trim()));
+
+    const todos = await getBrokerCatalog(brokerId);
+    const entries = jaMostrados.size ? todos.filter((e) => !jaMostrados.has(e.id)) : todos;
+
+    if (!todos.length) {
       return res.json({
         ok: true,
         catalogo: { total: 0 },
         encontrou: false,
-        imoveis: [],
+        imovel: null,
         orientacao: "Este corretor ainda não tem imóvel disponível cadastrado. Diga isso com honestidade, pergunte o que a pessoa procura e ofereça avisar quando entrar algo. NÃO invente imóvel.",
+      });
+    }
+    if (!entries.length) {
+      return res.json({
+        ok: true,
+        encontrou: false,
+        imovel: null,
+        acabaram_as_opcoes: true,
+        orientacao: "Você já mostrou todos os imóveis que tinha. Diga isso, e pergunte se a pessoa aceita mudar algum critério (região, valor ou tamanho).",
       });
     }
 
     const result = searchCatalog(entries, criteria);
-    const imoveis = result.resultados.map(toAgentProperty);
-    const temIncerteza = result.resultados.some((h) => h.entry.camposIncertos.length > 0);
 
+    // ── Região pedida sem nenhum imóvel ────────────────────────────────────
+    // Este é o caso do "Jardim América". Devolver a lista de imóveis aqui é o
+    // que fazia a IA despejar três opções de bairros diferentes de uma vez.
+    // Em vez disso devolvemos as REGIÕES onde ela realmente tem o que a pessoa
+    // pediu — e ela oferece a mais próxima, uma pergunta só. O backend garante
+    // que a região existe; a IA só escolhe a mais perto, que é o que ela
+    // realmente sabe fazer.
+    const soFaltaRegiao = result.resultados.filter(
+      (h) => h.naoBate.length === 1 && h.naoBate[0] === "região",
+    );
+    if (regiaoPedida && !result.encontrouExatos && soFaltaRegiao.length) {
+      const regioes = [...new Set(soFaltaRegiao.map((h) => h.entry.local).filter(Boolean))];
+      return res.json({
+        ok: true,
+        encontrou: false,
+        nenhum_na_regiao: regiaoPedida,
+        imovel: null,
+        regioes_disponiveis: regioes,
+        orientacao: `Você NÃO tem nada em ${regiaoPedida}. Diga isso primeiro, em uma frase. Depois escolha da lista regioes_disponiveis a região MAIS PRÓXIMA de ${regiaoPedida} (use seu conhecimento da cidade), ofereça só ela e pergunte se atende. NÃO liste várias regiões nem vários imóveis. Se a pessoa aceitar, busque de novo com essa região.`,
+      });
+    }
+
+    const escolhido = result.resultados[0];
+    if (!escolhido) {
+      return res.json({
+        ok: true,
+        encontrou: false,
+        imovel: null,
+        orientacao: "Nada no catálogo se aproxima do que foi pedido. Diga isso com honestidade e pergunte o que a pessoa aceitaria flexibilizar.",
+      });
+    }
+
+    // UMA opção por resposta. A IA não consegue despejar o que não recebeu —
+    // é a diferença entre pedir educação no prompt e tornar o excesso
+    // impossível. Com 5 ou 500 imóveis no catálogo, sai sempre uma.
+    const outras = Math.max(0, result.resultados.length - 1);
     const orientacao: string[] = [];
     if (result.encontrouExatos) {
-      orientacao.push(
-        imoveis.length > 1
-          ? "Apresente APENAS o primeiro imóvel, em mensagem curta. Guarde os outros para o caso de a pessoa querer mais uma opção."
-          : "Apresente este imóvel em mensagem curta.",
-      );
-    } else if (result.gargalos.length) {
-      orientacao.push(
-        `Você NÃO tem nada que atenda: ${result.gargalos.join(", ")}. Diga isso claramente ANTES de sugerir alternativa — não empurre o que não foi pedido.`,
-      );
-      orientacao.push("Se apresentar uma alternativa, avise na mesma frase o que nela não bate com o pedido.");
+      orientacao.push("Apresente ESTE imóvel, em mensagem curta: o que ele tem a ver com o que a pessoa pediu, o valor e o link. Não recite a ficha.");
     } else {
-      orientacao.push("Nenhum imóvel atende a tudo que foi pedido. Diga o que não bate em cada opção antes de apresentá-la.");
+      orientacao.push(`Este imóvel não atende a tudo: ${escolhido.naoBate.join(", ")}. Diga o que não bate na MESMA frase em que apresenta.`);
     }
-    if (temIncerteza) {
+    if (outras > 0) {
+      orientacao.push(`Existem mais ${outras} opção(ões). NÃO fale delas agora — ofereça só se a pessoa recusar esta, chamando a busca de novo com excluir_ids.`);
+    }
+    if (escolhido.entry.camposIncertos.length) {
       orientacao.push("Campos em `dados_incertos` estão faltando ou contraditórios no cadastro: NÃO afirme esses números. Se a pessoa perguntar, diga que confirma com o corretor.");
     }
 
     res.json({
       ok: true,
-      catalogo: summarizeCatalog(entries),
+      catalogo: summarizeCatalog(todos),
       encontrou: result.encontrouExatos,
-      nada_exato: !result.encontrouExatos,
+      imovel: toAgentProperty(escolhido),
+      outras_opcoes: outras,
       o_que_nao_tenho: result.gargalos,
-      imoveis,
       orientacao: orientacao.join(" "),
     });
   } catch (err: any) {
@@ -272,6 +317,15 @@ salesAgentRouter.post("/api/crm/n8n/lead", requireInternalToken, n8nInternalLimi
     } else {
       orientacao.push("Primeira mensagem desta conversa: cumprimente e apresente-se UMA vez. Depois disso, nunca mais.");
     }
+    // Como tratar a pessoa: o nome do perfil do WhatsApp evita a abertura
+    // burocrática ("como posso te chamar?") quando ele já existe.
+    if (knowledge.nome) {
+      orientacao.push(`Chame a pessoa de ${knowledge.nome}. Não pergunte o nome de novo.`);
+    } else if (knowledge.nome_whatsapp) {
+      orientacao.push(`No WhatsApp ela aparece como "${knowledge.nome_whatsapp}" — use esse nome naturalmente, sem perguntar e sem dizer de onde tirou.`);
+    } else {
+      orientacao.push("Você ainda NÃO sabe o nome desta pessoa. Pergunte como pode chamá-la logo na sua primeira resposta.");
+    }
     if (knowledge.hipoteses.length) {
       orientacao.push("O que está em `apenas_suposicoes` NÃO foi confirmado por ela. Confirme antes de usar como verdade.");
     }
@@ -288,6 +342,7 @@ salesAgentRouter.post("/api/crm/n8n/lead", requireInternalToken, n8nInternalLimi
       ja_se_apresentou: jaSeApresentou,
       sei: {
         nome: knowledge.nome,
+        nome_no_whatsapp: knowledge.nome_whatsapp,
         finalidade: knowledge.finalidade,
         regiao: knowledge.regiao,
         tipo: knowledge.tipo,

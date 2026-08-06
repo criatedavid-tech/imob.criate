@@ -31,3 +31,10 @@ create table if not exists public.imf_lead_knowledge (
 
 create index if not exists idx_lead_knowledge_broker_recente
   on public.imf_lead_knowledge (broker_id, ultima_interacao desc);
+
+-- Nome do perfil do WhatsApp (senderName do webhook). É o que faz a IA saber
+-- com quem está falando na PRIMEIRA mensagem, sem precisar perguntar. Fica em
+-- campo separado de propósito: nome de perfil costuma ser apelido ou nome de
+-- empresa, então serve para se dirigir à pessoa, não para o cadastro.
+alter table public.imf_lead_knowledge
+  add column if not exists nome_whatsapp text;
