@@ -94,6 +94,8 @@ test("numero central fica somente no Assistente IA e nunca vira conversa comerci
   assert.match(sql, /DELETE FROM public\.imf_conversation_tickets[\s\S]*customer_phone = '556299982218'/);
 
   const source = await readFile(new URL("../server/services/inboundWebhookQueue.ts", import.meta.url), "utf8");
+  assert.match(source, /OFFICIAL_PAI_PHONE = "556299982218"/);
+  assert.match(source, /phone_normalized[\s\S]*return OFFICIAL_PAI_PHONE/);
   assert.match(source, /customerPhone === platformPaiPhone/);
   assert.match(source, /if \(isPaiInternalConversation\)/);
   const internalBranch = source.slice(
@@ -107,6 +109,7 @@ test("numero central fica somente no Assistente IA e nunca vira conversa comerci
 
   const route = await readFile(new URL("../server/routes/agent.ts", import.meta.url), "utf8");
   assert.match(route, /select\("role, text, media_url, media_type, created_at"\)/);
+  assert.match(route, /media_\(url\|type\)[\s\S]*select\("role, text, created_at"\)/);
   const ui = await readFile(new URL("../src/experience/CommandBar.tsx", import.meta.url), "utf8");
   assert.match(ui, /t\.mediaType === 'image'/);
   assert.match(ui, /t\.mediaType === 'audio'/);

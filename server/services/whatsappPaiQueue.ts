@@ -176,11 +176,18 @@ async function logPaiTurn(
   providerMessageId?: string | null, actionType?: string,
   mediaUrl?: string | null, mediaType?: "image" | "audio" | null,
 ): Promise<void> {
-  const { error } = await supabase.from("imf_agent_log").insert({
+  const values = {
     broker_id: brokerId, user_id: userId, role, text: text.slice(0, 4000),
     action_type: actionType || null, channel: "whatsapp", provider_message_id: providerMessageId || null,
     media_url: mediaUrl || null, media_type: mediaType || null,
-  });
+  };
+  let { error } = await supabase.from("imf_agent_log").insert(values);
+  // Permite publicar o bloqueio do loop antes da migration de mídia. Quando
+  // as colunas ainda não existem, preserva texto/transcrição no schema antigo.
+  if (error && /media_(url|type)/i.test(error.message || "")) {
+    const { media_url: _mediaUrl, media_type: _mediaType, ...legacyValues } = values;
+    ({ error } = await supabase.from("imf_agent_log").insert(legacyValues));
+  }
   if (error && (error as any).code !== "23505") {
     console.warn("[WhatsApp Pai] falha ao logar turno:", error.message);
   }

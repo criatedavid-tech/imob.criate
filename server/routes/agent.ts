@@ -54,13 +54,27 @@ agentRouter.get("/api/agent/history", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.json([]);
 
-    const { data, error } = await supabase
+    const mediaHistory = await supabase
       .from("imf_agent_log")
       .select("role, text, media_url, media_type, created_at")
       .eq("broker_id", brokerId)
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
+    let data: any[] | null = mediaHistory.data;
+    let error: any = mediaHistory.error;
+    // Compatibilidade enquanto a migration de mídia ainda não foi aplicada.
+    if (error && /media_(url|type)/i.test(error.message || "")) {
+      const legacyHistory = await supabase
+        .from("imf_agent_log")
+        .select("role, text, created_at")
+        .eq("broker_id", brokerId)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      data = legacyHistory.data;
+      error = legacyHistory.error;
+    }
     if (error) throw error;
 
     res.json((data || []).reverse().map((t: any) => ({

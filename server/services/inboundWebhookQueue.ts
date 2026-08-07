@@ -50,6 +50,7 @@ const withMediaSlot = createSemaphore(MEDIA_CONCURRENCY);
 let inboxTickRunning = false;
 let outboxTickRunning = false;
 let paiPhoneCache: { value: string; expires: number } | null = null;
+const OFFICIAL_PAI_PHONE = "556299982218";
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const parsed = Number(process.env[name]);
@@ -69,10 +70,10 @@ async function getPlatformPaiPhone(): Promise<string> {
     .maybeSingle();
   if (error) {
     // Compatibilidade durante o intervalo entre o deploy e a migration.
-    if (/phone_normalized/i.test(error.message || "")) return "";
+    if (/phone_normalized/i.test(error.message || "")) return OFFICIAL_PAI_PHONE;
     throw error;
   }
-  const value = normalizePhoneBR(optionalString(data?.phone_normalized));
+  const value = normalizePhoneBR(optionalString(data?.phone_normalized)) || OFFICIAL_PAI_PHONE;
   paiPhoneCache = { value, expires: Date.now() + 60_000 };
   return value;
 }
