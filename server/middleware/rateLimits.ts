@@ -153,3 +153,17 @@ export const aiTranscriptionLimiter = rateLimit({
   store: makeRedisStore('ai-audio', AI_WINDOW_MS),
   skip: skipInDev,
 });
+
+// Vínculo de telefone do WhatsApp Pai — cada chamada de start manda uma
+// mensagem REAL pelo WhatsApp da plataforma; sem limite, um usuário
+// poderia martelar números alheios com códigos de verificação indesejados.
+export const whatsappLinkLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Muitas tentativas de vínculo. Aguarde 15 minutos e tente novamente.' },
+  store: makeRedisStore('whatsapp-link', 15 * 60 * 1000),
+  skip: skipInDev,
+});

@@ -389,6 +389,144 @@ agindo "como" um membro); perfis customizados além dos 6 fixos;
 enforcement no módulo Contatos (catalogado na taxonomia, sem rota gated
 ainda); sistema Corretora (continua só metadado, intocado).
 
+### WhatsApp Pai — Fase 1: permissão granular chega ao agente de IA (2026-08-07)
+
+Pedido: número de WhatsApp central onde qualquer usuário da plataforma
+manda comando em linguagem natural e a IA executa a ação real na conta
+correta, respeitando as mesmas permissões do painel — sem n8n, nativo.
+Investigação prévia (agentes de exploração em paralelo + validação de
+arquitetura) confirmou que `server/services/agent.ts` já é o cérebro
+completo por trás do assistente do painel — `runAgent()`/`executeAction()`
+já são funções puras, sem acoplamento a req/res, prontas pra uma porta de
+entrada nova. Plano completo (7 fases) em
+`.claude/plans/zany-forging-curry.md`.
+
+**Lacuna encontrada**: o motor de permissões granulares da seção acima
+(`hasPermission`) nunca era consultado por `agent.ts`/`routes/agent.ts` —
+um membro sem `carteira:criar` já conseguia cadastrar imóvel só pedindo
+pro assistente de IA do painel. Fechado nesta Fase 1, pré-requisito
+explícito do pedido do WhatsApp Pai ("se não tiver autorização... a IA
+também não pode") e que já vale pro assistente do painel hoje, não só
+pro WhatsApp futuro.
+
+**Implementação**: `AGENT_ACTION_PERMISSION` (`server/services/agent.ts`)
+mapeia as 12 ações mutantes do agente + `query_agenda` pro par
+módulo:ação de `permissions.ts` (`create_property→carteira:criar`,
+`create_lead→negocios:criar`, `send_message`/`broadcast_message`/
+`schedule_followup→conversas:gerenciar`, `end_rental_contract→
+locacao:excluir`, `update_unit→lancamentos:editar`, etc.). Dois pontos de
+checagem: gate soft em `runAgent` (nem propõe a ação sem permissão) e
+gate hard em `executeAction` (nunca executa — cobre inclusive o cenário
+de corrida onde a permissão é revogada entre a proposta e a confirmação
+vinda de `/api/agent/execute`). Titular sempre passa (`hasPermission`
+atalha por `isBrokerOwner`). Teste novo `tests/agentPermissions.test.ts`
+deriva a lista de ações mutantes direto do schema Zod existente
+(`agentActionSchema.options`), evitando uma segunda lista hardcoded que
+pudesse ficar desatualizada.
+
+Verificado ao vivo com conta descartável (titular + 1 membro, servidor
+real, Supabase real, chamada real ao OpenRouter): membro sem grade →
+negado sem propor; aplica perfil "corretor" → proposta+confirmação
+normal; titular sempre passa; revoga → nega na hora; cenário de corrida
+propor→revogar→confirmar → bloqueado pelo gate hard com 400.
+
+### WhatsApp Pai — Fase 2: vínculo de telefone com verificação (2026-08-07)
+
+Continuação da Fase 1 acima. Antes de qualquer inbound do futuro WhatsApp
+central existir (Fase 4), staff precisa provar, dentro do painel já
+autenticado, que um número de WhatsApp é dele — sem isso não há como
+resolver "quem está mandando esse comando" a partir de um telefone.
+
+**Schema** (`supabase/migrations/20260807_whatsapp_pai_staff_links.sql`,
+aditiva): `imf_whatsapp_staff_links`, PK = telefone normalizado (não
+`user_id`) — o caminho quente futuro é "esse telefone bate com quem",
+busca direta O(1); sem `broker_id`, derivado em tempo de leitura via
+`getBrokerId` (já cacheado), evitando um dado derivado que ficaria
+desatualizado se o usuário mudasse de conta.
+
+**Backend**: `server/security/whatsappVerificationCode.ts` (código de 6
+dígitos + hash sha256, espelha `trialVoucherCode.ts` — nunca texto puro
+persistido). `server/services/whatsappStaffLinks.ts` —
+`startPhoneVerification` recusa sobrescrever um número já VERIFICADO por
+outra conta (nunca "rouba" um vínculo confirmado), mas permite reiniciar
+uma verificação ainda pendente de qualquer um (nada foi provado ainda,
+sem risco); `confirmPhoneVerification` expira em 10 min, máx. 5
+tentativas, sempre resolve pra tentativa mais recente do próprio usuário;
+`unlinkPhone` filtra por `user_id` — ninguém desvincula número alheio.
+Rotas `GET/POST/DELETE /api/me/whatsapp-link*` (`requireUser` + rate
+limit novo `whatsappLinkLimiter`, 8/15min por usuário — cada `start`
+dispara uma mensagem REAL). Frontend: card novo em `ConfigArea.tsx`
+(telefone → código → confirmar, lista de vínculos com botão de
+desvincular).
+
+**Achado de infraestrutura durante o teste ao vivo** (pré-existente, não
+introduzido nesta rodada): o envio do código copiava o mesmo padrão que
+a recuperação de senha via WhatsApp já usa (`server/routes/auth.ts`,
+`POST /message/text/:session`) — mas ao vivo esse endpoint devolve 405
+pra qualquer valor, e `server/services/uazapi.ts` já documentava desde
+03/07/2026 que essa hipótese foi "testada e descartada" em favor de
+`POST /send/text` com o token da própria instância no header. Corrigido
+pra reusar `sendUazapiText` diretamente. Separado disso, a variável local
+`UAZAPI_PLATFORM_SESSION` no `.env` do repositório nunca tinha sido
+preenchida de verdade (ficou o placeholder `"COLE_O_NOME_DA_SESSAO_AQUI"`)
+— não necessariamente afeta produção, que usa secrets do Fly. Provisionada
+uma instância UAZAPI temporária pareada com o número pessoal do usuário
+só pra validar o fluxo localmente, com comentário explícito marcando como
+temporário até a Fase 3 trazer o número oficial.
+
+Testado ao vivo: telefone inválido, código errado, código expirado,
+bloqueio após 5 tentativas e confirmação cross-account todos rejeitados
+corretamente via script contra o servidor real; fluxo feliz completo
+(código chega de verdade no WhatsApp, usuário digita, confirma) validado
+pelo próprio usuário direto na tela real do navegador.
+
+### WhatsApp Pai — Fase 3: instância central gerenciada pelo admin (2026-08-07)
+
+Enquanto a Fase 2 prova "esse número é de fulano", a Fase 3 resolve o
+outro lado: qual número CENTRAL recebe os comandos de todo mundo. Pedido
+explícito do usuário durante a implementação — *"quando um corretor
+entrar na plataforma o whatsapp pai já deve estar cadastrado, caso ele se
+desconecte, na conta de super admin deve ter a opção de colocar o
+whatsapp pai pra todos os tenants"* — confirmou o desenho já em curso:
+instância única, compartilhada, gerenciada só pelo admin, sem nenhuma
+ação extra exigida de cada corretor.
+
+**Schema** (`supabase/migrations/20260807b_whatsapp_pai_platform_instance.sql`,
+aditiva): `imf_platform_instances`, linha única `key='pai'` — diferente de
+`imf_brokers`/`imf_broker_members` (1 linha = 1 instância própria por
+conta), o Pai é literalmente UMA instância pra plataforma inteira.
+
+**Backend**: `server/services/provisioning.ts` ganhou `setUazapiWebhookUrl`
+(núcleo puro do POST `/webhook`, extraído de `setUazapiWebhook` pra ser
+reaproveitado com uma URL diferente) e `ensurePlatformInstance`/
+`provisionUazapiInstanceForPlatform` — mesmo padrão de comparar-e-trocar
+já provado em `ensureInstance` (broker/membro), adaptado pra chave de
+texto em vez de UUID. O webhook do Pai aponta pra uma URL FIXA
+`/api/wpp-pai/inbound` (sem `:instanceId` no path — a Fase 4 vai resolver
+quem está mandando por telefone do remetente, não por qual instância
+recebeu; até lá essa URL dá 404, inofensivo). Rotas novas em `admin.ts`:
+`GET /api/admin/whatsapp-pai/status`, `POST .../connect` (QR ou código de
+pareamento, mesma lógica do fluxo de conexão do corretor em `brokers.ts`),
+`POST .../disconnect` — todas atrás de `requireAdmin`.
+
+**Frontend**: aba nova "WhatsApp Pai" no Painel Admin
+(`src/components/AdminWhatsappPai.tsx`, lazy-loaded igual às outras abas
+de `pages/Admin.tsx`), mesmo padrão visual/de polling de
+`WhatsAppConnectCard`, com aviso explícito de que conectar/desconectar
+ali vale pra **todos os tenants de uma vez**.
+
+A instância temporária de teste da Fase 2 (já pareada com o número
+pessoal do usuário) foi inserida direto na tabela nova em vez de deixar
+`ensurePlatformInstance` provisionar do zero — evita perder o pareamento
+já feito. Trocar pelo número oficial mais tarde é só usar a mesma tela
+(desconectar → conectar com o número novo), sem mudar nenhum código.
+
+Testado ao vivo: conta sem `is_admin` recebe 403 no status; conta admin
+vê `provisioned=true, connected=true` com dados reais (perfil, número) da
+instância já conectada; UI checada de ponta a ponta com uma sessão de
+admin descartável injetada no navegador — a aba renderiza exatamente o
+status ao vivo.
+
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
 A régua de reativação automática de lead (`/app` → Assistente IA,

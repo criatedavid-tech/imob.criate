@@ -1,5 +1,175 @@
 # Estado do projeto
 
+## WhatsApp Pai — Fase 1: permissão granular no agente de IA (2026-08-07)
+
+Pedido do usuário: número de WhatsApp central onde qualquer usuário da
+plataforma manda comando em linguagem natural e a IA executa a ação real
+na conta correta — "controle remoto inteligente da plataforma", nativo,
+sem n8n. Investigação prévia (3 agentes Explore em paralelo + 1 agente
+Plan validando a arquitetura contra os arquivos-fonte reais) mapeou toda
+a stack de mensageria/webhooks, o cérebro de IA já existente
+(`server/services/agent.ts`) e as APIs de domínio. Plano completo de 7
+fases em `.claude/plans/zany-forging-curry.md`. Achado central: o app já
+tem um assistente de IA nativo completo (hoje só exposto no chat do
+painel) cujo `runAgent()`/`executeAction()` já são funções puras sem
+acoplamento a req/res — prontas pra receber uma porta de entrada nova
+(WhatsApp) sem reconstruir nada.
+
+**Fase 1, concluída**: achado durante a investigação — o motor de
+permissões granulares por membro (`hasPermission`/`imf_member_permissions`,
+construído mais cedo nesta mesma sessão, ver seção abaixo) nunca era
+consultado em `agent.ts`/`routes/agent.ts`. Um membro sem `carteira:criar`
+já conseguia, hoje, cadastrar um imóvel só pedindo pro assistente de IA do
+painel — a grade de permissões não protegia essa porta. O pedido do
+WhatsApp Pai é explícito sobre isso ("se não tiver autorização... a IA
+também não pode"), então fechar essa lacuna virou pré-requisito, não
+opcional — e beneficia o assistente do painel hoje mesmo, não só o
+WhatsApp futuro, já que os dois vão compartilhar o mesmo `executeAction`.
+
+Implementado em `server/services/agent.ts`: `AGENT_ACTION_PERMISSION`,
+mapa das 12 ações mutantes + `query_agenda` pro par módulo:ação
+correspondente em `permissions.ts` (ex. `create_property→carteira:criar`,
+`send_message/broadcast_message/schedule_followup→conversas:gerenciar`).
+Dois pontos de checagem: gate **soft** em `runAgent` (nem propõe a ação se
+o membro não pode — evita "vou fazer X, confirma?" pra só negar na
+confirmação) e gate **hard** em `executeAction` (nunca executa, mesmo que
+a proposta já tenha sido recebida antes de uma permissão ser revogada —
+fecha o cenário de corrida propor→revogar→confirmar). Titular sempre passa
+(`hasPermission` atalha por `isBrokerOwner`), zero mudança de comportamento
+pra quem já é dono da conta.
+
+Teste novo `tests/agentPermissions.test.ts` (registrado em
+`package.json`): garante que toda ação mutante tem entrada em
+`AGENT_ACTION_PERMISSION` (deriva a lista direto do schema Zod existente,
+não duplica em texto solto) e que todo módulo/ação mapeado existe de
+verdade em `permissions.ts`.
+
+**Testado ao vivo** (conta descartável, titular + 1 membro, servidor real
++ Supabase real + chamada real ao OpenRouter): membro sem grade nenhuma
+pede "cadastra um imóvel" → negado sem propor nada. Titular aplica perfil
+"corretor" (tem `carteira:criar`) → fluxo normal de proposta + confirmação.
+Titular sempre passa, testado em paralelo. Revoga `carteira:criar` →
+volta a negar na hora (cache de 60s não atrapalha, invalidado no PUT).
+Cenário de corrida (propõe com permissão, revoga, tenta confirmar a ação
+já recebida) → gate hard em `executeAction` bloqueia com 400. `npx tsc
+--noEmit` e `npx knip` limpos nos arquivos tocados (2 erros de TS
+pré-existentes em `LocacaoArea.tsx`/`LocacaoPanels.tsx`, de outra sessão,
+não relacionados). `npm test`: 143/144 no momento (1 falha pré-existente
+sem relação, flagueada separadamente, task `task_77366054` — depois da
+Fase 2 a suíte já estava 144/144, possivelmente aquela task já corrigiu).
+
+## WhatsApp Pai — Fase 2: vínculo de telefone com verificação (2026-08-07)
+
+Continuação da Fase 1 acima. Objetivo: staff prova, dentro do painel já
+autenticado, que um número de WhatsApp é dele — pré-requisito pra
+qualquer inbound futuro (Fase 4) resolver quem está mandando comando.
+
+**Schema** (`supabase/migrations/20260807_whatsapp_pai_staff_links.sql`,
+aditiva, aplicada pelo usuário): `imf_whatsapp_staff_links` — PK é o
+telefone normalizado (não `user_id`), porque o caminho quente futuro é
+"esse telefone bate com quem", busca direta O(1); sem `broker_id`,
+derivado em tempo de leitura via `getBrokerId` (já cacheado).
+
+**Backend**: `server/security/whatsappVerificationCode.ts` (código de 6
+dígitos + hash sha256, espelha `trialVoucherCode.ts` — nunca o código em
+texto puro é persistido). `server/services/whatsappStaffLinks.ts` —
+`startPhoneVerification` (recusa se o número já está VERIFICADO por
+OUTRA conta, nunca sobrescreve um vínculo confirmado; permite reiniciar
+um vínculo ainda não confirmado, sem risco), `confirmPhoneVerification`
+(expira em 10 min, máx. 5 tentativas, sempre confirma a tentativa mais
+recente do próprio usuário), `listVerifiedPhones`/`unlinkPhone` (filtra
+por `user_id` — ninguém desvincula o número de outra pessoa). Rotas
+`GET/POST/DELETE /api/me/whatsapp-link*` (`requireUser`, rate limit novo
+`whatsappLinkLimiter`: 8/15min por usuário). Frontend: card novo em
+`ConfigArea.tsx` (telefone → código → confirmar, lista de vínculos com
+botão de desvincular).
+
+**Achado real de infraestrutura durante o teste ao vivo** (não um bug
+introduzido agora, pré-existente): o envio original copiava o mesmo
+padrão que `auth.ts`'s recuperação de senha via WhatsApp já usa
+(`POST /message/text/:session`) — mas testando ao vivo, esse endpoint
+devolve 405 pra QUALQUER valor, e o próprio `uazapi.ts` já documentava
+desde 03/07 que essa hipótese foi "testada e descartada". Corrigido pra
+reusar `sendUazapiText` (`server/services/uazapi.ts`), o `/send/text`
+comprovado ao vivo e usado em todo o resto do app. Separado disso,
+`UAZAPI_PLATFORM_SESSION` no `.env` LOCAL nunca tinha sido preenchido de
+verdade — ficou o texto de placeholder `"COLE_O_NOME_DA_SESSAO_AQUI"`
+(não necessariamente afeta produção, que usa secrets do Fly, não o
+`.env` do repo). Provisionada uma instância UAZAPI temporária
+("WhatsApp Pai - TESTE TEMPORARIO"), pareada por código com o número
+pessoal do usuário só pra validar o fluxo local — token real salvo no
+`.env`, com comentário explícito marcando como temporário até a Fase 3
+trazer o número oficial.
+
+**Testado ao vivo**: telefone inválido rejeitado; código errado rejeitado
+(incrementa `otp_attempts`); código expirado rejeitado; bloqueio após 5
+tentativas mesmo com código novo válido; outro usuário sem verificação
+pendente própria não confirma nada — tudo via script contra o servidor
+real. O fluxo feliz completo (enviar → receber no WhatsApp de verdade →
+digitar → confirmar) foi validado pelo próprio usuário direto na tela
+real do navegador (`+55 6299982218` apareceu verificado com sucesso).
+`npx tsc --noEmit`, `npx knip` e `npm test` limpos (144/144).
+
+**Pendente**: autorização de commit/push.
+
+## WhatsApp Pai — Fase 3: instância central gerenciada pelo admin (2026-08-07)
+
+Continuação das Fases 1+2. Enquanto o vínculo de telefone (Fase 2) prova
+"esse número é de fulano", a Fase 3 resolve o outro lado: qual número
+CENTRAL recebe os comandos de todo mundo. Pedido explícito do usuário no
+meio da implementação: *"quando um corretor entrar na plataforma o
+whatsapp pai já deve estar cadastrado, caso ele se desconecte, na conta
+de super admin deve ter a opção de colocar o whatsapp pai pra todos os
+tenants"* — confirma exatamente o desenho já em andamento (instância
+única, compartilhada, gerenciada só pelo admin).
+
+**Schema** (`supabase/migrations/20260807b_whatsapp_pai_platform_instance.sql`,
+aditiva): `imf_platform_instances`, linha única `key='pai'`. Diferente de
+`imf_brokers`/`imf_broker_members` (1 linha = 1 instância própria), aqui é
+literalmente UMA instância pra plataforma inteira — daí tabela própria em
+vez de reaproveitar a de broker.
+
+**Backend** (`server/services/provisioning.ts`): `setUazapiWebhookUrl`
+extraído como núcleo puro (POST `/webhook` sem montar URL), reaproveitado
+tanto por `setUazapiWebhook` (broker/membro, URL com `:instanceId`) quanto
+pela nova `provisionUazapiInstanceForPlatform` (URL fixa
+`/api/wpp-pai/inbound`, sem identificador — resolvido por telefone do
+remetente na Fase 4, não por instância). `ensurePlatformInstance`
+replica o mesmo padrão de comparar-e-trocar já provado em `ensureInstance`
+(broker/membro), adaptado pra chave de texto (`key='pai'`) em vez de UUID.
+Rotas novas em `admin.ts`: `GET /api/admin/whatsapp-pai/status`, `POST
+.../connect` (QR ou código de pareamento, mesma lógica de
+`brokers.ts`'s conexão de corretor), `POST .../disconnect` — todas
+`requireAdmin`.
+
+**Frontend**: nova aba "WhatsApp Pai" no Painel Admin
+(`src/components/AdminWhatsappPai.tsx`, lazy-loaded como as outras abas),
+mesmo padrão visual/de polling de `WhatsAppConnectCard` (QR ↔ código de
+pareamento, com refresh automático), mas com aviso explícito na tela de
+que conectar/desconectar aqui **afeta todos os tenants de uma vez**.
+
+**Reaproveitamento em vez de reprovisionar do zero**: a instância
+temporária de teste da Fase 2 (já pareada com o número pessoal do
+usuário) foi inserida direto na tabela nova via script, em vez de deixar
+`ensurePlatformInstance` criar uma instância nova do zero — evitaria
+perder o pareamento já feito e forçar escanear QR de novo à toa. Trocar
+pelo número oficial mais tarde é só usar a mesma tela (desconectar →
+conectar com o número novo), zero mudança de código.
+
+Testado ao vivo: usuário sem `is_admin` recebe 403 no status; conta admin
+vê `provisioned=true, connected=true` com dados reais (perfil "Hunter",
+número) da instância já conectada; UI validada de ponta a ponta com uma
+sessão de admin descartável injetada no navegador — a aba renderiza
+exatamente o status ao vivo, texto e tudo. `npx tsc --noEmit`, `npx knip`
+e `npm test` limpos (144/144).
+
+**Pendente**: autorização de commit/push. Próximas fases (4-6): pipeline
+de inbound (fila durável + confirmação persistida — é aqui que
+`/api/wpp-pai/inbound` passa a existir de verdade), mídia (voz + fotos de
+imóvel antes do texto), novas consultas (leads hoje, relatório do mês).
+Fase 7 (documentos) fora de escopo por falta de conceito de anexo em
+qualquer objeto de domínio hoje.
+
 ## Permissões granulares por membro da equipe (2026-08-06)
 
 Pedido do usuário: titular de conta Imobiliária/Incorporadora controla,

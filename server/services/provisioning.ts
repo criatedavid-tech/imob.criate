@@ -17,6 +17,37 @@ import { fetchWithTimeout } from "../lib/http";
 // (`${PUBLIC_APP_URL}/api/wpp-shim/inbound/:instanceId`). É idempotente e
 // chamado tanto na criação quanto a cada conexão para corrigir qualquer URL
 // divergente. Best-effort: nunca lança, para não derrubar quem chama.
+// Núcleo puro (sem guarda de PUBLIC_APP_URL, sem montar a URL) — extraído
+// pra ser reaproveitado tanto pelo webhook de broker/membro (URL com
+// :instanceId, guardada abaixo) quanto pelo do Pai (Fase 3, URL fixa
+// /api/wpp-pai/inbound, sem identificador — é uma instância só, não uma
+// por conta).
+async function setUazapiWebhookUrl(instanceToken: string, url: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
+      method: 'POST',
+      headers: { token: instanceToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        enabled: true,
+        // Só o que o pipeline realmente consome. Assinar messages_update
+        // (recibos de entrega/leitura), contacts, groups e history triplicava o
+        // volume de webhooks — todos eram enfileirados e descartados depois.
+        // `connection` fica porque é raro e diz quando a instância cai.
+        events: ['messages', 'connection'],
+        excludeMessages: [],
+        addUrlEvents: false,
+        addUrlTypesMessages: false,
+      }),
+    });
+    console.log(`[Provisioning] webhook ${res.ok ? 'configurado ✓' : 'FALHOU'} → ${url}`);
+    return res.ok;
+  } catch (e: any) {
+    console.warn('[Provisioning] setUazapiWebhookUrl exceção:', e.message);
+    return false;
+  }
+}
+
 export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
   // Guarda de produção: se PUBLIC_APP_URL não for uma URL pública (https e não
   // localhost), NÃO configura o webhook — apontar a UAZAPI para
@@ -30,29 +61,7 @@ export async function setUazapiWebhook(instanceToken: string, instanceId: string
     return false;
   }
   const inboundUrl = `${PUBLIC_APP_URL}/api/wpp-shim/inbound/${instanceId}`;
-  try {
-    const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
-      method: 'POST',
-      headers: { token: instanceToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: inboundUrl,
-        enabled: true,
-        // Só o que o pipeline realmente consome. Assinar messages_update
-        // (recibos de entrega/leitura), contacts, groups e history triplicava o
-        // volume de webhooks — todos eram enfileirados e descartados depois.
-        // `connection` fica porque é raro e diz quando a instância cai.
-        events: ['messages', 'connection'],
-        excludeMessages: [],
-        addUrlEvents: false,
-        addUrlTypesMessages: false,
-      }),
-    });
-    console.log(`[Provisioning] webhook nativo ${res.ok ? 'configurado ✓' : 'FALHOU'} → ${inboundUrl}`);
-    return res.ok;
-  } catch (e: any) {
-    console.warn('[Provisioning] setUazapiWebhook exceção:', e.message);
-    return false;
-  }
+  return setUazapiWebhookUrl(instanceToken, inboundUrl);
 }
 
 // Lê a URL de webhook atualmente configurada na instância, pra o guardião
@@ -76,7 +85,10 @@ export async function getUazapiWebhookUrl(instanceToken: string): Promise<string
   }
 }
 
-async function createUazapiInstance(channelName: string): Promise<{ instanceId: string; instanceToken: string }> {
+// webhookUrl explícita é só pro Pai (Fase 3) — instância única, sem
+// :instanceId no path. Sem ela, cai no comportamento de sempre
+// (setUazapiWebhook monta a URL padrão de broker/membro).
+async function createUazapiInstance(channelName: string, webhookUrl?: string): Promise<{ instanceId: string; instanceToken: string }> {
   const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
     method: 'POST',
     headers: { admintoken: UAZAPI_TOKEN, 'Content-Type': 'application/json' },
@@ -91,7 +103,8 @@ async function createUazapiInstance(channelName: string): Promise<{ instanceId: 
   }
 
   // Webhook direto para o backend canônico da V2.
-  await setUazapiWebhook(instanceToken, instanceId);
+  if (webhookUrl) await setUazapiWebhookUrl(instanceToken, webhookUrl);
+  else await setUazapiWebhook(instanceToken, instanceId);
 
   return { instanceId, instanceToken };
 }
@@ -231,6 +244,89 @@ export function ensureBrokerInstance(broker: { id: string; name?: string }) {
 
 export function ensureMemberInstance(member: { id: string; name?: string }) {
   return ensureInstance('imf_broker_members', member, (m) => provisionUazapiInstanceForMember(m as { id: string; name: string }));
+}
+
+// ─── Instância central do WhatsApp Pai (Fase 3) ───────────────────────────
+// Diferente de broker/membro (1 linha = 1 instância própria), o Pai é UMA
+// instância só, compartilhada por TODA a plataforma — daí a tabela própria
+// imf_platform_instances (linha única, key='pai') em vez de reaproveitar
+// imf_brokers. O webhook aponta pra uma URL FIXA (/api/wpp-pai/inbound,
+// sem :instanceId — resolvido por telefone do remetente na Fase 4, não por
+// instância) em vez da URL padrão de broker/membro.
+async function provisionUazapiInstanceForPlatform(key: string, label: string): Promise<void> {
+  if (!UAZAPI_HOST || !UAZAPI_TOKEN) {
+    console.warn('[Provisioning] UAZAPI_HOST/UAZAPI_TOKEN ausente — não é possível provisionar instância de plataforma.');
+    await supabase.from('imf_platform_instances').update({
+      provisioning_status: 'failed',
+      provisioning_error: 'UAZAPI não configurada no servidor.',
+    }).eq('key', key);
+    return;
+  }
+
+  try {
+    const webhookUrl = `${PUBLIC_APP_URL}/api/wpp-pai/inbound`;
+    const { instanceId, instanceToken } = await createUazapiInstance(label, webhookUrl);
+
+    await supabase.from('imf_platform_instances').update({
+      uazapi_instance_id: instanceId,
+      uazapi_instance_token: instanceToken,
+      provisioning_status: 'completed',
+      provisioning_completed_at: new Date().toISOString(),
+      provisioning_error: null,
+    }).eq('key', key);
+
+    console.log(`[Provisioning] Instância de plataforma criada (${key}): ${instanceId}`);
+  } catch (err: any) {
+    console.error('[Provisioning] Falha no provisionamento de plataforma:', err.message);
+    await supabase.from('imf_platform_instances').update({
+      provisioning_status: 'failed',
+      provisioning_error: err.message,
+    }).eq('key', key);
+  }
+}
+
+// Mesmo padrão de comparar-e-trocar de ensureInstance() acima, adaptado pra
+// chave de texto (key='pai') em vez de UUID — não reaproveita ensureInstance
+// direto porque essa é restrita às tabelas de broker/membro (chave `id`) e
+// só existe UMA linha aqui, criada sob demanda na primeira chamada.
+export async function ensurePlatformInstance(key: string, label: string): Promise<{ token: string | null; status: string | null; error: string | null }> {
+  const { data: current } = await supabase.from('imf_platform_instances')
+    .select('uazapi_instance_token, provisioning_status, provisioning_error')
+    .eq('key', key)
+    .maybeSingle();
+
+  if (current?.uazapi_instance_token) {
+    return { token: current.uazapi_instance_token, status: current.provisioning_status || null, error: current.provisioning_error || null };
+  }
+  if (current?.provisioning_status && PROVISIONING_BLOCKING_STATES.includes(current.provisioning_status)) {
+    return { token: null, status: current.provisioning_status, error: current.provisioning_error || null };
+  }
+
+  if (!current) {
+    // Primeira chamada de sempre: a linha ainda não existe, a trava abaixo
+    // precisa de algo pra comparar-e-trocar contra.
+    await supabase.from('imf_platform_instances').upsert({ key, provisioning_status: null }, { onConflict: 'key', ignoreDuplicates: true });
+  }
+
+  let lockQuery = supabase.from('imf_platform_instances').update({ provisioning_status: 'processing' }).eq('key', key);
+  lockQuery = current?.provisioning_status
+    ? lockQuery.eq('provisioning_status', current.provisioning_status)
+    : lockQuery.is('provisioning_status', null);
+  const { data: locked } = await lockQuery.select('key');
+
+  if (locked?.length) {
+    await provisionUazapiInstanceForPlatform(key, label);
+  }
+
+  const { data: fresh } = await supabase.from('imf_platform_instances')
+    .select('uazapi_instance_token, provisioning_status, provisioning_error')
+    .eq('key', key)
+    .maybeSingle();
+  return {
+    token: fresh?.uazapi_instance_token || null,
+    status: fresh?.provisioning_status || null,
+    error: fresh?.provisioning_error || null,
+  };
 }
 
 // Encerra a sessão do WhatsApp conectada na instância (POST /instance/disconnect

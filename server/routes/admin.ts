@@ -2,6 +2,8 @@ import express from "express";
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { invalidateAccountAccessCache, requireAdmin } from "../middleware/auth";
+import { fetchWithTimeout } from "../lib/http";
+import { normalizePhoneBRFull } from "../lib/crypto";
 import {
   UAZAPI_HOST, UAZAPI_TOKEN, PLAN_INCLUDED_TICKETS, PLAN_OVERAGE_PRICE, PUBLIC_APP_URL,
   MEMBER_WHATSAPP_SLOT_MAX,
@@ -12,7 +14,7 @@ import {
   trialVoucherCodeHint,
 } from "../security/trialVoucherCode";
 import { cancelAsaasSubscription } from "../services/billing";
-import { provisionUazapiInstanceNative, ensureBrokerInstance } from "../services/provisioning";
+import { provisionUazapiInstanceNative, ensureBrokerInstance, ensurePlatformInstance, disconnectUazapiInstance } from "../services/provisioning";
 import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases } from "../services/systemHealth";
 import { purgeResolvedQueueRows } from "../services/maintenance";
 import { runWebhookKeeperTick } from "../services/webhookKeeper";
@@ -619,6 +621,87 @@ adminRouter.post("/api/admin/health/actions/:action", async (req, res) => {
     }
   } catch (err: any) {
     console.error(`Erro POST /api/admin/health/actions/${req.params.action}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// WHATSAPP PAI — instância central (Fase 3)
+// ─────────────────────────────────────────────────────────────────────────
+// Diferente do WhatsApp de um corretor (uma instância por conta, cada um
+// conecta a sua), o Pai é UMA instância só, compartilhada por TODA a
+// plataforma — todo corretor que já vinculou o próprio número (Config →
+// WhatsApp Pai) passa a ser reconhecido assim que ela está conectada,
+// sem precisar fazer nada de novo. Só o super admin gerencia essa conexão.
+const WHATSAPP_PAI_KEY = "pai";
+const WHATSAPP_PAI_LABEL = "WhatsApp Pai (central)";
+
+adminRouter.get("/api/admin/whatsapp-pai/status", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const { token, status: provisioningStatus, error: provisioningError } = await ensurePlatformInstance(WHATSAPP_PAI_KEY, WHATSAPP_PAI_LABEL);
+    if (!token) {
+      return res.json({ provisioned: false, connected: false, loggedIn: false, provisioningStatus, provisioningError });
+    }
+
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/status`, { headers: { token } });
+    if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
+    const data = await r.json();
+
+    res.json({
+      provisioned: true,
+      connected: !!data?.status?.connected,
+      loggedIn: !!data?.status?.loggedIn,
+      profileName: data?.instance?.profileName || null,
+      owner: data?.instance?.owner || null,
+    });
+  } catch (err: any) {
+    console.error("Erro GET /api/admin/whatsapp-pai/status:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post("/api/admin/whatsapp-pai/connect", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const { token, status: provisioningStatus, error: provisioningError } = await ensurePlatformInstance(WHATSAPP_PAI_KEY, WHATSAPP_PAI_LABEL);
+    if (!token) {
+      return res.status(400).json({ error: provisioningError || "Instância ainda sendo preparada.", provisioningStatus });
+    }
+
+    // phone opcional: com ele, a UAZAPI gera código de pareamento em vez de
+    // QR — mesma regra de brokers.ts (número COM o 9º dígito).
+    const phone = req.body?.phone ? normalizePhoneBRFull(String(req.body.phone)) : undefined;
+    const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify(phone ? { phone } : {}),
+    });
+    if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
+    const data = await r.json();
+
+    res.json({
+      connected: !!data?.connected,
+      qrcode: data?.instance?.qrcode || null,
+      paircode: data?.instance?.paircode || null,
+    });
+  } catch (err: any) {
+    console.error("Erro POST /api/admin/whatsapp-pai/connect:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post("/api/admin/whatsapp-pai/disconnect", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const { data: instance } = await supabase.from("imf_platform_instances").select("uazapi_instance_token").eq("key", WHATSAPP_PAI_KEY).maybeSingle();
+    if (!instance?.uazapi_instance_token) {
+      return res.status(400).json({ error: "Nenhuma instância provisionada pra desconectar." });
+    }
+    await disconnectUazapiInstance(instance.uazapi_instance_token);
+    res.json({ disconnected: true });
+  } catch (err: any) {
+    console.error("Erro POST /api/admin/whatsapp-pai/disconnect:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -12,6 +12,7 @@ import Copyright from '../components/Copyright';
 // Painel pesado e usado só quando há incidente — carregado sob demanda.
 const AdminHealth = lazy(() => import('../components/AdminHealth'));
 const AdminTrialVouchers = lazy(() => import('../components/AdminTrialVouchers'));
+const AdminWhatsappPai = lazy(() => import('../components/AdminWhatsappPai'));
 
 interface Broker {
   id: string;
@@ -112,7 +113,7 @@ export default function Admin() {
   const [capabilitySelection, setCapabilitySelection] = useState<AccountCapability[]>([]);
   const [savingCapabilities, setSavingCapabilities] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
-  const [view, setView] = useState<'contas' | 'vouchers' | 'saude'>('contas');
+  const [view, setView] = useState<'contas' | 'vouchers' | 'saude' | 'whatsapp-pai'>('contas');
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
   const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
   const detailRequestIdRef = useRef(0);
@@ -441,7 +442,7 @@ export default function Admin() {
       <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-8">
         {/* Contas, concessões de experimentação e saúde operacional. */}
         <div className="flex gap-1 p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] w-fit mb-6">
-          {([['contas', 'Contas'], ['vouchers', 'Vouchers'], ['saude', 'Saúde do sistema']] as const).map(([key, label]) => (
+          {([['contas', 'Contas'], ['vouchers', 'Vouchers'], ['saude', 'Saúde do sistema'], ['whatsapp-pai', 'WhatsApp Pai']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setView(key)}
@@ -461,6 +462,10 @@ export default function Admin() {
         ) : view === 'saude' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
             <AdminHealth />
+          </Suspense>
+        ) : view === 'whatsapp-pai' ? (
+          <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
+            <AdminWhatsappPai />
           </Suspense>
         ) : loading ? (
           <div className="flex justify-center py-20">

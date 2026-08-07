@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw, Landmark, Trash2, Users, Minus, Plus } from 'lucide-react';
+import { Loader2, User, Phone, MapPin, Check, CreditCard, FileText, Receipt, LogOut, Smartphone, Wifi, WifiOff, RefreshCw, Landmark, Trash2, Users, Minus, Plus, Bot, X } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { digitsOnly, normalizePhoneBR, stripDDI } from '../lib/phone';
@@ -184,6 +184,9 @@ export function ConfigArea() {
 
       {/* WhatsApp */}
       <WhatsAppConnectCard />
+
+      {/* WhatsApp Pai — vínculo do número pessoal pra comandar a plataforma por lá (Fase 2, ainda sem número central conectado) */}
+      <WhatsappPaiLinkCard fieldCls={fieldCls} />
 
       {/* Integração de cobrança dos clientes fica fora do núcleo operacional. */}
       {CLIENT_FINANCIAL_OPERATIONS_ENABLED && me && me.account_type !== 'corretor' && <AsaasKeyCard fieldCls={fieldCls} />}
@@ -690,6 +693,144 @@ function TeamWhatsappSlotsCard() {
               {saved ? 'Salvo' : 'Salvar'}
             </button>
           </div>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+// Vínculo de telefone do WhatsApp Pai (Fase 2 do plano) — o usuário prova
+// aqui, já logado, que um número é dele. O número central ("Pai") em si
+// ainda não existe (Fase 3); por enquanto isso só cadastra o vínculo pra
+// quando o inbound (Fase 4) existir, resolver quem está mandando comando.
+function WhatsappPaiLinkCard({ fieldCls }: { fieldCls: string }) {
+  const [phones, setPhones] = useState<string[] | null>(null);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const r = await fetch('/api/me/whatsapp-link', { headers: authService.getAuthHeaders() });
+      const data = await r.json();
+      if (r.ok) setPhones(data.phones || []);
+    } catch { /* silencioso — card secundário, não trava a tela de config */ }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const sendCode = async () => {
+    setError('');
+    const phone = normalizePhoneBR(phoneInput);
+    if (!phone) { setError('Digite um número válido.'); return; }
+    setSending(true);
+    try {
+      const r = await fetch('/api/me/whatsapp-link/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Falha ao enviar o código.');
+      setCodeSentTo(phoneInput);
+      setCodeInput('');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const confirmCode = async () => {
+    setError('');
+    if (!/^\d{6}$/.test(codeInput.trim())) { setError('Digite o código de 6 dígitos.'); return; }
+    setConfirming(true);
+    try {
+      const r = await fetch('/api/me/whatsapp-link/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ code: codeInput.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Código incorreto.');
+      setCodeSentTo(null);
+      setPhoneInput('');
+      setCodeInput('');
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const unlink = async (phone: string) => {
+    if (!confirm('Desvincular este número? Ele para de ser reconhecido pela plataforma.')) return;
+    try {
+      const r = await fetch(`/api/me/whatsapp-link/${phone}`, { method: 'DELETE', headers: authService.getAuthHeaders() });
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b?.error || 'Falha ao desvincular.'); }
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <GlassCard className="!p-6 mb-5">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Bot className="w-4 h-4 text-[var(--text-low)]" />
+        <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">WhatsApp Pai (comando por voz/texto)</h3>
+      </div>
+      <p className="text-[12px] text-[var(--text-low)] mb-4">
+        Vincule seu número pessoal pra futuramente comandar a plataforma direto pelo WhatsApp — cadastrar imóvel, consultar leads, agendar visita, tudo por lá. Confirme aqui que o número é seu; o número central ainda está sendo preparado.
+      </p>
+
+      {phones === null && <div className="flex justify-center py-3"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
+
+      {phones && phones.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {phones.map((phone) => (
+            <div key={phone} className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300">
+                <Check className="w-4 h-4" /> +55 {stripDDI(phone)}
+              </span>
+              <button onClick={() => unlink(phone)} className="text-[var(--text-low)] hover:text-red-300 transition-colors" title="Desvincular">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="text-[12px] text-red-300 mb-3">{error}</p>}
+
+      {!codeSentTo ? (
+        <div className="flex items-stretch gap-2">
+          <span className="flex items-center px-3 rounded-xl text-sm font-semibold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline-strong)]">+55</span>
+          <input value={phoneInput} onChange={(e) => setPhoneInput(digitsOnly(e.target.value))} inputMode="numeric" maxLength={11} placeholder="62994381279" className={`${fieldCls} flex-1 min-w-0`} />
+          <button onClick={sendCode} disabled={sending || !phoneInput}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 whitespace-nowrap">
+            {sending ? <Loader2 size={15} className="animate-spin" /> : null}
+            Enviar código
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[12px] text-[var(--text-low)]">Enviamos um código de 6 dígitos pelo WhatsApp pro número +55 {codeSentTo}. Digite abaixo:</p>
+          <div className="flex items-stretch gap-2">
+            <input value={codeInput} onChange={(e) => setCodeInput(digitsOnly(e.target.value, 6))} inputMode="numeric" maxLength={6} placeholder="000000" className={`${fieldCls} flex-1 min-w-0 tracking-[0.3em] text-center font-mono`} />
+            <button onClick={confirmCode} disabled={confirming || codeInput.length !== 6}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors disabled:opacity-50 whitespace-nowrap">
+              {confirming ? <Loader2 size={15} className="animate-spin" /> : null}
+              Confirmar
+            </button>
+          </div>
+          <button onClick={() => { setCodeSentTo(null); setError(''); }} className="text-[12px] text-[var(--text-low)] hover:text-[var(--text-mid)] transition-colors">
+            Usar outro número
+          </button>
         </div>
       )}
     </GlassCard>

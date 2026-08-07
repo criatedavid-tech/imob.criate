@@ -38,6 +38,7 @@ import { agentRouter } from "./server/routes/agent";
 import { relatoriosRouter } from "./server/routes/relatorios";
 import { vitrineRouter } from "./server/routes/vitrine";
 import { contactsRouter } from "./server/routes/contacts";
+import { whatsappPaiSettingsRouter } from "./server/routes/whatsappPaiSettings";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -175,6 +176,7 @@ async function startServer() {
   app.use(relatoriosRouter);
   app.use(vitrineRouter);
   app.use(contactsRouter);
+  app.use(whatsappPaiSettingsRouter);
 
   // Jobs recorrentes não rodam na API. O process group singleton `scheduler`
   // executa scheduler-worker.ts; assim o grupo `web` pode ser escalado sem

@@ -1,6 +1,100 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Permissões granulares por membro da equipe — pendente: autorização de commit
+## WhatsApp Pai — camada de comando da plataforma — Fases 1+2+3 concluídas, pendente: autorização de commit
+
+Pedido do usuário: número de WhatsApp central onde qualquer usuário
+(titular ou membro, entre potencialmente centenas de contas) manda
+comando em linguagem natural (texto/áudio/foto/documento) e a IA executa
+a ação real na conta correta, respeitando as mesmas permissões do painel.
+Nativo, sem n8n. Plano completo em `.claude/plans/zany-forging-curry.md`
+(7 fases). Detalhe completo em PROGRESS.md/DOCUMENTACAO.md.
+
+**Fase 1 (fechar a lacuna de permissão no agente) — concluída e testada
+ao vivo**: achado da investigação — `hasPermission`/`imf_member_permissions`
+(sistema construído mais cedo nesta mesma sessão) nunca era consultado em
+`server/services/agent.ts`/`server/routes/agent.ts`; um membro sem
+`carteira:criar` já conseguia cadastrar imóvel via assistente de IA do
+painel. Corrigido com `AGENT_ACTION_PERMISSION` (mapa ação→módulo:ação
+novo em `agent.ts`) + gate soft em `runAgent` (nem propõe a ação sem
+permissão) + gate hard em `executeAction` (nunca executa, mesmo que a
+proposta já tenha sido recebida antes de uma revogação — cenário de
+corrida). Beneficia o assistente do painel E o futuro WhatsApp Pai, já
+que os dois vão compartilhar o mesmo `executeAction`.
+
+Testado ao vivo com conta descartável (titular + 1 membro): membro sem
+grade nenhuma é negado sem propor nada; titular concede perfil "corretor"
+→ fluxo normal de proposta+confirmação; titular nunca é bloqueado;
+revogar `carteira:criar` volta a negar imediatamente (sem esperar o cache
+de 60s, invalidado no PUT); cenário de corrida propor→revogar→confirmar é
+bloqueado pelo gate hard mesmo com a ação já em mãos. `tsc`/`knip`/`npm
+test` limpos (144 testes, 1 falha pré-existente sem relação — flagueada
+separadamente, ver `tests/scheduledCardEditing.test.ts`).
+
+**Fase 2 (vínculo de telefone com verificação) — concluída e testada ao
+vivo, com um achado real de infraestrutura no caminho**: nova tabela
+`imf_whatsapp_staff_links` (PK = telefone normalizado), `server/security/
+whatsappVerificationCode.ts` (código de 6 dígitos + hash sha256, nunca
+texto puro salvo), `server/services/whatsappStaffLinks.ts` (start/confirm/
+list/unlink), rotas `GET/POST/DELETE /api/me/whatsapp-link*`
+(`requireUser` + rate limit novo `whatsappLinkLimiter`), card novo em
+`ConfigArea.tsx` (telefone → código → confirmar, com lista de vínculos e
+botão de desvincular).
+
+Achado ao vivo: o envio original copiava o padrão de `auth.ts`'s
+recuperação de senha (`POST /message/text/:session`), mas esse endpoint
+já está documentado como morto desde 03/07 em `uazapi.ts` (405 pra
+qualquer valor no path) — corrigido pra reusar `sendUazapiText` (o mesmo
+`/send/text` já comprovado ao vivo pro resto do app). Além disso,
+`UAZAPI_PLATFORM_SESSION` no `.env` local nunca tinha sido preenchido de
+verdade (ficou o placeholder `"COLE_O_NOME_DA_SESSAO_AQUI"`) — provisionada
+uma instância UAZAPI temporária pareada com o número pessoal do usuário
+só pra validar o fluxo local (token real salvo no `.env`, comentário
+deixado explicando que é temporário até a Fase 3 trazer o número oficial).
+
+Testado ao vivo: telefone inválido rejeitado, código errado rejeitado
+(incrementa tentativa), código expirado rejeitado, bloqueio após 5
+tentativas, outro usuário não confirma verificação pendente alheia — tudo
+via script contra o servidor real. O fluxo feliz completo (enviar → 
+receber no WhatsApp de verdade → digitar → confirmar) foi validado pelo
+próprio usuário direto na tela real do navegador. `tsc`/`knip`/`npm test`
+limpos (144/144).
+
+**Fase 3 (instância central do Pai, gerenciada pelo admin) — concluída e
+testada ao vivo**: tabela `imf_platform_instances` (linha única, `key=
+'pai'`, sem amarrar a nenhum broker — diferente de corretor/membro, o Pai
+é UMA instância compartilhada por TODA a plataforma). `provisioning.ts`
+ganhou `ensurePlatformInstance`/`provisionUazapiInstanceForPlatform`
+(mesmo padrão de comparar-e-trocar já provado pra broker/membro, adaptado
+pra chave de texto) + `setUazapiWebhookUrl` extraído como núcleo
+reaproveitável (o Pai aponta pra uma URL fixa `/api/wpp-pai/inbound`, sem
+`:instanceId` — a Fase 4 ainda não existe, então por enquanto essa URL dá
+404, harmless). Rotas novas `GET/POST /api/admin/whatsapp-pai/status|
+connect` + `POST .../disconnect`, todas `requireAdmin`. Aba nova "WhatsApp
+Pai" no Painel Admin (`AdminWhatsappPai.tsx`, mesmo padrão de QR/código de
+pareamento que `WhatsAppConnectCard` já usa pro corretor), com aviso
+explícito de que conectar/desconectar vale pra **todos os tenants de uma
+vez** — pedido específico do usuário nesta sessão ("quando um corretor
+entrar na plataforma o whatsapp pai já deve estar cadastrado... super
+admin deve ter a opção de colocar o whatsapp pai pra todos os tenants").
+
+A instância temporária de teste da Fase 2 (pareada com o número pessoal
+do usuário) foi migrada pra dentro dessa tabela nova em vez de
+reprovisionar do zero — evita perder o pareamento já feito; troca pelo
+número oficial mais tarde é só desconectar/conectar de novo na mesma
+tela, sem mudar código nenhum.
+
+Testado ao vivo: usuário não-admin recebe 403 no status; admin vê
+`provisioned=true, connected=true` com dados reais (perfil, número) da
+instância já pareada; UI checada de ponta a ponta injetando uma sessão
+real de admin descartável no navegador — a aba renderiza exatamente o
+status ao vivo. `tsc`/`knip`/`npm test` limpos (144/144).
+
+**Próximas fases (4-6)**: pipeline de inbound (fila durável + confirmação
+persistida) — é aqui que a URL `/api/wpp-pai/inbound` passa a existir de
+verdade —, mídia (voz + fotos de imóvel), novas consultas (leads
+hoje/relatório do mês). Fase 7 (documentos) fora de escopo por enquanto.
+
+## Permissões granulares por membro da equipe — CONCLUÍDO, deployado (commit `200ed5b8e`, 2026-08-07)
 
 Pedido do usuário: titular controla, por membro, o que cada um acessa —
 grade módulo × ação (Visualizar/Criar/Editar/Excluir/Gerenciar), 6 perfis
@@ -48,7 +142,7 @@ PROGRESS.md/DOCUMENTACAO.md.
   revogável numa rodada futura); perfis customizados; enforcement em
   Contatos; sistema Corretora.
 
-## Fix: exclusão de conta (admin) falhava com FK ambígua — pendente: autorização de commit
+## Fix: exclusão de conta (admin) falhava com FK ambígua — CONCLUÍDO, deployado (commit `2fdfb8ab8`, 2026-08-07)
 
 Usuário tentou excluir uma conta no painel admin e bateu em `update or
 delete on table "imf_brokers" violates foreign key constraint

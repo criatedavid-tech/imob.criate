@@ -10,6 +10,7 @@ import { resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
 import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
 import type { AccountCapability } from "./accountCapabilities";
+import { hasPermission, type PermissionModule, type PermissionAction } from "./permissions";
 import {
   AGENT_CONTEXT_SECURITY_RULES,
   buildUntrustedContextMessage,
@@ -549,9 +550,47 @@ async function sendNotification(brokerId: string, phone: string, message: string
   }
 }
 
+// Mapa ação→permissão granular (server/services/permissions.ts) — até aqui
+// o agente só respeitava ownership (isBrokerOwner) e capability de CONTA
+// (rentals/developments/finance/team), nunca a grade por-membro. Um membro
+// com perfil "Atendente" (sem carteira:criar) conseguia mandar "cadastra
+// esse imóvel" pelo assistente e funcionava normalmente — achado nesta
+// sessão, não relatado pelo usuário. O titular sempre passa (hasPermission
+// atalha por isBrokerOwner antes de checar a grade), então nada muda pra
+// quem já é dono da conta. Ações sem entrada aqui (answer/navigate) nunca
+// mutam dado, não precisam de gate.
+export const AGENT_ACTION_PERMISSION: Partial<Record<AgentAction["type"], { module: PermissionModule; action: PermissionAction }>> = {
+  query_agenda: { module: "agenda", action: "visualizar" },
+  create_lead: { module: "negocios", action: "criar" },
+  create_visit: { module: "agenda", action: "criar" },
+  update_visit: { module: "agenda", action: "editar" },
+  cancel_visit: { module: "agenda", action: "excluir" },
+  create_reminder: { module: "agenda", action: "criar" },
+  send_message: { module: "conversas", action: "gerenciar" },
+  broadcast_message: { module: "conversas", action: "gerenciar" },
+  schedule_followup: { module: "conversas", action: "gerenciar" },
+  create_property: { module: "carteira", action: "criar" },
+  update_property: { module: "carteira", action: "editar" },
+  end_rental_contract: { module: "locacao", action: "excluir" },
+  update_unit: { module: "lancamentos", action: "editar" },
+};
+
+async function isActionAllowed(userId: string, brokerId: string, actionType: AgentAction["type"]): Promise<boolean> {
+  const permission = AGENT_ACTION_PERMISSION[actionType];
+  if (!permission) return true;
+  return hasPermission(userId, brokerId, permission.module, permission.action);
+}
+
 // Executa uma ação de mutação, revalidando que o imóvel é do corretor (e,
 // pra membro que não é dono da conta, que o imóvel é dele mesmo).
 export async function executeAction(brokerId: string, userId: string, action: AgentAction): Promise<{ summary: string; navigate?: string }> {
+  // Gate hard: revalidado aqui (não só em runAgent) porque é o único ponto
+  // por onde toda mutação passa de verdade — inclusive a confirmação vinda
+  // de /api/agent/execute, onde a permissão pode ter mudado entre a proposta
+  // e a confirmação.
+  if (!(await isActionAllowed(userId, brokerId, action.type))) {
+    throw new Error("Você não tem permissão pra fazer essa ação no ImobiFlow.");
+  }
   const owner = await isBrokerOwner(userId, brokerId);
 
   if (action.type === "create_lead") {
@@ -1038,8 +1077,18 @@ export async function runAgent(opts: {
     return { reply, navigate: area };
   }
   if (action.type === "query_agenda") {
+    if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+      return { reply: "Você não tem permissão para consultar a agenda no ImobiFlow." };
+    }
     const realReply = await queryAgendaRange(opts.brokerId, opts.userId, action.date_from, action.date_to);
     return { reply: realReply };
+  }
+
+  // Gate soft: nem propõe a ação se o membro não pode executá-la — evita a
+  // UX ruim de mostrar "vou fazer X, confirma?" pra só negar na hora do
+  // /api/agent/execute (que tem o gate hard de verdade, ver executeAction).
+  if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+    return { reply: "Você não tem permissão para fazer essa ação no ImobiFlow. Fale com quem administra sua equipe se precisar de acesso." };
   }
 
   // Defesa contra prompt injection: nenhuma mutação é executada apenas pela
