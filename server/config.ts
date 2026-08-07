@@ -40,7 +40,6 @@ export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
 export const TERMS_VERSION = '2026-07-28';
 export const UAZAPI_HOST             = process.env.UAZAPI_HOST             || "https://criate.uazapi.com";
 export const UAZAPI_TOKEN            = process.env.UAZAPI_TOKEN            || "";
-export const UAZAPI_PLATFORM_SESSION = process.env.UAZAPI_PLATFORM_SESSION || "";
 export const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
   || "https://212hook.criate.online/webhook/edc20beb-c9c1-46c3-bbef-8fa81538cbb3";
 export const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "49.90");

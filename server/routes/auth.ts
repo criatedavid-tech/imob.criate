@@ -11,13 +11,12 @@ import { isValidPublicResetToken } from "../security/publicResetToken";
 import { hashTrialVoucherCode, isValidTrialVoucherCode } from "../security/trialVoucherCode";
 import {
   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_APP_URL,
-  UAZAPI_HOST, UAZAPI_TOKEN, UAZAPI_PLATFORM_SESSION,
 } from "../config";
-import { fetchWithTimeout } from "../lib/http";
 import { provisionUazapiInstanceForMember } from "../services/provisioning";
 import { compensateInviteAcceptanceFailure } from "../services/inviteAcceptance";
 import { executePasswordReset, PasswordResetTokenError } from "../services/passwordReset";
 import { BASIC_ACCESS_DEFAULTS } from "../services/permissions";
+import { getUazapiPlatformToken, sendUazapiText } from "../services/uazapi";
 
 export const authRouter = express.Router();
 
@@ -282,7 +281,8 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
     const resetLink = `${PUBLIC_APP_URL}/reset-password?token=${token}`;
     const phone = normalizePhoneBR(broker.phone);
 
-    if (UAZAPI_HOST && UAZAPI_TOKEN && UAZAPI_PLATFORM_SESSION && phone) {
+    const platformToken = await getUazapiPlatformToken().catch(() => null);
+    if (platformToken && phone) {
       const wppText =
         `🏠 *ImobiFlow*\n\n` +
         `Você solicitou a recuperação de senha.\n\n` +
@@ -291,11 +291,8 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
         `${resetLink}\n\n` +
         `_Se não foi você, ignore esta mensagem._`;
 
-      await fetchWithTimeout(`${UAZAPI_HOST}/message/text/${UAZAPI_PLATFORM_SESSION}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
-        body: JSON.stringify({ number: phone, text: wppText })
-      }).catch(e => console.warn('[WPP] Envio de reset falhou:', e?.message));
+      const sent = await sendUazapiText(platformToken, phone, wppText);
+      if (!sent.ok) console.warn(`[WPP] Envio de reset falhou: status ${sent.status}`);
     } else {
       console.warn('[WPP] Recuperação de senha não enviada: sessão da plataforma ou telefone indisponível.');
     }

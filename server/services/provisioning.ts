@@ -22,14 +22,40 @@ import { fetchWithTimeout } from "../lib/http";
 // :instanceId, guardada abaixo) quanto pelo do Pai (Fase 3, URL fixa
 // /api/wpp-pai/inbound, sem identificador — é uma instância só, não uma
 // por conta).
-async function setUazapiWebhookUrl(instanceToken: string, url: string): Promise<boolean> {
+const EXPECTED_WEBHOOK_EVENTS = ['connection', 'messages'] as const;
+
+export interface UazapiWebhookState {
+  url: string | null;
+  enabled: boolean | null;
+  events: string[] | null;
+}
+
+export function parseUazapiWebhookState(data: any): UazapiWebhookState {
+  const candidate = Array.isArray(data)
+    ? data[0]
+    : data?.webhook ?? data?.value ?? data;
+  const url = typeof candidate?.url === 'string' && candidate.url ? candidate.url : null;
+  const enabled = typeof candidate?.enabled === 'boolean' ? candidate.enabled : null;
+  const events = Array.isArray(candidate?.events)
+    ? candidate.events.filter((event: unknown): event is string => typeof event === 'string').sort()
+    : null;
+  return { url, enabled, events };
+}
+
+export function isUazapiWebhookReady(state: UazapiWebhookState, expectedUrl: string): boolean {
+  return state.url === expectedUrl
+    && state.enabled === true
+    && JSON.stringify(state.events) === JSON.stringify([...EXPECTED_WEBHOOK_EVENTS]);
+}
+
+async function setUazapiWebhookUrl(instanceToken: string, url: string, enabled = true): Promise<boolean> {
   try {
     const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
       method: 'POST',
       headers: { token: instanceToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
-        enabled: true,
+        enabled,
         // Só o que o pipeline realmente consome. Assinar messages_update
         // (recibos de entrega/leitura), contacts, groups e history triplicava o
         // volume de webhooks — todos eram enfileirados e descartados depois.
@@ -60,7 +86,8 @@ export function platformWebhookUrl(publicAppUrl: string = PUBLIC_APP_URL): strin
   const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const privateIpv4 = /^(?:10\.|127\.|169\.254\.|192\.168\.|0\.0\.0\.0$)/.test(host)
     || /^172\.(?:1[6-9]|2\d|3[01])\./.test(host);
-  const privateIpv6 = host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+  const privateIpv6 = host === '::1'
+    || (host.includes(':') && (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')));
   if (host === 'localhost' || host.endsWith('.localhost') || privateIpv4 || privateIpv6) return null;
 
   return `${parsed.origin}/api/wpp-pai/inbound`;
@@ -71,6 +98,7 @@ export function platformWebhookUrl(publicAppUrl: string = PUBLIC_APP_URL): strin
 export async function setUazapiPlatformWebhook(
   instanceToken: string,
   publicAppUrl: string = PUBLIC_APP_URL,
+  enabled = true,
 ): Promise<boolean> {
   const webhookUrl = platformWebhookUrl(publicAppUrl);
   if (!webhookUrl) {
@@ -80,7 +108,7 @@ export async function setUazapiPlatformWebhook(
     );
     return false;
   }
-  return setUazapiWebhookUrl(instanceToken, webhookUrl);
+  return setUazapiWebhookUrl(instanceToken, webhookUrl, enabled);
 }
 
 export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
@@ -103,7 +131,7 @@ export async function setUazapiWebhook(instanceToken: string, instanceId: string
 // detectar desvio sem re-setar à toa. Defensivo: a UAZAPI pode variar o shape
 // da resposta (ou nem suportar GET); nesses casos devolve null e o guardião
 // re-afirma por garantia numa cadência mais espaçada.
-export async function getUazapiWebhookUrl(instanceToken: string): Promise<string | null> {
+export async function getUazapiWebhookState(instanceToken: string): Promise<UazapiWebhookState | null> {
   try {
     const res = await fetchWithTimeout(`${UAZAPI_HOST}/webhook`, {
       method: 'GET',
@@ -112,9 +140,7 @@ export async function getUazapiWebhookUrl(instanceToken: string): Promise<string
     if (!res.ok) return null;
     const data: any = await res.json().catch(() => null);
     if (!data) return null;
-    const candidates = [data?.url, data?.webhook?.url, data?.value?.url, Array.isArray(data) ? data[0]?.url : null];
-    const url = candidates.find((u: unknown) => typeof u === 'string' && u);
-    return typeof url === 'string' ? url : null;
+    return parseUazapiWebhookState(data);
   } catch {
     return null;
   }
@@ -123,7 +149,11 @@ export async function getUazapiWebhookUrl(instanceToken: string): Promise<string
 // webhookUrl explícita é só pro Pai (Fase 3) — instância única, sem
 // :instanceId no path. Sem ela, cai no comportamento de sempre
 // (setUazapiWebhook monta a URL padrão de broker/membro).
-async function createUazapiInstance(channelName: string, webhookUrl?: string): Promise<{ instanceId: string; instanceToken: string }> {
+async function createUazapiInstance(
+  channelName: string,
+  webhookUrl?: string,
+  webhookEnabled = true,
+): Promise<{ instanceId: string; instanceToken: string }> {
   const res = await fetchWithTimeout(`${UAZAPI_HOST}/instance/create`, {
     method: 'POST',
     headers: { admintoken: UAZAPI_TOKEN, 'Content-Type': 'application/json' },
@@ -138,7 +168,7 @@ async function createUazapiInstance(channelName: string, webhookUrl?: string): P
   }
 
   // Webhook direto para o backend canônico da V2.
-  if (webhookUrl) await setUazapiWebhookUrl(instanceToken, webhookUrl);
+  if (webhookUrl) await setUazapiWebhookUrl(instanceToken, webhookUrl, webhookEnabled);
   else await setUazapiWebhook(instanceToken, instanceId);
 
   return { instanceId, instanceToken };
@@ -303,7 +333,7 @@ async function provisionUazapiInstanceForPlatform(key: string, label: string): P
     if (!webhookUrl) {
       throw new Error('PUBLIC_APP_URL precisa ser uma origem HTTPS pública para provisionar o WhatsApp Pai.');
     }
-    const { instanceId, instanceToken } = await createUazapiInstance(label, webhookUrl);
+    const { instanceId, instanceToken } = await createUazapiInstance(label, webhookUrl, false);
 
     await supabase.from('imf_platform_instances').update({
       uazapi_instance_id: instanceId,

@@ -14,7 +14,16 @@ import {
   trialVoucherCodeHint,
 } from "../security/trialVoucherCode";
 import { cancelAsaasSubscription } from "../services/billing";
-import { provisionUazapiInstanceNative, ensureBrokerInstance, ensurePlatformInstance, disconnectUazapiInstance, setUazapiPlatformWebhook } from "../services/provisioning";
+import {
+  disconnectUazapiInstance,
+  ensureBrokerInstance,
+  ensurePlatformInstance,
+  getUazapiWebhookState,
+  isUazapiWebhookReady,
+  platformWebhookUrl,
+  provisionUazapiInstanceNative,
+  setUazapiPlatformWebhook,
+} from "../services/provisioning";
 import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases } from "../services/systemHealth";
 import { purgeResolvedQueueRows } from "../services/maintenance";
 import { runWebhookKeeperTick } from "../services/webhookKeeper";
@@ -647,6 +656,13 @@ adminRouter.get("/api/admin/whatsapp-pai/status", async (req, res) => {
     const r = await fetchWithTimeout(`${UAZAPI_HOST}/instance/status`, { headers: { token } });
     if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
     const data = await r.json();
+    const { data: platform, error: platformError } = await supabase.from("imf_platform_instances")
+      .select("webhook_enabled")
+      .eq("key", WHATSAPP_PAI_KEY)
+      .maybeSingle();
+    if (platformError) throw platformError;
+    const webhookState = await getUazapiWebhookState(token);
+    const expectedWebhookUrl = platformWebhookUrl(PUBLIC_APP_URL);
 
     res.json({
       provisioned: true,
@@ -654,6 +670,13 @@ adminRouter.get("/api/admin/whatsapp-pai/status", async (req, res) => {
       loggedIn: !!data?.status?.loggedIn,
       profileName: data?.instance?.profileName || null,
       owner: data?.instance?.owner || null,
+      webhookDesired: platform?.webhook_enabled === true,
+      webhookEnabled: webhookState?.enabled ?? null,
+      webhookUrl: webhookState?.url ?? null,
+      webhookEvents: webhookState?.events ?? null,
+      webhookReady: !!expectedWebhookUrl
+        && !!webhookState
+        && isUazapiWebhookReady(webhookState, expectedWebhookUrl),
     });
   } catch (err: any) {
     console.error("Erro GET /api/admin/whatsapp-pai/status:", err);
@@ -669,13 +692,6 @@ adminRouter.post("/api/admin/whatsapp-pai/connect", async (req, res) => {
       return res.status(400).json({ error: provisioningError || "Instância ainda sendo preparada.", provisioningStatus });
     }
 
-    // A sessão pode continuar conectada mesmo depois de a UAZAPI perder ou
-    // desviar o webhook. Reafirma a rota central em toda tentativa de conexão.
-    const webhookReady = await setUazapiPlatformWebhook(token);
-    if (!webhookReady) {
-      return res.status(503).json({ error: "Webhook público do WhatsApp Pai não pôde ser configurado." });
-    }
-
     // phone opcional: com ele, a UAZAPI gera código de pareamento em vez de
     // QR — mesma regra de brokers.ts (número COM o 9º dígito).
     const phone = req.body?.phone ? normalizePhoneBRFull(String(req.body.phone)) : undefined;
@@ -687,6 +703,18 @@ adminRouter.post("/api/admin/whatsapp-pai/connect", async (req, res) => {
     if (!r.ok) throw new Error(`UAZAPI respondeu ${r.status}`);
     const data = await r.json();
 
+    const { data: platform, error: platformError } = await supabase.from("imf_platform_instances")
+      .select("webhook_enabled")
+      .eq("key", WHATSAPP_PAI_KEY)
+      .maybeSingle();
+    if (platformError) throw platformError;
+    if (platform?.webhook_enabled) {
+      const webhookReady = await setUazapiPlatformWebhook(token);
+      if (!webhookReady) {
+        return res.status(503).json({ error: "WhatsApp conectado, mas o webhook público não pôde ser reafirmado." });
+      }
+    }
+
     res.json({
       connected: !!data?.connected,
       qrcode: data?.instance?.qrcode || null,
@@ -694,6 +722,62 @@ adminRouter.post("/api/admin/whatsapp-pai/connect", async (req, res) => {
     });
   } catch (err: any) {
     console.error("Erro POST /api/admin/whatsapp-pai/connect:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post("/api/admin/whatsapp-pai/webhook/enable", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const { token, error } = await ensurePlatformInstance(WHATSAPP_PAI_KEY, WHATSAPP_PAI_LABEL);
+    if (!token) return res.status(400).json({ error: error || "Instância ainda sendo preparada." });
+
+    const statusResponse = await fetchWithTimeout(`${UAZAPI_HOST}/instance/status`, { headers: { token } });
+    const statusData = await statusResponse.json().catch(() => null);
+    if (!statusResponse.ok || !statusData?.status?.connected || !statusData?.status?.loggedIn) {
+      return res.status(409).json({ error: "Conecte e autentique o número antes de ativar o recebimento." });
+    }
+    if (!await setUazapiPlatformWebhook(token, PUBLIC_APP_URL, true)) {
+      return res.status(503).json({ error: "Não foi possível ativar o webhook no provedor." });
+    }
+    const { error: updateError } = await supabase.from("imf_platform_instances")
+      .update({ webhook_enabled: true })
+      .eq("key", WHATSAPP_PAI_KEY);
+    if (updateError) {
+      await setUazapiPlatformWebhook(token, PUBLIC_APP_URL, false);
+      throw updateError;
+    }
+    res.json({ webhookEnabled: true });
+  } catch (err: any) {
+    console.error("Erro POST /api/admin/whatsapp-pai/webhook/enable:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.post("/api/admin/whatsapp-pai/webhook/disable", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    const { data: instance, error: instanceError } = await supabase.from("imf_platform_instances")
+      .select("uazapi_instance_token")
+      .eq("key", WHATSAPP_PAI_KEY)
+      .maybeSingle();
+    if (instanceError) throw instanceError;
+    if (!instance?.uazapi_instance_token) {
+      return res.status(400).json({ error: "Nenhuma instância provisionada." });
+    }
+    const { error: updateError } = await supabase.from("imf_platform_instances")
+      .update({ webhook_enabled: false })
+      .eq("key", WHATSAPP_PAI_KEY);
+    if (updateError) throw updateError;
+    if (!await setUazapiPlatformWebhook(instance.uazapi_instance_token, PUBLIC_APP_URL, false)) {
+      await supabase.from("imf_platform_instances")
+        .update({ webhook_enabled: true })
+        .eq("key", WHATSAPP_PAI_KEY);
+      return res.status(503).json({ error: "Não foi possível desativar o webhook no provedor." });
+    }
+    res.json({ webhookEnabled: false });
+  } catch (err: any) {
+    console.error("Erro POST /api/admin/whatsapp-pai/webhook/disable:", err);
     res.status(500).json({ error: err.message });
   }
 });

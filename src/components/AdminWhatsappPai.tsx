@@ -10,6 +10,9 @@ interface Status {
   owner?: string | null;
   provisioningStatus?: string | null;
   provisioningError?: string | null;
+  webhookDesired?: boolean;
+  webhookEnabled?: boolean | null;
+  webhookReady?: boolean;
 }
 
 const glassCard = 'rounded-2xl backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_4px_16px_rgba(0,0,0,0.2)]';
@@ -27,6 +30,7 @@ export default function AdminWhatsappPai() {
   const [showPairInput, setShowPairInput] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [changingWebhook, setChangingWebhook] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -72,7 +76,7 @@ export default function AdminWhatsappPai() {
     }
   };
 
-  const requestQrcode = async () => {
+  const requestQrcode = async (): Promise<boolean> => {
     try {
       const phone = activePhoneRef.current;
       const r = await fetch('/api/admin/whatsapp-pai/connect', {
@@ -84,11 +88,13 @@ export default function AdminWhatsappPai() {
       if (!r.ok) throw new Error(data.error || 'Falha ao gerar QR code');
       if (data.paircode) { setPaircode(data.paircode); setQrcode(null); }
       else if (data.qrcode) { setQrcode(data.qrcode); setPaircode(null); }
-      if (data.connected) { setConnecting(false); stopPolling(); loadStatus(); }
+      if (data.connected) { setConnecting(false); stopPolling(); loadStatus(); return false; }
+      return true;
     } catch (e: any) {
       setError(e.message);
       setConnecting(false);
       stopPolling();
+      return false;
     }
   };
 
@@ -98,29 +104,53 @@ export default function AdminWhatsappPai() {
     setQrcode(null);
     setPaircode(null);
     activePhoneRef.current = phone || '';
-    await requestQrcode();
+    const shouldPoll = await requestQrcode();
+    if (!shouldPoll) return;
     stopPolling();
     pollRef.current = setInterval(loadStatus, 3000);
     qrRefreshRef.current = setInterval(requestQrcode, 20000);
   };
 
   const disconnectSilently = async () => {
+    const r = await fetch('/api/admin/whatsapp-pai/disconnect', { method: 'POST', headers: authService.getAuthHeaders() });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Falha ao preparar a troca do número');
+  };
+
+  const changeWebhook = async (enable: boolean) => {
+    if (enable && !confirm('Ativar o recebimento do WhatsApp Pai para toda a plataforma? Mensagens reais começarão a ser processadas.')) return;
+    setChangingWebhook(true);
+    setError(null);
     try {
-      await fetch('/api/admin/whatsapp-pai/disconnect', { method: 'POST', headers: authService.getAuthHeaders() });
-    } catch { /* segue o fluxo mesmo se falhar — o connect seguinte revela o erro real, se houver */ }
+      const r = await fetch(`/api/admin/whatsapp-pai/webhook/${enable ? 'enable' : 'disable'}`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Falha ao ${enable ? 'ativar' : 'desativar'} o recebimento`);
+      await loadStatus();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setChangingWebhook(false);
+    }
   };
 
   const requestPaircode = async () => {
     const digits = pairPhone.replace(/\D/g, '');
     if (!digits) { setError('Informe o número com DDD.'); return; }
     setShowPairInput(false);
-    await disconnectSilently();
-    await startConnecting(digits);
+    try {
+      await disconnectSilently();
+      await startConnecting(digits);
+    } catch (e: any) { setError(e.message); }
   };
 
   const switchToQrcode = async () => {
-    await disconnectSilently();
-    await startConnecting();
+    try {
+      await disconnectSilently();
+      await startConnecting();
+    } catch (e: any) { setError(e.message); }
   };
 
   useEffect(() => {
@@ -164,12 +194,27 @@ export default function AdminWhatsappPai() {
         {status?.provisioned && status.connected && !connecting && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-emerald-300 text-[13px] font-semibold">
-              <Wifi className="w-4 h-4" /> Conectado — valendo para toda a plataforma
+              <Wifi className="w-4 h-4" /> Número conectado
             </div>
             <div className="text-[12px] text-[var(--text-low)] space-y-1">
               {status.profileName && <div>Perfil: <span className="text-[var(--text-mid)]">{status.profileName}</span></div>}
               {status.owner && <div>Número: <span className="text-[var(--text-mid)] font-mono">{status.owner}</span></div>}
             </div>
+            {status.webhookReady ? (
+              <div className="text-[12px] text-emerald-300">Recebimento ativo para toda a plataforma.</div>
+            ) : status.webhookDesired ? (
+              <div className="text-[12px] text-red-300">Recebimento solicitado, mas o webhook não está saudável. Desative e ative novamente.</div>
+            ) : (
+              <div className="text-[12px] text-amber-300">Recebimento desativado. O número permanece conectado, sem processar mensagens.</div>
+            )}
+            <button
+              onClick={() => changeWebhook(!status.webhookDesired)}
+              disabled={changingWebhook}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold text-[var(--text-hi)] bg-[var(--control-fill-hover)] border border-[var(--glass-border)] hover:bg-[var(--control-fill)] transition-colors disabled:opacity-50"
+            >
+              {changingWebhook && <Loader2 className="animate-spin w-3.5 h-3.5" />}
+              {status.webhookDesired ? 'Desativar recebimento' : 'Ativar recebimento'}
+            </button>
             <button
               onClick={disconnectInstance}
               disabled={disconnecting}
@@ -186,6 +231,15 @@ export default function AdminWhatsappPai() {
             <div className="flex items-center gap-2 text-amber-300 text-[13px] font-semibold">
               <WifiOff className="w-4 h-4" /> Desconectado — nenhum corretor consegue comandar por WhatsApp agora
             </div>
+            {status.webhookDesired && (
+              <button
+                onClick={() => changeWebhook(false)}
+                disabled={changingWebhook}
+                className="text-[12px] text-red-300 hover:text-red-200 disabled:opacity-50"
+              >
+                Desativar recebimento automático antes de reconectar
+              </button>
+            )}
             <button
               onClick={() => startConnecting()}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-[var(--text-hi)] bg-blue-600/80 border border-blue-400/30 hover:bg-blue-600 transition-colors"

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { supabase } from "../supabase";
 import { normalizePhoneBR } from "../lib/crypto";
 import { getBrokerId } from "../middleware/auth";
-import { sendUazapiText, downloadUazapiMedia } from "./uazapi";
+import { sendUazapiText, downloadUazapiMedia, getUazapiPlatformToken } from "./uazapi";
 import { resolveAccountCapabilities } from "./accountCapabilities";
 import { runAgent, executeAction, type AgentTurn, type AgentAction } from "./agent";
 import { parseConfirmedAgentAction } from "../security/agentGuardrails";
@@ -104,15 +104,16 @@ async function markPaiCompleted(id: string): Promise<void> {
 let platformTokenCache: { value: string | null; expires: number } | null = null;
 async function getPlatformInstanceToken(): Promise<string | null> {
   if (platformTokenCache && platformTokenCache.expires > Date.now()) return platformTokenCache.value;
-  const { data } = await supabase.from("imf_platform_instances").select("uazapi_instance_token").eq("key", "pai").maybeSingle();
-  const value = data?.uazapi_instance_token || null;
+  const value = await getUazapiPlatformToken();
   platformTokenCache = { value, expires: Date.now() + 30_000 };
   return value;
 }
 
 async function sendPaiReply(instanceToken: string, phone: string, text: string): Promise<void> {
   const sent = await sendUazapiText(instanceToken, phone, text);
-  if (!sent.ok) console.warn(`[WhatsApp Pai] falha ao responder ${phone}: status ${sent.status}`);
+  if (!sent.ok) {
+    throw new Error(`Falha temporaria ao responder pelo WhatsApp (status ${sent.status}).`);
+  }
 }
 
 async function resolveSenderIdentity(phone: string): Promise<{ userId: string; brokerId: string } | null> {
@@ -136,7 +137,9 @@ async function logPaiTurn(
     broker_id: brokerId, user_id: userId, role, text: text.slice(0, 4000),
     action_type: actionType || null, channel: "whatsapp", provider_message_id: providerMessageId || null,
   });
-  if (error) console.warn("[WhatsApp Pai] falha ao logar turno:", error.message);
+  if (error && (error as any).code !== "23505") {
+    console.warn("[WhatsApp Pai] falha ao logar turno:", error.message);
+  }
 }
 
 // Classificação determinística — nunca pergunta ao modelo se uma resposta
@@ -163,34 +166,135 @@ function classifyReply(text: string): "confirm" | "cancel" | "other" {
   return "other";
 }
 
-async function handlePendingAction(
-  pending: { action: unknown; broker_id: string },
-  decision: "confirm" | "cancel",
-  brokerId: string, userId: string, senderPhone: string, platformToken: string,
-): Promise<void> {
-  await supabase.from("imf_whatsapp_pending_actions").delete().eq("user_id", userId);
+interface PaiPendingAction {
+  action: unknown;
+  broker_id: string;
+  status: "pending" | "executing" | "executed" | "cancelled" | "expired";
+  expires_at: string;
+  execution_message_id?: string | null;
+  execution_summary?: string | null;
+}
 
-  if (decision === "cancel") {
-    await sendPaiReply(platformToken, senderPhone, "Combinado, cancelei essa ação.");
-    await logPaiTurn(brokerId, userId, "ai", "(cancelado)");
+async function deleteHandledPendingAction(userId: string, executionMessageId: string): Promise<void> {
+  const { error } = await supabase
+    .from("imf_whatsapp_pending_actions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("execution_message_id", executionMessageId);
+  if (error) throw error;
+}
+
+async function handlePendingAction(
+  pending: PaiPendingAction,
+  decision: "confirm" | "cancel",
+  brokerId: string,
+  userId: string,
+  senderPhone: string,
+  platformToken: string,
+  executionMessageId: string,
+): Promise<void> {
+  // Nunca reaproveita em um tenant uma ação proposta quando o usuário ainda
+  // pertencia a outro tenant.
+  if (pending.broker_id !== brokerId) {
+    const replyText = "Essa ação foi criada em outra conta e foi descartada por segurança. Faça o pedido novamente.";
+    const { error } = await supabase.from("imf_whatsapp_pending_actions").delete().eq("user_id", userId);
+    if (error) throw error;
+    await sendPaiReply(platformToken, senderPhone, replyText);
+    await logPaiTurn(brokerId, userId, "ai", replyText);
     return;
   }
 
+  // A mutação terminou e somente a entrega da resposta falhou: reapresenta o
+  // resumo persistido sem executar a ação outra vez.
+  if (
+    (pending.status === "executed" || pending.status === "cancelled")
+    && pending.execution_message_id
+    && pending.execution_summary
+  ) {
+    await sendPaiReply(platformToken, senderPhone, pending.execution_summary);
+    await logPaiTurn(brokerId, userId, "ai", pending.execution_summary);
+    await deleteHandledPendingAction(userId, pending.execution_message_id);
+    return;
+  }
+
+  // A queda ocorreu na janela impossível de provar atomicamente (depois de
+  // iniciar executeAction e antes de persistir o resultado). Reexecutar aqui
+  // poderia duplicar cadastro ou disparo. Falha segura e pede conferência.
+  if (pending.status === "executing") {
+    const replyText = "A execução anterior foi interrompida e não vou repeti-la automaticamente para evitar duplicidade. Confira no painel; se não tiver sido aplicada, faça o pedido novamente.";
+    const messageId = pending.execution_message_id || executionMessageId;
+    const { error } = await supabase.from("imf_whatsapp_pending_actions").update({
+      status: "cancelled",
+      execution_message_id: messageId,
+      execution_summary: replyText,
+      executed_at: new Date().toISOString(),
+    }).eq("user_id", userId).eq("broker_id", brokerId).eq("status", "executing");
+    if (error) throw error;
+    await sendPaiReply(platformToken, senderPhone, replyText);
+    await logPaiTurn(brokerId, userId, "ai", replyText);
+    await deleteHandledPendingAction(userId, messageId);
+    return;
+  }
+
+  if (pending.status !== "pending") {
+    throw new Error("A ação pendente não está mais disponível para confirmação.");
+  }
+
+  if (decision === "cancel") {
+    const replyText = "Combinado, cancelei essa ação.";
+    const { data: cancelled, error } = await supabase.from("imf_whatsapp_pending_actions").update({
+      status: "cancelled",
+      execution_message_id: executionMessageId,
+      execution_summary: replyText,
+      executed_at: new Date().toISOString(),
+    }).eq("user_id", userId).eq("broker_id", brokerId).eq("status", "pending").select("user_id").maybeSingle();
+    if (error) throw error;
+    if (!cancelled) throw new Error("A ação pendente mudou durante o cancelamento.");
+    await sendPaiReply(platformToken, senderPhone, replyText);
+    await logPaiTurn(brokerId, userId, "ai", "(cancelado)");
+    await deleteHandledPendingAction(userId, executionMessageId);
+    return;
+  }
+
+  const { data: claimed, error: claimError } = await supabase.from("imf_whatsapp_pending_actions").update({
+    status: "executing",
+    execution_message_id: executionMessageId,
+    execution_summary: null,
+    executed_at: null,
+  }).eq("user_id", userId).eq("broker_id", brokerId).eq("status", "pending").select("user_id").maybeSingle();
+  if (claimError) throw claimError;
+  if (!claimed) throw new Error("A ação pendente mudou durante a confirmação.");
+
+  let replyText: string;
+  let actionType: string | undefined;
   try {
     const action = parseConfirmedAgentAction(pending.action) as AgentAction;
+    actionType = action.type;
     const { summary } = await executeAction(brokerId, userId, action);
     if (action.type === "create_property") {
-      // Staging cumpriu o papel — limpa pra não vazar fotos velhas pro
-      // próximo imóvel que este usuário cadastrar.
-      await supabase.from("imf_whatsapp_staged_media").delete().eq("user_id", userId);
+      const { error } = await supabase.from("imf_whatsapp_staged_media").delete()
+        .eq("user_id", userId).eq("broker_id", brokerId);
+      if (error) console.warn("[WhatsApp Pai] imóvel criado, mas o staging de fotos não foi limpo:", error.message);
     }
-    await sendPaiReply(platformToken, senderPhone, `✓ ${summary}`);
-    await logPaiTurn(brokerId, userId, "ai", `✓ ${summary}`, null, action.type);
+    replyText = `✓ ${summary}`;
   } catch (err: any) {
     const msg = err?.message || "Não consegui completar essa ação agora.";
-    await sendPaiReply(platformToken, senderPhone, `Não consegui completar: ${msg}`);
-    await logPaiTurn(brokerId, userId, "ai", `Falhou: ${msg}`);
+    replyText = `Não consegui completar: ${msg}`;
   }
+
+  const { data: finished, error: finishError } = await supabase.from("imf_whatsapp_pending_actions").update({
+    status: "executed",
+    execution_summary: replyText,
+    executed_at: new Date().toISOString(),
+  }).eq("user_id", userId).eq("broker_id", brokerId)
+    .eq("status", "executing").eq("execution_message_id", executionMessageId)
+    .select("user_id").maybeSingle();
+  if (finishError) throw finishError;
+  if (!finished) throw new Error("O resultado da ação não pôde ser persistido com segurança.");
+
+  await sendPaiReply(platformToken, senderPhone, replyText);
+  await logPaiTurn(brokerId, userId, "ai", replyText, null, actionType);
+  await deleteHandledPendingAction(userId, executionMessageId);
 }
 
 // Baixa e sobe a foto pro bucket de imóveis, sem extrair dado nenhum dela —
@@ -204,9 +308,18 @@ async function handlePendingAction(
 // whatsappStaffLinks.ts/confirmPhoneVerification para o mesmo problema.
 async function handleIncomingPhoto(
   platformToken: string, message: Record<string, any>, userId: string, brokerId: string,
+  providerMessageId: string,
 ): Promise<void> {
   const messageId = mediaMessageId(message);
   if (!messageId) throw new Error("ID da mídia ausente.");
+  const { data: existing, error: existingError } = await supabase
+    .from("imf_whatsapp_staged_media")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("provider_message_id", providerMessageId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return;
   const fileLength = declaredFileLength(message);
   if (fileLength !== null && fileLength > MAX_IMAGE_BYTES) throw new Error("Imagem excede o limite permitido.");
 
@@ -214,7 +327,12 @@ async function handleIncomingPhoto(
   if (!media.mimetype.toLowerCase().startsWith("image/")) throw new Error("A UAZAPI não devolveu um arquivo de imagem.");
 
   const url = await uploadPropertyImageBase64(userId, `data:${media.mimetype};base64,${media.base64Data}`);
-  const { error } = await supabase.from("imf_whatsapp_staged_media").insert({ user_id: userId, broker_id: brokerId, url });
+  const { error } = await supabase.from("imf_whatsapp_staged_media").upsert({
+    user_id: userId,
+    broker_id: brokerId,
+    provider_message_id: providerMessageId,
+    url,
+  }, { onConflict: "user_id,provider_message_id" });
   if (error) throw error;
 }
 
@@ -266,34 +384,42 @@ async function handleIncomingDocument(
 
   // Mantém somente os documentos mais recentes. O conteúdo é temporário e
   // não pode crescer sem limite enquanto o usuário envia arquivos e some.
-  const { data: staged } = await supabase
+  const { data: staged, error: stagedError } = await supabase
     .from("imf_whatsapp_staged_documents")
     .select("id")
     .eq("user_id", userId)
+    .eq("broker_id", brokerId)
     .order("created_at", { ascending: false });
+  if (stagedError) throw stagedError;
   const overflowIds = (staged || []).slice(MAX_STAGED_DOCUMENTS).map((row: any) => row.id);
   if (overflowIds.length) {
-    await supabase.from("imf_whatsapp_staged_documents").delete().in("id", overflowIds).eq("user_id", userId);
+    const { error } = await supabase.from("imf_whatsapp_staged_documents").delete()
+      .in("id", overflowIds).eq("user_id", userId).eq("broker_id", brokerId);
+    if (error) throw error;
   }
   return extracted.fileName;
 }
 
-async function fetchStagedPhotoUrls(userId: string): Promise<string[]> {
-  const { data } = await supabase
+async function fetchStagedPhotoUrls(userId: string, brokerId: string): Promise<string[]> {
+  const { data, error } = await supabase
     .from("imf_whatsapp_staged_media")
     .select("url")
     .eq("user_id", userId)
+    .eq("broker_id", brokerId)
     .order("created_at", { ascending: true });
+  if (error) throw error;
   return (data || []).map((r: any) => r.url).filter(Boolean);
 }
 
-async function fetchStagedDocuments(userId: string): Promise<{ fileName: string; mimeType: string; text: string }[]> {
-  const { data } = await supabase
+async function fetchStagedDocuments(userId: string, brokerId: string): Promise<{ fileName: string; mimeType: string; text: string }[]> {
+  const { data, error } = await supabase
     .from("imf_whatsapp_staged_documents")
     .select("file_name, mime_type, extracted_text")
     .eq("user_id", userId)
+    .eq("broker_id", brokerId)
     .order("created_at", { ascending: true })
     .limit(MAX_STAGED_DOCUMENTS);
+  if (error) throw error;
   return (data || []).map((row: any) => ({
     fileName: row.file_name,
     mimeType: row.mime_type,
@@ -328,17 +454,10 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     return;
   }
   const { userId, brokerId } = identity;
-
-  // Idempotência: se esta mensagem já foi processada antes (retry após
-  // crash/lease expirado), não reexecuta nem manda resposta duplicada.
-  if (providerMessageId) {
-    const { data: already } = await supabase
-      .from("imf_agent_log")
-      .select("id")
-      .eq("broker_id", brokerId).eq("user_id", userId).eq("provider_message_id", providerMessageId)
-      .maybeSingle();
-    if (already) { await markPaiCompleted(row.id); return; }
-  }
+  // A linha única da inbox é a fonte de idempotência do inbound. O histórico
+  // não pode ser usado como marcador de conclusão: ele é gravado antes de
+  // algumas etapas e faria um retry descartar uma mensagem ainda incompleta.
+  const executionMessageId = providerMessageId || `inbox:${row.id}`;
 
   let receivedDocumentName: string | null = null;
   if (isDocument) {
@@ -368,7 +487,7 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   if (mediaKind === "image") {
     let replyText: string;
     try {
-      await handleIncomingPhoto(platformToken, message, userId, brokerId);
+      await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
       replyText = "Foto recebida! Manda mais fotos ou já descreve o imóvel (endereço, quartos, valor...) que eu cadastro.";
     } catch (error: any) {
       logAiProviderError("[WhatsApp Pai] processamento de foto falhou", error);
@@ -396,35 +515,59 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     }
   }
 
-  await logPaiTurn(
-    brokerId,
-    userId,
-    "user",
-    receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text,
-    providerMessageId,
-  );
-
-  const { data: pending } = await supabase
+  const userLogText = receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text;
+  const { data: pending, error: pendingError } = await supabase
     .from("imf_whatsapp_pending_actions")
-    .select("action, broker_id, expires_at")
+    .select("action, broker_id, status, expires_at, execution_message_id, execution_summary")
     .eq("user_id", userId)
     .maybeSingle();
+  if (pendingError) throw pendingError;
+
+  // Estado de recuperação vence a expiração da proposta: uma mutação já pode
+  // ter começado ou terminado, então primeiro reapresenta o resultado (ou o
+  // aviso de incerteza) e nunca transforma o retry em um comando novo.
+  if (pending && pending.status !== "pending") {
+    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+    await handlePendingAction(
+      pending as PaiPendingAction,
+      "confirm",
+      brokerId,
+      userId,
+      row.sender_phone,
+      platformToken,
+      executionMessageId,
+    );
+    await markPaiCompleted(row.id);
+    return;
+  }
 
   if (pending && new Date(pending.expires_at).getTime() > Date.now()) {
     const decision = classifyReply(text);
     if (decision !== "other") {
-      await handlePendingAction(pending, decision, brokerId, userId, row.sender_phone, platformToken);
+      await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+      await handlePendingAction(
+        pending as PaiPendingAction,
+        decision,
+        brokerId,
+        userId,
+        row.sender_phone,
+        platformToken,
+        executionMessageId,
+      );
       await markPaiCompleted(row.id);
       return;
     }
     // "other": abandona a pendência em silêncio, cai pro fluxo normal abaixo
     // tratando a mensagem atual como um comando novo.
-    await supabase.from("imf_whatsapp_pending_actions").delete().eq("user_id", userId);
+    const { error } = await supabase.from("imf_whatsapp_pending_actions").delete()
+      .eq("user_id", userId).eq("broker_id", brokerId).eq("status", "pending");
+    if (error) throw error;
   } else if (pending) {
     // Pendência vencida encontrada na hora — limpa antes de seguir (o job
     // periódico de expiração cobre o caso comum, isto é só para não deixar
     // a corrida "expirou entre o tick e esta mensagem" gerar confusão).
-    await supabase.from("imf_whatsapp_pending_actions").delete().eq("user_id", userId);
+    const { error } = await supabase.from("imf_whatsapp_pending_actions").delete().eq("user_id", userId);
+    if (error) throw error;
   }
 
   const { data: historyRows } = await supabase
@@ -436,8 +579,8 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   const history: AgentTurn[] = (historyRows || []).reverse().map((h: any) => ({ role: h.role, text: h.text }));
 
   const entitlement = await resolveAccountCapabilities(brokerId);
-  const stagedPhotoUrls = await fetchStagedPhotoUrls(userId);
-  const stagedDocuments = await fetchStagedDocuments(userId);
+  const stagedPhotoUrls = await fetchStagedPhotoUrls(userId, brokerId);
+  const stagedDocuments = await fetchStagedDocuments(userId, brokerId);
   const result = await runAgent({
     brokerId, userId,
     message: text.slice(0, 1000),
@@ -449,24 +592,28 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     documentContexts: stagedDocuments.length ? stagedDocuments : undefined,
   });
 
-  if (stagedDocuments.length) {
-    // Documento é contexto de uso único do comando que acabou de rodar. A
-    // ação proposta já carrega somente os campos validados que serão
-    // confirmados depois; não há razão para manter o texto extraído.
-    await supabase.from("imf_whatsapp_staged_documents").delete().eq("user_id", userId);
-  }
-
   if (result.proposedAction) {
-    await supabase.from("imf_whatsapp_pending_actions").upsert({
+    const { error } = await supabase.from("imf_whatsapp_pending_actions").upsert({
       user_id: userId, broker_id: brokerId,
       action: result.proposedAction, reply_preview: result.reply,
       status: "pending", expires_at: new Date(Date.now() + PENDING_ACTION_TTL_MS).toISOString(),
+      execution_message_id: null, execution_summary: null, executed_at: null,
     }, { onConflict: "user_id" });
+    if (error) throw error;
     await sendPaiReply(platformToken, row.sender_phone, `${result.reply}\n\nResponda *sim* pra confirmar ou *não* pra cancelar.`);
+    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
     await logPaiTurn(brokerId, userId, "ai", result.reply, null, result.proposedAction.type);
   } else {
     await sendPaiReply(platformToken, row.sender_phone, result.reply);
+    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
     await logPaiTurn(brokerId, userId, "ai", result.reply);
+  }
+  if (stagedDocuments.length) {
+    // Só apaga depois que a resposta saiu. Se o provedor falhar, o retry ainda
+    // recebe exatamente o mesmo contexto documental.
+    const { error } = await supabase.from("imf_whatsapp_staged_documents").delete()
+      .eq("user_id", userId).eq("broker_id", brokerId);
+    if (error) console.warn("[WhatsApp Pai] limpeza de documento staged falhou:", error.message);
   }
   await markPaiCompleted(row.id);
 }

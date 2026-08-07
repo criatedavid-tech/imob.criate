@@ -3,6 +3,16 @@ import { normalizePhoneBR } from "../lib/crypto";
 import { fetchWithTimeout } from "../lib/http";
 import { supabase } from "../supabase";
 
+export async function getUazapiPlatformToken(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("imf_platform_instances")
+    .select("uazapi_instance_token")
+    .eq("key", "pai")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.uazapi_instance_token || null;
+}
+
 // ─── Cliente UAZAPI nativo ─────────────────────────────────────────────────
 //
 // ✅ FORMATO CONFIRMADO AO VIVO (2026-07-03) contra a instância real do Hunter

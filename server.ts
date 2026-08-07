@@ -140,6 +140,7 @@ async function startServer() {
   // (foto de imóvel, mídia da conversa, documento, áudio) continuam no limite
   // grande do parser global logo abaixo.
   app.use("/api/wpp-shim/inbound", express.json({ limit: "512kb" }));
+  app.use("/api/wpp-pai/inbound", express.json({ limit: "512kb" }));
   app.use("/api/leads", express.json({ limit: "64kb" }));
 
   // 10mb: suficiente para upload individual de foto em base64 (~7MB de imagem real).

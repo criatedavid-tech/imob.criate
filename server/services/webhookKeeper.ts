@@ -1,6 +1,12 @@
 import { supabase } from "../supabase";
 import { PUBLIC_APP_URL } from "../config";
-import { setUazapiWebhook, setUazapiPlatformWebhook, getUazapiWebhookUrl, platformWebhookUrl } from "./provisioning";
+import {
+  getUazapiWebhookState,
+  isUazapiWebhookReady,
+  platformWebhookUrl,
+  setUazapiPlatformWebhook,
+  setUazapiWebhook,
+} from "./provisioning";
 
 // ─── Guardião do webhook UAZAPI ─────────────────────────────────────────────
 // Causa-raiz do "inbound cai e precisa reconectar": o webhook só era (re)setado
@@ -43,10 +49,10 @@ async function collectInstances(): Promise<KeptInstance[]> {
     if (m.uazapi_instance_id && m.uazapi_instance_token) out.push({ instanceId: m.uazapi_instance_id, token: m.uazapi_instance_token, kind: "broker" });
   }
   const { data: platform } = await supabase.from("imf_platform_instances")
-    .select("key, uazapi_instance_id, uazapi_instance_token")
+    .select("key, uazapi_instance_id, uazapi_instance_token, webhook_enabled")
     .eq("key", "pai")
     .maybeSingle();
-  if (platform?.uazapi_instance_id && platform?.uazapi_instance_token) {
+  if (platform?.webhook_enabled && platform?.uazapi_instance_id && platform?.uazapi_instance_token) {
     out.push({ instanceId: platform.uazapi_instance_id, token: platform.uazapi_instance_token, kind: "pai" });
   }
   return out;
@@ -57,15 +63,18 @@ async function keepOne(inst: KeptInstance, nowMs: number): Promise<"ok" | "fixed
     ? platformWebhookUrl(PUBLIC_APP_URL)
     : `${PUBLIC_APP_URL}/api/wpp-shim/inbound/${inst.instanceId}`;
   if (!expected) return "skip";
-  const current = await getUazapiWebhookUrl(inst.token);
+  const current = await getUazapiWebhookState(inst.token);
 
   const reassert = () => inst.kind === "pai"
     ? setUazapiPlatformWebhook(inst.token)
     : setUazapiWebhook(inst.token, inst.instanceId);
 
-  if (current === expected) { lastAssertedAt.set(inst.instanceId, nowMs); return "ok"; }
+  if (current && isUazapiWebhookReady(current, expected)) {
+    lastAssertedAt.set(inst.instanceId, nowMs);
+    return "ok";
+  }
 
-  if (current && current !== expected) {
+  if (current && (current.url !== expected || current.enabled === false || current.events !== null)) {
     // Desvio confirmado (o webhook aponta pra outro lugar) → corrige já.
     const ok = await reassert();
     if (ok) { lastAssertedAt.set(inst.instanceId, nowMs); return "fixed"; }
