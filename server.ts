@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import helmet from "helmet";
+import { readFile } from "node:fs/promises";
 
 import { SUPABASE_URL } from "./server/config";
 import {
@@ -29,6 +30,7 @@ import { locacaoRouter } from "./server/routes/locacao";
 import { rentalAgentRouter } from "./server/routes/rentalAgent";
 import { crmSalesAgentRouter } from "./server/routes/crmSalesAgent";
 import { salesAgentRouter } from "./server/routes/salesAgent";
+import { getPropertyPageMeta, injectPageMeta } from "./server/services/publicPageMeta";
 import { lancamentosRouter } from "./server/routes/lancamentos";
 import { financeiroRouter } from "./server/routes/financeiro";
 import { equipeRouter } from "./server/routes/equipe";
@@ -208,6 +210,25 @@ async function startServer() {
     // leitura de arquivo.
     app.use("/api", (_req, res) => {
       res.status(404).json({ error: "Not found" });
+    });
+
+    // Vitrine do imóvel: o HTML sai com título, descrição e foto do imóvel.
+    // Sem isto, o robô do WhatsApp (que não executa JavaScript) só via a casca
+    // da SPA — e todo link compartilhado aparecia como "Criate", sem imagem.
+    // O `preload` da foto principal também adianta a primeira pintura.
+    app.get("/p/:slug", async (req, res, next) => {
+      try {
+        const meta = await getPropertyPageMeta(String(req.params.slug || ""));
+        if (!meta) return next();
+        const html = await readFile(path.join(distPath, "index.html"), "utf8");
+        res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+        res.setHeader("Content-Type", "text/html; charset=UTF-8");
+        return res.send(injectPageMeta(html, meta));
+      } catch {
+        // Qualquer falha aqui cai no fallback normal da SPA: a página abre
+        // igual a antes, só sem a prévia enriquecida.
+        return next();
+      }
     });
 
     app.get("*", (req, res) => {

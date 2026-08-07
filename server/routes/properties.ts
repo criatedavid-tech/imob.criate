@@ -309,6 +309,11 @@ propertiesRouter.get("/api/properties/qualidade", requireUser, async (req, res) 
 
 propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res) => {
   try {
+    // Exceção consciente ao `no-store` global da API (server.ts): esta rota é
+    // pública, só devolve o que a vitrine já mostra a qualquer visitante, e é
+    // o ponto que mais sofre quando um link cai num grupo de WhatsApp — sem
+    // cache, cada pessoa que abre vira uma consulta ao Postgres.
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     if (!isValidPublicPropertySlug(req.params.slug)) {
       return res.status(400).json({ error: "Slug de imóvel inválido" });
     }

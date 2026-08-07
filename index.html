@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Fonte via <link> em vez de @import no CSS: o @import só era descoberto
+         depois de baixar E interpretar o CSS, empilhando mais duas viagens de
+         rede (googleapis -> gstatic) antes de qualquer texto aparecer. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://umvbrahsqvqeondwtikm.supabase.co" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Criate</title>
   </head>
