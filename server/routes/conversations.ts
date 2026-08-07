@@ -20,6 +20,7 @@ import {
   N8nInputValidationError,
   parseN8nAiReply,
 } from "../security/n8nGuardrails";
+import { isOfficialWhatsappPaiPhone } from "../services/whatsappPaiIdentity";
 
 // Resposta em balões: ver server/services/replyChunks.ts. Desligar volta ao
 // bloco único de antes.
@@ -56,6 +57,7 @@ async function memberPhoneOwnership(brokerId: string): Promise<Map<string, strin
 async function canAccessTicket(userId: string, brokerId: string, ticketId: string): Promise<boolean> {
   const ticket = await getConversationTicket(brokerId, ticketId);
   if (!ticket) return false;
+  if (isOfficialWhatsappPaiPhone(ticket.customer_phone)) return false;
   if (await hasPermission(userId, brokerId, "conversas", "gerenciar")) return true;
   const ownership = await memberPhoneOwnership(brokerId);
   return ownership.get(normalizePhoneBR(ticket.customer_phone)) === userId
@@ -78,6 +80,9 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInte
     const ticketId = input.ticket_id;
     if (!isValidNormalizedBrazilianPhone(customerPhone)) {
       return res.status(400).json({ error: "customer_phone inválido." });
+    }
+    if (isOfficialWhatsappPaiPhone(customerPhone)) {
+      return res.status(409).json({ error: "O numero do Assistente IA nao e uma conversa comercial." });
     }
 
     const ticket = ticketId
@@ -194,7 +199,9 @@ conversationsRouter.get("/api/conversas", requireUser, async (req, res) => {
 
     // Isolamento por membro: dono vê todas as conversas; membro vê as que
     // batem com um lead que ele possui OU que foram atribuídas a ele direto.
-    let visibleConversations = conversations || [];
+    let visibleConversations = (conversations || []).filter(
+      (conversation: any) => !isOfficialWhatsappPaiPhone(conversation.customer_phone),
+    );
     if (!(await hasPermission(userId, brokerId, "conversas", "gerenciar"))) {
       const ownership = await memberPhoneOwnership(brokerId);
       visibleConversations = visibleConversations.filter((c: any) =>

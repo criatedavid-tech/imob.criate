@@ -94,8 +94,7 @@ test("numero central fica somente no Assistente IA e nunca vira conversa comerci
   assert.match(sql, /DELETE FROM public\.imf_conversation_tickets[\s\S]*customer_phone = '556299982218'/);
 
   const source = await readFile(new URL("../server/services/inboundWebhookQueue.ts", import.meta.url), "utf8");
-  assert.match(source, /OFFICIAL_PAI_PHONE = "556299982218"/);
-  assert.match(source, /phone_normalized[\s\S]*return OFFICIAL_PAI_PHONE/);
+  assert.match(source, /phone_normalized[\s\S]*return OFFICIAL_WHATSAPP_PAI_PHONE/);
   assert.match(source, /customerPhone === platformPaiPhone/);
   assert.match(source, /if \(isPaiInternalConversation\)/);
   const internalBranch = source.slice(
@@ -113,4 +112,13 @@ test("numero central fica somente no Assistente IA e nunca vira conversa comerci
   const ui = await readFile(new URL("../src/experience/CommandBar.tsx", import.meta.url), "utf8");
   assert.match(ui, /t\.mediaType === 'image'/);
   assert.match(ui, /t\.mediaType === 'audio'/);
+
+  const conversations = await readFile(new URL("../server/routes/conversations.ts", import.meta.url), "utf8");
+  assert.match(conversations, /!isOfficialWhatsappPaiPhone\(conversation\.customer_phone\)/);
+  assert.match(conversations, /isOfficialWhatsappPaiPhone\(ticket\.customer_phone\)/);
+  assert.match(conversations, /O numero do Assistente IA nao e uma conversa comercial/);
+
+  const followup = await readFile(new URL("../server/services/followup.ts", import.meta.url), "utf8");
+  assert.match(followup, /isOfficialWhatsappPaiPhone\(row\.customer_phone\)/);
+  assert.match(followup, /ai_active: false[\s\S]*follow_sent: true/);
 });

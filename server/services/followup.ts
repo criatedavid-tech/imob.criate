@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import { resolveOutboundInstanceToken, sendUazapiText } from "./uazapi";
 import { ensureConversationTicket, recordConversationMessage } from "./conversationTickets";
+import { isOfficialWhatsappPaiPhone } from "./whatsappPaiIdentity";
 
 // ─── Motor do Follow-Up (tick 60s) ──────────────────────────────────────────
 // claim_due_followups_v2() faz o claim ATÔMICO (seleciona+marca+avança numa só
@@ -62,6 +63,15 @@ export async function runFollowupTick() {
     if (error) { console.error('[Follow-up] claim erro:', error.message); return; }
     if (!due?.length) return;
     for (const row of due as any[]) {
+      if (isOfficialWhatsappPaiPhone(row.customer_phone)) {
+        await supabase.from('followup_conversations').update({
+          ai_active: false,
+          follow_sent: true,
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.conversation_id);
+        console.warn('[Follow-up] numero interno do Assistente IA ignorado.');
+        continue;
+      }
       // Mensagem vazia = follow não configurado → avança sem enviar (evita loop infinito)
       if (!row.message?.trim()) {
         console.warn(`[Follow-up] follow #${row.message_index} sem mensagem configurada — pulando → ${row.customer_phone}`);
