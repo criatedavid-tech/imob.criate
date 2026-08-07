@@ -1,9 +1,8 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { AnimatePresence } from 'motion/react';
 import { authService } from './services/auth';
-import TermsGate from './components/TermsGate';
 
+const TermsGate = lazy(() => import('./components/TermsGate'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PropertyLanding = lazy(() => import('./pages/PropertyLanding'));
 const Login = lazy(() => import('./pages/Login'));
@@ -59,14 +58,13 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
   if (status !== 'ativo') return <Navigate to="/payment" replace />;
 
-  return <><TermsGate />{children}</>;
+  return <><Suspense fallback={null}><TermsGate /></Suspense>{children}</>;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Suspense fallback={<RouteFallback />}>
-        <AnimatePresence mode="wait">
           <Routes>
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
@@ -115,7 +113,6 @@ export default function App() {
           {/* Rota curinga */}
           <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AnimatePresence>
       </Suspense>
     </BrowserRouter>
   );

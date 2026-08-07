@@ -309,3 +309,15 @@ html.theme-transition * {
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+
+
+/* Zoom lento da foto principal da vitrine. Era feito pela biblioteca de
+   animação; em CSS o navegador pinta a imagem assim que ela chega, sem
+   esperar JavaScript — é o maior elemento da tela (LCP). */
+@keyframes heroZoom {
+  from { transform: scale(1.08); }
+  to   { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[heroZoom_6s_cubic-bezier\(\.22\,1\,\.36\,1\)_forwards\] { animation: none; }
+}

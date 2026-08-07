@@ -27,7 +27,14 @@ const MAX_ENTRIES = 500;
 export interface PublicPageMeta {
   titulo: string;
   descricao: string;
-  imagem: string | null;
+  /** Versão para o card do WhatsApp/Facebook (1200px). */
+  imagemOg: string | null;
+  /**
+   * Versão que a PÁGINA vai pedir (1600px). Precisa ser byte a byte a mesma
+   * URL que PropertyLanding monta com `imagemOtimizada(hero, 1600, 74)` —
+   * um preload com URL diferente faz o navegador baixar a foto DUAS vezes.
+   */
+  imagemHero: string | null;
   url: string;
 }
 
@@ -60,6 +67,16 @@ function firstImage(imageUrl: string | null): string | null {
   return raw.startsWith("http") ? raw : null;
 }
 
+/**
+ * Redimensiona pelo CDN do Storage. Mesma regra de src/lib/imageUrl.ts — os
+ * dois precisam gerar a URL IDÊNTICA para o preload valer.
+ */
+function redimensionar(url: string | null, largura: number, qualidade: number): string | null {
+  if (!url || !url.includes("/storage/v1/object/public/")) return url;
+  const base = url.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/");
+  return `${base}${base.includes("?") ? "&" : "?"}width=${largura}&quality=${qualidade}`;
+}
+
 function buildDescription(row: any): string {
   const partes: string[] = [];
   if (row.location) partes.push(String(row.location).replace(/refer[êe]ncia.*/i, "").trim());
@@ -80,11 +97,15 @@ async function fetchPropertyMeta(slug: string): Promise<PublicPageMeta | null> {
     .eq("slug", slug)
     .maybeSingle();
   if (!data) return null;
+  const primeira = firstImage(data.image_url);
 
   return {
     titulo: String(data.title || "Imóvel").trim(),
     descricao: buildDescription(data),
-    imagem: firstImage(data.image_url),
+    // 1200/75 para o card da prévia; 1600/74 é o que a página pede (o robô do
+    // WhatsApp baixa a og antes de mostrar o card, então ela vai menor).
+    imagemOg: redimensionar(primeira, 1200, 75),
+    imagemHero: redimensionar(primeira, 1600, 74),
     url: `${PUBLIC_APP_URL.replace(/\/$/, "")}/p/${slug}`,
   };
 }
@@ -127,29 +148,66 @@ export function injectPageMeta(html: string, meta: PublicPageMeta): string {
     `<meta property="og:title" content="${titulo}" />`,
     `<meta property="og:description" content="${descricao}" />`,
     `<meta property="og:url" content="${url}" />`,
-    `<meta name="twitter:card" content="${meta.imagem ? "summary_large_image" : "summary"}" />`,
+    `<meta name="twitter:card" content="${meta.imagemOg ? "summary_large_image" : "summary"}" />`,
     `<meta name="twitter:title" content="${titulo}" />`,
     `<meta name="twitter:description" content="${descricao}" />`,
   ];
 
-  if (meta.imagem) {
-    const img = escapeAttr(meta.imagem);
+  if (meta.imagemOg) {
+    const og = escapeAttr(meta.imagemOg);
     tags.push(
-      `<meta property="og:image" content="${img}" />`,
+      `<meta property="og:image" content="${og}" />`,
       `<meta property="og:image:alt" content="${titulo}" />`,
-      `<meta name="twitter:image" content="${img}" />`,
-      // A foto principal começa a baixar junto com o HTML, em vez de esperar
-      // o JS montar e a API responder.
-      `<link rel="preload" as="image" href="${img}" fetchpriority="high" />`,
+      `<meta name="twitter:image" content="${og}" />`,
     );
     try {
-      tags.push(`<link rel="preconnect" href="${escapeAttr(new URL(meta.imagem).origin)}" crossorigin />`);
+      tags.push(`<link rel="preconnect" href="${escapeAttr(new URL(meta.imagemOg).origin)}" crossorigin />`);
     } catch {
       // URL inválida: só não pré-conecta.
     }
   }
 
+  if (meta.imagemHero) {
+    // A foto principal começa a baixar junto com o HTML, em vez de esperar o
+    // JS montar e a API responder. URL igual à que a página pede.
+    tags.push(`<link rel="preload" as="image" href="${escapeAttr(meta.imagemHero)}" fetchpriority="high" />`);
+  }
+
   // Substitui o <title> genérico da casca para não sobrarem dois.
   const semTitulo = html.replace(/<title>[\s\S]*?<\/title>/i, "");
   return semTitulo.replace(/<\/head>/i, `${tags.join("\n    ")}\n  </head>`);
+}
+
+/**
+ * Primeira pintura sem esperar o JavaScript.
+ *
+ * A vitrine é renderizada no cliente: até o JS baixar, montar o React e a API
+ * responder, o visitante vê tela em branco. Isto coloca a foto e o título
+ * dentro do `#root` já no HTML.
+ *
+ * É seguro porque o app usa `createRoot(...).render(...)` (src/main.tsx), e não
+ * `hydrateRoot`: ao montar, o React SUBSTITUI o conteúdo do container. Não há
+ * hidratação, logo não há divergência possível entre servidor e cliente. Se o
+ * React demorar ou falhar, o visitante ao menos vê o imóvel.
+ *
+ * Só o que aparece acima da dobra, com estilo embutido — não depende do CSS
+ * do app, que carrega depois.
+ */
+export function injectAboveFold(html: string, meta: PublicPageMeta): string {
+  const titulo = escapeAttr(meta.titulo);
+  const fundo = meta.imagemHero
+    ? `background-image:linear-gradient(180deg,rgba(15,17,19,.42),rgba(15,17,19,.05) 34%,rgba(15,17,19,.8)),url('${escapeAttr(meta.imagemHero)}');background-size:cover;background-position:center`
+    : "background:linear-gradient(135deg,#2b534e,#131518)";
+
+  const esqueleto =
+    `<div style="position:absolute;inset:0;${fundo}"></div>` +
+    `<div style="position:absolute;left:0;right:0;bottom:0;padding:0 clamp(20px,5vw,64px) clamp(40px,7vh,90px);color:#fff">` +
+    `<h1 style="margin:0;font-family:Cormorant Garamond,Georgia,serif;font-weight:300;line-height:1.02;` +
+    `font-size:clamp(38px,7vw,104px);text-shadow:0 2px 24px rgba(0,0,0,.35)">${titulo}</h1>` +
+    `</div>`;
+
+  return html.replace(
+    '<div id="root"></div>',
+    `<div id="root"><div style="position:relative;height:100svh;min-height:600px;overflow:hidden;background:#131518">${esqueleto}</div></div>`,
+  );
 }

@@ -30,7 +30,7 @@ import { locacaoRouter } from "./server/routes/locacao";
 import { rentalAgentRouter } from "./server/routes/rentalAgent";
 import { crmSalesAgentRouter } from "./server/routes/crmSalesAgent";
 import { salesAgentRouter } from "./server/routes/salesAgent";
-import { getPropertyPageMeta, injectPageMeta } from "./server/services/publicPageMeta";
+import { getPropertyPageMeta, injectPageMeta, injectAboveFold } from "./server/services/publicPageMeta";
 import { lancamentosRouter } from "./server/routes/lancamentos";
 import { financeiroRouter } from "./server/routes/financeiro";
 import { equipeRouter } from "./server/routes/equipe";
@@ -223,7 +223,7 @@ async function startServer() {
         const html = await readFile(path.join(distPath, "index.html"), "utf8");
         res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
-        return res.send(injectPageMeta(html, meta));
+        return res.send(injectAboveFold(injectPageMeta(html, meta), meta));
       } catch {
         // Qualquer falha aqui cai no fallback normal da SPA: a página abre
         // igual a antes, só sem a prévia enriquecida.

@@ -5,6 +5,7 @@ import {
   BedDouble, Bath, Maximize2, Car, CheckCircle2,
 } from 'lucide-react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
+import { imagemOtimizada, voltarParaOriginal } from '../lib/imageUrl';
 import Copyright from '../components/Copyright';
 
 // ── Reveal ────────────────────────────────────────────────────────────────
@@ -345,7 +346,9 @@ export default function PropertyLanding() {
       {/* ── Hero ── */}
       <header className="relative h-[100svh] min-h-[600px] overflow-hidden text-white">
         {heroImg
-          ? <motion.img src={heroImg} alt={d.title} initial={{ scale: 1.08 }} animate={{ scale: 1 }} transition={{ duration: 6, ease: [0.22, 1, 0.36, 1] }} className="absolute inset-0 w-full h-full object-cover" />
+          ? <img src={imagemOtimizada(heroImg, 1600, 74)} alt={d.title} fetchPriority="high" decoding="async"
+              onError={(e) => voltarParaOriginal(e, heroImg)}
+              className="absolute inset-0 w-full h-full object-cover animate-[heroZoom_6s_cubic-bezier(.22,1,.36,1)_forwards]" />
           : <div className="absolute inset-0 bg-gradient-to-br from-[#2b534e] to-[#131518]" />}
         <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(15,17,19,.42),rgba(15,17,19,.05) 34%,rgba(15,17,19,.8)),linear-gradient(90deg,rgba(15,17,19,.36),transparent 55%)' }} />
         <div className="absolute inset-x-0 bottom-0 px-5 md:px-16 pb-[clamp(40px,7vh,90px)]">
@@ -396,7 +399,8 @@ export default function PropertyLanding() {
       {spreads.map((s, i) => (
         <section key={i} className={`grid grid-cols-1 md:grid-cols-2 ${i % 2 === 1 ? 'md:[&>*:first-child]:order-2' : ''}`}>
           <div className="relative min-h-[62vw] md:min-h-[clamp(360px,72vh,720px)] overflow-hidden bg-[#d7d6cf] group">
-            {s.img && <img src={s.img} alt={`${d.title} — ${s.kicker}`} loading="lazy" className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1400ms] ease-[cubic-bezier(.22,1,.36,1)] group-hover:scale-[1.04]" />}
+            {s.img && <img src={imagemOtimizada(s.img, 1200)} alt={`${d.title} — ${s.kicker}`} loading="lazy" decoding="async"
+              onError={(e) => voltarParaOriginal(e, s.img)} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1400ms] ease-[cubic-bezier(.22,1,.36,1)] group-hover:scale-[1.04]" />}
           </div>
           <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-10%' }}
             className={`flex flex-col justify-center gap-5 px-[clamp(26px,5vw,86px)] py-[clamp(44px,7vw,100px)] ${i % 2 === 0 ? 'bg-[#f6f5f1]' : 'bg-[#ecebe6]'}`}>
@@ -461,7 +465,8 @@ export default function PropertyLanding() {
                 return (
                   <motion.figure key={img + i} variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-6%' }}
                     className={`overflow-hidden rounded-2xl bg-[#d7d6cf] group col-span-2 aspect-[4/3] ${span}`}>
-                    <img src={img} alt={`${d.title} — ambiente ${i + 1}`} loading="lazy" className="w-full h-full object-cover transition-transform duration-[900ms] ease-[cubic-bezier(.22,1,.36,1)] group-hover:scale-105" />
+                    <img src={imagemOtimizada(img, 800)} alt={`${d.title} — ambiente ${i + 1}`} loading="lazy" decoding="async"
+                      onError={(e) => voltarParaOriginal(e, img)} className="w-full h-full object-cover transition-transform duration-[900ms] ease-[cubic-bezier(.22,1,.36,1)] group-hover:scale-105" />
                   </motion.figure>
                 );
               })}
