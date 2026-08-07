@@ -42,6 +42,11 @@ jobs:
 
       - name: Automated tests
         run: npm test
+        env:
+          # Alguns testes importam módulos do backend apenas para validar
+          # contratos/constantes. A chave não é usada em chamadas de rede,
+          # mas o bootstrap fail-closed exige um valor não vazio.
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret
 
       - name: Dead code
         run: npx knip

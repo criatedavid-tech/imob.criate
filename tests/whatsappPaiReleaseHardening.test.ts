@@ -42,3 +42,13 @@ test("webhook do Pai usa limite de corpo dedicado", async () => {
   assert.match(route, /select\("uazapi_instance_token, webhook_enabled"\)/);
   assert.match(route, /!instance\?\.webhook_enabled/);
 });
+
+test("CI fornece somente placeholder ao bootstrap fail-closed dos testes", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/deploy-v2.yml", import.meta.url), "utf8");
+  const testStep = workflow.slice(
+    workflow.indexOf("- name: Automated tests"),
+    workflow.indexOf("- name: Dead code"),
+  );
+  assert.match(testStep, /SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret/);
+  assert.doesNotMatch(testStep, /\$\{\{\s*secrets\./);
+});
