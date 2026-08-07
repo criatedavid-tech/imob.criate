@@ -8,6 +8,10 @@ export function GlassCard({
   onClick,
   style,
 }: {
+  // `key` é consumida pelo React e não chega ao componente em runtime, mas
+  // precisa constar no contrato explícito deste function component para a
+  // combinação atual de TypeScript + @types/react aceitar listas JSX.
+  key?: React.Key;
   className?: string;
   children: React.ReactNode;
   onClick?: () => void;

@@ -9,6 +9,13 @@ import { parseConfirmedAgentAction } from "../security/agentGuardrails";
 import { detectInboundMediaKind, mediaMessageId, declaredFileLength } from "./inboundMedia";
 import { transcribeWithOpenRouter, resolveAudioFormat, logAiProviderError, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from "./mediaAi";
 import { uploadPropertyImageBase64 } from "./propertyImages";
+import {
+  MAX_DOCUMENT_BYTES,
+  MAX_STAGED_DOCUMENTS,
+  documentFileName,
+  extractPaiDocument,
+  isPaiDocumentMessage,
+} from "./whatsappPaiDocuments";
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHATSAPP PAI — fila de inbound (Fase 4)
@@ -19,7 +26,8 @@ import { uploadPropertyImageBase64 } from "./propertyImages";
 // próprio runAgent já dá continuidade entre mensagens separadas, igual já
 // faz hoje entre envios separados da CommandBar no painel).
 //
-// Texto, áudio e foto (Fase 5). Áudio vira texto via transcrição (mesma IA
+// Texto, áudio e foto (Fase 5) + documento como contexto temporário (Fase 7).
+// Áudio vira texto via transcrição (mesma IA
 // já usada no pipeline do cliente). Foto só faz staging — nunca é descrita
 // por IA aqui (diferente do pipeline do cliente): o comando de verdade
 // chega no texto que vem depois, igual ao array em memória da CommandBar.tsx
@@ -226,6 +234,50 @@ async function handleIncomingAudio(platformToken: string, message: Record<string
   return transcript;
 }
 
+async function handleIncomingDocument(
+  platformToken: string,
+  message: Record<string, any>,
+  userId: string,
+  brokerId: string,
+): Promise<string> {
+  const messageId = mediaMessageId(message);
+  if (!messageId) throw new Error("ID do documento ausente.");
+  const fileLength = declaredFileLength(message);
+  if (fileLength !== null && fileLength > MAX_DOCUMENT_BYTES) throw new Error("Documento excede o limite de 8MB.");
+
+  const media = await downloadUazapiMedia(platformToken, messageId, {
+    generateMp3: false,
+    maxBytes: MAX_DOCUMENT_BYTES,
+  });
+  const fileName = documentFileName(message, media.mimetype);
+  const extracted = await extractPaiDocument(media.base64Data, media.mimetype, fileName);
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("imf_whatsapp_staged_documents").upsert({
+    user_id: userId,
+    broker_id: brokerId,
+    file_name: extracted.fileName,
+    mime_type: extracted.mimeType,
+    byte_size: extracted.byteSize,
+    content_hash: extracted.contentHash,
+    extracted_text: extracted.text,
+    created_at: now,
+  }, { onConflict: "user_id,content_hash" });
+  if (error) throw error;
+
+  // Mantém somente os documentos mais recentes. O conteúdo é temporário e
+  // não pode crescer sem limite enquanto o usuário envia arquivos e some.
+  const { data: staged } = await supabase
+    .from("imf_whatsapp_staged_documents")
+    .select("id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  const overflowIds = (staged || []).slice(MAX_STAGED_DOCUMENTS).map((row: any) => row.id);
+  if (overflowIds.length) {
+    await supabase.from("imf_whatsapp_staged_documents").delete().in("id", overflowIds).eq("user_id", userId);
+  }
+  return extracted.fileName;
+}
+
 async function fetchStagedPhotoUrls(userId: string): Promise<string[]> {
   const { data } = await supabase
     .from("imf_whatsapp_staged_media")
@@ -235,13 +287,29 @@ async function fetchStagedPhotoUrls(userId: string): Promise<string[]> {
   return (data || []).map((r: any) => r.url).filter(Boolean);
 }
 
+async function fetchStagedDocuments(userId: string): Promise<{ fileName: string; mimeType: string; text: string }[]> {
+  const { data } = await supabase
+    .from("imf_whatsapp_staged_documents")
+    .select("file_name, mime_type, extracted_text")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(MAX_STAGED_DOCUMENTS);
+  return (data || []).map((row: any) => ({
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    text: row.extracted_text,
+  }));
+}
+
 async function processPaiInboxRow(row: { id: string; sender_phone: string; payload: Record<string, any> }): Promise<void> {
   const message = row.payload?.message || {};
-  const rawText = optionalString(message.text) || optionalString(message.content);
+  const content = message.content && typeof message.content === "object" ? message.content : {};
+  const rawText = optionalString(message.text) || optionalString(message.content) || optionalString(content.caption);
   const providerMessageId = optionalString(message.id) || optionalString(message.messageid) || null;
   const mediaKind = detectInboundMediaKind(message);
+  const isDocument = isPaiDocumentMessage(message);
 
-  if (!rawText && !mediaKind) {
+  if (!rawText && !mediaKind && !isDocument) {
     await markPaiIgnored(row.id, "Tipo de mensagem ainda não suportado.");
     return;
   }
@@ -270,6 +338,29 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
       .eq("broker_id", brokerId).eq("user_id", userId).eq("provider_message_id", providerMessageId)
       .maybeSingle();
     if (already) { await markPaiCompleted(row.id); return; }
+  }
+
+  let receivedDocumentName: string | null = null;
+  if (isDocument) {
+    try {
+      receivedDocumentName = await handleIncomingDocument(platformToken, message, userId, brokerId);
+    } catch (error: any) {
+      logAiProviderError("[WhatsApp Pai] processamento de documento falhou", error);
+      const replyText = `Não consegui ler esse documento: ${error?.message || "Erro desconhecido."}`;
+      await logPaiTurn(brokerId, userId, "user", "[Documento]", providerMessageId);
+      await sendPaiReply(platformToken, row.sender_phone, replyText);
+      await logPaiTurn(brokerId, userId, "ai", replyText);
+      await markPaiCompleted(row.id);
+      return;
+    }
+    if (!rawText) {
+      const replyText = `Documento “${receivedDocumentName}” recebido. Agora me diga o que você quer consultar ou fazer com essas informações.`;
+      await logPaiTurn(brokerId, userId, "user", `[Documento: ${receivedDocumentName}]`, providerMessageId);
+      await sendPaiReply(platformToken, row.sender_phone, replyText);
+      await logPaiTurn(brokerId, userId, "ai", replyText);
+      await markPaiCompleted(row.id);
+      return;
+    }
   }
 
   // Foto: staging + confirmação, nunca chama o agente — a próxima mensagem
@@ -305,7 +396,13 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     }
   }
 
-  await logPaiTurn(brokerId, userId, "user", text, providerMessageId);
+  await logPaiTurn(
+    brokerId,
+    userId,
+    "user",
+    receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text,
+    providerMessageId,
+  );
 
   const { data: pending } = await supabase
     .from("imf_whatsapp_pending_actions")
@@ -340,6 +437,7 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
 
   const entitlement = await resolveAccountCapabilities(brokerId);
   const stagedPhotoUrls = await fetchStagedPhotoUrls(userId);
+  const stagedDocuments = await fetchStagedDocuments(userId);
   const result = await runAgent({
     brokerId, userId,
     message: text.slice(0, 1000),
@@ -348,7 +446,15 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     autonomy: "copiloto",
     history,
     imageUrls: stagedPhotoUrls.length ? stagedPhotoUrls : undefined,
+    documentContexts: stagedDocuments.length ? stagedDocuments : undefined,
   });
+
+  if (stagedDocuments.length) {
+    // Documento é contexto de uso único do comando que acabou de rodar. A
+    // ação proposta já carrega somente os campos validados que serão
+    // confirmados depois; não há razão para manter o texto extraído.
+    await supabase.from("imf_whatsapp_staged_documents").delete().eq("user_id", userId);
+  }
 
   if (result.proposedAction) {
     await supabase.from("imf_whatsapp_pending_actions").upsert({

@@ -1,5 +1,63 @@
 # Estado do projeto
 
+## WhatsApp Pai — pareamento oficial e hardening do webhook (2026-08-07)
+
+A migration `20260807e_whatsapp_pai_staged_documents.sql` foi aplicada
+manualmente pelo usuário e confirmada por consulta read-only. O número oficial
+`6299982218` foi pareado na instância central pelo Admin local; a UAZAPI reportou
+perfil `Criate` e owner normalizado `556299982218`.
+
+Como não havia um segundo número disponível para enviar comandos, nenhum smoke
+real foi executado. Um Quick Tunnel temporário foi validado atrás de um proxy
+local que aceitava exclusivamente `POST /api/wpp-pai/inbound`; raiz e demais
+rotas respondiam 404. Em seguida o webhook temporário foi desativado e o túnel
+encerrado. O número continua pareado, mas o inbound permanece desativado até a
+retomada controlada ou o deploy.
+
+A revisão encontrou e corrigiu uma lacuna: a conexão administrativa não
+reafirmava o webhook central e o guardião periódico cobria apenas brokers e
+membros. `setUazapiPlatformWebhook` agora valida origem HTTPS pública, monta a
+rota fixa do Pai, é chamada antes de `/instance/connect` e também pelo guardião
+para `imf_platform_instances(key='pai')`. Localhost, loopback e HTTP falham
+fechados. Testes específicos cobrem normalização, ordem da conexão e guardião.
+
+## WhatsApp Pai — Fase 7: documentos como contexto temporário (2026-08-07)
+
+Pedido do usuário: concluir a última fase e preparar a troca controlada para o
+número oficial do WhatsApp Pai. Como o plano original não definia a qual
+objeto um documento deveria ser anexado, foi adotada a opção reversível e de
+menor privilégio: o documento alimenta somente o próximo comando do usuário;
+não é anexado silenciosamente a imóvel, lead, contrato ou reserva.
+
+Migration nova `20260807e_whatsapp_pai_staged_documents.sql`, já aplicada, cria
+`imf_whatsapp_staged_documents`, isolada por `user_id` e `broker_id`, RLS
+ativa e acesso exclusivo da `service_role`. O arquivo bruto não é persistido.
+Ficam apenas nome sanitizado, MIME, tamanho, SHA-256 e até 2.000 caracteres de
+texto extraído. Há dedupe por usuário+hash, no máximo 3 documentos staged,
+consumo único pelo próximo comando e expiração automática em 60 minutos.
+
+Formatos suportados: PDF, TXT, CSV, JSON, Markdown e XML, até 8 MB. Texto é
+decodificado localmente em UTF-8; PDF usa o tipo `file` da API do OpenRouter
+com parser `cloudflare-ai`, sem ativar OCR pago silenciosamente. Arquivos
+Office são rejeitados com orientação explícita para converter em PDF.
+
+`whatsappPaiQueue.ts` reconhece documento, baixa pela UAZAPI, extrai e faz o
+staging. Se vier sem legenda, confirma o recebimento e aguarda o comando; se
+vier com legenda, executa a interpretação na mesma mensagem. `runAgent`
+recebe `attachedDocuments` dentro de `UNTRUSTED_ACCOUNT_CONTEXT`; instruções
+embutidas no arquivo nunca expressam intenção autenticada nem removem a
+confirmação humana. O contexto é apagado depois do comando, inclusive quando
+a ação fica pendente, porque a própria ação validada já contém os campos que
+serão confirmados.
+
+Também foram corrigidos três bloqueios de qualidade encontrados na retomada:
+o hint JSON do agente agora inclui `query_leads`/`query_report`, a tipagem de
+`GlassCard` aceita `key` nas listas JSX e o whitespace antigo de
+`NEXT_TASK.md` foi removido. Seis testes específicos da Fase 7 passaram e o
+TypeScript ficou limpo. Nenhuma chamada real de WhatsApp/OpenRouter e nenhum
+envio de mensagem real ou chamada real ao OpenRouter foram feitos nesta
+validação.
+
 ## WhatsApp Pai — Fase 1: permissão granular no agente de IA (2026-08-07)
 
 Pedido do usuário: número de WhatsApp central onde qualquer usuário da

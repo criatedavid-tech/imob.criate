@@ -698,8 +698,58 @@ Membro com `negocios:visualizar`/`relatorios:visualizar` revogados
 explicitamente → negado nos dois casos, mesma mensagem de negação da
 Fase 1, provando o gate valendo pras ações novas também.
 
-Com isso, as Fases 1-6 do plano do WhatsApp Pai estão completas; só a
-Fase 7 (documentos) fica de fora, sem escopo definido ainda.
+Com isso, as Fases 1-6 do plano do WhatsApp Pai ficaram completas. A Fase 7
+foi definida e implementada na sequência, conforme a seção abaixo.
+
+### WhatsApp Pai — Fase 7: documentos como contexto temporário (2026-08-07)
+
+Documento recebido pelo número central não é anexado automaticamente a nenhum
+objeto do produto. Ele funciona como contexto de uso único para o próximo
+comando do mesmo usuário vinculado. Isso permite perguntas como “resuma este
+contrato” ou “cadastre o imóvel com os dados deste PDF” sem inventar um acervo
+genérico nem escolher silenciosamente entre imóvel, lead, locação e reserva.
+
+**Formatos e limites**:
+
+- PDF, TXT, CSV, JSON, Markdown e XML;
+- máximo de 8 MB por arquivo;
+- no máximo 3 documentos staged por usuário;
+- até 2.000 caracteres factuais extraídos por documento;
+- DOC/DOCX/XLS/XLSX/PPT/PPTX devem ser convertidos para PDF.
+
+**Persistência e privacidade**: a migration
+`20260807e_whatsapp_pai_staged_documents.sql` cria
+`imf_whatsapp_staged_documents` com `user_id`, `broker_id`, nome sanitizado,
+MIME, tamanho, SHA-256, texto extraído e `created_at`. O arquivo bruto não é
+salvo no Storage nem no banco. A tabela usa RLS, revoga `anon`/`authenticated`,
+aceita apenas `service_role`, deduplica por usuário+hash e expira em 60 minutos.
+Depois do próximo comando, todas as linhas staged daquele usuário são apagadas.
+
+**Extração**: arquivos textuais são decodificados localmente em UTF-8. PDF é
+enviado em base64 pelo tipo `file` da API do OpenRouter, usando explicitamente
+o parser `cloudflare-ai`; a configuração evita ativar OCR pago de forma
+silenciosa. O resultado é limitado antes de persistir.
+
+**Segurança da IA**: `runAgent` recebe os documentos em `attachedDocuments`
+dentro de `UNTRUSTED_ACCOUNT_CONTEXT`, separado de
+`CURRENT_AUTHENTICATED_BROKER_REQUEST`. Instruções, prompt injection ou pedidos
+contidos no documento são apenas dados. Somente a mensagem atual do usuário
+autenticado expressa intenção e toda mutação ainda passa por schema Zod,
+permissão granular e confirmação humana.
+
+**Estado de rollout**: implementação e testes unitários locais concluídos. A
+migration foi aplicada manualmente e confirmada. O número oficial foi pareado
+pelo Admin local, mas não havia um segundo número disponível para o smoke; não
+houve envio real nem chamada real ao OpenRouter. O webhook temporário de teste
+foi desativado e o túnel encerrado.
+
+**Resiliência do webhook central**: `setUazapiPlatformWebhook` aceita somente
+origem HTTPS pública e monta a rota fixa `/api/wpp-pai/inbound`. O Admin a
+reafirma antes de toda conexão e falha com 503 se não conseguir configurá-la.
+O guardião periódico passou a incluir também a linha `key='pai'` de
+`imf_platform_instances`; antes cuidava apenas das instâncias de brokers e
+membros, permitindo o Pai aparecer conectado com inbound silenciosamente
+desviado.
 
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
@@ -1929,13 +1979,19 @@ Pendências de segurança/infraestrutura:
 | Reconciliação financeira | 5 min + boot | reprocessa intenções monetárias pendentes |
 | Expiração de reserva PIX | 60 s + boot | libera reservas vencidas e cancela cobrança |
 | Retenção de webhook logs | 24 h + boot | remove logs com mais de 90 dias |
+| Cobrança de aluguel — geração | 1 h + boot | gera competência idempotente no D-5 |
+| Cobrança de aluguel — régua | 30 min | executa a comunicação configurada com o inquilino |
+| Alerta de chave em atraso | 15 min + boot | avisa sobre devolução de chave vencida |
 | Retenção das filas | 6 h + boot | remove linhas resolvidas para conter índices e histórico operacional |
 | Guardião de webhook | 3 min + boot | reafirma os webhooks UAZAPI das instâncias |
+| Expiração de ação do WhatsApp Pai | 60 s + boot | remove confirmação pendente vencida |
+| Expiração de fotos do WhatsApp Pai | 5 min + boot | remove staging de foto abandonado |
+| Expiração de documentos do WhatsApp Pai | 5 min + boot | remove contexto documental abandonado |
 | Backfill de mídia recebida | 30 min + boot | recupera URL reproduzível de mídia histórica incompleta |
 
 A inbox/outbox roda exclusivamente em `webhook-worker.ts` e pode usar múltiplas
 Machines porque os claims usam `FOR UPDATE SKIP LOCKED`, lease e partição por
-conversa. Os 11 jobs rodam em `scheduler-worker.ts`, numa Machine singleton,
+conversa. Os 17 jobs rodam em `scheduler-worker.ts`, numa Machine singleton,
 com prevenção local de sobreposição e drenagem no SIGTERM. `server.ts` não
 registra schedulers. A produção possui três web; o grupo worker tem uma ativa
 e uma standby parada. Ver `SCALABILITY_TEST_PLAN.md` antes de alterar escala.
@@ -2001,6 +2057,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260803_account_capability_overrides.sql` | aplicada e verificada pelo usuário em 03/08/2026 | combinações de Locação/Lançamentos/Financeiro/Equipe por conta |
 | `20260803b_rental_contract_management.sql` | aplicada manualmente pelo usuário em 03/08/2026 | termos completos de locação, competências mensais e recebimentos externos transacionais |
 | `20260803c_rental_tenants.sql` | aplicada manualmente pelo usuário em 03/08/2026 | cadastro reutilizável de inquilinos, backfill de contratos e defesa de vínculo entre contas |
+| `20260807e_whatsapp_pai_staged_documents.sql` | versionada; aplicação pendente | contexto temporário e isolado de documentos recebidos pelo WhatsApp Pai |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

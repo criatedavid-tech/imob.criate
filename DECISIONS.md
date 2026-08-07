@@ -1,5 +1,35 @@
 # Decisões vigentes
 
+## WhatsApp Pai: conexão só fica pronta com webhook público reafirmado (2026-08-07)
+
+- Pareamento e webhook são estados diferentes: uma instância pode aparecer
+  conectada enquanto não recebe nenhuma mensagem. Por isso o Admin reafirma o
+  webhook central antes de conectar e falha fechado se a configuração falhar.
+- A origem deve ser HTTPS pública. HTTP, localhost e endereços de loopback nunca
+  são enviados à UAZAPI.
+- O guardião periódico cobre brokers, membros e a instância central do Pai.
+- Teste local real usa túnel temporário restrito somente ao endpoint inbound;
+  sem número remetente disponível, o webhook fica desativado e nenhum worker ou
+  scheduler local é iniciado contra o banco compartilhado.
+
+## WhatsApp Pai: documento é contexto temporário, não anexo implícito (2026-08-07)
+
+- Um documento enviado ao número central serve somente ao próximo comando do
+  usuário autenticado. Não existe vínculo automático com imóvel, lead,
+  contrato, inquilino ou reserva.
+- O arquivo bruto não é persistido pelo ImobiFlow. Nome sanitizado, tipo,
+  tamanho, hash e texto extraído ficam staged por até 60 minutos, limitados a
+  três arquivos e 2.000 caracteres factuais por documento.
+- PDF usa o parser textual `cloudflare-ai` do OpenRouter; TXT, CSV, JSON,
+  Markdown e XML são lidos localmente em UTF-8. DOC/DOCX/XLS/XLSX/PPT/PPTX
+  exigem conversão para PDF nesta fase, evitando suporte parcial não provado.
+- O texto extraído entra em `UNTRUSTED_ACCOUNT_CONTEXT`. Uma instrução dentro
+  do documento nunca vale como comando; somente a mensagem atual do usuário
+  vinculado expressa intenção, e toda mutação continua exigindo confirmação.
+- O número oficial não é hardcoded no repositório: o pareamento continua sendo
+  estado operacional da instância central. Isso preserva a troca futura da
+  UAZAPI pela API oficial da Meta atrás da fronteira de transporte.
+
 ## Conta administradora: titular gerencia a equipe, super admin fica intocado (2026-08-05)
 
 - Super admin (`is_admin`) e titular de conta continuam sendo dois conceitos

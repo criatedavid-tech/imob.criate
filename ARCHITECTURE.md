@@ -19,7 +19,7 @@ Fly Proxy ──► web × 3 (Express + SPA)
                          ▲              │
                          └── worker × 1 ativo (+ 1 standby)
 
-scheduler × 1 ──► 11 jobs periódicos singleton
+scheduler × 1 ──► 17 jobs periódicos singleton
 ```
 
 Todos os processos ficam em `gru`. Somente `web` recebe tráfego HTTP na porta
@@ -103,6 +103,10 @@ entitlements sem alterar novamente o modelo de navegação.
   `google/gemini-2.5-flash-lite` via OpenRouter.
 - O backfill periódico recupera mídia recebida sem URL; o guardião reafirma a
   configuração dos webhooks UAZAPI.
+- O WhatsApp Pai usa `imf_pai_inbox`, separado do inbound de clientes. PDFs e
+  documentos textuais são reduzidos a contexto factual temporário em
+  `imf_whatsapp_staged_documents`; o arquivo bruto não é persistido, o texto
+  expira em 60 minutos e é consumido pelo próximo comando do mesmo usuário.
 
 Redis não substitui essas filas. Ele é usado para rate limit compartilhado
 entre as três `web`. A integração força IPv6 para o host Upstash/Fly quando
@@ -134,10 +138,9 @@ não está dedicado no Fly; o código usa temporariamente o fallback
 
 ## Jobs periódicos
 
-`scheduler-worker.ts` executa 11 jobs: follow-up inteligente, follow-up
-agendado do assistente, alerta de lembrete, alerta de visita, preparação de
-billing, reconciliação de billing, expiração de reserva PIX, retenção de logs,
-retenção das filas, guardião de webhook e backfill de mídia recebida.
+`scheduler-worker.ts` executa 17 jobs: follow-ups, alertas, billing, reserva,
+três rotinas de locação, retenção, guardião de webhook, expiração das ações,
+fotos e documentos temporários do WhatsApp Pai e backfill de mídia recebida.
 
 O scheduler previne sobreposição local, tolera erro de tick e drena jobs no
 SIGTERM. Ele deve permanecer singleton. O worker pode ser escalado conforme

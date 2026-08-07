@@ -25,6 +25,11 @@ imóvel sem apagar registros anteriores.
 
 ## Escopo ativo
 
+- O WhatsApp Pai é a porta nativa de comando da plataforma: texto, áudio,
+  fotos e documentos chegam a um único número central, resolvem usuário e
+  tenant pelo telefone verificado e reutilizam o mesmo agente/permissões do
+  painel. Documentos são contexto temporário de uso único; não viram anexos
+  permanentes de um objeto de negócio sem uma ação explícita suportada.
 - V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
   `imobiflow-v2`.
 - Baseline funcional auditado em 27/07/2026: commit `4ee40d6`, release Fly

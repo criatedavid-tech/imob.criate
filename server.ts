@@ -187,6 +187,10 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
+      // Evita que o loader "bundle" do esbuild percorra diretórios acima do
+      // checkout (bloqueados no ambiente local do Codex). O build já usa o
+      // mesmo loader via package.json.
+      configLoader: "runner",
       server: { middlewareMode: true },
       appType: "spa",
     });

@@ -48,6 +48,41 @@ async function setUazapiWebhookUrl(instanceToken: string, url: string): Promise<
   }
 }
 
+export function platformWebhookUrl(publicAppUrl: string = PUBLIC_APP_URL): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(publicAppUrl.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return null;
+
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const privateIpv4 = /^(?:10\.|127\.|169\.254\.|192\.168\.|0\.0\.0\.0$)/.test(host)
+    || /^172\.(?:1[6-9]|2\d|3[01])\./.test(host);
+  const privateIpv6 = host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+  if (host === 'localhost' || host.endsWith('.localhost') || privateIpv4 || privateIpv6) return null;
+
+  return `${parsed.origin}/api/wpp-pai/inbound`;
+}
+
+// O Pai usa uma rota fixa, sem instanceId. Reafirmar esse webhook na conexão
+// e no guardião evita a sessão ficar "conectada" enquanto o inbound morreu.
+export async function setUazapiPlatformWebhook(
+  instanceToken: string,
+  publicAppUrl: string = PUBLIC_APP_URL,
+): Promise<boolean> {
+  const webhookUrl = platformWebhookUrl(publicAppUrl);
+  if (!webhookUrl) {
+    console.error(
+      `[Provisioning] PUBLIC_APP_URL inválida para webhook do Pai ("${publicAppUrl}"). ` +
+      'Use uma origem HTTPS pública; localhost nunca deve ser enviado à UAZAPI.',
+    );
+    return false;
+  }
+  return setUazapiWebhookUrl(instanceToken, webhookUrl);
+}
+
 export async function setUazapiWebhook(instanceToken: string, instanceId: string): Promise<boolean> {
   // Guarda de produção: se PUBLIC_APP_URL não for uma URL pública (https e não
   // localhost), NÃO configura o webhook — apontar a UAZAPI para
@@ -264,7 +299,10 @@ async function provisionUazapiInstanceForPlatform(key: string, label: string): P
   }
 
   try {
-    const webhookUrl = `${PUBLIC_APP_URL}/api/wpp-pai/inbound`;
+    const webhookUrl = platformWebhookUrl();
+    if (!webhookUrl) {
+      throw new Error('PUBLIC_APP_URL precisa ser uma origem HTTPS pública para provisionar o WhatsApp Pai.');
+    }
     const { instanceId, instanceToken } = await createUazapiInstance(label, webhookUrl);
 
     await supabase.from('imf_platform_instances').update({

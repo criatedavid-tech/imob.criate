@@ -1,6 +1,6 @@
 # Próximas tarefas — ImobiFlow V2
 
-## WhatsApp Pai — camada de comando da plataforma — Fases 1-6 concluídas, Fase 7 fora de escopo (1-3 já commitadas, `d5a0818`; 4-5 já commitadas, `2eb0282`; Fase 6 pendente: autorização de commit)
+## WhatsApp Pai — Fases 1-7 concluídas localmente; smoke real pendente
 
 Pedido do usuário: número de WhatsApp central onde qualquer usuário
 (titular ou membro, entre potencialmente centenas de contas) manda
@@ -54,7 +54,7 @@ deixado explicando que é temporário até a Fase 3 trazer o número oficial).
 Testado ao vivo: telefone inválido rejeitado, código errado rejeitado
 (incrementa tentativa), código expirado rejeitado, bloqueio após 5
 tentativas, outro usuário não confirma verificação pendente alheia — tudo
-via script contra o servidor real. O fluxo feliz completo (enviar → 
+via script contra o servidor real. O fluxo feliz completo (enviar →
 receber no WhatsApp de verdade → digitar → confirmar) foi validado pelo
 próprio usuário direto na tela real do navegador. `tsc`/`knip`/`npm test`
 limpos (144/144).
@@ -188,12 +188,39 @@ Membro sem as duas permissões (revogadas explicitamente) → negado nos
 dois casos, mesma mensagem da Fase 1. `tsc`/`knip`/`npm test`
 (144/144)/`build` limpos.
 
-**WhatsApp Pai: Fases 1-6 completas.** Fase 7 (documentos) fica fora de
-escopo — sem conceito de anexo em nenhum objeto de domínio hoje, precisa
-de decisão de produto antes de virar escopo. Pendências gerais: commit
-da Fase 6 (aguardando autorização) e resolução do número banido (ver
-seção da Fase 5 acima) antes de qualquer teste ao vivo real com
-mídia/pareamento.
+**Fase 7 (documentos como contexto temporário) — implementada localmente,
+com migration aplicada e sem teste real de provedor**: PDF, TXT, CSV, JSON,
+Markdown e XML, até 8 MB. O arquivo bruto não é persistido; somente texto
+extraído e metadados mínimos ficam em `imf_whatsapp_staged_documents`,
+isolados por usuário/tenant, limitados a 3 documentos, consumidos pelo próximo
+comando ou apagados em 60 minutos. O texto entra no agente dentro de
+`UNTRUSTED_ACCOUNT_CONTEXT`, portanto instruções presentes no arquivo não são
+comandos. PDF usa o parser `cloudflare-ai` do OpenRouter; Office deve ser
+convertido em PDF. Migration: `20260807e_whatsapp_pai_staged_documents.sql`.
+
+**Próximo rollout controlado**:
+
+1. executar os gates completos e obter autorização explícita de commit/push;
+2. manter o número oficial informado pelo usuário (`6299982218`) pareado, sem
+   hardcode no código; o webhook fica desativado enquanto não houver teste;
+3. quando houver um segundo número vinculado, criar túnel HTTPS restrito e
+   fazer somente smokes mínimos: 1 texto, 1 PDF pequeno e, depois, 1 áudio e
+   1 foto — sem rajadas, loops ou massa sintética;
+4. validar fila, resposta, consumo/expiração do contexto e ausência de envio
+   duplicado antes de liberar uso normal;
+5. manter UAZAPI como transporte atual e planejar a futura troca pela API
+   oficial da Meta sem alterar o motor do WhatsApp Pai.
+
+Hardening posterior ao pareamento: conexão administrativa agora reafirma o
+webhook central antes de chamar a UAZAPI, falhando fechada se a origem pública
+não estiver pronta. O guardião periódico também passou a cobrir
+`imf_platform_instances(key='pai')`, além de brokers e membros. URLs locais ou
+HTTP são recusadas. O túnel de validação foi encerrado e o webhook temporário
+foi desativado porque não havia um segundo número disponível para o smoke.
+
+**WhatsApp Pai: Fases 1-7 completas no código local.** Os commits locais das
+Fases 1-6 ainda não foram publicados; a Fase 7 aguarda validação controlada e
+autorização de versionamento/deploy.
 
 ## Permissões granulares por membro da equipe — CONCLUÍDO, deployado (commit `200ed5b8e`, 2026-08-07)
 

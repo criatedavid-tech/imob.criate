@@ -113,3 +113,15 @@ export async function expireStagedWhatsappMedia(): Promise<void> {
     .lt("created_at", cutoff);
   if (error) console.error("[Maintenance] falha ao expirar staging de mídia do WhatsApp Pai:", error.message);
 }
+
+// Documentos do WhatsApp Pai são contexto temporário de uso único. Se o
+// usuário envia um arquivo e não manda o comando seguinte, o texto extraído
+// expira sem virar um acervo paralelo de documentos no produto.
+export async function expireStagedWhatsappDocuments(): Promise<void> {
+  const cutoff = new Date(Date.now() - STAGED_MEDIA_TTL_MS).toISOString();
+  const { error } = await supabase
+    .from("imf_whatsapp_staged_documents")
+    .delete()
+    .lt("created_at", cutoff);
+  if (error) console.error("[Maintenance] falha ao expirar documentos do WhatsApp Pai:", error.message);
+}

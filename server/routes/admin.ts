@@ -14,7 +14,7 @@ import {
   trialVoucherCodeHint,
 } from "../security/trialVoucherCode";
 import { cancelAsaasSubscription } from "../services/billing";
-import { provisionUazapiInstanceNative, ensureBrokerInstance, ensurePlatformInstance, disconnectUazapiInstance } from "../services/provisioning";
+import { provisionUazapiInstanceNative, ensureBrokerInstance, ensurePlatformInstance, disconnectUazapiInstance, setUazapiPlatformWebhook } from "../services/provisioning";
 import { getSystemHealth, getBrokerHealth, requeueDeadRows, releaseStaleLeases } from "../services/systemHealth";
 import { purgeResolvedQueueRows } from "../services/maintenance";
 import { runWebhookKeeperTick } from "../services/webhookKeeper";
@@ -667,6 +667,13 @@ adminRouter.post("/api/admin/whatsapp-pai/connect", async (req, res) => {
     const { token, status: provisioningStatus, error: provisioningError } = await ensurePlatformInstance(WHATSAPP_PAI_KEY, WHATSAPP_PAI_LABEL);
     if (!token) {
       return res.status(400).json({ error: provisioningError || "Instância ainda sendo preparada.", provisioningStatus });
+    }
+
+    // A sessão pode continuar conectada mesmo depois de a UAZAPI perder ou
+    // desviar o webhook. Reafirma a rota central em toda tentativa de conexão.
+    const webhookReady = await setUazapiPlatformWebhook(token);
+    if (!webhookReady) {
+      return res.status(503).json({ error: "Webhook público do WhatsApp Pai não pôde ser configurado." });
     }
 
     // phone opcional: com ele, a UAZAPI gera código de pareamento em vez de

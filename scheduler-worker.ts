@@ -7,7 +7,13 @@ import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduled
 import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
 import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
-import { purgeExpiredWebhookLogs, purgeResolvedQueueRows, expirePaiPendingActions, expireStagedWhatsappMedia } from "./server/services/maintenance";
+import {
+  purgeExpiredWebhookLogs,
+  purgeResolvedQueueRows,
+  expirePaiPendingActions,
+  expireStagedWhatsappMedia,
+  expireStagedWhatsappDocuments,
+} from "./server/services/maintenance";
 import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
 import { runInboundMediaBackfillTick } from "./server/services/inboundMediaBackfill";
 import {
@@ -122,6 +128,14 @@ const jobs: RecurringJob[] = [
     intervalMs: 5 * 60_000,
     runOnStart: true,
     task: expireStagedWhatsappMedia,
+  },
+  {
+    // Texto extraído de PDF/TXT/CSV/JSON/XML que ainda não foi consumido pelo
+    // próximo comando. O arquivo bruto nunca é persistido pelo ImobiFlow.
+    name: "expiração de documentos do WhatsApp Pai",
+    intervalMs: 5 * 60_000,
+    runOnStart: true,
+    task: expireStagedWhatsappDocuments,
   },
   {
     // Torna tocáveis os áudios/imagens recebidos que ficaram só como transcrição

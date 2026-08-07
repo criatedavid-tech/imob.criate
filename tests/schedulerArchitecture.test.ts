@@ -25,6 +25,12 @@ test("processo scheduler registra todos os jobs recorrentes esperados", async ()
     // Sem o guardião, a UAZAPI perde o webhook e o inbound para em silêncio.
     "runWebhookKeeperTick",
     "runInboundMediaBackfillTick",
+    "runRentalChargeGenerationTick",
+    "runRentalDunningTick",
+    "runKeyOverdueAlertTick",
+    "expirePaiPendingActions",
+    "expireStagedWhatsappMedia",
+    "expireStagedWhatsappDocuments",
   ]) {
     assert.match(source, new RegExp(`task: ${job}`));
   }
