@@ -9,6 +9,8 @@ import { parseConfirmedAgentAction } from "../security/agentGuardrails";
 import { detectInboundMediaKind, mediaMessageId, declaredFileLength } from "./inboundMedia";
 import { transcribeWithOpenRouter, resolveAudioFormat, logAiProviderError, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from "./mediaAi";
 import { uploadPropertyImageBase64 } from "./propertyImages";
+import { ensureConversationTicket, recordConversationMessage } from "./conversationTickets";
+import { storeConversationMediaFromBase64 } from "./conversationMedia";
 import {
   MAX_DOCUMENT_BYTES,
   MAX_STAGED_DOCUMENTS,
@@ -47,6 +49,11 @@ function paiDedupeKey(body: Record<string, any>): string {
   const providerMessageId = optionalString(body.message?.id) || optionalString(body.message?.messageid);
   if (providerMessageId) return `message:${providerMessageId}`;
   return `payload:${createHash("sha256").update(JSON.stringify(body)).digest("hex")}`;
+}
+
+export function isPaiAlbumEnvelope(message: Record<string, any>): boolean {
+  return optionalString(message.mediaType).toLowerCase() === "collection"
+    || optionalString(message.messageType).toLowerCase() === "albummessage";
 }
 
 // Enfileira um webhook JÁ AUTENTICADO (o token contra imf_platform_instances
@@ -114,6 +121,124 @@ async function sendPaiReply(instanceToken: string, phone: string, text: string):
   if (!sent.ok) {
     throw new Error(`Falha temporaria ao responder pelo WhatsApp (status ${sent.status}).`);
   }
+}
+
+function platformPhoneFromPayload(payload: Record<string, any>): string {
+  return normalizePhoneBR(optionalString(payload.owner) || optionalString(payload.message?.owner));
+}
+
+async function recordPaiCommandMessage(input: {
+  brokerId: string;
+  userId: string;
+  platformPhone: string;
+  body: string;
+  providerMessageId: string;
+  mediaUrl?: string | null;
+  mediaType?: "image" | "audio" | null;
+}): Promise<string | null> {
+  if (!input.platformPhone) return null;
+  const ticket = await ensureConversationTicket({
+    brokerId: input.brokerId,
+    customerPhone: input.platformPhone,
+    initialStatus: "pending",
+    aiActive: false,
+    assignedUserId: input.userId,
+    instanceOwnerUserId: input.userId,
+  });
+  const [ticketUpdate, contactUpsert] = await Promise.all([
+    supabase.from("imf_conversation_tickets").update({
+      ai_active: false,
+      assigned_user_id: input.userId,
+      instance_owner_user_id: input.userId,
+      human_takeover_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", ticket.id).eq("broker_id", input.brokerId),
+    supabase.from("imf_contacts").upsert({
+      broker_id: input.brokerId,
+      phone: input.platformPhone,
+      name: "WhatsApp Pai",
+    }, { onConflict: "broker_id,phone" }),
+  ]);
+  if (ticketUpdate.error) throw ticketUpdate.error;
+  if (contactUpsert.error) throw contactUpsert.error;
+  try {
+    await recordConversationMessage({
+      brokerId: input.brokerId,
+      customerPhone: input.platformPhone,
+      ticketId: ticket.id,
+      direction: "out",
+      senderType: "broker_manual",
+      body: input.body,
+      mediaUrl: input.mediaUrl,
+      mediaType: input.mediaType,
+      providerMessageId: input.providerMessageId,
+    });
+  } catch (error: any) {
+    if (error?.code !== "23505") throw error;
+  }
+  return ticket.id;
+}
+
+async function backfillStagedPhotosToPaiConversation(
+  brokerId: string,
+  userId: string,
+  platformPhone: string,
+): Promise<void> {
+  if (!platformPhone) return;
+  const { data, error } = await supabase.from("imf_whatsapp_staged_media")
+    .select("url, provider_message_id")
+    .eq("user_id", userId)
+    .eq("broker_id", brokerId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  for (const photo of data || []) {
+    if (!photo.url || !photo.provider_message_id) continue;
+    await recordPaiCommandMessage({
+      brokerId,
+      userId,
+      platformPhone,
+      body: "[Imagem]",
+      providerMessageId: photo.provider_message_id,
+      mediaUrl: photo.url,
+      mediaType: "image",
+    });
+  }
+}
+
+async function enqueueDeferredPhotoCaption(
+  senderPhone: string,
+  caption: string,
+  providerMessageId: string,
+): Promise<void> {
+  const { error } = await supabase.from("imf_pai_inbox").upsert({
+    dedupe_key: `photo-caption:${providerMessageId}`,
+    sender_phone: senderPhone,
+    payload: {
+      EventType: "messages",
+      _imobiflow: { kind: "photo_caption", source_message_id: providerMessageId },
+      message: {
+        id: `photo-caption:${providerMessageId}`,
+        text: caption,
+        type: "text",
+        mediaType: "",
+        messageType: "ExtendedTextMessage",
+        fromMe: false,
+        chatid: `${senderPhone}@s.whatsapp.net`,
+      },
+    },
+  }, { onConflict: "dedupe_key", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+async function hasDeferredPhotoCaption(senderPhone: string): Promise<boolean> {
+  const { data, error } = await supabase.from("imf_pai_inbox")
+    .select("id")
+    .eq("sender_phone", senderPhone)
+    .in("status", ["pending", "processing"])
+    .like("dedupe_key", "photo-caption:%")
+    .limit(1);
+  if (error) throw error;
+  return !!data?.length;
 }
 
 async function resolveSenderIdentity(phone: string): Promise<{ userId: string; brokerId: string } | null> {
@@ -309,17 +434,17 @@ async function handlePendingAction(
 async function handleIncomingPhoto(
   platformToken: string, message: Record<string, any>, userId: string, brokerId: string,
   providerMessageId: string,
-): Promise<void> {
+): Promise<string> {
   const messageId = mediaMessageId(message);
   if (!messageId) throw new Error("ID da mídia ausente.");
   const { data: existing, error: existingError } = await supabase
     .from("imf_whatsapp_staged_media")
-    .select("id")
+    .select("id, url")
     .eq("user_id", userId)
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existing) return;
+  if (existing?.url) return existing.url;
   const fileLength = declaredFileLength(message);
   if (fileLength !== null && fileLength > MAX_IMAGE_BYTES) throw new Error("Imagem excede o limite permitido.");
 
@@ -334,11 +459,15 @@ async function handleIncomingPhoto(
     url,
   }, { onConflict: "user_id,provider_message_id" });
   if (error) throw error;
+  return url;
 }
 
 // Áudio vira texto (mesma transcrição já usada no pipeline do cliente) e
 // segue o fluxo normal como se o usuário tivesse digitado o comando.
-async function handleIncomingAudio(platformToken: string, message: Record<string, any>): Promise<string> {
+async function handleIncomingAudio(
+  platformToken: string,
+  message: Record<string, any>,
+): Promise<{ transcript: string; base64Data: string; mimetype: string }> {
   const messageId = mediaMessageId(message);
   if (!messageId) throw new Error("ID da mídia ausente.");
   const fileLength = declaredFileLength(message);
@@ -349,7 +478,7 @@ async function handleIncomingAudio(platformToken: string, message: Record<string
 
   const transcript = await transcribeWithOpenRouter(media.base64Data, resolveAudioFormat(media.base64Data, media.mimetype));
   if (!transcript) throw new Error("A transcrição do áudio voltou vazia.");
-  return transcript;
+  return { transcript, base64Data: media.base64Data, mimetype: media.mimetype };
 }
 
 async function handleIncomingDocument(
@@ -434,6 +563,14 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   const providerMessageId = optionalString(message.id) || optionalString(message.messageid) || null;
   const mediaKind = detectInboundMediaKind(message);
   const isDocument = isPaiDocumentMessage(message);
+  const deferredPhotoCaption = row.payload?._imobiflow?.kind === "photo_caption";
+
+  // A UAZAPI emite um envelope sem arquivo antes dos eventos individuais das
+  // fotos do album. Ele nao e uma mensagem do usuario para o agente.
+  if (isPaiAlbumEnvelope(message)) {
+    await markPaiIgnored(row.id, "Envelope de album; fotos processadas individualmente.");
+    return;
+  }
 
   if (!rawText && !mediaKind && !isDocument) {
     await markPaiIgnored(row.id, "Tipo de mensagem ainda não suportado.");
@@ -454,6 +591,7 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     return;
   }
   const { userId, brokerId } = identity;
+  const platformPhone = platformPhoneFromPayload(row.payload);
   // A linha única da inbox é a fonte de idempotência do inbound. O histórico
   // não pode ser usado como marcador de conclusão: ele é gravado antes de
   // algumas etapas e faria um retry descartar uma mensagem ainda incompleta.
@@ -487,23 +625,63 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   if (mediaKind === "image") {
     let replyText: string;
     try {
-      await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
-      replyText = "Foto recebida! Manda mais fotos ou já descreve o imóvel (endereço, quartos, valor...) que eu cadastro.";
+      const photoUrl = await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
+      await recordPaiCommandMessage({
+        brokerId,
+        userId,
+        platformPhone,
+        body: rawText || "[Imagem]",
+        providerMessageId: executionMessageId,
+        mediaUrl: photoUrl,
+        mediaType: "image",
+      });
+      if (rawText) {
+        await enqueueDeferredPhotoCaption(row.sender_phone, rawText, executionMessageId);
+        replyText = "Foto e descrição recebidas. Vou juntar as imagens antes de preparar o cadastro.";
+      } else if (await hasDeferredPhotoCaption(row.sender_phone)) {
+        replyText = "";
+      } else {
+        replyText = "Foto recebida! Manda mais fotos ou já descreve o imóvel (endereço, quartos, valor...) que eu cadastro.";
+      }
     } catch (error: any) {
       logAiProviderError("[WhatsApp Pai] processamento de foto falhou", error);
       replyText = `Não consegui processar essa foto: ${error?.message || "Erro desconhecido."}`;
     }
     await logPaiTurn(brokerId, userId, "user", "[Foto]", providerMessageId);
-    await sendPaiReply(platformToken, row.sender_phone, replyText);
-    await logPaiTurn(brokerId, userId, "ai", replyText);
+    if (replyText) {
+      await sendPaiReply(platformToken, row.sender_phone, replyText);
+      await logPaiTurn(brokerId, userId, "ai", replyText);
+    }
     await markPaiCompleted(row.id);
     return;
   }
 
   let text = rawText;
+  let commandMediaUrl: string | null = null;
+  let commandMediaType: "audio" | null = null;
   if (mediaKind === "audio") {
     try {
-      text = await handleIncomingAudio(platformToken, message);
+      const audio = await handleIncomingAudio(platformToken, message);
+      text = audio.transcript;
+      if (platformPhone) {
+        const ticket = await ensureConversationTicket({
+          brokerId,
+          customerPhone: platformPhone,
+          initialStatus: "pending",
+          aiActive: false,
+          assignedUserId: userId,
+          instanceOwnerUserId: userId,
+        });
+        const stored = await storeConversationMediaFromBase64({
+          brokerId,
+          ticketId: ticket.id,
+          base64: audio.base64Data,
+          mime: audio.mimetype,
+          filenameHint: "comando-pai-audio",
+        });
+        commandMediaUrl = stored.publicUrl;
+        commandMediaType = "audio";
+      }
     } catch (error: any) {
       logAiProviderError("[WhatsApp Pai] transcrição de áudio falhou", error);
       const replyText = `Não consegui entender esse áudio: ${error?.message || "Erro desconhecido."}`;
@@ -513,6 +691,19 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
       await markPaiCompleted(row.id);
       return;
     }
+  }
+
+  if (!deferredPhotoCaption) {
+    await backfillStagedPhotosToPaiConversation(brokerId, userId, platformPhone);
+    await recordPaiCommandMessage({
+      brokerId,
+      userId,
+      platformPhone,
+      body: commandMediaType === "audio" ? `Áudio: ${text}` : text,
+      providerMessageId: executionMessageId,
+      mediaUrl: commandMediaUrl,
+      mediaType: commandMediaType,
+    });
   }
 
   const userLogText = receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text;

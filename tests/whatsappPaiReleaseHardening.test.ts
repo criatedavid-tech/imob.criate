@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { normalizeStaffPhone } from "../server/services/whatsappStaffLinks";
+import { isPaiAlbumEnvelope } from "../server/services/whatsappPaiQueue";
 
 test("telefone de colaborador aceita formato local e brasileiro", () => {
   assert.equal(normalizeStaffPhone("(62) 99982-2218"), "556299822218");
@@ -65,4 +66,40 @@ test("migration incremental elimina conflito entre retorno e coluna do telefone"
   assert.doesNotMatch(sql, /ON CONFLICT \(phone_normalized\)/);
   assert.match(sql, /REVOKE ALL ON FUNCTION public\.imf_start_whatsapp_phone_verification[\s\S]*FROM PUBLIC, anon, authenticated/);
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.imf_start_whatsapp_phone_verification[\s\S]*TO service_role/);
+});
+
+test("album do Pai e tratado pelos eventos individuais e a legenda vira comando adiado", async () => {
+  assert.equal(isPaiAlbumEnvelope({ mediaType: "collection", messageType: "AlbumMessage" }), true);
+  assert.equal(isPaiAlbumEnvelope({ mediaType: "image", messageType: "ImageMessage" }), false);
+
+  const source = await readFile(new URL("../server/services/whatsappPaiQueue.ts", import.meta.url), "utf8");
+  assert.match(source, /Envelope de album; fotos processadas individualmente/);
+  assert.match(source, /enqueueDeferredPhotoCaption\(row\.sender_phone, rawText, executionMessageId\)/);
+  assert.match(source, /dedupe_key: `photo-caption:\$\{providerMessageId\}`/);
+  assert.match(source, /recordPaiCommandMessage\(\{/);
+  assert.match(source, /backfillStagedPhotosToPaiConversation\(brokerId, userId, platformPhone\)/);
+  assert.match(source, /mediaType: "image"/);
+  assert.match(source, /mediaType: commandMediaType/);
+});
+
+test("numero central vira conversa interna sem acionar a IA comercial", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260807h_whatsapp_pai_internal_conversation.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS phone_normalized TEXT/);
+  assert.match(sql, /SET phone_normalized = '556299982218'/);
+  assert.match(sql, /UPDATE public\.imf_conversation_tickets[\s\S]*customer_phone = '556299982218'/);
+  assert.match(sql, /SET ai_active = FALSE/);
+
+  const source = await readFile(new URL("../server/services/inboundWebhookQueue.ts", import.meta.url), "utf8");
+  assert.match(source, /customerPhone === platformPaiPhone/);
+  assert.match(source, /if \(isPaiInternalConversation\)/);
+  const internalBranch = source.slice(
+    source.indexOf("if (isPaiInternalConversation)"),
+    source.indexOf("const pushName", source.indexOf("if (isPaiInternalConversation)")),
+  );
+  assert.match(internalBranch, /ai_active: false/);
+  assert.match(internalBranch, /markInboxCompleted/);
+  assert.doesNotMatch(internalBranch, /enqueueN8nOutbox/);
 });

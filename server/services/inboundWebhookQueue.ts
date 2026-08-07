@@ -49,6 +49,7 @@ const withMediaSlot = createSemaphore(MEDIA_CONCURRENCY);
 
 let inboxTickRunning = false;
 let outboxTickRunning = false;
+let paiPhoneCache: { value: string; expires: number } | null = null;
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const parsed = Number(process.env[name]);
@@ -58,6 +59,22 @@ function envInteger(name: string, fallback: number, min: number, max: number): n
 
 function optionalString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function getPlatformPaiPhone(): Promise<string> {
+  if (paiPhoneCache && paiPhoneCache.expires > Date.now()) return paiPhoneCache.value;
+  const { data, error } = await supabase.from("imf_platform_instances")
+    .select("phone_normalized")
+    .eq("key", "pai")
+    .maybeSingle();
+  if (error) {
+    // Compatibilidade durante o intervalo entre o deploy e a migration.
+    if (/phone_normalized/i.test(error.message || "")) return "";
+    throw error;
+  }
+  const value = normalizePhoneBR(optionalString(data?.phone_normalized));
+  paiPhoneCache = { value, expires: Date.now() + 60_000 };
+  return value;
 }
 
 function eventType(body: Record<string, any>): string {
@@ -363,6 +380,8 @@ async function processInboxRow(row: InboxRow): Promise<void> {
 
     const customerPhone = normalizePhoneBR(optionalString(message.chatid));
     if (!customerPhone) return await markInboxIgnored(row.id, "Telefone ausente ou invalido.");
+    const platformPaiPhone = await getPlatformPaiPhone();
+    const isPaiInternalConversation = !!platformPaiPhone && customerPhone === platformPaiPhone;
 
     const providerMessageId = optionalString(message.id) || optionalString(message.messageid) || null;
     const persistenceMessageId = providerMessageId || `inbox:${row.id}`;
@@ -401,7 +420,7 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         brokerId: row.broker_id,
         customerPhone,
         initialStatus: "pending",
-        aiActive: true,
+        aiActive: !isPaiInternalConversation,
         instanceOwnerUserId: row.instance_owner_user_id,
         lastActivityAt: activityAt,
       });
@@ -459,13 +478,35 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         brokerId: row.broker_id,
         customerPhone,
         initialStatus: "pending",
-        aiActive: true,
+        aiActive: !isPaiInternalConversation,
         instanceOwnerUserId: row.instance_owner_user_id,
       });
       ticketId = ticket.id;
     }
 
     const activityAt = optionalString(recorded?.created_at) || new Date().toISOString();
+
+    // O numero central e um canal interno de comando. A resposta continua
+    // visivel em Conversas, mas nunca vira lead, follow-up ou entrada do n8n.
+    if (isPaiInternalConversation) {
+      const [ticketUpdate, contactUpsert] = await Promise.all([
+        supabase.from("imf_conversation_tickets").update({
+          ai_active: false,
+          human_takeover_at: activityAt,
+          updated_at: activityAt,
+        }).eq("id", ticketId).eq("broker_id", row.broker_id),
+        supabase.from("imf_contacts").upsert({
+          broker_id: row.broker_id,
+          phone: customerPhone,
+          name: "WhatsApp Pai",
+        }, { onConflict: "broker_id,phone" }),
+      ]);
+      if (ticketUpdate.error) throw ticketUpdate.error;
+      if (contactUpsert.error) throw contactUpsert.error;
+      await markInboxCompleted(row.id);
+      return;
+    }
+
     const pushName = optionalString(body.chat?.wa_contactName)
       || optionalString(body.chat?.wa_name)
       || optionalString(message.senderName)
