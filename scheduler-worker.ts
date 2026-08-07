@@ -7,7 +7,7 @@ import { runScheduledAgentFollowupsTick } from "./server/services/agentScheduled
 import { runReminderWhatsappAlertTick } from "./server/services/reminderAlerts";
 import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
-import { purgeExpiredWebhookLogs, purgeResolvedQueueRows } from "./server/services/maintenance";
+import { purgeExpiredWebhookLogs, purgeResolvedQueueRows, expirePaiPendingActions, expireStagedWhatsappMedia } from "./server/services/maintenance";
 import { runWebhookKeeperTick } from "./server/services/webhookKeeper";
 import { runInboundMediaBackfillTick } from "./server/services/inboundMediaBackfill";
 import {
@@ -104,6 +104,24 @@ const jobs: RecurringJob[] = [
     intervalMs: 3 * 60 * 1_000,
     runOnStart: true,
     task: runWebhookKeeperTick,
+  },
+  {
+    // Uma ação proposta pelo WhatsApp Pai que nunca foi confirmada nem
+    // cancelada não pode ficar presa pra sempre — expira em 15min (ver
+    // PENDING_ACTION_TTL_MS em whatsappPaiQueue.ts).
+    name: "expiração de ação pendente do WhatsApp Pai",
+    intervalMs: 60_000,
+    runOnStart: true,
+    task: expirePaiPendingActions,
+  },
+  {
+    // Fotos enviadas ao WhatsApp Pai e nunca aproveitadas num cadastro
+    // (usuário abandonou) — rede de segurança, TTL de 60min (ver
+    // STAGED_MEDIA_TTL_MS em maintenance.ts).
+    name: "expiração de staging de mídia do WhatsApp Pai",
+    intervalMs: 5 * 60_000,
+    runOnStart: true,
+    task: expireStagedWhatsappMedia,
   },
   {
     // Torna tocáveis os áudios/imagens recebidos que ficaram só como transcrição

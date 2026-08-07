@@ -74,8 +74,9 @@ export async function purgeResolvedQueueRows(): Promise<void> {
     // na ordem inversa evita apagar por cascata sem contabilizar.
     const outbox = await purgeQueueTable("imf_webhook_outbox", cutoff);
     const inbox = await purgeQueueTable("imf_webhook_inbox", cutoff);
-    if (outbox || inbox) {
-      console.log(`[Maintenance] filas purgadas: outbox=${outbox}, inbox=${inbox} (anteriores a ${cutoff})`);
+    const pai = await purgeQueueTable("imf_pai_inbox", cutoff);
+    if (outbox || inbox || pai) {
+      console.log(`[Maintenance] filas purgadas: outbox=${outbox}, inbox=${inbox}, pai=${pai} (anteriores a ${cutoff})`);
     }
   } catch (error: any) {
     console.error("[Maintenance] purge de filas falhou:", error?.message || error);
@@ -83,4 +84,32 @@ export async function purgeResolvedQueueRows(): Promise<void> {
     const { error } = await supabase.rpc("release_billing_lock", { p_key: "webhook_queue_purge" });
     if (error) console.warn("[Maintenance] falha ao liberar lock do purge de filas:", error.message);
   }
+}
+
+// Uma ação proposta que nunca foi confirmada nem cancelada fica presa
+// esperando pra sempre sem isto — próxima mensagem do mesmo usuário, mesmo
+// fora da janela de 15min, ainda tentaria classificar a resposta como
+// confirma/cancela em vez de tratar como comando novo.
+export async function expirePaiPendingActions(): Promise<void> {
+  const { error } = await supabase
+    .from("imf_whatsapp_pending_actions")
+    .delete()
+    .lt("expires_at", new Date().toISOString());
+  if (error) console.error("[Maintenance] falha ao expirar pendências do WhatsApp Pai:", error.message);
+}
+
+// Fotos enviadas ao WhatsApp Pai antes do texto descritivo, mas o usuário
+// nunca completou o cadastro (ex.: mandou foto e sumiu) — sem isto ficariam
+// staged pra sempre e vazariam pro PRÓXIMO imóvel que esse usuário cadastrar
+// meses depois. O caminho feliz (create_property confirmado) já limpa sozinho
+// em handlePendingAction (whatsappPaiQueue.ts); isto é só a rede de segurança
+// pro caso abandonado.
+const STAGED_MEDIA_TTL_MS = 60 * 60 * 1000;
+export async function expireStagedWhatsappMedia(): Promise<void> {
+  const cutoff = new Date(Date.now() - STAGED_MEDIA_TTL_MS).toISOString();
+  const { error } = await supabase
+    .from("imf_whatsapp_staged_media")
+    .delete()
+    .lt("created_at", cutoff);
+  if (error) console.error("[Maintenance] falha ao expirar staging de mídia do WhatsApp Pai:", error.message);
 }

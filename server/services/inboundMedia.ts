@@ -8,7 +8,7 @@ import {
 } from "./mediaAi";
 import { downloadUazapiMedia } from "./uazapi";
 
-type InboundMediaKind = "audio" | "image";
+export type InboundMediaKind = "audio" | "image";
 
 export interface InboundMediaMessage {
   id?: unknown;
@@ -54,7 +54,10 @@ function optionalString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function mediaMessageId(message: InboundMediaMessage): string {
+// Exportadas também para o pipeline de mídia do WhatsApp Pai
+// (whatsappPaiQueue.ts, Fase 5) — mesma extração de id/tamanho declarado do
+// payload da UAZAPI, reaproveitada em vez de duplicada.
+export function mediaMessageId(message: InboundMediaMessage): string {
   const directId = optionalString(message.messageid);
   if (directId) return directId;
   const compositeId = optionalString(message.id);
@@ -62,7 +65,7 @@ function mediaMessageId(message: InboundMediaMessage): string {
   return separatorIndex >= 0 ? compositeId.slice(separatorIndex + 1) : compositeId;
 }
 
-function declaredFileLength(message: InboundMediaMessage): number | null {
+export function declaredFileLength(message: InboundMediaMessage): number | null {
   if (!message.content || typeof message.content !== "object") return null;
   const value = Number((message.content as Record<string, unknown>).fileLength);
   return Number.isFinite(value) && value >= 0 ? value : null;
@@ -76,7 +79,7 @@ function messageCaption(message: InboundMediaMessage): string {
   return optionalString(message.text);
 }
 
-function detectInboundMediaKind(message: InboundMediaMessage): InboundMediaKind | null {
+export function detectInboundMediaKind(message: InboundMediaMessage): InboundMediaKind | null {
   const mediaType = optionalString(message.mediaType).toLowerCase();
   const messageType = optionalString(message.messageType).toLowerCase();
   if (mediaType === "ptt" || mediaType === "audio" || messageType === "audiomessage") return "audio";

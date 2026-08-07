@@ -1,6 +1,6 @@
 # Próximas tarefas — ImobiFlow V2
 
-## WhatsApp Pai — camada de comando da plataforma — Fases 1+2+3 concluídas, pendente: autorização de commit
+## WhatsApp Pai — camada de comando da plataforma — Fases 1-5 concluídas (1-3 já commitadas, commit `d5a0818`; Fases 4 e 5 pendentes: autorização de commit)
 
 Pedido do usuário: número de WhatsApp central onde qualquer usuário
 (titular ou membro, entre potencialmente centenas de contas) manda
@@ -89,10 +89,87 @@ instância já pareada; UI checada de ponta a ponta injetando uma sessão
 real de admin descartável no navegador — a aba renderiza exatamente o
 status ao vivo. `tsc`/`knip`/`npm test` limpos (144/144).
 
-**Próximas fases (4-6)**: pipeline de inbound (fila durável + confirmação
-persistida) — é aqui que a URL `/api/wpp-pai/inbound` passa a existir de
-verdade —, mídia (voz + fotos de imóvel), novas consultas (leads
-hoje/relatório do mês). Fase 7 (documentos) fora de escopo por enquanto.
+**Fase 4 (pipeline de inbound + confirmação persistida) — concluída e
+testada ao vivo, com 2 bugs reais achados e corrigidos no processo**:
+`imf_pai_inbox` (fila durável, mesmo padrão SKIP LOCKED de
+`claim_imf_webhook_inbox`, particionada por telefone — mensagens da mesma
+pessoa nunca processam fora de ordem) + `imf_whatsapp_pending_actions`
+(PK em `user_id`, 1 ação pendente por remetente de graça) +
+`imf_agent_log` ganhou `channel`/`provider_message_id` (trava de
+idempotência). `server/services/whatsappPaiQueue.ts` (novo): resolve
+telefone→usuário via `imf_whatsapp_staff_links`, classifica confirmação
+por palavra-chave determinística em PT-BR, chama `runAgent`/`executeAction`
+(o mesmo cérebro do assistente do painel). `POST /api/wpp-pai/inbound`
+(`server/routes/whatsappPai.ts`) — autentica pelo token da instância
+central, sem lookup por instância (só existe uma).
+
+Bugs achados testando ao vivo (não hipotéticos, achados rodando contra o
+servidor real): (1) `runPaiInboxTick` não tinha a mesma trava
+anti-sobreposição que `runWebhookInboxTick` já tem — duas mensagens
+próximas no tempo disparavam ciclos concorrentes que colidiam entre si
+("lease não pertence mais a este worker"); corrigido com o mesmo padrão
+`*TickRunning` boolean. (2) `classifyReply` não tirava pontuação antes de
+comparar — "sim, pode confirmar" virava `firstWord` "sim," (com vírgula),
+não batia com "sim" da lista, e a pendência era abandonada em silêncio em
+vez de confirmada; corrigido tirando pontuação final antes de comparar.
+
+Testado ao vivo, servidor real, contas descartáveis, payload sintético no
+formato exato da UAZAPI: telefone não vinculado → orientação, nada
+tocado; comando mutante → proposta + pendência persistida; "não" →
+cancela, nada criado; comando de novo + "sim" → imóvel REAL criado;
+reenvio da mesma mensagem (mesmo id) → bloqueado pelo `dedupe_key`, sem
+duplicar; log de conversa com `channel='whatsapp'`; membro sem
+`carteira:criar` → negado explicitamente através do WhatsApp Pai (mesmo
+gate da Fase 1, agora provado funcionando também por essa porta nova).
+`tsc`/`knip`/`npm test` limpos (144/144).
+
+**Fase 5 (mídia: voz + fotos de imóvel antes do texto) — concluída, com
+uma ressalva de teste importante**: no intervalo entre a Fase 4 e esta, o
+número de teste pessoal do usuário foi BANIDO pelo WhatsApp por spam —
+efeito colateral direto do volume de mensagens automatizadas dos testes
+anteriores num número recém-pareado. Confirmado contra `GET
+/instance/status` (`connected:false`). A implementação seguiu normal; o
+teste ao vivo com download real de mídia ficou bloqueado (exige instância
+conectada de verdade) e a verificação foi adaptada — ver abaixo. Fica
+registrado como risco real pra plataforma inteira, não só pro teste: todo
+envio automatizado da ImobiFlow passa pela mesma UAZAPI não-oficial;
+número novo + volume alto de mensagens automatizadas logo na entrada é
+gatilho conhecido de banimento — merece conversa de produto separada.
+
+`imf_whatsapp_staged_media` (nova, migration `20260807d`) guarda fotos
+recebidas ANTES do texto descritivo chegar — WhatsApp entrega cada foto
+numa mensagem separada, sem estado de sessão entre elas (diferente do
+array em memória da `CommandBar.tsx` no painel). `handleIncomingPhoto`
+(baixa da UAZAPI + sobe pro bucket via `uploadPropertyImageBase64`, nova,
+extraída de `properties.ts` — SEM descrever a foto por IA, vira anexo
+puro) e `handleIncomingAudio` (baixa + transcreve com
+`transcribeWithOpenRouter`, mesma IA do pipeline do cliente) em
+`whatsappPaiQueue.ts`. `fetchStagedPhotoUrls` alimenta `opts.imageUrls`
+do `runAgent`, que `create_property` já sabia consumir desde que esse
+parâmetro existe — zero mudança em `agent.ts`. Staging limpo
+automaticamente após `create_property` confirmado, mais uma varredura por
+TTL de 60min pro abandonado.
+
+1 bug de TypeScript achado (mesma causa-raiz já documentada na Fase 2):
+com `strictNullChecks` desligado neste `tsconfig.json`, `!resultado.ok`
+não estreita união discriminada — corrigido lançando exceção em vez de
+devolver `{ok,error}`.
+
+Testado (adaptado à instância banida): fotos staged simuladas
+diretamente no banco → comando de texto → ação pendente chega com
+`image_urls` corretos (prova staging→`runAgent`→`create_property` de
+ponta a ponta); "sim" → imóvel REAL criado com as fotos; staging limpo
+depois; mensagem de foto sintética contra a instância desconectada →
+falha tratada com graça (resposta amigável, linha termina `completed`,
+não trava nem derruba o worker). O download bem-sucedido em si (função já
+comprovada, reusada do pipeline do cliente) fica pendente de validação ao
+vivo pra quando houver número pareado de novo. `tsc`/`knip`/`npm test`
+(144/144) e `npm run build` limpos.
+
+**Próxima fase (6)**: novas consultas (leads hoje, relatório do mês) —
+não depende de WhatsApp real pra testar (mesmo padrão de payload
+sintético já usado nas Fases 4/5), pode seguir mesmo com o número banido.
+Fase 7 (documentos) fora de escopo por enquanto.
 
 ## Permissões granulares por membro da equipe — CONCLUÍDO, deployado (commit `200ed5b8e`, 2026-08-07)
 

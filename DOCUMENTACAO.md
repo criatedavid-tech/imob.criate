@@ -527,6 +527,140 @@ instância já conectada; UI checada de ponta a ponta com uma sessão de
 admin descartável injetada no navegador — a aba renderiza exatamente o
 status ao vivo.
 
+### WhatsApp Pai — Fase 4: pipeline de inbound + confirmação persistida (2026-08-07)
+
+O WhatsApp central passa a RECEBER comando de verdade — texto apenas
+nesta fase (áudio/foto ficam pra Fase 5, `server/services/
+inboundMedia.ts` já tem o pipeline de download/transcrição pronto pra
+reusar).
+
+**Schema** (`supabase/migrations/20260807c_whatsapp_pai_inbox_and_pending_actions.sql`,
+aditiva): `imf_pai_inbox` — fila durável própria pro Pai (não estende
+`imf_webhook_inbox`, entrelaçada com despacho pro n8n/debounce,
+irrelevantes aqui — nativo, sem n8n, cada mensagem é 1 turno só), mesmo
+padrão SKIP LOCKED comprovado em `claim_imf_webhook_inbox`
+(`20260721b_webhook_inbox_outbox.sql`), particionada por `sender_phone`
+em vez de `broker_id` (o Pai não sabe de quem é a mensagem até resolver
+o telefone) — garante que mensagens da MESMA pessoa nunca processam fora
+de ordem/concorrentes. `imf_whatsapp_pending_actions` — PK em `user_id`
+(garante "1 ação pendente por remetente" de graça, já que
+`imf_broker_members.user_id` é `UNIQUE`). `imf_agent_log` ganha `channel`
+('web'|'whatsapp') e `provider_message_id` (índice único parcial = trava
+de idempotência contra reprocessamento após crash).
+
+**Backend**: `server/services/whatsappPaiQueue.ts` (novo) — resolve
+telefone→`imf_whatsapp_staff_links` (só verificado)→`userId`→
+`getBrokerId`; número não vinculado recebe orientação pra vincular no
+painel, nada é tocado. Ação pendente existente e não vencida: classifica
+a resposta por palavra-chave determinística em PT-BR (nunca pergunta ao
+modelo se "sim"/"não" — mesmo princípio de `resolveDueAt`/`computeDueAt`
+em `agent.ts`); qualquer coisa fora das duas listas abandona a pendência
+em silêncio e trata a mensagem como comando novo, nunca executa por
+engano. Confirma → `parseConfirmedAgentAction` + `executeAction` — o
+MESMO `executeAction` da Fase 1, com o gate de permissão já embutido, sem
+duplicar lógica nenhuma. Sem pendência: monta `history` das últimas 8
+linhas de `imf_agent_log` (qualquer canal — memória contínua entre
+painel e WhatsApp) e chama `runAgent`, o MESMO cérebro do assistente do
+painel. `server/routes/whatsappPai.ts` (novo) — `POST /api/wpp-pai/inbound`,
+autentica por `body.token` contra o token da instância central (1
+instância só, sem lookup por id, diferente do inbound de broker). Ciclo
+novo `cycles.pai` em `webhook-worker.ts`; job novo
+`expirePaiPendingActions` (60s) em `scheduler-worker.ts`; `imf_pai_inbox`
+entrou na retenção de filas existente.
+
+**2 bugs reais achados testando ao vivo** (não hipotéticos, só apareceram
+rodando contra o servidor real com mensagens em sequência):
+1. `runPaiInboxTick` não tinha a mesma trava anti-sobreposição que
+   `runWebhookInboxTick` já tem (`inboxTickRunning`) — duas mensagens
+   próximas no tempo (comum, já que `runAgent` leva alguns segundos)
+   disparavam ciclos concorrentes colidindo entre si. Corrigido com o
+   mesmo padrão `paiTickRunning` boolean.
+2. `classifyReply` não tirava pontuação antes de comparar — "sim, pode
+   confirmar" virava `firstWord` `"sim,"`, não batia com `"sim"` da
+   lista, e a pendência era abandonada em silêncio em vez de confirmada
+   (o imóvel nunca era criado, sem erro nenhum aparecer). Corrigido
+   tirando pontuação final da palavra antes de comparar.
+
+Testado ao vivo com payload sintético no formato exato da UAZAPI e
+*polling* do status da fila (mais confiável que espera fixa — `runAgent`
+varia de ~5 a ~10s): telefone não vinculado → orientação; comando
+mutante → proposta persistida; "não" → cancela, nada criado; comando de
+novo + "sim" → imóvel REAL criado; reenvio da mesma mensagem → bloqueado
+pelo `dedupe_key`, sem duplicar; log com `channel='whatsapp'`; membro sem
+`carteira:criar` → negado através do WhatsApp Pai, mesma mensagem da
+Fase 1 — prova de que o gate de permissão vale igual não importa a porta
+de entrada.
+
+### WhatsApp Pai — Fase 5: mídia (voz + fotos de imóvel antes do texto) (2026-08-07)
+
+**Contexto**: entre a Fase 4 e esta, o número de teste (pessoal do
+usuário, usado deliberadamente "só pra teste" até vir o número oficial)
+foi banido pelo WhatsApp por spam — efeito colateral do volume de
+mensagens automatizadas dos testes anteriores num número recém-pareado,
+gatilho clássico de detecção de abuso contra clientes não-oficiais tipo
+UAZAPI. Confirmado direto contra `GET /instance/status`
+(`connected:false, loggedIn:false`). Isso impediu teste ao vivo com
+download real de mídia nesta fase (exige instância conectada); a
+implementação seguiu normal e a verificação foi adaptada (ver "Testado").
+
+Fotos entregues pelo WhatsApp chegam uma mensagem por vez, sem estado de
+sessão entre elas — diferente do array em memória da `CommandBar.tsx` no
+painel. `imf_whatsapp_staged_media(user_id, broker_id, url, created_at)`
+(migration `20260807d_whatsapp_pai_staged_media.sql`, aditiva) faz esse
+papel de forma persistida: cada foto recebida vira uma linha; a próxima
+mensagem de TEXTO do mesmo usuário é que dispara o comando de verdade e
+recolhe as fotos staged.
+
+**Backend**:
+- `server/services/propertyImages.ts` (novo) — `uploadPropertyImageBase64`
+  extraída de `POST /api/properties/upload-image`, comportamento
+  idêntico; a rota virou wrapper fino.
+- `server/services/inboundMedia.ts` — `detectInboundMediaKind`,
+  `mediaMessageId`, `declaredFileLength` exportadas (eram privadas) pra
+  reuso, evitando duplicar a extração de id/tamanho do payload UAZAPI
+  entre os dois pipelines (cliente e Pai).
+- `server/services/whatsappPaiQueue.ts` — `handleIncomingPhoto` baixa via
+  `downloadUazapiMedia`, sobe pro bucket `property-images` e grava em
+  staging — SEM `describeImageWithOpenRouter`: diferente do pipeline do
+  cliente, a foto do Pai nunca é descrita por IA, vira anexo puro (mesmo
+  comportamento do painel hoje, decisão do plano original).
+  `handleIncomingAudio` baixa + transcreve com `transcribeWithOpenRouter`
+  (mesma IA já usada no pipeline do cliente); o texto transcrito
+  substitui a mensagem normal e segue o fluxo comum. `fetchStagedPhotoUrls`
+  alimenta `opts.imageUrls` do `runAgent` — `create_property` já sabia
+  carimbar isso sozinho desde que o agente ganhou esse parâmetro
+  (`agent.ts:1068-1070`, usado pela `CommandBar.tsx`), zero mudança lá.
+  Staging é limpo em `handlePendingAction` assim que um `create_property`
+  é confirmado e executado com sucesso.
+- `server/services/maintenance.ts` — `expireStagedWhatsappMedia` (TTL
+  60min, rede de segurança pro staging abandonado); job novo em
+  `scheduler-worker.ts` (5 em 5 min).
+
+**1 bug de TypeScript, mesma causa-raiz já documentada na Fase 2**:
+`handleIncomingPhoto`/`handleIncomingAudio` devolviam originalmente
+`{ok:true,...}|{ok:false,error}`, e o acesso a `.error` no ramo negado
+falhava a compilar. Isolado com repro mínimo fora do projeto: com
+`strictNullChecks` desligado (confirmado no `tsconfig.json` — sem
+`"strict"` nem `"strictNullChecks"`), `!x.ok` e `if (!x.ok)` NÃO estreitam
+união discriminada, só `x.ok === false` estreita. Corrigido lançando
+exceção em vez de devolver `{ok,error}`, mesma solução já usada em
+`whatsappStaffLinks.ts`/`confirmPhoneVerification`.
+
+**Testado** (adaptado à instância banida — ver Contexto): 2 fotos
+inseridas diretamente em staging simulando envio prévio → comando de
+texto "cadastra um imóvel..." → ação pendente chega com `image_urls`
+contendo as 2 URLs staged (prova que staging→`runAgent`→`create_property`
+funciona de ponta a ponta); "sim" → imóvel REAL criado em
+`imf_properties` com as 2 fotos no campo `image_url`; staging confirmado
+vazio depois; mensagem de foto sintética contra a instância desconectada
+→ `downloadUazapiMedia` falha com HTTP 503 → capturado, logado, resposta
+amigável enviada, linha da fila termina `completed` (não trava, não vira
+`dead`) — prova de degradação graciosa mesmo sem conexão real. O caminho
+de download bem-sucedido em si (função já comprovada, reusada do
+pipeline do cliente) fica pendente de validação ao vivo pra quando houver
+número pareado de novo. `npx tsc --noEmit`, `npx knip`, `npm test`
+(144/144) e `npm run build` limpos.
+
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
 A régua de reativação automática de lead (`/app` → Assistente IA,

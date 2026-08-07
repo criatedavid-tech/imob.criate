@@ -3,6 +3,7 @@ import {
   runWebhookInboxTick,
   runWebhookOutboxTick,
 } from "./server/services/inboundWebhookQueue";
+import { runPaiInboxTick } from "./server/services/whatsappPaiQueue";
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const parsed = Number(process.env[name]);
@@ -21,9 +22,9 @@ let timer: NodeJS.Timeout | null = null;
 // indisponibilidade do n8n (downstream) prendia a gravação das mensagens
 // (upstream) — cada lote da outbox gastava o timeout inteiro e a inbox ficava
 // limitada a um lote por timeout. Uma fila não pode depender da outra.
-const cycles: Record<"inbox" | "outbox", Promise<void> | null> = { inbox: null, outbox: null };
+const cycles: Record<"inbox" | "outbox" | "pai", Promise<void> | null> = { inbox: null, outbox: null, pai: null };
 
-function startCycle(name: "inbox" | "outbox", run: () => Promise<void>): void {
+function startCycle(name: "inbox" | "outbox" | "pai", run: () => Promise<void>): void {
   if (stopping || cycles[name]) return;
   cycles[name] = run()
     .catch((error) => {
@@ -38,10 +39,11 @@ function startCycle(name: "inbox" | "outbox", run: () => Promise<void>): void {
 function startQueueCycle(): void {
   startCycle("inbox", runWebhookInboxTick);
   startCycle("outbox", runWebhookOutboxTick);
+  startCycle("pai", runPaiInboxTick);
 }
 
 function activeCycles(): Promise<void>[] {
-  return [cycles.inbox, cycles.outbox].filter(Boolean) as Promise<void>[];
+  return [cycles.inbox, cycles.outbox, cycles.pai].filter(Boolean) as Promise<void>[];
 }
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -76,4 +78,4 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 
 timer = setInterval(startQueueCycle, POLL_MS);
 startQueueCycle();
-console.log(`[Webhook Worker] inbox/outbox ativas (poll ${POLL_MS}ms).`);
+console.log(`[Webhook Worker] inbox/outbox/pai ativas (poll ${POLL_MS}ms).`);

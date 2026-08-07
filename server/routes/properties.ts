@@ -11,6 +11,7 @@ import {
 import { isValidPublicPropertySlug } from "../security/publicPropertySlug";
 import { getBrokerCatalog, invalidateBrokerCatalog } from "../services/propertyCatalog";
 import { loadPublicProperty } from "../services/publicProperty";
+import { uploadPropertyImageBase64 } from "../services/propertyImages";
 
 export const propertiesRouter = express.Router();
 
@@ -395,36 +396,11 @@ propertiesRouter.post("/api/properties/upload-image", requireUser, async (req, r
       return res.status(400).json({ error: "No image data" });
     }
 
-    const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    // Limite defensivo de 8MB por imagem já comprimida
-    if (buffer.length > 8 * 1024 * 1024) {
-      return res.status(413).json({ error: "Imagem muito grande (máx. 8MB)." });
-    }
-
-    const fileName = `prop-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-
-    // Garante que o bucket existe (idempotente)
-    await supabase.storage.createBucket('property-images', {
-      public: true,
-      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-      fileSizeLimit: 8388608
-    }).catch(() => {}); // ignora erro se bucket já existe
-
-    const { error: uploadError } = await supabase.storage
-      .from('property-images')
-      .upload(fileName, buffer, { contentType: 'image/jpeg', upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('property-images')
-      .getPublicUrl(fileName);
-
-    res.json({ url: publicUrl });
+    const url = await uploadPropertyImageBase64(userId, imageData);
+    res.json({ url });
   } catch (err: any) {
     console.error("Erro upload imagem imóvel:", err);
-    res.status(500).json({ error: err.message });
+    const status = /máx\. 8MB/.test(err.message || "") ? 413 : 500;
+    res.status(status).json({ error: err.message });
   }
 });
