@@ -11,6 +11,7 @@ import { scheduleAgentFollowup } from "./agentScheduledFollowups";
 import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
 import type { AccountCapability } from "./accountCapabilities";
 import { hasPermission, type PermissionModule, type PermissionAction } from "./permissions";
+import { buildRelatoriosSummary } from "../routes/relatorios";
 import {
   AGENT_CONTEXT_SECURITY_RULES,
   buildUntrustedContextMessage,
@@ -90,7 +91,7 @@ function resolveDueAt(action: { date?: string; time?: string; delay_value?: stri
 }
 
 export interface AgentAction {
-  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "send_message"
+  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "query_leads" | "query_report" | "send_message"
       | "broadcast_message"
       | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
       | "create_reminder" | "schedule_followup";
@@ -104,10 +105,16 @@ export interface AgentAction {
   // abaixo — os dois usam o mesmo par date+time de create_visit).
   date?: string; // YYYY-MM-DD
   time?: string; // HH:MM
-  // query_agenda — consulta real de visitas fora da janela do snapshot
+  // query_agenda / query_leads — consulta real fora da janela do snapshot
   // (data específica ou intervalo, passado ou futuro).
   date_from?: string; // YYYY-MM-DD
   date_to?: string;   // YYYY-MM-DD, opcional — omitido = mesmo dia de date_from
+  // query_leads — "nao_atendidos" restringe aos leads ainda no estágio
+  // inicial (sem contato feito); omitido/"todos" traz qualquer estágio.
+  filter?: "todos" | "nao_atendidos";
+  // query_report — janela do relatório (mesmo cálculo de reportPeriod em
+  // relatorios.ts: mes=1, trimestre=3, semestre=6, ano=12 meses corridos).
+  period?: "mes" | "trimestre" | "semestre" | "ano";
   // send_message (usa phone acima) e broadcast_message (envia pra TODOS os
   // contatos salvos, sem phone) — o texto REAL da mensagem pelo WhatsApp.
   message?: string;
@@ -428,6 +435,92 @@ async function queryAgendaRange(brokerId: string, userId: string, dateFrom?: str
   return `Em ${periodo}, ${data.length} visita(s):\n${linhas.join("\n")}`;
 }
 
+const LEAD_STATUS_LABEL: Record<string, string> = {
+  new: "sem contato ainda",
+  contato: "em contato",
+  visita: "visita agendada",
+  proposta: "em proposta",
+  fechado: "fechado",
+};
+
+// Consulta real de leads por período (ação "query_leads") — mesmo princípio
+// determinístico de queryAgendaRange: o modelo só extrai a data/filtro
+// pedidos, a contagem e a lista vêm direto do banco.
+async function queryLeadsSummary(
+  brokerId: string, userId: string, dateFrom?: string, dateTo?: string, filter?: "todos" | "nao_atendidos",
+): Promise<string> {
+  const isValidDate = (d?: string) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(d).getTime());
+  if (!isValidDate(dateFrom)) return "Não consegui entender qual data você quer consultar.";
+  const from = dateFrom!;
+  const to = isValidDate(dateTo) ? dateTo! : from;
+
+  const owner = await isBrokerOwner(userId, brokerId);
+  const { data: props } = await supabase.from("imf_properties").select("id").eq("broker_id", brokerId);
+  const propIds = (props || []).map((p: any) => p.id as string);
+
+  const periodo = from === to
+    ? new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : `${new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR")} a ${new Date(`${to}T12:00:00`).toLocaleDateString("pt-BR")}`;
+  const filtroTxt = filter === "nao_atendidos" ? " sem atendimento" : "";
+
+  if (!propIds.length) return `Nenhum lead${filtroTxt} em ${periodo}.`;
+
+  let query = supabase.from("leads")
+    .select("id, name, phone, status, created_at, imf_properties(title)")
+    .in("property_id", propIds)
+    .gte("created_at", `${from}T00:00:00-03:00`)
+    .lte("created_at", `${to}T23:59:59-03:00`)
+    .order("created_at", { ascending: false });
+  if (!owner) query = query.eq("owner_user_id", userId);
+  if (filter === "nao_atendidos") query = query.eq("status", "new");
+  const { data, error } = await query;
+  if (error) return "Não consegui consultar os leads agora. Pode tentar de novo?";
+
+  if (!data || data.length === 0) return `Nenhum lead${filtroTxt} em ${periodo}.`;
+
+  const linhas = data.slice(0, 20).map((l: any) => {
+    const prop = l.imf_properties?.title ? ` (${l.imf_properties.title})` : "";
+    const status = LEAD_STATUS_LABEL[l.status] || LEAD_STATUS_LABEL.new;
+    return `${l.name || "sem nome"} — ${l.phone || "sem telefone"}${prop}, ${status}`;
+  });
+  const extra = data.length > 20 ? `\n(+${data.length - 20} outro(s))` : "";
+
+  return `Em ${periodo}, ${data.length} lead(s)${filtroTxt}:\n${linhas.join("\n")}${extra}`;
+}
+
+const REPORT_PERIOD_MONTHS: Record<string, number> = { mes: 1, trimestre: 3, semestre: 6, ano: 12 };
+const REPORT_PERIOD_LABEL: Record<string, string> = { mes: "do mês", trimestre: "do trimestre", semestre: "do semestre", ano: "do ano" };
+
+// Relatório real (ação "query_report") — mesma agregação determinística já
+// usada por GET /api/relatorios/summary (buildRelatoriosSummary), só
+// reformatada em texto curto pro WhatsApp/chat em vez do JSON estruturado
+// que a tela de Relatórios consome.
+async function queryReportSummary(brokerId: string, userId: string, period?: string): Promise<string> {
+  const key = period && REPORT_PERIOD_MONTHS[period] ? period : "mes";
+  const months = REPORT_PERIOD_MONTHS[key];
+  const owner = await isBrokerOwner(userId, brokerId);
+  const targetUserId = owner ? null : userId;
+  const scope: "account" | "personal" = owner ? "account" : "personal";
+
+  let summary;
+  try {
+    summary = await buildRelatoriosSummary(brokerId, months, owner, targetUserId, scope);
+  } catch {
+    return "Não consegui gerar o relatório agora. Pode tentar de novo?";
+  }
+
+  const moeda = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const linhas = [
+    `Relatório ${REPORT_PERIOD_LABEL[key]}:`,
+    `- Leads captados: ${summary.totalLeads} (conversão de ${summary.conversionRate}%)`,
+    `- Negócios fechados: ${summary.closedLeads}`,
+    `- Visitas: ${summary.visitsDone} realizadas, ${summary.visitsScheduled} agendadas, ${summary.visitsCancelled} canceladas`,
+  ];
+  if (summary.salesCount > 0) linhas.push(`- Vendas de lançamento: ${summary.salesCount} unidade(s), ${moeda(summary.salesTotalCents)}`);
+  if (summary.rentalPaymentsCount > 0) linhas.push(`- Aluguéis recebidos: ${summary.rentalPaymentsCount} pagamento(s), ${moeda(summary.rentalPaidCents)}`);
+  return linhas.join("\n");
+}
+
 function buildSystemPrompt(persona: string, capabilities: readonly AccountCapability[]): string {
   const areas = agentAreas(capabilities);
   const hoje = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
@@ -438,6 +531,8 @@ function buildSystemPrompt(persona: string, capabilities: readonly AccountCapabi
 
   let actionNum = 6;
   const extraActions: string[] = [];
+  extraActions.push(`${++actionNum}. "query_leads" — SEMPRE que perguntarem quantos leads chegaram numa data/período (ex.: "quantos leads hoje", "leads dessa semana") ou pedirem os leads SEM ATENDIMENTO ainda — dado que NÃO está coberto pelo snapshot acima (que só tem a contagem total por estágio, não uma janela de datas). Preencha date_from (YYYY-MM-DD, obrigatório — pra "hoje" use a data de hoje informada acima) e date_to (opcional, só se for um intervalo). filter="nao_atendidos" quando o pedido for especificamente sobre leads ainda sem contato feito (estágio inicial); omita ou use "todos" nos demais casos. Você NÃO tem esse dado agora; o sistema busca de verdade e só depois responde — nunca use "answer" pra chutar essa contagem.`);
+  extraActions.push(`${++actionNum}. "query_report" — SEMPRE que pedirem um relatório/resumo de desempenho (ex.: "relatório do mês", "como foi o trimestre", "resumo do ano", "fechei quanto esse mês") — dado que o snapshot acima não tem (é só um retrato do momento atual, não um período fechado). Preencha period com um de "mes" (padrão se não especificarem), "trimestre", "semestre" ou "ano". Você NÃO tem esses números agora; o sistema calcula de verdade e só depois responde.`);
   extraActions.push(`${++actionNum}. "broadcast_message" — enviar UMA mensagem de WhatsApp pra TODOS os seus contatos salvos de uma vez. Use quando o corretor falar no plural/coletivo: "manda pros meus contatos", "avisa todo mundo", "divulga meus imóveis pra minha lista/base". Precisa SÓ de message (o texto que você compõe; NUNCA phone — o sistema envia pra cada contato salvo sozinho). Se for divulgação de imóveis, siga a REGRA DE DIVULGAÇÃO abaixo (mensagem-convite + link da vitrine). É diferente de "send_message", que é pra UM contato específico (aí sim tem phone). O sistema mostra pra você confirmar (com a contagem real de contatos) antes de disparar qualquer coisa.`);
   extraActions.push(`${++actionNum}. "create_property" — cadastrar um imóvel NOVO na carteira (o corretor está descrevendo um imóvel que ainda não existe na lista acima, não editando um existente). Precisa de price e location (bairro/cidade/endereço). title é opcional (se não vier, gere um curto a partir do tipo+localização, ex.: "Apartamento no Setor Oeste"). description é opcional mas recomendado: escreva um texto de venda natural e atraente com TUDO que não couber nos campos estruturados abaixo (andar, detalhes do prédio/condomínio, etc.).
    CAMPOS ESTRUTURADOS — isto NÃO é opcional: sempre que o corretor mencionar qualquer um destes, você TEM que preencher o campo correspondente, MESMO que a mesma informação também apareça em texto na description. Nunca deixe um campo vazio só porque "já está na descrição" — description e os campos estruturados são preenchidos JUNTOS, o campo estruturado é o que alimenta o formulário de verdade, a descrição é só o texto de venda.
@@ -561,6 +656,8 @@ async function sendNotification(brokerId: string, phone: string, message: string
 // mutam dado, não precisam de gate.
 export const AGENT_ACTION_PERMISSION: Partial<Record<AgentAction["type"], { module: PermissionModule; action: PermissionAction }>> = {
   query_agenda: { module: "agenda", action: "visualizar" },
+  query_leads: { module: "negocios", action: "visualizar" },
+  query_report: { module: "relatorios", action: "visualizar" },
   create_lead: { module: "negocios", action: "criar" },
   create_visit: { module: "agenda", action: "criar" },
   update_visit: { module: "agenda", action: "editar" },
@@ -1069,7 +1166,8 @@ export async function runAgent(opts: {
     action.image_urls = opts.imageUrls;
   }
 
-  // answer, navigate e query_agenda nunca são mutação — seguem direto, autonomia não se aplica.
+  // answer, navigate, query_agenda, query_leads e query_report nunca são
+  // mutação — seguem direto, autonomia não se aplica.
   if (action.type === "answer") return { reply };
   if (action.type === "navigate") {
     const areas = agentAreas(opts.capabilities);
@@ -1083,6 +1181,20 @@ export async function runAgent(opts: {
     const realReply = await queryAgendaRange(opts.brokerId, opts.userId, action.date_from, action.date_to);
     return { reply: realReply };
   }
+  if (action.type === "query_leads") {
+    if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+      return { reply: "Você não tem permissão para consultar leads no ImobiFlow." };
+    }
+    const realReply = await queryLeadsSummary(opts.brokerId, opts.userId, action.date_from, action.date_to, action.filter);
+    return { reply: realReply };
+  }
+  if (action.type === "query_report") {
+    if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+      return { reply: "Você não tem permissão para consultar relatórios no ImobiFlow." };
+    }
+    const realReply = await queryReportSummary(opts.brokerId, opts.userId, action.period);
+    return { reply: realReply };
+  }
 
   // Gate soft: nem propõe a ação se o membro não pode executá-la — evita a
   // UX ruim de mostrar "vou fazer X, confirma?" pra só negar na hora do
@@ -1093,7 +1205,8 @@ export async function runAgent(opts: {
 
   // Defesa contra prompt injection: nenhuma mutação é executada apenas pela
   // decisão do modelo. Mesmo no modo piloto, o corretor precisa confirmar na
-  // interface. answer/navigate/query_agenda já retornaram nos branches acima.
+  // interface. answer/navigate/query_agenda/query_leads/query_report já
+  // retornaram nos branches acima.
   if (requiresHumanConfirmation(action)) {
     // Broadcast: a UI de confirmação só exibe o `reply`, então ele passa a ser
     // AUTORITATIVO — reescrito aqui com a contagem REAL de contatos (do

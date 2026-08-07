@@ -1,6 +1,6 @@
 # Próximas tarefas — ImobiFlow V2
 
-## WhatsApp Pai — camada de comando da plataforma — Fases 1-5 concluídas (1-3 já commitadas, commit `d5a0818`; Fases 4 e 5 pendentes: autorização de commit)
+## WhatsApp Pai — camada de comando da plataforma — Fases 1-6 concluídas, Fase 7 fora de escopo (1-3 já commitadas, `d5a0818`; 4-5 já commitadas, `2eb0282`; Fase 6 pendente: autorização de commit)
 
 Pedido do usuário: número de WhatsApp central onde qualquer usuário
 (titular ou membro, entre potencialmente centenas de contas) manda
@@ -166,10 +166,34 @@ comprovada, reusada do pipeline do cliente) fica pendente de validação ao
 vivo pra quando houver número pareado de novo. `tsc`/`knip`/`npm test`
 (144/144) e `npm run build` limpos.
 
-**Próxima fase (6)**: novas consultas (leads hoje, relatório do mês) —
-não depende de WhatsApp real pra testar (mesmo padrão de payload
-sintético já usado nas Fases 4/5), pode seguir mesmo com o número banido.
-Fase 7 (documentos) fora de escopo por enquanto.
+**Fase 6 (novas consultas: leads e relatório) — concluída e testada ao
+vivo, beneficia painel e WhatsApp Pai ao mesmo tempo**: `query_leads`
+(leads captados num período, filtro opcional pra só os sem atendimento) e
+`query_report` (relatório de leads/visitas/vendas/locação do
+mês/trimestre/semestre/ano), as duas determinísticas em código (mesmo
+princípio de `query_agenda` — o modelo só decide QUANDO chamar e extrai o
+parâmetro). Como vivem em `runAgent`/`executeAction`, o assistente do
+painel ganha as duas perguntas junto, de graça. `buildRelatoriosSummary`
+extraída de `GET /api/relatorios/summary` (resposta idêntica, rota virou
+wrapper fino) e reaproveitada por `query_report`. Gate de permissão
+(`negocios:visualizar`/`relatorios:visualizar`) igual ao das outras
+ações desde a Fase 1.
+
+Testado ao vivo, conta descartável com titular + 1 membro, dados reais
+semeados: contagem de leads de hoje bate exato (exclui os de outros
+dias), filtro "não atendidos" isola certo, relatório do mês reflete os
+números semeados e bate com a rota HTTP `/api/relatorios/summary`
+chamada via sessão real — confirma que a extração ficou byte-idêntica.
+Membro sem as duas permissões (revogadas explicitamente) → negado nos
+dois casos, mesma mensagem da Fase 1. `tsc`/`knip`/`npm test`
+(144/144)/`build` limpos.
+
+**WhatsApp Pai: Fases 1-6 completas.** Fase 7 (documentos) fica fora de
+escopo — sem conceito de anexo em nenhum objeto de domínio hoje, precisa
+de decisão de produto antes de virar escopo. Pendências gerais: commit
+da Fase 6 (aguardando autorização) e resolução do número banido (ver
+seção da Fase 5 acima) antes de qualquer teste ao vivo real com
+mídia/pareamento.
 
 ## Permissões granulares por membro da equipe — CONCLUÍDO, deployado (commit `200ed5b8e`, 2026-08-07)
 

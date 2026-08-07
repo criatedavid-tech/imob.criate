@@ -32,6 +32,16 @@ const queryAgendaAction = z.object({
   date_from: date,
   date_to: date.optional(),
 }).strict();
+const queryLeadsAction = z.object({
+  type: z.literal("query_leads"),
+  date_from: date,
+  date_to: date.optional(),
+  filter: z.enum(["todos", "nao_atendidos"]).optional(),
+}).strict();
+const queryReportAction = z.object({
+  type: z.literal("query_report"),
+  period: z.enum(["mes", "trimestre", "semestre", "ano"]).optional(),
+}).strict();
 const sendMessageAction = z.object({
   type: z.literal("send_message"),
   phone,
@@ -121,6 +131,8 @@ const agentActionSchema = z.discriminatedUnion("type", [
   createLeadAction,
   createVisitAction,
   queryAgendaAction,
+  queryLeadsAction,
+  queryReportAction,
   sendMessageAction,
   broadcastMessageAction,
   createPropertyAction,
@@ -139,6 +151,8 @@ const confirmedAgentActionSchema = z.discriminatedUnion("type", [
   createLeadAction,
   createVisitAction,
   queryAgendaAction,
+  queryLeadsAction,
+  queryReportAction,
   sendMessageAction,
   broadcastMessageAction,
   confirmedCreatePropertyAction,
@@ -175,7 +189,7 @@ export function parseConfirmedAgentAction(input: unknown) {
   return parsed.data;
 }
 
-const NON_MUTATING_ACTIONS = new Set(["answer", "navigate", "query_agenda"]);
+const NON_MUTATING_ACTIONS = new Set(["answer", "navigate", "query_agenda", "query_leads", "query_report"]);
 
 export function requiresHumanConfirmation(action: { type: string }): boolean {
   return !NON_MUTATING_ACTIONS.has(action.type);

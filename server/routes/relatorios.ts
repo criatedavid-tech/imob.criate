@@ -108,35 +108,19 @@ function emptySummary(months: number, start: Date, end: Date) {
 // Relatório determinístico: cada número vem do Supabase e usa a mesma janela
 // de calendário (3/6/12 meses) quando representa fluxo. Carteira mensal ativa
 // é explicitamente um snapshot atual, não uma receita acumulada do período.
-relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) => {
-  try {
-    const userId = (req as any).userId as string;
-    const requestedMonths = Number(req.query.months);
-    const months = [3, 6, 12].includes(requestedMonths) ? requestedMonths : 6;
+// Extraída pra função pura (Fase 6 do WhatsApp Pai) pra ser reaproveitada
+// pela ação "query_report" do agente de IA — mesmo cálculo, resposta
+// byte-idêntica à rota HTTP, que virou um wrapper fino em cima.
+export async function buildRelatoriosSummary(
+  brokerId: string,
+  months: number,
+  owner: boolean,
+  targetUserId: string | null,
+  scope: "account" | "personal" | "member",
+) {
     const { start, end } = reportPeriod(months);
     const startIso = start.toISOString();
     const endIso = end.toISOString();
-
-    const brokerId = await getBrokerId(userId);
-    if (!brokerId) return res.json(emptySummary(months, start, end));
-    const owner = await isBrokerOwner(userId, brokerId);
-
-    // Drill-down: só o titular pode pedir o relatório de OUTRO membro
-    // específico (member_user_id). Sem esse parâmetro, titular continua
-    // vendo o consolidado da conta e um membro comum vê só o próprio -
-    // exatamente como já era antes desta extensão.
-    const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
-    if (requestedMember && !(await hasPermission(userId, brokerId, "relatorios", "gerenciar"))) {
-      return res.status(403).json({ error: "Você não tem permissão para ver o relatório de outro membro." });
-    }
-    let targetUserId: string | null = null;
-    if (requestedMember) {
-      const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", requestedMember).maybeSingle();
-      if (!memberRow) return res.status(404).json({ error: "Membro não encontrado nesta conta." });
-      targetUserId = requestedMember;
-    } else if (!owner) {
-      targetUserId = userId;
-    }
 
     const properties = await collectPages(
       (from, to) => supabase.from("imf_properties").select("id").eq("broker_id", brokerId).order("id").range(from, to),
@@ -260,11 +244,11 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
     const visitsDone = visits.filter((visit: any) => visit.status === "realizado").length;
     const visitsScheduled = visits.length - visitsCancelled;
 
-    res.json({
+    return {
       months,
       periodStart: startIso,
       periodEnd: endIso,
-      scope: requestedMember ? "member" : (owner ? "account" : "personal"),
+      scope,
       totalLeads,
       closedLeads: closedDeals.length,
       convertedLeads,
@@ -283,7 +267,40 @@ relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) =>
       visitsScheduled,
       visitsCancelled,
       visitsTotal: visitsScheduled,
-    });
+    };
+}
+
+relatoriosRouter.get("/api/relatorios/summary", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const requestedMonths = Number(req.query.months);
+    const months = [3, 6, 12].includes(requestedMonths) ? requestedMonths : 6;
+    const { start, end } = reportPeriod(months);
+
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.json(emptySummary(months, start, end));
+    const owner = await isBrokerOwner(userId, brokerId);
+
+    // Drill-down: só o titular pode pedir o relatório de OUTRO membro
+    // específico (member_user_id). Sem esse parâmetro, titular continua
+    // vendo o consolidado da conta e um membro comum vê só o próprio -
+    // exatamente como já era antes desta extensão.
+    const requestedMember = typeof req.query.member_user_id === "string" ? req.query.member_user_id : null;
+    if (requestedMember && !(await hasPermission(userId, brokerId, "relatorios", "gerenciar"))) {
+      return res.status(403).json({ error: "Você não tem permissão para ver o relatório de outro membro." });
+    }
+    let targetUserId: string | null = null;
+    if (requestedMember) {
+      const { data: memberRow } = await supabase.from("imf_broker_members").select("user_id").eq("broker_id", brokerId).eq("user_id", requestedMember).maybeSingle();
+      if (!memberRow) return res.status(404).json({ error: "Membro não encontrado nesta conta." });
+      targetUserId = requestedMember;
+    } else if (!owner) {
+      targetUserId = userId;
+    }
+
+    const scope = requestedMember ? "member" : (owner ? "account" : "personal");
+    const summary = await buildRelatoriosSummary(brokerId, months, owner, targetUserId, scope);
+    res.json(summary);
   } catch (err: any) {
     console.error("Erro GET /api/relatorios/summary:", err);
     res.status(500).json({ error: "Não foi possível carregar o relatório agora." });

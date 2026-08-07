@@ -328,6 +328,61 @@ relatório do mês) segue disponível pra implementar sem depender de
 WhatsApp real (mesmo padrão de teste da Fase 4/5 via payload sintético).
 Fase 7 (documentos) fora de escopo.
 
+## WhatsApp Pai — Fase 6: novas consultas (leads e relatório) — beneficia os dois canais (2026-08-07)
+
+Duas ações novas, determinísticas em código (o modelo só decide QUANDO
+chamar e extrai o parâmetro — nunca calcula o número, mesmo princípio já
+usado em `query_agenda`): `query_leads` (leads captados num período,
+opcionalmente só os "sem atendimento") e `query_report` (relatório de
+desempenho — leads/visitas/vendas/locação do mês/trimestre/semestre/ano).
+Como as duas vivem em `runAgent`/`executeAction`, o assistente do painel
+ganha essas perguntas de graça, ao mesmo tempo que o WhatsApp Pai — não é
+uma feature exclusiva de um canal.
+
+**Backend**:
+- `server/routes/relatorios.ts` — `buildRelatoriosSummary(brokerId,
+  months, owner, targetUserId, scope)` extraída da rota `GET
+  /api/relatorios/summary` (mesmo corpo, resposta idêntica); a rota virou
+  wrapper fino que resolve `targetUserId`/`scope` (inclusive o
+  drill-down por membro, que continua exclusivo da rota HTTP) e chama a
+  função pura.
+- `server/security/agentGuardrails.ts` — `queryLeadsAction`
+  (`date_from` obrigatório, `date_to` e `filter` opcionais) e
+  `queryReportAction` (`period` opcional: mes/trimestre/semestre/ano),
+  adicionadas aos dois schemas Zod discriminados e a `NON_MUTATING_ACTIONS`
+  (nunca pedem confirmação, igual `query_agenda`).
+- `server/services/agent.ts` — `queryLeadsSummary` (consulta `leads` por
+  `created_at`, filtra `status='new'` quando `filter='nao_atendidos'`,
+  formata lista em texto) e `queryReportSummary` (chama
+  `buildRelatoriosSummary` com `months` derivado do `period` e formata em
+  texto curto). `AGENT_ACTION_PERMISSION` ganhou `query_leads:
+  negocios:visualizar` e `query_report: relatorios:visualizar` — mesmo
+  gate soft da Fase 1 (nem propõe/executa sem a permissão). Prompt do
+  sistema ganhou os itens 7 e 8 explicando quando usar cada ação.
+
+**Testado ao vivo**, conta descartável com titular + 1 membro, dados reais
+semeados (3 leads — 2 hoje em estágios diferentes, 1 de ontem — e 1
+visita realizada este mês), tudo via payload sintético contra o
+WhatsApp Pai (mesmo `runAgent` do painel):
+"quantos leads chegaram hoje" → 2 leads (exclui o de ontem, inclui nome/
+telefone/estágio de cada um); "quais leads de hoje não foram atendidos"
+→ só o 1 ainda em "new"; "relatório do mês" → "Leads captados: 3",
+"1 realizadas" batendo com os dados semeados. Comparado com `GET
+/api/relatorios/summary` via sessão real (magic-link) — mesmo total de
+leads/visitas, confirmando que a extração ficou byte-idêntica. Membro
+sem `negocios:visualizar`/`relatorios:visualizar` (revogado
+explicitamente via `imf_set_member_permission`) → negado nos dois casos,
+mesma mensagem de negação da Fase 1, provando o gate funcionando pras
+ações novas. `npx tsc --noEmit`, `npx knip` e `npm test` limpos
+(144/144), `npm run build` OK.
+
+**Status do WhatsApp Pai**: Fases 1-6 completas. Fase 7 (documentos) fica
+fora de escopo (sem conceito de anexo em nenhum objeto de domínio hoje).
+Pendente: autorização de commit/push (Fases 1-3 commitadas, `2eb0282`
+adicionou 4-5; Fase 6 ainda não commitada) e resolução do número
+WhatsApp banido (ver Fase 5) antes de qualquer teste ao vivo real com
+mídia/pareamento.
+
 ## Permissões granulares por membro da equipe (2026-08-06)
 
 Pedido do usuário: titular de conta Imobiliária/Incorporadora controla,

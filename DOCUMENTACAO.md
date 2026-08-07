@@ -661,6 +661,46 @@ pipeline do cliente) fica pendente de validação ao vivo pra quando houver
 número pareado de novo. `npx tsc --noEmit`, `npx knip`, `npm test`
 (144/144) e `npm run build` limpos.
 
+### WhatsApp Pai — Fase 6: novas consultas (leads e relatório), compartilhadas com o painel (2026-08-07)
+
+Duas ações novas no agente de IA, determinísticas em código (o modelo só
+decide QUANDO chamar e extrai o parâmetro, nunca calcula o número — mesmo
+princípio de `query_agenda`): `query_leads` (leads captados num período,
+com filtro opcional pra só os sem atendimento) e `query_report`
+(relatório de desempenho: leads, visitas, vendas, locação). Como as duas
+entram em `runAgent`/`executeAction`, o MESMO cérebro usado pelo painel e
+pelo WhatsApp Pai, o assistente do painel ganha essas perguntas junto —
+não é feature exclusiva de canal.
+
+`buildRelatoriosSummary(brokerId, months, owner, targetUserId, scope)`
+extraída de `GET /api/relatorios/summary` (`server/routes/
+relatorios.ts`), reusando `collectPages`/`collectForIds`/`reportPeriod`
+como já eram — a rota HTTP virou wrapper fino, resposta idêntica
+(inclusive o drill-down por membro, que continua exclusivo dela).
+`queryLeadsAction`/`queryReportAction` novos em `agentGuardrails.ts`
+(schemas Zod + `NON_MUTATING_ACTIONS`, nunca pedem confirmação).
+`queryLeadsSummary`/`queryReportSummary` novos em `agent.ts` — a primeira
+consulta `leads` por `created_at` (filtro `status='new'` quando pedem "não
+atendidos"); a segunda chama `buildRelatoriosSummary` com `months`
+derivado de `period` (mes=1/trimestre=3/semestre=6/ano=12) e formata em
+texto curto. `AGENT_ACTION_PERMISSION` ganhou as duas entradas
+(`negocios:visualizar`/`relatorios:visualizar`) — mesmo gate soft da
+Fase 1.
+
+Testado ao vivo contra o servidor real, conta descartável com titular + 1
+membro, dados reais semeados (3 leads em estágios/dias diferentes, 1
+visita realizada), via payload sintético no WhatsApp Pai: contagem de
+leads de hoje bate exatamente (2, excluindo o de ontem), filtro "não
+atendidos" isola só o esperado, relatório do mês reflete os números
+semeados, e o resultado bate com `GET /api/relatorios/summary` chamado
+com uma sessão real (magic-link) — confirma extração byte-idêntica.
+Membro com `negocios:visualizar`/`relatorios:visualizar` revogados
+explicitamente → negado nos dois casos, mesma mensagem de negação da
+Fase 1, provando o gate valendo pras ações novas também.
+
+Com isso, as Fases 1-6 do plano do WhatsApp Pai estão completas; só a
+Fase 7 (documentos) fica de fora, sem escopo definido ainda.
+
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
 A régua de reativação automática de lead (`/app` → Assistente IA,
