@@ -52,3 +52,17 @@ test("CI fornece somente placeholder ao bootstrap fail-closed dos testes", async
   assert.match(testStep, /SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret/);
   assert.doesNotMatch(testStep, /\$\{\{\s*secrets\./);
 });
+
+test("migration incremental elimina conflito entre retorno e coluna do telefone", async () => {
+  const sql = await readFile(
+    new URL("../supabase/migrations/20260807g_whatsapp_phone_verification_conflict_fix.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.imf_start_whatsapp_phone_verification/);
+  assert.match(sql, /RETURNS TABLE\(outcome TEXT, phone_normalized TEXT\)/);
+  assert.match(sql, /ON CONFLICT ON CONSTRAINT imf_whatsapp_staff_links_pkey DO UPDATE SET/);
+  assert.doesNotMatch(sql, /ON CONFLICT \(phone_normalized\)/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.imf_start_whatsapp_phone_verification[\s\S]*FROM PUBLIC, anon, authenticated/);
+  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.imf_start_whatsapp_phone_verification[\s\S]*TO service_role/);
+});
