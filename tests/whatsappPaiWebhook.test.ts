@@ -48,8 +48,9 @@ test("guardião periódico também cobre a instância central do Pai", async () 
   const source = await readFile(new URL("../server/services/webhookKeeper.ts", import.meta.url), "utf8");
   assert.match(source, /from\("imf_platform_instances"\)/);
   assert.match(source, /kind: "pai"/);
-  assert.match(source, /platform\?\.webhook_enabled/);
-  assert.match(source, /setUazapiPlatformWebhook\(inst\.token\)/);
+  assert.match(source, /desiredEnabled: platform\.webhook_enabled === true/);
+  assert.match(source, /setUazapiPlatformWebhook\(inst\.token, PUBLIC_APP_URL, inst\.desiredEnabled\)/);
+  assert.match(source, /isUazapiWebhookReady\(current, expected, inst\.desiredEnabled\)/);
   assert.match(source, /platformWebhookUrl\(PUBLIC_APP_URL\)/);
 });
 
@@ -63,5 +64,6 @@ test("estado do webhook exige URL, enabled e conjunto exato de eventos", () => {
   assert.deepEqual(state.events, ["connection", "messages"]);
   assert.equal(isUazapiWebhookReady(state, expected), true);
   assert.equal(isUazapiWebhookReady({ ...state, enabled: false }, expected), false);
+  assert.equal(isUazapiWebhookReady({ ...state, enabled: false }, expected, false), true);
   assert.equal(isUazapiWebhookReady({ ...state, events: ["messages"] }, expected), false);
 });

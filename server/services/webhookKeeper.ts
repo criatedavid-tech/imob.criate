@@ -25,7 +25,12 @@ const lastAssertedAt = new Map<string, number>();
 const CONCURRENCY = 4;
 const FORCE_REFRESH_MS = 30 * 60 * 1_000;
 
-interface KeptInstance { instanceId: string; token: string; kind: "broker" | "pai"; }
+interface KeptInstance {
+  instanceId: string;
+  token: string;
+  kind: "broker" | "pai";
+  desiredEnabled: boolean;
+}
 
 function isPublicUrl(u: string): boolean {
   return /^https:\/\//i.test(u) && !/(^|\/\/)(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(u);
@@ -39,21 +44,30 @@ async function collectInstances(): Promise<KeptInstance[]> {
     .not("uazapi_instance_token", "is", null)
     .eq("provisioning_status", "completed");
   for (const b of brokers || []) {
-    if (b.uazapi_instance_id && b.uazapi_instance_token) out.push({ instanceId: b.uazapi_instance_id, token: b.uazapi_instance_token, kind: "broker" });
+    if (b.uazapi_instance_id && b.uazapi_instance_token) {
+      out.push({ instanceId: b.uazapi_instance_id, token: b.uazapi_instance_token, kind: "broker", desiredEnabled: true });
+    }
   }
   const { data: members } = await supabase.from("imf_broker_members")
     .select("uazapi_instance_id, uazapi_instance_token")
     .not("uazapi_instance_id", "is", null)
     .not("uazapi_instance_token", "is", null);
   for (const m of members || []) {
-    if (m.uazapi_instance_id && m.uazapi_instance_token) out.push({ instanceId: m.uazapi_instance_id, token: m.uazapi_instance_token, kind: "broker" });
+    if (m.uazapi_instance_id && m.uazapi_instance_token) {
+      out.push({ instanceId: m.uazapi_instance_id, token: m.uazapi_instance_token, kind: "broker", desiredEnabled: true });
+    }
   }
   const { data: platform } = await supabase.from("imf_platform_instances")
     .select("key, uazapi_instance_id, uazapi_instance_token, webhook_enabled")
     .eq("key", "pai")
     .maybeSingle();
-  if (platform?.webhook_enabled && platform?.uazapi_instance_id && platform?.uazapi_instance_token) {
-    out.push({ instanceId: platform.uazapi_instance_id, token: platform.uazapi_instance_token, kind: "pai" });
+  if (platform?.uazapi_instance_id && platform?.uazapi_instance_token) {
+    out.push({
+      instanceId: platform.uazapi_instance_id,
+      token: platform.uazapi_instance_token,
+      kind: "pai",
+      desiredEnabled: platform.webhook_enabled === true,
+    });
   }
   return out;
 }
@@ -66,15 +80,19 @@ async function keepOne(inst: KeptInstance, nowMs: number): Promise<"ok" | "fixed
   const current = await getUazapiWebhookState(inst.token);
 
   const reassert = () => inst.kind === "pai"
-    ? setUazapiPlatformWebhook(inst.token)
+    ? setUazapiPlatformWebhook(inst.token, PUBLIC_APP_URL, inst.desiredEnabled)
     : setUazapiWebhook(inst.token, inst.instanceId);
 
-  if (current && isUazapiWebhookReady(current, expected)) {
+  if (current && isUazapiWebhookReady(current, expected, inst.desiredEnabled)) {
     lastAssertedAt.set(inst.instanceId, nowMs);
     return "ok";
   }
 
-  if (current && (current.url !== expected || current.enabled === false || current.events !== null)) {
+  if (current && (
+    current.url !== expected
+    || current.enabled !== inst.desiredEnabled
+    || current.events !== null
+  )) {
     // Desvio confirmado (o webhook aponta pra outro lugar) → corrige já.
     const ok = await reassert();
     if (ok) { lastAssertedAt.set(inst.instanceId, nowMs); return "fixed"; }

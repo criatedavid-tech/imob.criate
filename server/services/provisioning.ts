@@ -42,9 +42,13 @@ export function parseUazapiWebhookState(data: any): UazapiWebhookState {
   return { url, enabled, events };
 }
 
-export function isUazapiWebhookReady(state: UazapiWebhookState, expectedUrl: string): boolean {
+export function isUazapiWebhookReady(
+  state: UazapiWebhookState,
+  expectedUrl: string,
+  expectedEnabled = true,
+): boolean {
   return state.url === expectedUrl
-    && state.enabled === true
+    && state.enabled === expectedEnabled
     && JSON.stringify(state.events) === JSON.stringify([...EXPECTED_WEBHOOK_EVENTS]);
 }
 
