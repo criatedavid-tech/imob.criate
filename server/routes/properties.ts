@@ -10,6 +10,7 @@ import {
 } from "../security/n8nGuardrails";
 import { isValidPublicPropertySlug } from "../security/publicPropertySlug";
 import { getBrokerCatalog, invalidateBrokerCatalog } from "../services/propertyCatalog";
+import { loadPublicProperty } from "../services/publicProperty";
 
 export const propertiesRouter = express.Router();
 
@@ -310,56 +311,18 @@ propertiesRouter.get("/api/properties/qualidade", requireUser, async (req, res) 
 propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res) => {
   try {
     // Exceção consciente ao `no-store` global da API (server.ts): esta rota é
-    // pública, só devolve o que a vitrine já mostra a qualquer visitante, e é
-    // o ponto que mais sofre quando um link cai num grupo de WhatsApp — sem
-    // cache, cada pessoa que abre vira uma consulta ao Postgres.
+    // pública e só devolve o que a vitrine já mostra a qualquer visitante.
     res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     if (!isValidPublicPropertySlug(req.params.slug)) {
       return res.status(400).json({ error: "Slug de imóvel inválido" });
     }
 
-    // Landing pública — allowlist explícita do corretor embutido: o resto de
-    // imf_brokers tem segredos (reset_token, uazapi_instance_token,
-    // asaas_credit_card_token, is_admin), que um select('*') vazava
-    // pra qualquer um que acessasse um slug de imóvel.
-    const { data, error } = await supabase
-      .from('imf_properties')
-      .select('*, brokers:imf_brokers(name, phone, broker_address)')
-      .eq('slug', req.params.slug)
-      .single();
+    // Mesma função que monta o dado embutido no HTML de /p/:slug — ver
+    // server/services/publicProperty.ts. Duas cópias divergiriam.
+    const { encontrado, imovel } = await loadPublicProperty(req.params.slug);
+    if (!encontrado) return res.status(404).json({ error: "Imóvel não encontrado" });
 
-    if (error?.code === 'PGRST116') return res.status(404).json({ error: "Imóvel não encontrado" });
-    if (error) throw error;
-    if (!data) return res.status(404).json({ error: "Imóvel não encontrado" });
-
-    let imageUrlStr = data.image_url;
-    let imagesArray: string[] = [];
-    try {
-      if (imageUrlStr && imageUrlStr.startsWith('[')) {
-         imagesArray = JSON.parse(imageUrlStr);
-         imageUrlStr = imagesArray[0] || '';
-      } else if (imageUrlStr) {
-         imagesArray = [imageUrlStr];
-      }
-    } catch(e) {
-       imagesArray = imageUrlStr ? [imageUrlStr] : [];
-    }
-    data.imageUrl = imageUrlStr;
-    data.images = imagesArray;
-
-    // Parse campos estruturados embutidos na descrição
-    const SEPARATOR = '---DETALHES-GERADOS---';
-    let cleanDescription = data.description || '';
-    let details: Record<string, any> = {};
-    if (cleanDescription.includes(SEPARATOR)) {
-      const parts = cleanDescription.split(SEPARATOR);
-      cleanDescription = parts[0].trim();
-      try { details = JSON.parse(parts[1].trim()); } catch { /* ignora */ }
-    }
-    data.description = cleanDescription;
-    data.details = details;
-
-    res.json(data);
+    res.json(imovel);
   } catch (err: any) {
     console.error("Erro GET /api/properties/:slug:", {
       code: err?.code || "UNKNOWN",
@@ -369,9 +332,6 @@ propertiesRouter.get("/api/properties/:slug", publicReadLimiter, async (req, res
   }
 });
 
-/**
- * Remove um imóvel do sistema permanentemente.
- */
 propertiesRouter.delete("/api/properties/:id", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;

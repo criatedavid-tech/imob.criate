@@ -133,17 +133,33 @@ export default function PropertyLanding() {
   const [navScrolled, setNavScrolled] = useState(false);
 
   useEffect(() => {
+    // O servidor embute o imóvel no próprio HTML (ver publicPageMeta.ts). Usar
+    // esse dado evita uma ida à rede antes de a página aparecer — e tira a
+    // vitrine de baixo do limite por IP quando um link viraliza num grupo.
+    // Só vale se for o MESMO imóvel: numa navegação interna o slug muda e o
+    // dado embutido é do imóvel anterior.
+    const embutido = (window as any).__IMOVEL__;
+    if (embutido && embutido.slug === slug) {
+      setProperty(embutido);
+      setLoading(false);
+      return;
+    }
+
+    // Reserva: HTML antigo em cache, navegação dentro do app, ou falha na
+    // injeção. O caminho de sempre continua inteiro.
+    let cancelado = false;
     const fetchProperty = async () => {
       try {
         const response = await fetch(`/api/properties/${slug}`);
-        if (response.ok) setProperty(await response.json());
+        if (response.ok && !cancelado) setProperty(await response.json());
       } catch (error) {
         console.error('Erro ao buscar imóvel:', error);
       } finally {
-        setLoading(false);
+        if (!cancelado) setLoading(false);
       }
     };
     fetchProperty();
+    return () => { cancelado = true; };
   }, [slug]);
 
   useEffect(() => {

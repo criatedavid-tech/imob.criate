@@ -12,7 +12,7 @@ test("prévia do link no WhatsApp sai com título, descrição e foto", () => {
     titulo: "Imóvel em Setor Oeste",
     descricao: "Setor Oeste · R$ 330.000,00",
     imagemOg: "https://x/og.jpg", imagemHero: "https://x/hero.jpg",
-    url: "https://imobiflow-v2.fly.dev/p/imovel-em-setor-oeste-mzj3",
+    url: "https://imobiflow-v2.fly.dev/p/imovel-em-setor-oeste-mzj3", imovel: null,
   });
   for (const t of ['og:title', 'og:image', 'og:description', 'og:url', 'twitter:card']) {
     assert.ok(html.includes(t), `faltou ${t}`);
@@ -28,14 +28,14 @@ test("preload aponta para a mesma URL que a página vai pedir (senão baixa duas
     titulo: "T", descricao: "d",
     imagemOg: "https://x/render/a.jpg?width=1200&quality=75",
     imagemHero: "https://x/render/a.jpg?width=1600&quality=74",
-    url: "https://x/p/y",
+    url: "https://x/p/y", imovel: null,
   });
   assert.ok(html.includes('rel="preload" as="image" href="https://x/render/a.jpg?width=1600&amp;quality=74"'));
   assert.ok(html.includes('og:image" content="https://x/render/a.jpg?width=1200&amp;quality=75"'));
 });
 
 test("imóvel sem foto ainda gera prévia válida, sem tag de imagem quebrada", () => {
-  const html = injectPageMeta(CASCA, { titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "https://x/p/y" });
+  const html = injectPageMeta(CASCA, { titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "https://x/p/y", imovel: null });
   assert.ok(html.includes("og:title"));
   assert.ok(!html.includes("og:image"));
   assert.ok(html.includes('name="twitter:card" content="summary"'));
@@ -44,14 +44,14 @@ test("imóvel sem foto ainda gera prévia válida, sem tag de imagem quebrada", 
 test("aspas e sinais no título não quebram o HTML", () => {
   const html = injectPageMeta(CASCA, {
     titulo: 'Casa "do Zé" & cia <script>alert(1)</script>',
-    descricao: 'desc "x" <b>', imagemOg: null, imagemHero: null, url: "https://x/p/y",
+    descricao: 'desc "x" <b>', imagemOg: null, imagemHero: null, url: "https://x/p/y", imovel: null,
   });
   assert.ok(!html.includes("<script>alert(1)</script>"), "injeção de HTML no título");
   assert.ok(html.includes("&quot;") && html.includes("&amp;"));
 });
 
 test("o corpo da SPA continua intacto — a página não muda, só ganha cabeçalho", () => {
-  const html = injectPageMeta(CASCA, { titulo: "A", descricao: "b", imagemOg: null, imagemHero: null, url: "https://x/p/y" });
+  const html = injectPageMeta(CASCA, { titulo: "A", descricao: "b", imagemOg: null, imagemHero: null, url: "https://x/p/y", imovel: null });
   assert.ok(html.includes('<div id="root"></div>'));
   assert.ok(html.includes("</head>") && html.includes("</html>"));
 });
@@ -84,7 +84,7 @@ const { injectAboveFold } = await import("../server/services/publicPageMeta");
 test("a foto e o título aparecem no HTML, antes de qualquer JavaScript", () => {
   const html = injectAboveFold(CASCA, {
     titulo: "Imóvel em Setor Oeste", descricao: "d",
-    imagemOg: null, imagemHero: "https://x/hero.jpg", url: "https://x/p/y",
+    imagemOg: null, imagemHero: "https://x/hero.jpg", url: "https://x/p/y", imovel: null,
   });
   assert.ok(html.includes("Imóvel em Setor Oeste"), "título tem que estar no HTML cru");
   assert.ok(html.includes("https://x/hero.jpg"));
@@ -92,7 +92,7 @@ test("a foto e o título aparecem no HTML, antes de qualquer JavaScript", () => 
 });
 
 test("sem foto, o esqueleto não fica quebrado", () => {
-  const html = injectAboveFold(CASCA, { titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "u" });
+  const html = injectAboveFold(CASCA, { titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "u", imovel: null });
   assert.ok(html.includes("Casa"));
   assert.ok(!html.includes("url('')"), "não pode gerar background com URL vazia");
   assert.ok(html.includes("linear-gradient"));
@@ -100,7 +100,7 @@ test("sem foto, o esqueleto não fica quebrado", () => {
 
 test("título com aspas não escapa do atributo de estilo nem do HTML", () => {
   const html = injectAboveFold(CASCA, {
-    titulo: '"><script>alert(1)</script>', descricao: "d", imagemOg: null, imagemHero: null, url: "u",
+    titulo: '"><script>alert(1)</script>', descricao: "d", imagemOg: null, imagemHero: null, url: "u", imovel: null,
   });
   assert.ok(!html.includes("<script>alert(1)</script>"));
 });
@@ -125,4 +125,34 @@ test("o HTML da vitrine nunca pode ser cacheado pelo navegador", () => {
     !/max-age=[1-9]/.test(rota),
     "nenhum max-age positivo no HTML da vitrine",
   );
+});
+
+// ─── Dado embutido no HTML ──────────────────────────────────────────────────
+const { serializeForScript } = await import("../server/services/publicProperty");
+
+test("descrição com </script> não escapa da tag e vira HTML executável", () => {
+  // A descrição é digitada pelo corretor — é entrada de usuário.
+  const veneno = { description: 'Casa </script><script>alert("xss")</script> boa' };
+  const saida = serializeForScript(veneno);
+  assert.ok(!saida.includes("</script>"), "fecharia a tag e executaria o resto");
+  assert.ok(saida.includes("\\u003c"));
+  // E o valor sobrevive intacto ao voltar.
+  assert.equal(JSON.parse(saida.replace(/\\u003c/g, "<").replace(/\\u003e/g, ">")).description, veneno.description);
+});
+
+test("o imóvel viaja no HTML, para a página não precisar chamar a API", () => {
+  const html = injectAboveFold(CASCA, {
+    titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "u",
+    imovel: { slug: "casa-x", title: "Casa", images: ["https://x/a.jpg"] },
+  });
+  assert.ok(html.includes("window.__IMOVEL__="));
+  assert.ok(html.includes('"slug":"casa-x"'));
+  assert.ok(html.includes('<div id="root">'), "o container do React continua lá");
+});
+
+test("sem imóvel carregado, nenhum script vazio é injetado", () => {
+  const html = injectAboveFold(CASCA, {
+    titulo: "Casa", descricao: "d", imagemOg: null, imagemHero: null, url: "u", imovel: null,
+  });
+  assert.ok(!html.includes("window.__IMOVEL__"));
 });

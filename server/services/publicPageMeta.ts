@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { PUBLIC_APP_URL } from "../config";
+import { loadPublicProperty, serializeForScript } from "./publicProperty";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Prévia do link e primeira pintura da vitrine.
@@ -36,6 +37,8 @@ export interface PublicPageMeta {
    */
   imagemHero: string | null;
   url: string;
+  /** O imóvel inteiro, para a página não precisar chamar a API. */
+  imovel: Record<string, any> | null;
 }
 
 interface CacheSlot {
@@ -91,13 +94,10 @@ function buildDescription(row: any): string {
 }
 
 async function fetchPropertyMeta(slug: string): Promise<PublicPageMeta | null> {
-  const { data } = await supabase
-    .from("imf_properties")
-    .select("title, price, location, description, image_url, slug, status")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (!data) return null;
-  const primeira = firstImage(data.image_url);
+  const { encontrado, imovel } = await loadPublicProperty(slug);
+  if (!encontrado || !imovel) return null;
+  const data = imovel;
+  const primeira = (data.images && data.images[0]) || null;
 
   return {
     titulo: String(data.title || "Imóvel").trim(),
@@ -107,6 +107,7 @@ async function fetchPropertyMeta(slug: string): Promise<PublicPageMeta | null> {
     imagemOg: redimensionar(primeira, 1200, 75),
     imagemHero: redimensionar(primeira, 1600, 74),
     url: `${PUBLIC_APP_URL.replace(/\/$/, "")}/p/${slug}`,
+    imovel: data,
   };
 }
 
@@ -206,8 +207,15 @@ export function injectAboveFold(html: string, meta: PublicPageMeta): string {
     `font-size:clamp(38px,7vw,104px);text-shadow:0 2px 24px rgba(0,0,0,.35)">${titulo}</h1>` +
     `</div>`;
 
+  // O imóvel viaja no próprio HTML: a página monta sem chamar a API. Tira uma
+  // ida à rede do caminho, e tira a vitrine de baixo do limitador por IP —
+  // que é o que apareceu como único ponto de saturação no teste de carga.
+  const dados = meta.imovel
+    ? `<script>window.__IMOVEL__=${serializeForScript(meta.imovel)}</script>`
+    : "";
+
   return html.replace(
     '<div id="root"></div>',
-    `<div id="root"><div style="position:relative;height:100svh;min-height:600px;overflow:hidden;background:#131518">${esqueleto}</div></div>`,
+    `<div id="root"><div style="position:relative;height:100svh;min-height:600px;overflow:hidden;background:#131518">${esqueleto}</div></div>${dados}`,
   );
 }
