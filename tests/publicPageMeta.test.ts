@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 process.env.SUPABASE_URL ||= "https://exemplo.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "chave-de-teste";
 const { injectPageMeta } = await import("../server/services/publicPageMeta");
@@ -102,4 +103,26 @@ test("título com aspas não escapa do atributo de estilo nem do HTML", () => {
     titulo: '"><script>alert(1)</script>', descricao: "d", imagemOg: null, imagemHero: null, url: "u",
   });
   assert.ok(!html.includes("<script>alert(1)</script>"));
+});
+
+// Regressão real: eu cachei o HTML da vitrine por 60s. O HTML referencia
+// assets com hash no nome, e o deploy seguinte apaga os antigos — quem tinha o
+// HTML velho no cache pedia um .js inexistente, recebia HTML de volta e via
+// TELA BRANCA. O comentário no próprio server.ts já avisava disso.
+const fonteDoServidor = await readFile(new URL("../server.ts", import.meta.url), "utf8");
+
+test("o HTML da vitrine nunca pode ser cacheado pelo navegador", () => {
+  const rota = fonteDoServidor.slice(
+    fonteDoServidor.indexOf('app.get("/p/:slug"'),
+    fonteDoServidor.indexOf('app.get("*"'),
+  );
+  assert.ok(rota.length > 0, "rota /p/:slug não encontrada");
+  assert.ok(
+    /Cache-Control", "no-cache"/.test(rota),
+    "HTML da SPA cacheado = tela branca no deploy seguinte",
+  );
+  assert.ok(
+    !/max-age=[1-9]/.test(rota),
+    "nenhum max-age positivo no HTML da vitrine",
+  );
 });

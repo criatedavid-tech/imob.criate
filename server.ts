@@ -221,7 +221,14 @@ async function startServer() {
         const meta = await getPropertyPageMeta(String(req.params.slug || ""));
         if (!meta) return next();
         const html = await readFile(path.join(distPath, "index.html"), "utf8");
-        res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+        // NUNCA cachear o HTML no navegador, mesmo com a consulta embutida:
+        // ele referencia assets com hash no nome, e o deploy seguinte apaga os
+        // antigos. Um HTML guardado por 60s vira tela branca depois do deploy
+        // (o navegador pede um .js que nao existe mais e recebe HTML de volta).
+        // A consulta ao banco ja e evitada pelo cache em memoria de 60s em
+        // getPropertyPageMeta — o cache HTTP aqui nao economizava nada e
+        // quebrava tudo.
+        res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
         return res.send(injectAboveFold(injectPageMeta(html, meta), meta));
       } catch {
