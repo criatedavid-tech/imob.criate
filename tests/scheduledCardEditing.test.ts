@@ -15,10 +15,11 @@ test("backend edita somente lembretes da IA ainda pendentes e da conta autentica
 
 test("backend nunca reescreve follow-up enviado", async () => {
   const source = await read("../server/routes/agent.ts");
-  const start = source.indexOf('"/api/agent/scheduled-followups/:id",\n  requireUser,\n  validateBody');
-  const end = source.indexOf('// DELETE /api/agent/scheduled-followups/:id', start);
-  assert.ok(start >= 0 && end > start);
-  const editRoute = source.slice(start, end);
+  const routeMatch = source.match(
+    /agentRouter\.patch\(\s*"\/api\/agent\/scheduled-followups\/:id"[\s\S]*?(?=\/\/ DELETE \/api\/agent\/scheduled-followups\/:id)/,
+  );
+  assert.ok(routeMatch);
+  const editRoute = routeMatch[0];
 
   assert.match(editRoute, /validateBody\(scheduledFollowupEditSchema\)/);
   assert.match(editRoute, /\.eq\("broker_id", brokerId\)/);
