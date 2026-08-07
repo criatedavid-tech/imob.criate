@@ -34,11 +34,8 @@ function sanitizeName(hint: string | undefined, fallback: string): string {
   return clean;
 }
 
-// Recebe base64 (com ou sem prefixo data:), grava no bucket e devolve a URL
-// pública. `ext`/nome derivados do mime quando o hint não traz extensão.
-export async function storeConversationMediaFromBase64(opts: {
-  brokerId: string;
-  ticketId: string;
+async function storeMediaFromBase64(opts: {
+  folder: string;
   base64: string;
   mime: string;
   filenameHint?: string;
@@ -50,8 +47,43 @@ export async function storeConversationMediaFromBase64(opts: {
 
   const clean = sanitizeName(opts.filenameHint, "media");
   const nameWithExt = clean.includes(".") ? clean : `${clean}${extensionFromMime(opts.mime)}`;
-  const path = `${opts.brokerId}/${opts.ticketId}/${Date.now()}-${nameWithExt}`;
+  const path = `${opts.folder}/${Date.now()}-${nameWithExt}`;
   await uploadConversaMedia(path, buffer, opts.mime);
   const { data } = supabase.storage.from(CONVERSA_MEDIA_BUCKET).getPublicUrl(path);
   return { publicUrl: data.publicUrl, path, size: buffer.length };
+}
+
+// Recebe base64 (com ou sem prefixo data:), grava no bucket e devolve a URL
+// pública. `ext`/nome derivados do mime quando o hint não traz extensão.
+export async function storeConversationMediaFromBase64(opts: {
+  brokerId: string;
+  ticketId: string;
+  base64: string;
+  mime: string;
+  filenameHint?: string;
+}): Promise<{ publicUrl: string; path: string; size: number }> {
+  return storeMediaFromBase64({
+    folder: `${opts.brokerId}/${opts.ticketId}`,
+    base64: opts.base64,
+    mime: opts.mime,
+    filenameHint: opts.filenameHint,
+  });
+}
+
+// O WhatsApp Pai e a CommandBar compartilham o historico do Assistente IA.
+// A midia fica no mesmo bucket tecnico, mas em um namespace sem ticket de
+// cliente, porque este canal nunca deve criar uma conversa comercial.
+export async function storeAgentMediaFromBase64(opts: {
+  brokerId: string;
+  userId: string;
+  base64: string;
+  mime: string;
+  filenameHint?: string;
+}): Promise<{ publicUrl: string; path: string; size: number }> {
+  return storeMediaFromBase64({
+    folder: `${opts.brokerId}/agent/${opts.userId}`,
+    base64: opts.base64,
+    mime: opts.mime,
+    filenameHint: opts.filenameHint,
+  });
 }

@@ -76,30 +76,38 @@ test("album do Pai e tratado pelos eventos individuais e a legenda vira comando 
   assert.match(source, /Envelope de album; fotos processadas individualmente/);
   assert.match(source, /enqueueDeferredPhotoCaption\(row\.sender_phone, rawText, executionMessageId\)/);
   assert.match(source, /dedupe_key: `photo-caption:\$\{providerMessageId\}`/);
-  assert.match(source, /recordPaiCommandMessage\(\{/);
-  assert.match(source, /backfillStagedPhotosToPaiConversation\(brokerId, userId, platformPhone\)/);
-  assert.match(source, /mediaType: "image"/);
-  assert.match(source, /mediaType: commandMediaType/);
+  assert.match(source, /photoUrl, "image"/);
+  assert.match(source, /storeAgentMediaFromBase64\(\{/);
+  assert.match(source, /commandMediaUrl, commandMediaType/);
 });
 
-test("numero central vira conversa interna sem acionar a IA comercial", async () => {
+test("numero central fica somente no Assistente IA e nunca vira conversa comercial", async () => {
   const sql = await readFile(
     new URL("../supabase/migrations/20260807h_whatsapp_pai_internal_conversation.sql", import.meta.url),
     "utf8",
   );
   assert.match(sql, /ADD COLUMN IF NOT EXISTS phone_normalized TEXT/);
   assert.match(sql, /SET phone_normalized = '556299982218'/);
-  assert.match(sql, /UPDATE public\.imf_conversation_tickets[\s\S]*customer_phone = '556299982218'/);
-  assert.match(sql, /SET ai_active = FALSE/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS media_url TEXT/);
+  assert.match(sql, /UPDATE public\.imf_agent_log AS log[\s\S]*imf_whatsapp_staged_media/);
+  assert.match(sql, /DELETE FROM public\.imf_conversation_messages[\s\S]*customer_phone = '556299982218'/);
+  assert.match(sql, /DELETE FROM public\.imf_conversation_tickets[\s\S]*customer_phone = '556299982218'/);
 
   const source = await readFile(new URL("../server/services/inboundWebhookQueue.ts", import.meta.url), "utf8");
   assert.match(source, /customerPhone === platformPaiPhone/);
   assert.match(source, /if \(isPaiInternalConversation\)/);
   const internalBranch = source.slice(
     source.indexOf("if (isPaiInternalConversation)"),
-    source.indexOf("const pushName", source.indexOf("if (isPaiInternalConversation)")),
+    source.indexOf("const providerMessageId", source.indexOf("if (isPaiInternalConversation)")),
   );
-  assert.match(internalBranch, /ai_active: false/);
   assert.match(internalBranch, /markInboxCompleted/);
+  assert.doesNotMatch(internalBranch, /ensureConversationTicket/);
+  assert.doesNotMatch(internalBranch, /recordConversationMessage/);
   assert.doesNotMatch(internalBranch, /enqueueN8nOutbox/);
+
+  const route = await readFile(new URL("../server/routes/agent.ts", import.meta.url), "utf8");
+  assert.match(route, /select\("role, text, media_url, media_type, created_at"\)/);
+  const ui = await readFile(new URL("../src/experience/CommandBar.tsx", import.meta.url), "utf8");
+  assert.match(ui, /t\.mediaType === 'image'/);
+  assert.match(ui, /t\.mediaType === 'audio'/);
 });

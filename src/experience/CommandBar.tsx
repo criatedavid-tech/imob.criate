@@ -12,6 +12,8 @@ interface ProposedAction {
 interface Turn {
   role: 'user' | 'ai';
   text: string;
+  mediaUrl?: string | null;
+  mediaType?: 'image' | 'audio' | null;
   proposedAction?: ProposedAction;
   done?: boolean; // ação já confirmada/executada
 }
@@ -370,7 +372,20 @@ export function CommandBar({
                 ? 'bg-violet-500/25 border border-violet-300/25 text-[var(--text-hi)]'
                 : 'bg-[var(--control-fill)] border border-[var(--hairline)] text-[var(--text-hi)]/85'
             }`}>
-              {t.text}
+              {t.mediaUrl && t.mediaType === 'image' && (
+                <a href={t.mediaUrl} target="_blank" rel="noreferrer" className="block mb-1.5">
+                  <img
+                    src={t.mediaUrl}
+                    alt="Foto enviada ao Assistente IA"
+                    loading="lazy"
+                    className="max-h-72 max-w-full rounded-xl object-contain"
+                  />
+                </a>
+              )}
+              {t.mediaUrl && t.mediaType === 'audio' && (
+                <audio src={t.mediaUrl} controls preload="none" className="mb-1.5 max-w-full w-64" />
+              )}
+              {t.text && !(t.mediaUrl && t.mediaType === 'image' && /^\[(Foto|Imagem)\]$/.test(t.text)) && t.text}
             </div>
             {t.proposedAction && (
               <div className="mt-2 flex items-center gap-2">

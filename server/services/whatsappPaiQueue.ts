@@ -9,8 +9,7 @@ import { parseConfirmedAgentAction } from "../security/agentGuardrails";
 import { detectInboundMediaKind, mediaMessageId, declaredFileLength } from "./inboundMedia";
 import { transcribeWithOpenRouter, resolveAudioFormat, logAiProviderError, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from "./mediaAi";
 import { uploadPropertyImageBase64 } from "./propertyImages";
-import { ensureConversationTicket, recordConversationMessage } from "./conversationTickets";
-import { storeConversationMediaFromBase64 } from "./conversationMedia";
+import { storeAgentMediaFromBase64 } from "./conversationMedia";
 import {
   MAX_DOCUMENT_BYTES,
   MAX_STAGED_DOCUMENTS,
@@ -123,88 +122,6 @@ async function sendPaiReply(instanceToken: string, phone: string, text: string):
   }
 }
 
-function platformPhoneFromPayload(payload: Record<string, any>): string {
-  return normalizePhoneBR(optionalString(payload.owner) || optionalString(payload.message?.owner));
-}
-
-async function recordPaiCommandMessage(input: {
-  brokerId: string;
-  userId: string;
-  platformPhone: string;
-  body: string;
-  providerMessageId: string;
-  mediaUrl?: string | null;
-  mediaType?: "image" | "audio" | null;
-}): Promise<string | null> {
-  if (!input.platformPhone) return null;
-  const ticket = await ensureConversationTicket({
-    brokerId: input.brokerId,
-    customerPhone: input.platformPhone,
-    initialStatus: "pending",
-    aiActive: false,
-    assignedUserId: input.userId,
-    instanceOwnerUserId: input.userId,
-  });
-  const [ticketUpdate, contactUpsert] = await Promise.all([
-    supabase.from("imf_conversation_tickets").update({
-      ai_active: false,
-      assigned_user_id: input.userId,
-      instance_owner_user_id: input.userId,
-      human_takeover_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq("id", ticket.id).eq("broker_id", input.brokerId),
-    supabase.from("imf_contacts").upsert({
-      broker_id: input.brokerId,
-      phone: input.platformPhone,
-      name: "WhatsApp Pai",
-    }, { onConflict: "broker_id,phone" }),
-  ]);
-  if (ticketUpdate.error) throw ticketUpdate.error;
-  if (contactUpsert.error) throw contactUpsert.error;
-  try {
-    await recordConversationMessage({
-      brokerId: input.brokerId,
-      customerPhone: input.platformPhone,
-      ticketId: ticket.id,
-      direction: "out",
-      senderType: "broker_manual",
-      body: input.body,
-      mediaUrl: input.mediaUrl,
-      mediaType: input.mediaType,
-      providerMessageId: input.providerMessageId,
-    });
-  } catch (error: any) {
-    if (error?.code !== "23505") throw error;
-  }
-  return ticket.id;
-}
-
-async function backfillStagedPhotosToPaiConversation(
-  brokerId: string,
-  userId: string,
-  platformPhone: string,
-): Promise<void> {
-  if (!platformPhone) return;
-  const { data, error } = await supabase.from("imf_whatsapp_staged_media")
-    .select("url, provider_message_id")
-    .eq("user_id", userId)
-    .eq("broker_id", brokerId)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  for (const photo of data || []) {
-    if (!photo.url || !photo.provider_message_id) continue;
-    await recordPaiCommandMessage({
-      brokerId,
-      userId,
-      platformPhone,
-      body: "[Imagem]",
-      providerMessageId: photo.provider_message_id,
-      mediaUrl: photo.url,
-      mediaType: "image",
-    });
-  }
-}
-
 async function enqueueDeferredPhotoCaption(
   senderPhone: string,
   caption: string,
@@ -257,10 +174,12 @@ async function resolveSenderIdentity(phone: string): Promise<{ userId: string; b
 async function logPaiTurn(
   brokerId: string, userId: string, role: "user" | "ai", text: string,
   providerMessageId?: string | null, actionType?: string,
+  mediaUrl?: string | null, mediaType?: "image" | "audio" | null,
 ): Promise<void> {
   const { error } = await supabase.from("imf_agent_log").insert({
     broker_id: brokerId, user_id: userId, role, text: text.slice(0, 4000),
     action_type: actionType || null, channel: "whatsapp", provider_message_id: providerMessageId || null,
+    media_url: mediaUrl || null, media_type: mediaType || null,
   });
   if (error && (error as any).code !== "23505") {
     console.warn("[WhatsApp Pai] falha ao logar turno:", error.message);
@@ -464,10 +383,10 @@ async function handleIncomingPhoto(
 
 // Áudio vira texto (mesma transcrição já usada no pipeline do cliente) e
 // segue o fluxo normal como se o usuário tivesse digitado o comando.
-async function handleIncomingAudio(
+async function downloadIncomingAudio(
   platformToken: string,
   message: Record<string, any>,
-): Promise<{ transcript: string; base64Data: string; mimetype: string }> {
+): Promise<{ base64Data: string; mimetype: string }> {
   const messageId = mediaMessageId(message);
   if (!messageId) throw new Error("ID da mídia ausente.");
   const fileLength = declaredFileLength(message);
@@ -475,10 +394,7 @@ async function handleIncomingAudio(
 
   const media = await downloadUazapiMedia(platformToken, messageId, { generateMp3: true, maxBytes: MAX_AUDIO_BYTES });
   if (!media.mimetype.toLowerCase().startsWith("audio/")) throw new Error("A UAZAPI não devolveu um arquivo de áudio.");
-
-  const transcript = await transcribeWithOpenRouter(media.base64Data, resolveAudioFormat(media.base64Data, media.mimetype));
-  if (!transcript) throw new Error("A transcrição do áudio voltou vazia.");
-  return { transcript, base64Data: media.base64Data, mimetype: media.mimetype };
+  return { base64Data: media.base64Data, mimetype: media.mimetype };
 }
 
 async function handleIncomingDocument(
@@ -563,7 +479,6 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   const providerMessageId = optionalString(message.id) || optionalString(message.messageid) || null;
   const mediaKind = detectInboundMediaKind(message);
   const isDocument = isPaiDocumentMessage(message);
-  const deferredPhotoCaption = row.payload?._imobiflow?.kind === "photo_caption";
 
   // A UAZAPI emite um envelope sem arquivo antes dos eventos individuais das
   // fotos do album. Ele nao e uma mensagem do usuario para o agente.
@@ -591,7 +506,6 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     return;
   }
   const { userId, brokerId } = identity;
-  const platformPhone = platformPhoneFromPayload(row.payload);
   // A linha única da inbox é a fonte de idempotência do inbound. O histórico
   // não pode ser usado como marcador de conclusão: ele é gravado antes de
   // algumas etapas e faria um retry descartar uma mensagem ainda incompleta.
@@ -624,17 +538,9 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   // de texto do mesmo remetente é que dispara o comando de verdade.
   if (mediaKind === "image") {
     let replyText: string;
+    let photoUrl: string | null = null;
     try {
-      const photoUrl = await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
-      await recordPaiCommandMessage({
-        brokerId,
-        userId,
-        platformPhone,
-        body: rawText || "[Imagem]",
-        providerMessageId: executionMessageId,
-        mediaUrl: photoUrl,
-        mediaType: "image",
-      });
+      photoUrl = await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
       if (rawText) {
         await enqueueDeferredPhotoCaption(row.sender_phone, rawText, executionMessageId);
         replyText = "Foto e descrição recebidas. Vou juntar as imagens antes de preparar o cadastro.";
@@ -647,7 +553,7 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
       logAiProviderError("[WhatsApp Pai] processamento de foto falhou", error);
       replyText = `Não consegui processar essa foto: ${error?.message || "Erro desconhecido."}`;
     }
-    await logPaiTurn(brokerId, userId, "user", "[Foto]", providerMessageId);
+    await logPaiTurn(brokerId, userId, "user", "[Foto]", providerMessageId, undefined, photoUrl, "image");
     if (replyText) {
       await sendPaiReply(platformToken, row.sender_phone, replyText);
       await logPaiTurn(brokerId, userId, "ai", replyText);
@@ -661,49 +567,33 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   let commandMediaType: "audio" | null = null;
   if (mediaKind === "audio") {
     try {
-      const audio = await handleIncomingAudio(platformToken, message);
-      text = audio.transcript;
-      if (platformPhone) {
-        const ticket = await ensureConversationTicket({
-          brokerId,
-          customerPhone: platformPhone,
-          initialStatus: "pending",
-          aiActive: false,
-          assignedUserId: userId,
-          instanceOwnerUserId: userId,
-        });
-        const stored = await storeConversationMediaFromBase64({
-          brokerId,
-          ticketId: ticket.id,
-          base64: audio.base64Data,
-          mime: audio.mimetype,
-          filenameHint: "comando-pai-audio",
-        });
-        commandMediaUrl = stored.publicUrl;
-        commandMediaType = "audio";
-      }
+      const audio = await downloadIncomingAudio(platformToken, message);
+      const stored = await storeAgentMediaFromBase64({
+        brokerId,
+        userId,
+        base64: audio.base64Data,
+        mime: audio.mimetype,
+        filenameHint: "comando-pai-audio",
+      });
+      commandMediaUrl = stored.publicUrl;
+      commandMediaType = "audio";
+      text = await transcribeWithOpenRouter(
+        audio.base64Data,
+        resolveAudioFormat(audio.base64Data, audio.mimetype),
+      );
+      if (!text) throw new Error("A transcrição do áudio voltou vazia.");
     } catch (error: any) {
       logAiProviderError("[WhatsApp Pai] transcrição de áudio falhou", error);
       const replyText = `Não consegui entender esse áudio: ${error?.message || "Erro desconhecido."}`;
-      await logPaiTurn(brokerId, userId, "user", "[Áudio]", providerMessageId);
+      await logPaiTurn(
+        brokerId, userId, "user", "[Áudio]", providerMessageId,
+        undefined, commandMediaUrl, commandMediaType,
+      );
       await sendPaiReply(platformToken, row.sender_phone, replyText);
       await logPaiTurn(brokerId, userId, "ai", replyText);
       await markPaiCompleted(row.id);
       return;
     }
-  }
-
-  if (!deferredPhotoCaption) {
-    await backfillStagedPhotosToPaiConversation(brokerId, userId, platformPhone);
-    await recordPaiCommandMessage({
-      brokerId,
-      userId,
-      platformPhone,
-      body: commandMediaType === "audio" ? `Áudio: ${text}` : text,
-      providerMessageId: executionMessageId,
-      mediaUrl: commandMediaUrl,
-      mediaType: commandMediaType,
-    });
   }
 
   const userLogText = receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text;
@@ -718,7 +608,10 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   // ter começado ou terminado, então primeiro reapresenta o resultado (ou o
   // aviso de incerteza) e nunca transforma o retry em um comando novo.
   if (pending && pending.status !== "pending") {
-    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+    await logPaiTurn(
+      brokerId, userId, "user", userLogText, providerMessageId,
+      undefined, commandMediaUrl, commandMediaType,
+    );
     await handlePendingAction(
       pending as PaiPendingAction,
       "confirm",
@@ -735,7 +628,10 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   if (pending && new Date(pending.expires_at).getTime() > Date.now()) {
     const decision = classifyReply(text);
     if (decision !== "other") {
-      await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+      await logPaiTurn(
+        brokerId, userId, "user", userLogText, providerMessageId,
+        undefined, commandMediaUrl, commandMediaType,
+      );
       await handlePendingAction(
         pending as PaiPendingAction,
         decision,
@@ -792,11 +688,17 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     }, { onConflict: "user_id" });
     if (error) throw error;
     await sendPaiReply(platformToken, row.sender_phone, `${result.reply}\n\nResponda *sim* pra confirmar ou *não* pra cancelar.`);
-    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+    await logPaiTurn(
+      brokerId, userId, "user", userLogText, providerMessageId,
+      undefined, commandMediaUrl, commandMediaType,
+    );
     await logPaiTurn(brokerId, userId, "ai", result.reply, null, result.proposedAction.type);
   } else {
     await sendPaiReply(platformToken, row.sender_phone, result.reply);
-    await logPaiTurn(brokerId, userId, "user", userLogText, providerMessageId);
+    await logPaiTurn(
+      brokerId, userId, "user", userLogText, providerMessageId,
+      undefined, commandMediaUrl, commandMediaType,
+    );
     await logPaiTurn(brokerId, userId, "ai", result.reply);
   }
   if (stagedDocuments.length) {

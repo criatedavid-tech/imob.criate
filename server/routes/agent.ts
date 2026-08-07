@@ -56,14 +56,19 @@ agentRouter.get("/api/agent/history", requireUser, async (req, res) => {
 
     const { data, error } = await supabase
       .from("imf_agent_log")
-      .select("role, text, created_at")
+      .select("role, text, media_url, media_type, created_at")
       .eq("broker_id", brokerId)
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw error;
 
-    res.json((data || []).reverse().map((t: any) => ({ role: t.role, text: t.text })));
+    res.json((data || []).reverse().map((t: any) => ({
+      role: t.role,
+      text: t.text,
+      mediaUrl: t.media_url || null,
+      mediaType: t.media_type || null,
+    })));
   } catch (err: any) {
     console.error("Erro GET /api/agent/history:", err);
     res.status(500).json({ error: err.message });

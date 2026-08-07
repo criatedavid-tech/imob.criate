@@ -383,6 +383,15 @@ async function processInboxRow(row: InboxRow): Promise<void> {
     const platformPaiPhone = await getPlatformPaiPhone();
     const isPaiInternalConversation = !!platformPaiPhone && customerPhone === platformPaiPhone;
 
+    // O numero central pertence ao Assistente IA, nao a um cliente. A resposta
+    // ja foi persistida em imf_agent_log pelo worker do Pai; aqui apenas
+    // absorvemos o eco recebido na instancia comercial para ele nunca criar
+    // ticket, contato, lead, follow-up ou evento para o n8n.
+    if (isPaiInternalConversation) {
+      await markInboxCompleted(row.id);
+      return;
+    }
+
     const providerMessageId = optionalString(message.id) || optionalString(message.messageid) || null;
     const persistenceMessageId = providerMessageId || `inbox:${row.id}`;
     const plainText = optionalString(message.text) || optionalString(message.content);
@@ -420,7 +429,7 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         brokerId: row.broker_id,
         customerPhone,
         initialStatus: "pending",
-        aiActive: !isPaiInternalConversation,
+        aiActive: true,
         instanceOwnerUserId: row.instance_owner_user_id,
         lastActivityAt: activityAt,
       });
@@ -478,35 +487,13 @@ async function processInboxRow(row: InboxRow): Promise<void> {
         brokerId: row.broker_id,
         customerPhone,
         initialStatus: "pending",
-        aiActive: !isPaiInternalConversation,
+        aiActive: true,
         instanceOwnerUserId: row.instance_owner_user_id,
       });
       ticketId = ticket.id;
     }
 
     const activityAt = optionalString(recorded?.created_at) || new Date().toISOString();
-
-    // O numero central e um canal interno de comando. A resposta continua
-    // visivel em Conversas, mas nunca vira lead, follow-up ou entrada do n8n.
-    if (isPaiInternalConversation) {
-      const [ticketUpdate, contactUpsert] = await Promise.all([
-        supabase.from("imf_conversation_tickets").update({
-          ai_active: false,
-          human_takeover_at: activityAt,
-          updated_at: activityAt,
-        }).eq("id", ticketId).eq("broker_id", row.broker_id),
-        supabase.from("imf_contacts").upsert({
-          broker_id: row.broker_id,
-          phone: customerPhone,
-          name: "WhatsApp Pai",
-        }, { onConflict: "broker_id,phone" }),
-      ]);
-      if (ticketUpdate.error) throw ticketUpdate.error;
-      if (contactUpsert.error) throw contactUpsert.error;
-      await markInboxCompleted(row.id);
-      return;
-    }
-
     const pushName = optionalString(body.chat?.wa_contactName)
       || optionalString(body.chat?.wa_name)
       || optionalString(message.senderName)
