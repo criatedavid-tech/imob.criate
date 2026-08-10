@@ -7,6 +7,9 @@ export function GlassCard({
   children,
   onClick,
   style,
+  role,
+  tabIndex,
+  onKeyDown,
 }: {
   // `key` é consumida pelo React e não chega ao componente em runtime, mas
   // precisa constar no contrato explícito deste function component para a
@@ -16,11 +19,21 @@ export function GlassCard({
   children: React.ReactNode;
   onClick?: () => void;
   style?: React.CSSProperties;
+  // Passthrough de acessibilidade pra cards clicáveis que abrem um detalhe
+  // (ex.: TenantDetailPanel) — sem isso, um card com onClick vira uma trap
+  // de teclado/leitor de tela: clicável no mouse, invisível pra quem navega
+  // sem ele.
+  role?: string;
+  tabIndex?: number;
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
 }) {
   return (
     <div
       onClick={onClick}
       style={style}
+      role={role}
+      tabIndex={tabIndex}
+      onKeyDown={onKeyDown}
       className={cn(
         'rounded-[26px] p-6 backdrop-blur-2xl backdrop-saturate-150 border bg-[var(--card-fill)] border-[var(--hairline)] shadow-[var(--card-shadow)]',
         onClick && 'cursor-pointer hover:bg-[var(--card-fill-hover)] transition-colors',

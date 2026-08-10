@@ -187,6 +187,18 @@
 html { background-color: var(--bg-base); }
 body { color: var(--text-mid); }
 
+/* O menu nativo do <select> no Chrome/Windows não respeita de forma confiável
+   texto claro herdado sobre o fundo branco do popup. Cores sólidas garantem
+   contraste nas opções sem alterar o campo translúcido fechado. */
+select option {
+  color: #EAF0FF;
+  background-color: #0E1626;
+}
+:root[data-theme="light"] select option {
+  color: #141C2E;
+  background-color: #FFFFFF;
+}
+
 /* Cross-fade suave ao trocar de tema (classe temporária no <html>, via JS) */
 html.theme-transition,
 html.theme-transition * {

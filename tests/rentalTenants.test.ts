@@ -57,4 +57,36 @@ test("interface de alugueis oferece cadastro e historico sem sair do modulo", as
   assert.match(source, /function TenantModal/);
   assert.match(source, /function PropertyHistoryModal/);
   assert.match(source, /\/api\/locacao\/tenants/);
+  assert.match(source, /Situação financeira/);
+  assert.match(source, /Adimplente/);
+  assert.match(source, /Inadimplente/);
+});
+
+test("carteira de locacao continua operavel com dezenas de clientes", async () => {
+  const source = await read("../src/experience/LocacaoArea.tsx");
+
+  assert.match(source, /const RENTAL_PAGE_SIZE = 12/);
+  assert.match(source, /Voltar para Aluguéis/);
+  assert.match(source, /Cadastros, contatos, contratos e situação financeira dos locatários/);
+  assert.match(source, /view !== 'tenants'/);
+  assert.match(source, /setView\('contracts'\)/);
+  assert.match(source, /Prioridade operacional/);
+  assert.match(source, /Buscar inquilino, im.vel, propriet.rio ou telefone/);
+  assert.match(source, /Buscar por nome, im.vel, telefone, e-mail ou CPF\/CNPJ/);
+  assert.match(source, /contractFinancialFilter/);
+  assert.match(source, /tenantFinancialFilter/);
+  assert.match(source, /contractDisplay === 'lista'/);
+  assert.match(source, /tenantDisplay === 'lista'/);
+  assert.match(source, /RentalPagination page=\{contractPage\}/);
+  assert.match(source, /RentalPagination page=\{tenantPage\}/);
+});
+
+test("api consolida adimplencia por contrato ativo sem confiar no cliente", async () => {
+  const source = await read("../server/routes/locacao.ts");
+
+  assert.match(source, /loadContractFinancialHealth/);
+  assert.match(source, /summarizeRentalFinancialHealth/);
+  assert.match(source, /summarizeTenantFinancialHealth/);
+  assert.match(source, /overdue_amount_cents/);
+  assert.match(source, /overdue_count/);
 });

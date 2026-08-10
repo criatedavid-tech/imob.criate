@@ -15,6 +15,8 @@ RUN npm ci --include=dev
 
 # Copia o código e gera o build estático do frontend
 COPY . .
+ARG VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false
+ENV VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=$VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED
 RUN npm run build
 
 # A partir daqui o processo roda em modo produção (serve dist/ estático)

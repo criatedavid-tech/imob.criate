@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Loader2, X, KeyRound, Users, CalendarClock, TrendingUp, AlertTriangle,
-  CheckCircle2, Bot, Clock, ArrowRightLeft, Sparkles, HandCoins,
+  CheckCircle2, Bot, Clock, ArrowRightLeft, Sparkles, HandCoins, MessageSquare,
 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from '../lib/features';
 
 // Painéis da aba Locação: visão gerencial (Alugados) e funil dos vagos
 // (Disponíveis). A regra de ouro do desenho aqui é: cada número na tela
@@ -183,18 +184,21 @@ const EVENT_STYLE: Record<string, { dot: string; label: string }> = {
   escalado_humano: { dot: 'bg-red-400', label: 'Passou para você' },
   autopilot_ligado: { dot: 'bg-emerald-400', label: 'Piloto ligado' },
   autopilot_desligado: { dot: 'bg-slate-400', label: 'Piloto desligado' },
+  teste_disparo_enviado: { dot: 'bg-cyan-400', label: 'Teste de WhatsApp enviado' },
 };
 
 const ACTOR_LABEL: Record<string, string> = { sistema: 'Sistema', ia: 'IA', humano: 'Você' };
 
 export function ContractDiaryModal({ contract, onClose, onChanged }: {
-  contract: { id: string; tenant_name: string; autopilot_enabled?: boolean };
+  contract: { id: string; tenant_name: string; tenant_phone?: string | null; autopilot_enabled?: boolean };
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [events, setEvents] = useState<any[] | null>(null);
   const [autopilot, setAutopilot] = useState(!!contract.autopilot_enabled);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -222,6 +226,26 @@ export function ContractDiaryModal({ contract, onClose, onChanged }: {
     }
   };
 
+  const sendTest = async () => {
+    if (!contract.tenant_phone) {
+      setError('Cadastre o WhatsApp do inquilino antes do teste.');
+      return;
+    }
+    if (!confirm(`Enviar uma mensagem identificada como TESTE para ${contract.tenant_name}? Nenhuma cobrança será criada.`)) return;
+    setTesting(true);
+    setError('');
+    setTestResult('');
+    try {
+      await api(`/api/locacao/contracts/${contract.id}/test-dispatch`, { method: 'POST' });
+      setTestResult('Teste confirmado pelo provedor. Confira o WhatsApp do inquilino.');
+      api(`/api/locacao/contracts/${contract.id}/events`).then(setEvents).catch(() => {});
+    } catch (e: any) {
+      setError(e.message || 'Não foi possível enviar o teste.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
@@ -243,12 +267,14 @@ export function ContractDiaryModal({ contract, onClose, onChanged }: {
                 <Bot className="w-4 h-4 text-violet-300" /> Piloto automático
               </p>
               <p className="text-[11.5px] text-[var(--text-low)] mt-1 leading-relaxed">
-                {autopilot
+                {!CLIENT_FINANCIAL_OPERATIONS_ENABLED
+                  ? 'A automação financeira está bloqueada na plataforma. Use o teste abaixo para validar somente o canal de WhatsApp.'
+                  : autopilot
                   ? 'A cobrança do mês é gerada e enviada sozinha, e a IA responde o inquilino. Casos fora da alçada vêm para você.'
                   : 'Nada é enviado automaticamente. Você gera e cobra manualmente.'}
               </p>
             </div>
-            <button onClick={toggleAutopilot} disabled={saving}
+            <button onClick={toggleAutopilot} disabled={saving || (!CLIENT_FINANCIAL_OPERATIONS_ENABLED && !autopilot)}
               className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[11px] font-bold transition-colors disabled:opacity-50 ${
                 autopilot ? 'text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25' : 'text-[var(--text-mid)] bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)]'
               }`}>
@@ -256,6 +282,17 @@ export function ContractDiaryModal({ contract, onClose, onChanged }: {
               {autopilot ? 'Ligado' : 'Desligado'}
             </button>
           </div>
+          <div className="mt-3 pt-3 border-t border-[var(--hairline)] flex flex-wrap items-center gap-3">
+            <button onClick={sendTest} disabled={testing || !contract.tenant_phone}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-[11px] font-bold text-cyan-200 bg-cyan-500/12 border border-cyan-400/20 hover:bg-cyan-500/20 disabled:opacity-40">
+              {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />}
+              {testing ? 'Enviando teste…' : 'Testar WhatsApp'}
+            </button>
+            <p className="text-[11px] text-[var(--text-low)]">
+              Envia uma mensagem marcada como teste, sem boleto, PIX ou mudança na régua.
+            </p>
+          </div>
+          {testResult && <p className="text-[12px] text-emerald-300 mt-2">{testResult}</p>}
           {error && <p className="text-[12px] text-red-300 mt-2">{error}</p>}
         </div>
 

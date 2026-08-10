@@ -838,9 +838,17 @@ function WhatsappPaiLinkCard({ fieldCls }: { fieldCls: string }) {
 }
 
 function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
-  const [status, setStatus] = useState<{ configured: boolean; needs_reconnect?: boolean; env: string | null; key_last4: string | null; can_manage: boolean } | null>(null);
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    needs_reconnect?: boolean;
+    env: string | null;
+    key_last4: string | null;
+    can_manage: boolean;
+    sandbox_only?: boolean;
+    blocked_by_sandbox_mode?: boolean;
+  } | null>(null);
   const [apiKey, setApiKey] = useState('');
-  const [env, setEnv] = useState<'sandbox' | 'production'>('production');
+  const [env, setEnv] = useState<'sandbox' | 'production'>('sandbox');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -853,7 +861,8 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Falha ao carregar.');
       setStatus(data);
-      if (data.env === 'sandbox' || data.env === 'production') setEnv(data.env);
+      if (data.sandbox_only) setEnv('sandbox');
+      else if (data.env === 'sandbox' || data.env === 'production') setEnv(data.env);
     } catch (e: any) {
       setError(e.message);
     }
@@ -910,6 +919,12 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
         Integração opcional com a conta Asaas da própria empresa. Os valores são recebidos diretamente nessa conta; o ImobiFlow apenas gera e acompanha o status. Sem integração própria, novas cobranças ficam bloqueadas.
       </p>
 
+      {status?.sandbox_only && (
+        <p className="text-[12px] text-amber-200 mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2.5">
+          Modo de validação: somente o Asaas sandbox é aceito. Boletos, PIX e clientes criados aqui são de teste e não movimentam dinheiro real.
+        </p>
+      )}
+
       {!status && <div className="flex justify-center py-4"><Loader2 className="animate-spin w-5 h-5 text-[var(--text-low)]" /></div>}
 
       {status && status.configured && !editing && (
@@ -934,6 +949,9 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
       {status && status.needs_reconnect && (
         <p className="text-[12px] text-amber-200 mb-3">A integração anterior não pode ser utilizada. O titular precisa conectar novamente a conta própria.</p>
       )}
+      {status && status.blocked_by_sandbox_mode && (
+        <p className="text-[12px] text-amber-200 mb-3">A chave de produção está bloqueada durante a validação. Conecte uma chave do Asaas sandbox.</p>
+      )}
       {status && !status.configured && !status.can_manage && (
         <p className="text-[12px] text-[var(--text-low)]">Nenhuma integração própria configurada. Novas cobranças estão bloqueadas; somente o titular pode conectar uma conta.</p>
       )}
@@ -954,7 +972,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
           <div>
             <label className="block text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5">Ambiente</label>
             <div className="flex gap-2">
-              {(['production', 'sandbox'] as const).map((opt) => (
+              {(status?.sandbox_only ? ['sandbox'] as const : ['production', 'sandbox'] as const).map((opt) => (
                 <button
                   key={opt}
                   type="button"

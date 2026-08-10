@@ -1,5 +1,60 @@
 # Decisões vigentes
 
+## Régua de cobrança: mensagens selecionáveis por etapa (2026-08-10)
+
+- Cada mensagem opcional possui uma chave **Envia / Não envia** diretamente no
+  cartão da etapa. A alteração é individual por conta e persiste no mesmo
+  template personalizado já usado pelo motor e pela agenda.
+- O salvamento é imediato, atualiza a agenda e restaura o estado anterior se a
+  API falhar. Desligar uma mensagem faz o motor ignorar somente aquele degrau.
+- A etapa final de entrega para uma pessoa permanece obrigatória como rede de
+  segurança. Seu texto continua editável e pode ficar vazio, mas a entrega
+  humana não pode ser eliminada pela chave.
+
+## Locação: piloto financeiro restrito ao Asaas sandbox (2026-08-10)
+
+- O deploy V2 libera a interface e o backend financeiro apenas para homologação.
+  `CLIENT_FINANCIAL_SANDBOX_ONLY=true` é fail-closed e recusa credenciais de
+  produção ao salvar, gerar cobranças, ligar a conta, ligar contratos e rodar
+  os jobs do scheduler.
+- As três travas operacionais continuam obrigatórias: geração ligada na conta,
+  régua ligada na conta e piloto ligado individualmente no contrato. Os padrões
+  do banco permanecem desligados.
+- Antes de criar cliente ou cobrança, o backend garante na conta Asaas própria
+  um webhook autenticado para a URL canônica do ImobiFlow. Sem token seguro ou
+  sem confirmação do Asaas, a emissão falha antes de criar a cobrança.
+- A liberação oficial de produção exigirá decisão separada, QA concluído e
+  alteração explícita de `CLIENT_FINANCIAL_SANDBOX_ONLY=false`. A conta Asaas
+  global da assinatura continua proibida para aluguéis e reservas.
+
+## Locação: teste de canal não liga operação financeira (2026-08-10)
+
+- `CLIENT_FINANCIAL_OPERATIONS_ENABLED` é uma trava de backend e scheduler,
+  não apenas um recurso visual. Com ela desligada, geração e régua são no-op.
+- Configuração antiga ainda pode ser desligada, mas não ligada, enquanto a
+  trava global estiver fechada. Isso evita automação armada silenciosamente.
+- O teste do WhatsApp é uma ação humana separada: envia texto claramente
+  identificado, tem rate limit, registra evento e nunca cria boleto/PIX nem
+  avança `dunning_step`.
+- Simulação na agenda não é disparo programado. Somente status `programado`,
+  com as quatro chaves ativas, representa uma automação que poderá sair.
+
+## `@reset`: apaga contexto pessoal, não dados de negócio (2026-08-10)
+
+- O comando só é reconhecido quando a mensagem inteira é exatamente `@reset`,
+  sem texto adicional. Ele é determinístico e nunca chega ao modelo de IA.
+- O histórico é único por `user_id` + `broker_id` e compartilhado pelo
+  WhatsApp Pai e Assistente IA do painel. O botão **Nova conversa** usa a mesma
+  operação para os dois canais não divergirem.
+- A limpeza transacional remove `imf_agent_log`, proposta ainda não executada e
+  staging de foto/documento. Não remove leads, imóveis, agenda, ações já
+  executadas, conversas comerciais ou a inbox técnica do webhook.
+- Uma ação em `executing`/`executed` aguardando entrega bloqueia o reset. Apagar
+  sua trava de recuperação poderia permitir duplicidade numa tentativa futura.
+- Mensagens antigas continuam visíveis fisicamente no aplicativo WhatsApp. O
+  produto apaga sua própria memória e interface, não o histórico local do
+  aparelho do usuário.
+
 ## WhatsApp Pai: conexão só fica pronta com webhook público reafirmado (2026-08-07)
 
 - Pareamento e webhook são estados diferentes: uma instância pode aparecer

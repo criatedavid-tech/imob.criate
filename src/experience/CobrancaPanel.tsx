@@ -328,7 +328,7 @@ function StatusCard({ ativo, onToggle, saving }: {
       detalhe: 'Emite o boleto com PIX antes do vencimento, sem você precisar lembrar.',
       acao: (
         <button onClick={() => onToggle('charge_generation_enabled', !ativo.geracao_conta)}
-          disabled={!ativo.global || saving === 'charge_generation_enabled'}
+          disabled={(!ativo.global && !ativo.geracao_conta) || saving === 'charge_generation_enabled'}
           className={`shrink-0 px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-colors disabled:opacity-40 ${
             ativo.geracao_conta ? 'text-emerald-300 bg-emerald-500/15' : 'text-[var(--text-mid)] bg-[var(--control-fill-hover)]'
           }`}>
@@ -342,7 +342,7 @@ function StatusCard({ ativo, onToggle, saving }: {
       detalhe: 'É a régua abaixo. Sem isso a cobrança é gerada, mas ninguém é avisado.',
       acao: (
         <button onClick={() => onToggle('dunning_enabled', !ativo.regua_conta)}
-          disabled={!ativo.global || saving === 'dunning_enabled'}
+          disabled={(!ativo.global && !ativo.regua_conta) || saving === 'dunning_enabled'}
           className={`shrink-0 px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-colors disabled:opacity-40 ${
             ativo.regua_conta ? 'text-emerald-300 bg-emerald-500/15' : 'text-[var(--text-mid)] bg-[var(--control-fill-hover)]'
           }`}>
@@ -410,6 +410,7 @@ export function CobrancaTab() {
   const [simular, setSimular] = useState(true);
   const [abertos, setAbertos] = useState<Record<string, boolean>>({});
   const [savingFlag, setSavingFlag] = useState<string | null>(null);
+  const [savingStep, setSavingStep] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -438,6 +439,36 @@ export function CobrancaTab() {
       setError(e.message);
     } finally {
       setSavingFlag(null);
+    }
+  };
+
+  const toggleStep = async (step: LadderStep) => {
+    if (!regua || !step.can_disable || savingStep) return;
+    const enabled = !step.enabled;
+    const previous = regua;
+    setSavingStep(step.step);
+    setError('');
+    // Resposta visual imediata; se a API falhar, restaura exatamente o estado
+    // anterior. O backend continua sendo a fonte final da configuração.
+    setRegua({ ...regua, passos: regua.passos.map((item) => (
+      item.step === step.step ? { ...item, enabled } : item
+    )) });
+    try {
+      await api('/api/locacao/regua', {
+        method: 'PUT',
+        body: JSON.stringify({ passos: [{ step: step.step, enabled }] }),
+      });
+      const [nextRegua, nextAgenda] = await Promise.all([
+        api('/api/locacao/regua'),
+        api(`/api/locacao/agenda?days=14&simular=${simular ? '1' : '0'}`),
+      ]);
+      setRegua(nextRegua);
+      setAgenda(nextAgenda);
+    } catch (e: any) {
+      setRegua(previous);
+      setError(e.message || 'Não foi possível alterar o envio desta mensagem.');
+    } finally {
+      setSavingStep(null);
     }
   };
 
@@ -508,9 +539,9 @@ export function CobrancaTab() {
             {regua.passos.map((p) => (
               <div key={p.step}
                 className={`rounded-2xl border p-3.5 transition-colors ${
-                  p.enabled ? 'border-[var(--hairline)] bg-[var(--control-fill)]' : 'border-[var(--hairline)] bg-transparent opacity-60'
+                  p.enabled ? 'border-[var(--hairline)] bg-[var(--control-fill)]' : 'border-[var(--hairline)] bg-black/10'
                 }`}>
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[12.5px] font-bold text-[var(--text-hi)]">{p.title}</span>
@@ -530,13 +561,46 @@ export function CobrancaTab() {
                       )}
                     </div>
                     <p className="text-[12px] text-[var(--text-mid)] mt-1.5 line-clamp-2 whitespace-pre-wrap">
-                      {p.preview || '— sem mensagem —'}
+                      {p.enabled ? (p.preview || '— sem mensagem —') : 'Mensagem desativada para esta etapa.'}
                     </p>
                   </div>
-                  <button onClick={() => setEditing(p)}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)] bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors">
-                    <Pencil className="w-3 h-3" /> Editar
-                  </button>
+                  <div className="shrink-0 flex items-center justify-between sm:justify-end gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={p.enabled}
+                        aria-label={`${p.enabled ? 'Desativar' : 'Ativar'} mensagem: ${p.title}`}
+                        title={p.can_disable
+                          ? `${p.enabled ? 'Desativar' : 'Ativar'} o envio desta mensagem`
+                          : 'Etapa obrigatória de entrega para uma pessoa'}
+                        disabled={!p.can_disable || savingStep !== null}
+                        onClick={() => toggleStep(p)}
+                        className={`relative w-11 h-6 rounded-full border transition-colors disabled:cursor-not-allowed ${
+                          p.enabled
+                            ? 'bg-emerald-500/25 border-emerald-400/40'
+                            : 'bg-[var(--control-fill-hover)] border-[var(--hairline-strong)]'
+                        } ${!p.can_disable ? 'opacity-65' : ''}`}
+                      >
+                        {savingStep === p.step ? (
+                          <Loader2 className="absolute w-3.5 h-3.5 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin text-[var(--text-hi)]" />
+                        ) : (
+                          <span className={`absolute top-0.5 w-[18px] h-[18px] rounded-full shadow-sm transition-all ${
+                            p.enabled ? 'left-[24px] bg-emerald-200' : 'left-0.5 bg-[var(--text-low)]'
+                          }`} />
+                        )}
+                      </button>
+                      <span className={`text-[10.5px] font-bold whitespace-nowrap ${
+                        p.enabled ? 'text-emerald-300' : 'text-[var(--text-low)]'
+                      }`}>
+                        {p.can_disable ? (p.enabled ? 'Envia' : 'Não envia') : 'Obrigatório'}
+                      </span>
+                    </div>
+                    <button onClick={() => setEditing(p)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[var(--text-mid)] bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-colors">
+                      <Pencil className="w-3 h-3" /> Editar
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

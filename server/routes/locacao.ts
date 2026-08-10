@@ -5,7 +5,7 @@ import { requireUser, getBrokerId } from "../middleware/auth";
 import { hasPermission, type PermissionAction } from "../services/permissions";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { validateBody } from "../middleware/validate";
-import { generateRentCharge } from "../services/rentalBilling";
+import { generateRentCharge, syncRentalPaymentWithAsaas } from "../services/rentalBilling";
 import {
   getRentalAiSettings,
   logRentalEvent,
@@ -25,13 +25,21 @@ import {
 } from "../services/rentalTemplates";
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 import { normalizePhoneBR } from "../lib/crypto";
+import { rentalBillingDispatchLimiter, rentalTestDispatchLimiter } from "../middleware/rateLimits";
+import { resolveOutboundInstanceToken, sendUazapiText } from "../services/uazapi";
 import { requireAccountCapability } from "../services/accountCapabilities";
-import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
+import { assertClientAsaasEnvironmentAllowed, ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
 import {
   buildRentalCompetency,
   effectiveRentalPaymentStatus,
+  summarizeRentalFinancialHealth,
+  summarizeTenantFinancialHealth,
+  rentalDelinquencyPercent,
+  todayIsoInBrasilia,
+  type RentalFinancialHealth,
   type RentalPaymentStatus,
 } from "../services/rentalLedger";
+import { removeRentalBoleto, signedRentalBoletoUrl, uploadRentalBoleto } from "../services/rentalBoleto";
 
 export const locacaoRouter = express.Router();
 
@@ -42,7 +50,13 @@ export const locacaoRouter = express.Router();
 // nao ha como filtrar "so os meus contratos" porque essa nocao nao existe.
 function classifyLocacaoAction(req: { method: string; path: string }): PermissionAction {
   if (req.method === "GET") return "visualizar";
-  if (req.path.includes("/ai-settings") || req.path.includes("/autopilot") || req.path.includes("/regua")) {
+  if (
+    req.path.includes("/ai-settings")
+    || req.path.includes("/autopilot")
+    || req.path.includes("/regua")
+    || req.path.includes("/test-dispatch")
+    || /\/payments\/[^/]+\/(?:status|boleto|send|sync)$/.test(req.path)
+  ) {
     return "gerenciar";
   }
   if (req.method === "POST") return "criar";
@@ -167,6 +181,16 @@ const externalReceiptSchema = z.object({
   notes: z.string().trim().max(500).optional().default(""),
 });
 
+const paymentManualStatusSchema = z.object({
+  paid: z.boolean(),
+  note: z.string().trim().max(500).optional().default(""),
+});
+
+const boletoImportSchema = z.object({
+  file_data: z.string().min(32).max(9_000_000),
+  file_name: z.string().trim().min(1).max(180).default("boleto.pdf"),
+});
+
 function contractBusinessError(contract: Record<string, any>): string | null {
   if (contract.end_date && contract.end_date < contract.start_date) {
     return "A data final nao pode ser anterior ao inicio do contrato.";
@@ -189,6 +213,55 @@ async function findTenantForBroker(brokerId: string, tenantId: string) {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+type ContractFinancialHealth = RentalFinancialHealth & {
+  current_month_payment_status: RentalPaymentStatus | null;
+};
+
+async function loadContractFinancialHealth(contractIds: string[]): Promise<Map<string, ContractFinancialHealth>> {
+  const result = new Map<string, ContractFinancialHealth>();
+  if (contractIds.length === 0) return result;
+
+  const today = todayIsoInBrasilia();
+  const monthIso = `${today.slice(0, 7)}-01`;
+  const [openResult, currentResult] = await Promise.all([
+    supabase
+      .from("imf_rental_payments")
+      .select("contract_id, status, due_date, amount_cents, amount_paid_cents")
+      .in("contract_id", contractIds)
+      .in("status", ["pending", "partial", "overdue", "negotiated"]),
+    supabase
+      .from("imf_rental_payments")
+      .select("contract_id, status, due_date")
+      .in("contract_id", contractIds)
+      .eq("reference_month", monthIso),
+  ]);
+  if (openResult.error) throw openResult.error;
+  if (currentResult.error) throw currentResult.error;
+
+  const openByContract = new Map<string, any[]>();
+  for (const payment of openResult.data || []) {
+    const items = openByContract.get(payment.contract_id) || [];
+    items.push(payment);
+    openByContract.set(payment.contract_id, items);
+  }
+  const currentByContract = new Map<string, RentalPaymentStatus>();
+  for (const payment of currentResult.data || []) {
+    currentByContract.set(
+      payment.contract_id,
+      effectiveRentalPaymentStatus(payment.status as RentalPaymentStatus, payment.due_date, today),
+    );
+  }
+
+  for (const contractId of contractIds) {
+    const currentStatus = currentByContract.get(contractId) || null;
+    result.set(contractId, {
+      ...summarizeRentalFinancialHealth(openByContract.get(contractId) || [], currentStatus, today),
+      current_month_payment_status: currentStatus,
+    });
+  }
+  return result;
 }
 
 async function ownsProperty(brokerId: string, propertyId: string): Promise<boolean> {
@@ -257,9 +330,23 @@ locacaoRouter.get("/api/locacao/tenants", async (req, res) => {
       historyByTenant.set(contract.tenant_id, history);
     }
 
+    const activeContracts = contracts.filter((contract: any) => contract.status === "ativo");
+    const financialHealthByContract = await loadContractFinancialHealth(
+      activeContracts.map((contract: any) => contract.id),
+    );
+    const financialHealthByTenant = new Map<string, RentalFinancialHealth>();
+    for (const tenant of tenants || []) {
+      const tenantHealth = activeContracts
+        .filter((contract: any) => contract.tenant_id === tenant.id)
+        .map((contract: any) => financialHealthByContract.get(contract.id))
+        .filter((health): health is ContractFinancialHealth => Boolean(health));
+      financialHealthByTenant.set(tenant.id, summarizeTenantFinancialHealth(tenantHealth));
+    }
+
     return res.json((tenants || []).map((tenant: any) => ({
       ...tenant,
       contract_history: historyByTenant.get(tenant.id) || [],
+      ...(financialHealthByTenant.get(tenant.id) || summarizeTenantFinancialHealth([])),
     })));
   } catch (err: any) {
     console.error("Erro GET /api/locacao/tenants:", err);
@@ -381,37 +468,18 @@ locacaoRouter.get("/api/locacao/contracts", requireUser, async (req, res) => {
 
     const contracts = data || [];
     const ids = contracts.map((c: any) => c.id);
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    const monthIso = monthStart.toISOString().split("T")[0];
-
-    // Status do pagamento do mês atual, por contrato — base real de
-    // inadimplência (usada no cockpit da Imobiliária). null = ainda não gerou cobrança.
-    // Enforcement lazy: se está "pending" mas o vencimento já passou, mostra
-    // "overdue" na hora — não depende só do webhook do Asaas ter chegado
-    // (mesmo padrão do grace_until em billing.ts).
-    const today = new Date().toISOString().split("T")[0];
-    const paymentByContract: Record<string, string> = {};
-    if (ids.length > 0) {
-      const { data: payments } = await supabase
-        .from("imf_rental_payments")
-        .select("contract_id, status, due_date")
-        .in("contract_id", ids)
-        .eq("reference_month", monthIso);
-      for (const p of payments || []) {
-        paymentByContract[p.contract_id] = effectiveRentalPaymentStatus(
-          p.status as RentalPaymentStatus,
-          p.due_date,
-          today,
-        );
-      }
-    }
+    const financialHealthByContract = await loadContractFinancialHealth(ids);
 
     res.json(contracts.map((c: any) => ({
       ...c,
       property: c.imf_properties?.title || null,
       tenant_profile: c.imf_rental_tenants || null,
-      current_month_payment_status: paymentByContract[c.id] || null,
+      ...(financialHealthByContract.get(c.id) || {
+        current_month_payment_status: null,
+        financial_status: "sem_cobranca",
+        overdue_amount_cents: 0,
+        overdue_count: 0,
+      }),
     })));
   } catch (err: any) {
     console.error("Erro GET /api/locacao/contracts:", err);
@@ -605,12 +673,14 @@ locacaoRouter.get("/api/locacao/contracts/:id/payments", requireUser, async (req
       receiptsByPayment.set(receipt.payment_id, current);
     }
     const today = new Date().toISOString().slice(0, 10);
-    res.json((data || []).map((payment: any) => ({
+    const response = await Promise.all((data || []).map(async (payment: any) => ({
       ...payment,
+      boleto_url: await signedRentalBoletoUrl(payment),
       status: effectiveRentalPaymentStatus(payment.status as RentalPaymentStatus, payment.due_date, today),
       remaining_cents: Math.max(0, payment.amount_cents - (payment.amount_paid_cents || 0)),
       receipts: receiptsByPayment.get(payment.id) || [],
     })));
+    res.json(response);
   } catch (err: any) {
     console.error("Erro GET /api/locacao/contracts/:id/payments:", err);
     res.status(500).json({ error: err.message });
@@ -725,6 +795,185 @@ locacaoRouter.post(
 // Gera boleto/PIX do mês atual pra esse contrato — chama a Asaas de verdade
 // (ver server/services/rentalBilling.ts). Idempotente: se já existe cobrança
 // pro mês, devolve a mesma em vez de duplicar.
+locacaoRouter.patch(
+  "/api/locacao/contracts/:contractId/payments/:paymentId/status",
+  requireUser,
+  validateBody(paymentManualStatusSchema),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await ownsContract(brokerId, req.params.contractId))) return res.status(403).json({ error: "Acesso negado." });
+
+      const { data: payment, error } = await supabase.from("imf_rental_payments")
+        .select("id, source, status, amount_cents, amount_paid_cents, due_date")
+        .eq("id", req.params.paymentId).eq("contract_id", req.params.contractId).maybeSingle();
+      if (error) throw error;
+      if (!payment) return res.status(404).json({ error: "Cobranca nao encontrada." });
+      if (["canceled", "failed"].includes(payment.status)) {
+        return res.status(409).json({ error: "Esta cobranca nao aceita alteracao de pagamento." });
+      }
+      if (!req.body.paid && payment.amount_paid_cents > 0) {
+        const { count } = await supabase.from("imf_rental_payment_receipts")
+          .select("id", { count: "exact", head: true }).eq("payment_id", payment.id);
+        if ((count || 0) > 0) {
+          return res.status(409).json({ error: "Esta competencia possui recebimentos registrados e nao pode ser reaberta diretamente." });
+        }
+      }
+
+      const changedAt = new Date().toISOString();
+      const nextStatus = req.body.paid ? "paid" : (payment.due_date < changedAt.slice(0, 10) ? "overdue" : "pending");
+      const { data: updated, error: updateError } = await supabase.from("imf_rental_payments").update({
+        status: nextStatus,
+        amount_paid_cents: req.body.paid ? payment.amount_cents : 0,
+        paid_at: req.body.paid ? changedAt : null,
+        promise_date: null,
+        manual_status: req.body.paid ? "paid" : "unpaid",
+        manual_status_at: changedAt,
+        manual_status_by_user_id: userId,
+        status_source: "manual",
+        updated_at: changedAt,
+      }).eq("id", payment.id).select().single();
+      if (updateError) throw updateError;
+      await logRentalEvent({
+        brokerId, contractId: req.params.contractId, paymentId: payment.id,
+        type: req.body.paid ? "pagamento_confirmado_manual" : "pagamento_reaberto_manual",
+        actor: "humano",
+        description: req.body.paid
+          ? "Cobranca marcada como paga manualmente; proximos follow-ups foram interrompidos."
+          : "Cobranca marcada como nao paga; follow-ups futuros podem continuar.",
+        metadata: req.body.note ? { note: req.body.note } : undefined,
+      });
+      res.json({ ...updated, status: effectiveRentalPaymentStatus(updated.status, updated.due_date), remaining_cents: Math.max(0, updated.amount_cents - updated.amount_paid_cents) });
+    } catch (error: any) {
+      console.error("Erro PATCH status manual de cobranca:", error?.message || "erro desconhecido");
+      res.status(500).json({ error: "Nao foi possivel atualizar o status da cobranca." });
+    }
+  },
+);
+
+locacaoRouter.post(
+  "/api/locacao/contracts/:contractId/payments/:paymentId/boleto",
+  requireUser,
+  validateBody(boletoImportSchema),
+  async (req, res) => {
+    let uploadedPath: string | null = null;
+    try {
+      const userId = (req as any).userId as string;
+      const brokerId = await getBrokerId(userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await ownsContract(brokerId, req.params.contractId))) return res.status(403).json({ error: "Acesso negado." });
+      const { data: payment, error } = await supabase.from("imf_rental_payments")
+        .select("id, source, boleto_file_path").eq("id", req.params.paymentId)
+        .eq("contract_id", req.params.contractId).maybeSingle();
+      if (error) throw error;
+      if (!payment) return res.status(404).json({ error: "Cobranca nao encontrada." });
+      if (payment.source !== "external") return res.status(409).json({ error: "A cobranca do Asaas ja possui boleto proprio." });
+
+      const uploaded = await uploadRentalBoleto({
+        brokerId, contractId: req.params.contractId, paymentId: payment.id,
+        fileData: req.body.file_data, fileName: req.body.file_name,
+      });
+      uploadedPath = uploaded.filePath;
+      const importedAt = new Date().toISOString();
+      const { data: updated, error: updateError } = await supabase.from("imf_rental_payments").update({
+        billing_type: "BOLETO", boleto_file_path: uploaded.filePath, boleto_file_name: uploaded.fileName,
+        boleto_imported_at: importedAt, boleto_imported_by_user_id: userId, updated_at: importedAt,
+      }).eq("id", payment.id).select().single();
+      if (updateError) throw updateError;
+      uploadedPath = null;
+      if (payment.boleto_file_path) await removeRentalBoleto(payment.boleto_file_path);
+      await logRentalEvent({ brokerId, contractId: req.params.contractId, paymentId: payment.id, type: "boleto_importado", actor: "humano", description: `Boleto importado: ${uploaded.fileName}.` });
+      res.json({ ...updated, boleto_url: uploaded.signedUrl });
+    } catch (error: any) {
+      if (uploadedPath) await removeRentalBoleto(uploadedPath);
+      const safe = /PDF|boleto|6 MB|armazenar|link temporario/i.test(error?.message || "") ? error.message : "Nao foi possivel importar o boleto.";
+      console.error("Erro POST importacao de boleto:", error?.message || "erro desconhecido");
+      res.status(400).json({ error: safe });
+    }
+  },
+);
+
+locacaoRouter.post(
+  "/api/locacao/contracts/:contractId/payments/:paymentId/send",
+  requireUser,
+  rentalBillingDispatchLimiter,
+  async (req, res) => {
+    try {
+      const brokerId = await getBrokerId((req as any).userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      const { data: contract, error: contractError } = await supabase.from("imf_rental_contracts")
+        .select("id, tenant_name, tenant_phone, status").eq("id", req.params.contractId)
+        .eq("broker_id", brokerId).maybeSingle();
+      if (contractError) throw contractError;
+      if (!contract) return res.status(404).json({ error: "Contrato nao encontrado." });
+      if (contract.status !== "ativo") return res.status(409).json({ error: "O contrato precisa estar ativo." });
+      const { data: payment, error } = await supabase.from("imf_rental_payments")
+        .select("id, amount_cents, due_date, status, boleto_url, boleto_file_path, pix_copy_paste, dunning_step_offset")
+        .eq("id", req.params.paymentId).eq("contract_id", contract.id).maybeSingle();
+      if (error) throw error;
+      if (!payment) return res.status(404).json({ error: "Cobranca nao encontrada." });
+      if (["paid", "canceled", "failed"].includes(payment.status)) return res.status(409).json({ error: "Esta cobranca nao esta disponivel para envio." });
+      const phone = normalizePhoneBR(contract.tenant_phone || "");
+      if (!phone) return res.status(422).json({ error: "Cadastre o WhatsApp do inquilino antes do envio." });
+      const boletoUrl = await signedRentalBoletoUrl(payment);
+      if (!boletoUrl && !payment.pix_copy_paste) return res.status(409).json({ error: "Importe ou gere um boleto/PIX antes de enviar a cobranca." });
+
+      const firstName = String(contract.tenant_name || "").trim().split(/\s+/)[0] || "inquilino";
+      const amount = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(payment.amount_cents / 100);
+      const dueDate = new Date(`${payment.due_date}T12:00:00`).toLocaleDateString("pt-BR");
+      const text = [
+        `Ola, ${firstName}! Segue a cobranca do aluguel no valor de ${amount}, com vencimento em ${dueDate}.`,
+        payment.pix_copy_paste ? `PIX copia e cola:\n${payment.pix_copy_paste}` : "",
+        boletoUrl ? `Boleto: ${boletoUrl}` : "",
+        "Se ja pagou, pode desconsiderar esta mensagem.",
+      ].filter(Boolean).join("\n\n");
+      const instanceToken = await resolveOutboundInstanceToken(brokerId, phone);
+      if (!instanceToken) return res.status(409).json({ error: "Nenhuma instancia de WhatsApp esta conectada para esta conta." });
+      const sent = await sendUazapiText(instanceToken, phone, text);
+      if (!sent.ok) return res.status(502).json({ error: "O provedor de WhatsApp nao confirmou o envio." });
+
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const daysFromDue = Math.floor((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${payment.due_date}T12:00:00Z`)) / 86_400_000);
+      const sentAt = new Date().toISOString();
+      await supabase.from("imf_rental_payments").update({
+        dunning_step: "manual_dispatch",
+        dunning_step_offset: Math.max(payment.dunning_step_offset ?? -999, daysFromDue),
+        dunning_last_sent_at: sentAt, updated_at: sentAt,
+      }).eq("id", payment.id);
+      await logRentalEvent({ brokerId, contractId: contract.id, paymentId: payment.id, type: "cobranca_enviada_manual", actor: "humano", description: `Cobranca enviada manualmente pelo WhatsApp - ${amount}.` });
+      res.json({ ok: true, sent: true, sent_at: sentAt });
+    } catch (error: any) {
+      console.error("Erro POST envio manual de cobranca:", error?.message || "erro desconhecido");
+      res.status(500).json({ error: "Nao foi possivel enviar a cobranca." });
+    }
+  },
+);
+
+locacaoRouter.post(
+  "/api/locacao/contracts/:contractId/payments/:paymentId/sync",
+  requireUser,
+  async (req, res) => {
+    try {
+      const brokerId = await getBrokerId((req as any).userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+      if (!(await ownsContract(brokerId, req.params.contractId))) return res.status(403).json({ error: "Acesso negado." });
+      const { data: payment, error: paymentError } = await supabase.from("imf_rental_payments")
+        .select("id").eq("id", req.params.paymentId)
+        .eq("contract_id", req.params.contractId).maybeSingle();
+      if (paymentError) throw paymentError;
+      if (!payment) return res.status(404).json({ error: "Cobranca nao encontrada." });
+      const updated = await syncRentalPaymentWithAsaas(req.params.paymentId);
+      res.json({ ...updated, boleto_url: await signedRentalBoletoUrl(updated), status: effectiveRentalPaymentStatus(updated.status, updated.due_date), remaining_cents: Math.max(0, updated.amount_cents - updated.amount_paid_cents) });
+    } catch (error: any) {
+      const safe = /Asaas|cobranca|pertence/i.test(error?.message || "") ? error.message : "Nao foi possivel consultar o pagamento.";
+      console.error("Erro POST conciliacao manual Asaas:", error?.message || "erro desconhecido");
+      res.status(400).json({ error: safe });
+    }
+  },
+);
+
 locacaoRouter.post(
   "/api/locacao/contracts/:id/charge",
   requireUser,
@@ -779,9 +1028,13 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
           .limit(2000)
       : { data: [] as any[] };
 
-    const hojeIso = hoje.toISOString().slice(0, 10);
-    const abertos = (payments || []).filter((p: any) => ["pending", "overdue"].includes(p.status));
-    const atrasados = abertos.filter((p: any) => p.due_date < hojeIso);
+    const hojeIso = todayIsoInBrasilia(hoje);
+    const abertos = (payments || []).filter((p: any) => ["pending", "partial", "overdue", "negotiated"].includes(p.status));
+    const atrasados = abertos.filter((p: any) => {
+      const status = effectiveRentalPaymentStatus(p.status as RentalPaymentStatus, p.due_date, hojeIso);
+      return status === "overdue" || status === "negotiated";
+    });
+    const remainingCents = (payment: any) => Math.max(0, (payment.amount_cents || 0) - (payment.amount_paid_cents || 0));
 
     const receitaPrevista = ativos.reduce((s: number, c: any) => s + (c.rent_amount_cents || 0), 0);
     const taxaAdmin = ativos.reduce(
@@ -796,15 +1049,18 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
       serie.push({
         mes: d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""),
         previsto: doMes.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
-        recebido: doMes.filter((p: any) => p.status === "paid")
-          .reduce((s: number, p: any) => s + (p.amount_paid_cents || p.amount_cents || 0), 0),
+        recebido: doMes.reduce((s: number, p: any) => (
+          s + (p.amount_paid_cents || (p.status === "paid" ? p.amount_cents || 0 : 0))
+        ), 0),
       });
     }
 
     const totalMes = serie[serie.length - 1];
-    const inadimplencia = totalMes && totalMes.previsto > 0
-      ? Math.round(((totalMes.previsto - totalMes.recebido) / totalMes.previsto) * 100)
-      : 0;
+    const currentMonthKey = hojeIso.slice(0, 7);
+    const currentMonthOverdueCents = atrasados
+      .filter((payment: any) => String(payment.reference_month || "").slice(0, 7) === currentMonthKey)
+      .reduce((sum: number, payment: any) => sum + remainingCents(payment), 0);
+    const inadimplencia = rentalDelinquencyPercent(currentMonthOverdueCents, totalMes?.previsto || 0);
 
     res.json({
       contratos_ativos: ativos.length,
@@ -813,9 +1069,9 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
       receita_mensal_cents: receitaPrevista,
       taxa_admin_mensal_cents: taxaAdmin,
       em_aberto_qtd: abertos.length,
-      em_aberto_cents: abertos.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      em_aberto_cents: abertos.reduce((s: number, p: any) => s + remainingCents(p), 0),
       atrasados_qtd: atrasados.length,
-      atrasados_cents: atrasados.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      atrasados_cents: atrasados.reduce((s: number, p: any) => s + remainingCents(p), 0),
       com_promessa_qtd: abertos.filter((p: any) => p.promise_date).length,
       escalados_qtd: abertos.filter((p: any) => p.escalated_at).length,
       inadimplencia_percent: inadimplencia,
@@ -856,6 +1112,13 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     const enabled = !!req.body?.enabled;
+    if (enabled && !CLIENT_FINANCIAL_OPERATIONS_ENABLED) {
+      return res.status(403).json({
+        error: "A automação financeira está desativada na plataforma. Use o teste de WhatsApp sem gerar cobrança.",
+        code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
+      });
+    }
+    if (enabled) await assertClientAsaasEnvironmentAllowed(brokerId);
 
     const { data, error } = await supabase
       .from("imf_rental_contracts")
@@ -878,9 +1141,65 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
     });
     res.json(data);
   } catch (err: any) {
+    if (err instanceof ClientAsaasAccountRequiredError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
     res.status(500).json({ error: err.message });
   }
 });
+
+// Valida o caminho real de saída (conta -> instância UAZAPI -> telefone) sem
+// criar cobrança, sem alterar a régua e sem depender da flag financeira.
+// A mensagem é deliberadamente identificada como teste e exige clique humano.
+locacaoRouter.post(
+  "/api/locacao/contracts/:id/test-dispatch",
+  requireUser,
+  rentalTestDispatchLimiter,
+  async (req, res) => {
+    try {
+      const brokerId = await getBrokerId((req as any).userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const { data: contract, error } = await supabase
+        .from("imf_rental_contracts")
+        .select("id, tenant_name, tenant_phone, status")
+        .eq("id", req.params.id)
+        .eq("broker_id", brokerId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!contract) return res.status(404).json({ error: "Contrato não encontrado." });
+      if (contract.status !== "ativo") return res.status(409).json({ error: "O contrato precisa estar ativo." });
+
+      const phone = normalizePhoneBR(contract.tenant_phone || "");
+      if (!phone) return res.status(422).json({ error: "Cadastre o WhatsApp do inquilino antes do teste." });
+
+      const instanceToken = await resolveOutboundInstanceToken(brokerId, phone);
+      if (!instanceToken) {
+        return res.status(409).json({ error: "Nenhuma instância de WhatsApp está conectada para esta conta." });
+      }
+
+      const firstName = String(contract.tenant_name || "").trim().split(/\s+/)[0] || "inquilino";
+      const message = `[TESTE ImobiFlow]\nOlá, ${firstName}! Esta é uma mensagem de teste do canal de locação. Nenhuma cobrança foi gerada.`;
+      const sent = await sendUazapiText(instanceToken, phone, message);
+      if (!sent.ok) {
+        console.warn(`[Locação] teste de disparo falhou (contrato ${contract.id}, HTTP ${sent.status})`);
+        return res.status(502).json({ error: "O provedor de WhatsApp não confirmou o envio do teste." });
+      }
+
+      await logRentalEvent({
+        brokerId,
+        contractId: contract.id,
+        type: "teste_disparo_enviado",
+        actor: "humano",
+        description: "Mensagem de teste do canal de cobrança enviada; nenhuma cobrança foi criada.",
+      });
+      return res.json({ ok: true, sent: true });
+    } catch (err: any) {
+      console.error("Erro POST /api/locacao/contracts/:id/test-dispatch:", err?.message);
+      return res.status(500).json({ error: "Não foi possível enviar a mensagem de teste." });
+    }
+  },
+);
 
 // Alçada da IA de cobrança (o que ela pode fazer sem perguntar).
 locacaoRouter.get("/api/locacao/ai-settings", requireUser, async (req, res) => {
@@ -897,6 +1216,23 @@ locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) =>
   try {
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED && (
+      req.body?.enabled === true
+      || req.body?.charge_generation_enabled === true
+      || req.body?.dunning_enabled === true
+    )) {
+      return res.status(403).json({
+        error: "A automação financeira está desativada na plataforma.",
+        code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
+      });
+    }
+    if (
+      req.body?.enabled === true
+      || req.body?.charge_generation_enabled === true
+      || req.body?.dunning_enabled === true
+    ) {
+      await assertClientAsaasEnvironmentAllowed(brokerId);
+    }
 
     const allowed = [
       "enabled", "charge_generation_enabled", "dunning_enabled", "can_send_second_copy",
@@ -914,6 +1250,9 @@ locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) =>
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
+    if (err instanceof ClientAsaasAccountRequiredError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -1322,7 +1661,7 @@ locacaoRouter.get("/api/locacao/agenda", requireUser, async (req, res) => {
               step: "geracao",
               valor_cents: contract.rent_amount_cents,
               status: !contract.autopilot_enabled ? "simulado"
-                : !ativo.geracao_conta ? "bloqueado" : "programado",
+                : !ativo.global || !ativo.geracao_conta ? "bloqueado" : "programado",
               mensagem: "",
             });
           }
@@ -1345,7 +1684,7 @@ locacaoRouter.get("/api/locacao/agenda", requireUser, async (req, res) => {
           const status = jaEnviado !== null && step.offset_days <= jaEnviado ? "enviado"
             : !contract.autopilot_enabled ? "simulado"
             : promessaAtiva ? "pausado"
-            : !ativo.regua_conta ? "bloqueado"
+            : !ativo.global || !ativo.regua_conta ? "bloqueado"
             : !contract.tenant_phone ? "sem_telefone"
             : "programado";
 

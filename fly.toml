@@ -20,9 +20,15 @@ kill_timeout = 30
 [build]
   dockerfile = "Dockerfile"
 
+[build.args]
+  # Libera somente a interface; o backend ainda exige todas as travas abaixo.
+  VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED = "true"
+
 [env]
   NODE_ENV = "production"
   PUBLIC_APP_URL = "https://imobiflow-v2.fly.dev"
+  CLIENT_FINANCIAL_OPERATIONS_ENABLED = "true"
+  CLIENT_FINANCIAL_SANDBOX_ONLY = "true"
   # Demais segredos vão via `fly secrets set` (nunca aqui).
 
 [processes]

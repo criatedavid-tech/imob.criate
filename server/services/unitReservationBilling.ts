@@ -1,6 +1,6 @@
 import { fetchWithTimeout } from "../lib/http";
 import { supabase } from "../supabase";
-import { resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
+import { ensureClientAsaasPaymentWebhook, resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
 
 const ACTIVE_RESERVATION_STATUSES = ["creating", "pending", "paid", "overdue", "payment_failed"];
 
@@ -159,6 +159,7 @@ export async function generateUnitReservationPix(reservationId: string, buyerDoc
   // O sinal só pode ser criado na conta própria da incorporadora. A conta
   // global da Criate é exclusiva da assinatura SaaS e nunca recebe o sinal.
   const creds = await resolveAsaasCredentials(row.broker_id);
+  await ensureClientAsaasPaymentWebhook(creds);
 
   const customerId = await ensureAsaasBuyerCustomer(row, creds, buyerDocument);
   let payment = row.asaas_payment_id

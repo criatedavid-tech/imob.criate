@@ -1,5 +1,129 @@
 # Estado do projeto
 
+## Inquilinos (Locação) — visão de detalhe (Etapas A e B) (2026-08-10)
+
+Pedido do usuário: a aba Inquilinos precisa escalar pra 100+ cadastros e
+"ainda não ficou clara, organizada e funcional", apesar do trabalho recente
+do Codex (tiles de estatística, busca+filtros, alternância lista/cartões,
+paginação — tudo já sólido). Investigação encontrou a lacuna real: **não
+existia visão de detalhe do inquilino**. "Editar" só abria o formulário de
+dados pessoais (`TenantModal`) — nunca contratos nem boletos. Pra ver
+"Controle mensal" (`PaymentLedgerModal`) ou "Diário e piloto"
+(`ContractDiaryModal`), o usuário precisava sair de Inquilinos, voltar pra
+"Imóveis alugados" e caçar manualmente o contrato certo — apesar dos dois
+modais já existirem prontos e funcionais. Proposta apresentada e aprovada
+via plan mode antes de qualquer edição.
+
+**Achado no caminho**: o checkout local estava 10 commits atrás de
+`origin/v2` — a tela que o usuário mostrou em print já existia lá (commits
+do Codex do próprio dia 10/08), só não na cópia local. Sincronizados
+cirurgicamente só os arquivos de Locação (`git checkout origin/v2 -- <lista>`,
+~24 arquivos, incluindo dependências entrelaçadas como sandbox Asaas e
+régua de cobrança) — **sem tocar em nenhum arquivo com edição local
+pendente** (a feature de reset do Assistente/WhatsApp Pai que o Codex tinha
+em andamento na mesma árvore de trabalho: `agent.ts`, `whatsappPaiQueue.ts`,
+`CommandBar.tsx`, `package.json`, `agentConversationReset.ts`).
+
+**Etapa A — visão de Detalhe**: `TenantDetailPanel` novo em
+`LocacaoArea.tsx`, abre como sub-página ao clicar na linha/cartão (não só no
+lápis), reaproveitando o padrão "Voltar" que a própria tela já tinha
+("Voltar para Inquilinos", mesmo mecanismo de "Voltar para Aluguéis") — no
+celular isso já garante tela cheia em vez de modal cortado, sem inventar
+navegação nova. Mostra cabeçalho (nome/status/situação financeira/valor em
+atraso/link de WhatsApp/editar), contato completo (telefone/e-mail/CPF/
+contato de emergência — hoje só existiam dentro do formulário de edição,
+nunca como leitura) e a lista de contratos, cada um com botões "Controle
+mensal" e "Diário e piloto" que abrem os modais **existentes tal como
+são** — zero mudança de backend, já que tudo que os modais precisam
+(`id`/`tenant_name`/`property`/`rent_amount_cents`/`status`) já vem no
+`contract_history` que `GET /api/locacao/tenants` já retorna. `GlassCard`
+(`src/experience/ui.tsx`) ganhou passthrough opcional de `role`/`tabIndex`/
+`onKeyDown` — mudança aditiva pequena, usada pelos cartões clicáveis daqui
+mas disponível pra qualquer outro card no app que precisar da mesma
+acessibilidade de teclado.
+
+**Etapa B — paridade e enxugamento**: a visão em cartões (que empilhava
+bloco financeiro + contato completo + histórico rolável de 3 itens, porque
+não tinha pra onde mandar isso) ficou só com nome/imóvel atual/badge de
+situação financeira/telefone — o resto mora no detalhe agora. A visão em
+lista ganhou o botão "Apagar" que só existia nos cartões (paridade de ações
+entre os dois modos).
+
+**Bug achado e corrigido durante o teste**: `tests/rentalTenants.test.ts`
+(teste já existente, sincronizado do `origin/v2`) assert a presença literal
+do texto "Situação financeira" no código-fonte — minha simplificação do
+cartão removeu esse rótulo. Não era regressão de comportamento (o badge
+"Adimplente/Inadimplente/Sem cobrança" continuava lá), mas o rótulo
+explícito é uma melhoria de clareza genuína — devolvido, só que dentro do
+novo `TenantDetailPanel` em vez do cartão.
+
+**Testado ao vivo**: conta descartável, 13 inquilinos via API real
+(`POST /api/locacao/tenants`+`/contracts`+`/contracts/:id/payments`) cobrindo
+os 4 estados (inadimplente/adimplente/sem_cobrança/inativo) — a inadimplência
+foi produzida criando uma competência com vencimento no passado (o cálculo
+`overdue` é 100% dinâmico no servidor, não um campo salvo). Confirmado na
+tela real: os 5 tiles batendo exato (13 cadastrados, 1 em atraso, 1 em dia,
+11 sem cobrança, 1 inativo), clique na linha E no cartão abrindo o detalhe,
+"Controle mensal" carregando a competência real ("Agosto de 2026,
+vencimento 05/08/2026, ATRASADO, R$ 1.800,00"), "Diário e piloto" carregando
+o contrato certo, "Editar cadastro" abrindo o formulário pré-preenchido,
+clique em "Editar"/"Apagar" dentro do cartão SEM abrir o detalhe por trás
+(stopPropagation funcionando), paginação (13 resultados, página 1 de 2),
+mobile 375px sem overflow horizontal e com o detalhe em tela cheia.
+`npx tsc --noEmit`, `npx knip`, `npm test` (179/179) e `npm run build`
+limpos.
+
+**Pendente**: autorização de commit/push (nada commitado ainda — a árvore
+de trabalho ainda tem a feature de reset do Codex pendente ao lado, então
+o commit desta mudança precisa ser cuidadoso pra incluir só os arquivos de
+Locação). Etapa C (opcional, ver plano): usar o `tenant_profile` que
+`GET /api/locacao/contracts` já devolve mas nunca usa, pra linkar de volta
+de um contrato em "Imóveis alugados" pro detalhe do inquilino correspondente.
+
+## Assistente IA — comando pessoal `@reset` (2026-08-10)
+
+Implementado um reset único para o histórico compartilhado entre WhatsApp Pai
+e Assistente IA do painel. Quando a mensagem inteira é exatamente `@reset`
+(sem texto adicional), o backend não chama o modelo: apaga `imf_agent_log`,
+cancela a proposta ainda não executada e remove fotos/documentos temporários do
+mesmo `user_id` + `broker_id`. Leads, imóveis, agenda, ações já executadas,
+conversas comerciais e a inbox técnica do webhook não são alterados.
+
+A limpeza usa a RPC transacional `imf_reset_agent_conversation`, criada pela
+migration `20260810a_agent_conversation_reset.sql` e exclusiva da
+`service_role`. Se uma mutação estiver em `executing` ou `executed` aguardando
+entrega da resposta, o reset retorna 409 e preserva a trava de idempotência; o
+usuário deve aguardar e tentar novamente. O botão **Nova conversa** do painel
+passou a usar a mesma limpeza. Digitar `@reset` no painel também limpa a tela.
+
+No WhatsApp, as bolhas antigas continuam visíveis fisicamente no aparelho — a
+integração não pode apagar retroativamente o histórico do aplicativo — mas o
+conteúdo deixa de existir na memória da IA e some do painel ao recarregar.
+
+Validação local aprovada: TypeScript, 167 testes, Knip, build e
+`git diff --check`. Migration ainda precisa ser aplicada antes do deploy.
+
+## WhatsApp Pai — aceite de produção e isolamento concluído (2026-08-10)
+
+As Fases 1–7 estão publicadas no commit `4c525f2` (Fly release 234). A
+migration `20260807h_whatsapp_pai_internal_conversation.sql` foi aplicada pelo
+usuário e os registros comerciais antigos do número Pai foram removidos.
+Hunter e demais canais comerciais agora bloqueiam `556299982218`; sua conversa
+permanece somente no Assistente IA.
+
+Auditoria read-only de produção: instância central com webhook ativo e
+provisionamento concluído; 22 entradas da inbox do Pai em `completed`, zero
+`dead`, zero ação pendente, staging de fotos/documentos vazio, 6 mídias
+permanentes no log do agente e 2 vínculos de equipe verificados. Isso também
+confirma que a limpeza por TTL executou corretamente depois dos testes.
+
+O aceite visual não foi concluído nesta auditoria porque a nova sessão do
+navegador abriu em `/login`. Assim que houver login, confirmar as 6 fotos no
+Assistente IA e a ausência do Pai em Conversas. O único smoke funcional ainda
+pendente é um PDF pequeno pela Fase 7. O branch `v2` estava limpo e sincronizado
+com `origin/v2` no início desta retomada; conferir novamente antes de qualquer
+novo commit porque outro desenvolvedor também trabalha no projeto.
+
 ## WhatsApp Pai — pareamento oficial e hardening do webhook (2026-08-07)
 
 A migration `20260807e_whatsapp_pai_staged_documents.sql` foi aplicada

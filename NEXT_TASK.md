@@ -1,6 +1,54 @@
 # Próximas tarefas — ImobiFlow V2
 
-## WhatsApp Pai — Fases 1-7 concluídas localmente; smoke real pendente
+## Inquilinos (Locação): visão de detalhe — pronto localmente; commit pendente
+
+Etapas A (visão de Detalhe do Inquilino, reaproveitando `PaymentLedgerModal`/
+`ContractDiaryModal` sem mudança de backend) e B (enxugar linha/cartão +
+paridade de ações lista↔cartões) concluídas e testadas ao vivo — ver seção
+detalhada em `PROGRESS.md`. Antes de commitar: a árvore de trabalho local
+também tem, ao lado, a feature de reset do Assistente IA do Codex ainda não
+commitada (`server/routes/agent.ts`, `server/services/whatsappPaiQueue.ts`,
+`src/experience/CommandBar.tsx`, `package.json`,
+`server/services/agentConversationReset.ts`, migration
+`20260810a_agent_conversation_reset.sql`, `tests/agentConversationReset.test.ts`)
+— o commit de Inquilinos precisa incluir SÓ os arquivos de Locação (mais
+`src/experience/ui.tsx`, que ganhou passthrough de acessibilidade usado
+pelo card clicável) pra não misturar as duas features nem tocar no trabalho
+em andamento do Codex.
+
+Etapa C (opcional, registrada no plano): linkar de volta, a partir de um
+contrato na aba "Imóveis alugados", pro detalhe do inquilino correspondente,
+usando o `tenant_profile` que `GET /api/locacao/contracts` já devolve mas
+nunca é consumido hoje.
+
+## `@reset` do Assistente IA — pronto localmente; migration/deploy pendentes
+
+Migration: `supabase/migrations/20260810a_agent_conversation_reset.sql`.
+Aplicá-la antes de publicar o código. Depois do deploy, enviar **somente**
+`@reset` ao WhatsApp Pai e confirmar: resposta de histórico zerado, Assistente
+IA vazio ao recarregar, nenhum lead/imóvel/agenda removido e nenhuma entrada do
+número Pai em Conversas. As mensagens antigas continuam no aplicativo do
+WhatsApp, mas não permanecem como memória da IA.
+
+## WhatsApp Pai — Fases 1-7 publicadas; aceite final em andamento
+
+**Estado confirmado em produção em 10/08/2026:** commit `4c525f2`, release
+Fly 234 e migration `20260807h_whatsapp_pai_internal_conversation.sql`
+aplicada. O número Pai `556299982218` está pareado e com webhook ativo. A
+auditoria encontrou 22 eventos concluídos, zero item `dead`, zero ação
+pendente, zero mídia/documento temporário vencido, 6 mídias permanentes no
+Assistente IA e 2 vínculos de equipe verificados.
+
+O canal interno também foi separado dos canais comerciais: o número Pai foi
+removido de leads, tickets, mensagens comerciais, follow-ups e contatos; o
+Hunter responde 409 se esse número alcançar seu pipeline. Assim, a conversa
+fica somente no Assistente IA e não deve aparecer em **Conversas**.
+
+**Pendências reais de aceite:** (1) validar visualmente, em sessão autenticada,
+as 6 fotos no Assistente IA e a ausência do número Pai em Conversas; (2) fazer
+um único smoke controlado com PDF pequeno para encerrar a validação real da
+Fase 7. A sessão de navegador usada na auditoria abriu sem autenticação, então
+o item visual ainda depende de login. Não enviar rajadas nem massa sintética.
 
 Pedido do usuário: número de WhatsApp central onde qualquer usuário
 (titular ou membro, entre potencialmente centenas de contas) manda
@@ -188,8 +236,8 @@ Membro sem as duas permissões (revogadas explicitamente) → negado nos
 dois casos, mesma mensagem da Fase 1. `tsc`/`knip`/`npm test`
 (144/144)/`build` limpos.
 
-**Fase 7 (documentos como contexto temporário) — implementada localmente,
-com migration aplicada e sem teste real de provedor**: PDF, TXT, CSV, JSON,
+**Fase 7 (documentos como contexto temporário) — publicada em produção,
+com migration aplicada e sem smoke real de PDF pelo provedor**: PDF, TXT, CSV, JSON,
 Markdown e XML, até 8 MB. O arquivo bruto não é persistido; somente texto
 extraído e metadados mínimos ficam em `imf_whatsapp_staged_documents`,
 isolados por usuário/tenant, limitados a 3 documentos, consumidos pelo próximo
@@ -198,17 +246,14 @@ comando ou apagados em 60 minutos. O texto entra no agente dentro de
 comandos. PDF usa o parser `cloudflare-ai` do OpenRouter; Office deve ser
 convertido em PDF. Migration: `20260807e_whatsapp_pai_staged_documents.sql`.
 
-**Próximo rollout controlado**:
+**Próximo aceite controlado**:
 
-1. executar os gates completos e obter autorização explícita de commit/push;
-2. manter o número oficial informado pelo usuário (`6299982218`) pareado, sem
-   hardcode no código; o webhook fica desativado enquanto não houver teste;
-3. quando houver um segundo número vinculado, criar túnel HTTPS restrito e
-   fazer somente smokes mínimos: 1 texto, 1 PDF pequeno e, depois, 1 áudio e
-   1 foto — sem rajadas, loops ou massa sintética;
-4. validar fila, resposta, consumo/expiração do contexto e ausência de envio
-   duplicado antes de liberar uso normal;
-5. manter UAZAPI como transporte atual e planejar a futura troca pela API
+1. entrar em produção e confirmar que as 6 fotos aparecem no Assistente IA;
+2. abrir Conversas e confirmar que `556299982218` não aparece em nenhuma aba;
+3. enviar somente 1 PDF pequeno ao Pai e, em seguida, 1 comando que use o
+   conteúdo; validar fila, resposta, consumo do contexto e ausência de envio
+   duplicado;
+4. manter UAZAPI como transporte atual e planejar a futura troca pela API
    oficial da Meta sem alterar o motor do WhatsApp Pai.
 
 Hardening posterior ao pareamento: conexão administrativa agora reafirma o
@@ -218,9 +263,8 @@ não estiver pronta. O guardião periódico também passou a cobrir
 HTTP são recusadas. O túnel de validação foi encerrado e o webhook temporário
 foi desativado porque não havia um segundo número disponível para o smoke.
 
-**WhatsApp Pai: Fases 1-7 completas no código local.** Os commits locais das
-Fases 1-6 ainda não foram publicados; a Fase 7 aguarda validação controlada e
-autorização de versionamento/deploy.
+**WhatsApp Pai: Fases 1-7 completas e publicadas.** O único smoke funcional
+ainda pendente é o de documento; o aceite visual depende de sessão autenticada.
 
 ## Permissões granulares por membro da equipe — CONCLUÍDO, deployado (commit `200ed5b8e`, 2026-08-07)
 

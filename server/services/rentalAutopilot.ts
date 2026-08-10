@@ -1,6 +1,9 @@
 import { supabase } from "../supabase";
+import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 import { sendUazapiText, resolveOutboundInstanceToken } from "./uazapi";
 import { generateRentCharge } from "./rentalBilling";
+import { assertClientAsaasEnvironmentAllowed } from "./asaasCredentials";
+import { signedRentalBoletoUrl } from "./rentalBoleto";
 import {
   getRentalLadder,
   renderRentalMessage,
@@ -146,6 +149,11 @@ async function sendToTenant(brokerId: string, phone: string, text: string): Prom
 export const CHARGE_LEAD_DAYS = 5;
 
 export async function runRentalChargeGenerationTick(): Promise<void> {
+  // A flag global é uma trava de segurança, não apenas um estado visual.
+  // Sem esta checagem, flags antigas no banco poderiam gerar cobranças mesmo
+  // quando o produto financeiro estivesse desligado no ambiente.
+  if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED) return;
+
   const { data: locked } = await supabase.rpc("try_billing_lock", {
     p_key: "rental_charge_generation",
     p_ttl_seconds: 1800,
@@ -173,6 +181,7 @@ export async function runRentalChargeGenerationTick(): Promise<void> {
           settingsCache.set(contract.broker_id, settings);
         }
         if (!settings.charge_generation_enabled) continue;
+        await assertClientAsaasEnvironmentAllowed(contract.broker_id);
 
         // Gera quando faltam CHARGE_LEAD_DAYS para o vencimento do mês corrente.
         const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), contract.due_day);
@@ -246,6 +255,10 @@ export function lastSentOffset(payment: { dunning_step?: string | null; dunning_
 }
 
 export async function runRentalDunningTick(): Promise<void> {
+  // A régua nunca pode enviar WhatsApp se a operação financeira de clientes
+  // estiver globalmente desligada, ainda que conta e contrato estejam ligados.
+  if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED) return;
+
   const { data: locked } = await supabase.rpc("try_billing_lock", {
     p_key: "rental_dunning",
     p_ttl_seconds: 900,
@@ -260,7 +273,7 @@ export async function runRentalDunningTick(): Promise<void> {
 
     const { data: payments, error } = await supabase
       .from("imf_rental_payments")
-      .select("id, contract_id, amount_cents, due_date, status, boleto_url, pix_copy_paste, dunning_step, dunning_step_offset, promise_date, reference_month")
+      .select("id, contract_id, source, amount_cents, due_date, status, boleto_url, boleto_file_path, pix_copy_paste, dunning_step, dunning_step_offset, promise_date, reference_month")
       .in("status", ["pending", "overdue"])
       .lte("due_date", horizon)
       .order("due_date", { ascending: true })
@@ -270,6 +283,7 @@ export async function runRentalDunningTick(): Promise<void> {
 
     const contractCache = new Map<string, any>();
     const settingsCache = new Map<string, RentalAiSettings>();
+    const allowedEnvironmentCache = new Map<string, boolean>();
     const ladderCache = new Map<string, LadderStep[]>();
     const propertyCache = new Map<string, string>();
 
@@ -294,6 +308,19 @@ export async function runRentalDunningTick(): Promise<void> {
           settingsCache.set(contract.broker_id, settings);
         }
         if (!settings.dunning_enabled) continue;
+        if (payment.source === "asaas") {
+          let environmentAllowed = allowedEnvironmentCache.get(contract.broker_id);
+          if (environmentAllowed === undefined) {
+            try {
+              await assertClientAsaasEnvironmentAllowed(contract.broker_id);
+              environmentAllowed = true;
+            } catch {
+              environmentAllowed = false;
+            }
+            allowedEnvironmentCache.set(contract.broker_id, environmentAllowed);
+          }
+          if (!environmentAllowed) continue;
+        }
         // Cobrança fora de hora é o caminho mais rápido para o número ser
         // denunciado e bloqueado no WhatsApp.
         if (isQuietHour(settings)) continue;
@@ -335,6 +362,7 @@ export async function runRentalDunningTick(): Promise<void> {
           propertyCache.set(contract.property_id, propertyTitle);
         }
 
+        const boletoUrl = await signedRentalBoletoUrl(payment);
         const text = renderRentalMessage(step.body, {
           tenantName: contract.tenant_name,
           amountCents: late.daysLate > 0 ? late.totalCents : payment.amount_cents,
@@ -346,7 +374,7 @@ export async function runRentalDunningTick(): Promise<void> {
           referenceMonth: payment.reference_month,
           propertyTitle,
           pix: payment.pix_copy_paste,
-          boleto: payment.boleto_url,
+          boleto: boletoUrl,
         });
 
         // Só marca o degrau como vencido depois de a mensagem sair de fato;

@@ -32,10 +32,12 @@ imóvel sem apagar registros anteriores.
   permanentes de um objeto de negócio sem uma ação explícita suportada.
 - V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
   `imobiflow-v2`.
-- Baseline funcional auditado em 27/07/2026: commit `4ee40d6`, release Fly
-  `v185`, região `gru`; três `web`, um `scheduler` e um `worker` ativo com uma
-  segunda Machine em standby. Redis e Sentry estão ativos; a captura do Sentry
-  exclui PII, corpo, cabeçalhos, cookies e parâmetros de URL.
+- Baseline funcional auditado e publicado em 10/08/2026: commit `31c2b93`,
+  GitHub Actions run `#139`, imagem Fly
+  `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, região `gru`; três `web`, um
+  `scheduler` e um `worker` ativo com uma segunda Machine em standby. Redis e
+  Sentry estão ativos; a captura do Sentry exclui PII, corpo, cabeçalhos,
+  cookies e parâmetros de URL.
 - V1: branch `main`, `https://imobiflow.fly.dev`; congelada como rollback e
   nunca deve ser alterada.
 - Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
@@ -52,6 +54,12 @@ imóvel sem apagar registros anteriores.
 - A extensão que separa a cota total de corretores da cota de WhatsApps próprios
   foi aplicada no Supabase e publicada em 04/08/2026 no commit `d0a5ac2`. A
   migration correspondente é `20260804b_trial_voucher_whatsapp.sql`.
+- O histórico do WhatsApp Pai e do Assistente IA é pessoal e compartilhado por
+  usuário. O comando exato `@reset` e o botão **Nova conversa** apagam esse
+  contexto, propostas não executadas e anexos temporários, sem tocar em dados
+  de negócio. A RPC transacional `imf_reset_agent_conversation` foi aplicada e
+  verificada em produção em 10/08/2026; o código correspondente foi publicado
+  no commit `31c2b93` pelo run `#139`.
 - A confirmação inline de uma vaga adicional de WhatsApp em planos pagos foi
   publicada em 04/08/2026 após a aplicação manual de
   `20260804c_team_invite_slot_upgrade.sql`. Vouchers não compram vagas: mantêm a
@@ -84,8 +92,8 @@ imóvel sem apagar registros anteriores.
   sessão; nunca confia no tenant enviado pelo cliente.
 - Tabelas núcleo usam prefixo `imf_`; a instância Supabase é compartilhada com
   outros projetos.
-- Migrations são executadas manualmente pelo usuário no SQL Editor; nunca pelo
-  deploy.
+- Migrations são executadas manualmente no SQL Editor antes do código
+  dependente; nunca pelo deploy.
 - Antes de commit: `npm test`, `npm run lint`, `npx knip`, `npm run build` e
   `git diff --check`.
 - `git push origin v2` dispara validação e deploy automaticamente.
