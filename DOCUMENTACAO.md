@@ -65,6 +65,12 @@ explicitamente os estados **Em posse** e **Em atraso**; a devolução é uma aç
 separada, chamada **Registrar devolução**, e exige confirmação para evitar que
 um clique seja confundido com a leitura de um status.
 
+O formulário de entrega usa um modal responsivo: pessoa e telefone ficam em
+duas colunas somente quando há largura suficiente, a finalidade é escolhida em
+botões próprios (sem o menu nativo do navegador), e a previsão de devolução
+ocupa uma linha exclusiva. Em telas estreitas, todos os campos e ações empilham
+sem sobreposição.
+
 O botão de histórico preserva e exibe todas as retiradas e devoluções do
 imóvel, inclusive quem levou, finalidade, telefone, horários previstos e reais.
 O indicador **Visitas feitas** contabiliza as retiradas com finalidade

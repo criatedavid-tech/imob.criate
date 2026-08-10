@@ -46,6 +46,9 @@ test("interface separa posse, devolução e histórico para evitar ação aciden
   assert.match(source, /Em posse/);
   assert.match(source, /p\.visitas_realizadas/);
   assert.match(source, /visitas feitas/);
+  assert.match(source, /aria-label="Motivo da retirada"/);
+  assert.match(source, /Registrar entrega/);
+  assert.match(source, /sm:grid-cols-4/);
   assert.match(source, /Informe um telefone válido com DDD/);
   assert.doesNotMatch(source, /\? '\.\.\.' : 'Devolvida'/);
 });

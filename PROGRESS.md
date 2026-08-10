@@ -23,6 +23,12 @@ as visitas pelo controle de chaves. O cartão agora mostra **Visitas feitas** e
 conta retiradas com finalidade `visita` já devolvidas; o KPI **Visitas
 marcadas** permanece restrito à Agenda futura e ignora eventos cancelados.
 
+Refino visual posterior: o modal de entrega deixou de usar o `select` nativo,
+que abria claro e quebrava o tema escuro. A finalidade agora usa botões
+segmentados responsivos; data e hora ocupam uma linha completa; cabeçalho,
+aviso e rodapé possuem separação visual; no celular, campos e ações empilham
+sem colisão ou texto sobreposto.
+
 A migration `20260810d_property_keys_hardening.sql` foi aplicada e verificada:
 RLS ativo, acesso direto do navegador recusado com HTTP 401 e acesso do backend
 preservado. As restrições `NOT VALID` protegem novos INSERTs/UPDATEs sem apagar
