@@ -27,6 +27,9 @@ test("API valida a retirada, isola por conta e nunca oculta erro de leitura", as
   assert.match(route, /A previsão de devolução deve ser uma data futura/);
   assert.match(route, /validateBody\(keyCheckoutSchema\)/);
   assert.match(route, /Falha ao carregar controle de chaves/);
+  assert.match(route, /Falha ao contabilizar visitas realizadas/);
+  assert.match(route, /\.eq\("purpose", "visita"\)\.not\("returned_at", "is", null\)/);
+  assert.match(route, /visitas_realizadas: \(completedVisitKeysMap\.get\(p\.id\) \|\| \[\]\)\.length/);
   assert.match(route, /locacaoRouter\.patch\("\/api\/locacao\/keys\/:id\/return"/);
   assert.match(route, /\.eq\("broker_id", brokerId\)[\s\S]*\.is\("returned_at", null\)/);
   assert.match(route, /locacaoRouter\.get\("\/api\/locacao\/keys"/);
@@ -41,6 +44,8 @@ test("interface separa posse, devolução e histórico para evitar ação aciden
   assert.match(source, /Registrar devolução/);
   assert.match(source, /Confirmar devolução\?/);
   assert.match(source, /Em posse/);
+  assert.match(source, /p\.visitas_realizadas/);
+  assert.match(source, /visitas feitas/);
   assert.match(source, /Informe um telefone válido com DDD/);
   assert.doesNotMatch(source, /\? '\.\.\.' : 'Devolvida'/);
 });

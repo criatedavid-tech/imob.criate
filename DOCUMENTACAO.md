@@ -67,6 +67,10 @@ um clique seja confundido com a leitura de um status.
 
 O botão de histórico preserva e exibe todas as retiradas e devoluções do
 imóvel, inclusive quem levou, finalidade, telefone, horários previstos e reais.
+O indicador **Visitas feitas** contabiliza as retiradas com finalidade
+**Visita** cuja devolução já foi registrada; **Visitas marcadas**, no resumo da
+aba, continua mostrando separadamente os compromissos futuros não cancelados da
+Agenda. Essa separação evita tratar uma reserva futura como visita realizada.
 O scheduler verifica chaves vencidas a cada 15 minutos e envia um único alerta
 ao telefone de notificação do responsável. A API mantém no máximo uma retirada
 em aberto por imóvel e nunca esconde falhas de leitura como uma lista vazia.

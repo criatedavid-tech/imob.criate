@@ -338,7 +338,7 @@ export function ContractDiaryModal({ contract, onClose, onChanged }: {
 interface AvailableProperty {
   id: string; title: string; location: string; price: string; slug: string;
   dias_vago: number; interessados: number; dias_sem_lead: number | null;
-  visitas_agendadas: number;
+  visitas_agendadas: number; visitas_realizadas: number;
   proxima_visita: { quando: string; cliente: string } | null;
   chave: { id: string; com: string; telefone: string | null; finalidade: string; prevista_para: string | null; atrasada: boolean } | null;
 }
@@ -637,8 +637,8 @@ export function AvailableTab() {
                 <div className="text-[9.5px] uppercase tracking-wider text-[var(--text-low)]">interessados</div>
               </div>
               <div className="rounded-xl bg-[var(--control-fill)] py-2">
-                <div className="text-[15px] font-bold text-[var(--text-hi)] tabular-nums">{p.visitas_agendadas}</div>
-                <div className="text-[9.5px] uppercase tracking-wider text-[var(--text-low)]">visitas</div>
+                <div className="text-[15px] font-bold text-[var(--text-hi)] tabular-nums">{p.visitas_realizadas}</div>
+                <div className="text-[9.5px] uppercase tracking-wider text-[var(--text-low)]">visitas feitas</div>
               </div>
               <div className="rounded-xl bg-[var(--control-fill)] py-2">
                 <div className="text-[15px] font-bold text-[var(--text-hi)] tabular-nums">

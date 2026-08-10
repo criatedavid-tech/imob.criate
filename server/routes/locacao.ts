@@ -1308,19 +1308,29 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
     const ids = list.map((p: any) => p.id);
     const nowIso = new Date().toISOString();
 
-    const [leadsResult, visitsResult, keysResult] = await Promise.all([
+    const [leadsResult, visitsResult, keysResult, completedVisitKeysResult] = await Promise.all([
       supabase.from("leads").select("id, property_id, name, phone, status, created_at").in("property_id", ids).limit(2000),
       supabase.from("imf_agenda").select("id, property_id, client_name, scheduled_at, status")
-        .in("property_id", ids).gte("scheduled_at", nowIso).limit(500),
+        .in("property_id", ids).gte("scheduled_at", nowIso).neq("status", "cancelado").limit(500),
       supabase.from("imf_property_keys").select("id, property_id, holder_name, holder_phone, due_at, taken_at, purpose")
         .in("property_id", ids).is("returned_at", null).limit(200),
+      // Uma visita realizada é uma retirada de chave com finalidade "visita"
+      // que já teve a devolução registrada. A agenda continua representando
+      // apenas compromissos futuros; misturar os dois conceitos fazia o cartão
+      // mostrar zero mesmo com o histórico de visitas preenchido.
+      supabase.from("imf_property_keys").select("id, property_id")
+        .in("property_id", ids).eq("purpose", "visita").not("returned_at", "is", null).limit(5000),
     ]);
     if (leadsResult.error) throw new Error(`Falha ao carregar interessados: ${leadsResult.error.message}`);
     if (visitsResult.error) throw new Error(`Falha ao carregar visitas: ${visitsResult.error.message}`);
     if (keysResult.error) throw new Error(`Falha ao carregar controle de chaves: ${keysResult.error.message}`);
+    if (completedVisitKeysResult.error) {
+      throw new Error(`Falha ao contabilizar visitas realizadas: ${completedVisitKeysResult.error.message}`);
+    }
     const leads = leadsResult.data;
     const visits = visitsResult.data;
     const keys = keysResult.data;
+    const completedVisitKeys = completedVisitKeysResult.data;
 
     const byProp = (rows: any[] | null): Map<string, any[]> => {
       const m = new Map<string, any[]>();
@@ -1334,6 +1344,7 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
     const leadsMap = byProp(leads as any);
     const visitsMap = byProp(visits as any);
     const keysMap = byProp(keys as any);
+    const completedVisitKeysMap = byProp(completedVisitKeys as any);
 
     res.json(list.map((p: any) => {
       const propLeads = leadsMap.get(p.id) || [];
@@ -1356,6 +1367,7 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
         interessados: propLeads.length,
         dias_sem_lead: ultimoLead ? Math.floor((Date.now() - new Date(ultimoLead).getTime()) / 86_400_000) : null,
         visitas_agendadas: propVisits.length,
+        visitas_realizadas: (completedVisitKeysMap.get(p.id) || []).length,
         proxima_visita: propVisits[0]
           ? { quando: propVisits[0].scheduled_at, cliente: propVisits[0].client_name }
           : null,

@@ -17,6 +17,12 @@ retiradas e devoluções. Nome, telefone brasileiro e previsão futura são
 validados no navegador e novamente no backend. Falhas ao consultar a tabela de
 chaves deixaram de ser convertidas silenciosamente em listas vazias.
 
+Correção posterior no mesmo fluxo: o número **Visitas** do cartão consultava
+somente eventos futuros de `imf_agenda`, embora o usuário estivesse registrando
+as visitas pelo controle de chaves. O cartão agora mostra **Visitas feitas** e
+conta retiradas com finalidade `visita` já devolvidas; o KPI **Visitas
+marcadas** permanece restrito à Agenda futura e ignora eventos cancelados.
+
 A migration `20260810d_property_keys_hardening.sql` foi aplicada e verificada:
 RLS ativo, acesso direto do navegador recusado com HTTP 401 e acesso do backend
 preservado. As restrições `NOT VALID` protegem novos INSERTs/UPDATEs sem apagar
