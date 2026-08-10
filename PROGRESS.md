@@ -1,5 +1,17 @@
 # Estado do projeto
 
+## Locação — diretório de inquilinos separado (2026-08-10)
+
+**Inquilinos** agora abre como uma tela própria e focada dentro do módulo de
+Locação. Ao entrar no diretório, o cabeçalho, os indicadores e as abas da gestão
+de Aluguéis deixam de competir com a consulta dos locatários. A tela apresenta
+somente o cadastro, contatos, contratos e situação financeira dos inquilinos,
+com ações próprias para criar e editar registros e um botão explícito de
+**Voltar para Aluguéis**.
+
+A mudança preserva a mesma fonte de dados e as regras já existentes, sem criar
+cadastros paralelos. É uma alteração somente de interface e não exige migration.
+
 ## Locação — operação escalável para até 100 clientes pronta localmente (2026-08-10)
 
 As abas **Imóveis alugados** e **Inquilinos** agora abrem em uma fila compacta,

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail, Upload, Send, CheckCircle2, Undo2, RefreshCw, ExternalLink, Search, SlidersHorizontal, LayoutGrid, List, ChevronLeft, ChevronRight, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail, Upload, Send, CheckCircle2, Undo2, RefreshCw, ExternalLink, Search, SlidersHorizontal, LayoutGrid, List, ChevronLeft, ChevronRight, ArrowLeft, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { RentalDashboard, AvailableTab, ContractDiaryModal, type RentalDashboardData } from './LocacaoPanels';
@@ -1489,40 +1489,63 @@ export function LocacaoArea() {
 
   return (
     <div className="max-w-6xl mx-auto w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-        <div>
-          <h2 className="text-2xl font-black text-[var(--text-hi)]">Aluguéis</h2>
-          <p className="text-[12px] text-[var(--text-low)] mt-1">Contratos, inquilinos e histórico dos imóveis alugados.</p>
-        </div>
-        {view !== 'cobranca' && view !== 'disponiveis' && (
-          <button onClick={() => view === 'contracts' ? setShowCreate(true) : setShowTenantCreate(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)]
-              bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
-            <Plus className="w-4 h-4" /> {view === 'contracts' ? 'Novo contrato' : 'Novo inquilino'}
+      {view === 'tenants' ? (
+        <div className="mb-6">
+          <button type="button" onClick={() => setView('contracts')}
+            className="mb-4 inline-flex items-center gap-2 text-[12px] font-bold text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Voltar para Aluguéis
           </button>
-        )}
-      </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-sky-400/20 bg-sky-500/10 text-sky-300">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-[var(--text-hi)]">Inquilinos</h2>
+                <p className="text-[12px] text-[var(--text-low)] mt-1">Cadastros, contatos, contratos e situação financeira dos locatários.</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowTenantCreate(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
+              <Plus className="w-4 h-4" /> Novo inquilino
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div>
+            <h2 className="text-2xl font-black text-[var(--text-hi)]">Aluguéis</h2>
+            <p className="text-[12px] text-[var(--text-low)] mt-1">Contratos, cobrança e operação dos imóveis alugados.</p>
+          </div>
+          {view === 'contracts' && (
+            <button type="button" onClick={() => setShowCreate(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-bold text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--glass-border)] hover:bg-[var(--control-fill-hover)] transition-colors">
+              <Plus className="w-4 h-4" /> Novo contrato
+            </button>
+          )}
+        </div>
+      )}
 
-      {/* 4 abas não cabem lado a lado no celular: quebra em duas linhas em vez
-          de espremer o texto. */}
-      <div className="inline-flex flex-wrap gap-1 w-full sm:w-auto p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] mb-6">
-        <button onClick={() => setView('contracts')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'contracts' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
-          Imóveis alugados
-        </button>
-        <button onClick={() => setView('disponiveis')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'disponiveis' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
-          Para alugar
-        </button>
-        <button onClick={() => setView('cobranca')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'cobranca' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
-          Cobrança automática
-        </button>
-        <button onClick={() => setView('tenants')}
-          className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'tenants' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
-          Inquilinos ({tenants?.length || 0})
-        </button>
-      </div>
+      {view !== 'tenants' && (
+        <div className="inline-flex flex-wrap gap-1 w-full sm:w-auto p-1 rounded-2xl bg-[var(--control-fill)] border border-[var(--hairline)] mb-6">
+          <button onClick={() => setView('contracts')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'contracts' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+            Imóveis alugados
+          </button>
+          <button onClick={() => setView('disponiveis')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'disponiveis' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+            Para alugar
+          </button>
+          <button onClick={() => setView('cobranca')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[12px] font-bold whitespace-nowrap transition-colors ${view === 'cobranca' ? 'bg-[var(--control-fill-hover)] text-[var(--text-hi)] shadow-sm' : 'text-[var(--text-low)]'}`}>
+            Cobrança automática
+          </button>
+          <button onClick={() => setView('tenants')}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-sky-400/15 bg-sky-500/[0.07] px-4 py-2 text-[12px] font-bold whitespace-nowrap text-sky-200 transition-colors hover:bg-sky-500/15 sm:flex-none">
+            <Users className="h-3.5 w-3.5" /> Inquilinos ({tenants?.length || 0})
+          </button>
+        </div>
+      )}
 
       {view === 'disponiveis' && <AvailableTab />}
 

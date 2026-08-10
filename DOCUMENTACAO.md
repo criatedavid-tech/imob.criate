@@ -1008,6 +1008,10 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   telas de contratos e inquilinos usam uma fila operacional compacta por
   padrão, com inadimplentes primeiro, busca por pessoa/imóvel/contato/documento,
   filtros de situação, ordenação, atalhos de ação e paginação de 12 registros.
+  O diretório de **Inquilinos** abre como tela própria, com cabeçalho e
+  navegação de retorno, sem manter as abas e indicadores de Aluguéis na mesma
+  superfície. Isso separa a consulta dos locatários da operação dos contratos
+  sem duplicar cadastros ou regras de negócio.
   Os cartões completos continuam disponíveis pelo seletor de visualização para
   consultas detalhadas e histórico. Um
   trigger impede relacionar inquilino e contrato de contas diferentes. A

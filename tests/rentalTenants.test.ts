@@ -66,6 +66,10 @@ test("carteira de locacao continua operavel com dezenas de clientes", async () =
   const source = await read("../src/experience/LocacaoArea.tsx");
 
   assert.match(source, /const RENTAL_PAGE_SIZE = 12/);
+  assert.match(source, /Voltar para Aluguéis/);
+  assert.match(source, /Cadastros, contatos, contratos e situação financeira dos locatários/);
+  assert.match(source, /view !== 'tenants'/);
+  assert.match(source, /setView\('contracts'\)/);
   assert.match(source, /Prioridade operacional/);
   assert.match(source, /Buscar inquilino, im.vel, propriet.rio ou telefone/);
   assert.match(source, /Buscar por nome, im.vel, telefone, e-mail ou CPF\/CNPJ/);
