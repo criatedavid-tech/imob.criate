@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail, Upload, Send, CheckCircle2, Undo2, RefreshCw, ExternalLink } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail, Upload, Send, CheckCircle2, Undo2, RefreshCw, ExternalLink, Search, SlidersHorizontal, LayoutGrid, List, ChevronLeft, ChevronRight, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { RentalDashboard, AvailableTab, ContractDiaryModal, type RentalDashboardData } from './LocacaoPanels';
@@ -139,6 +139,37 @@ const FINANCIAL_STATUS_LABEL: Record<RentalFinancialStatus, { label: string; cls
   inadimplente: { label: 'Inadimplente', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
   sem_cobranca: { label: 'Sem cobrança', cls: 'bg-amber-400/10 text-amber-200 border-amber-300/20' },
 };
+
+const RENTAL_PAGE_SIZE = 12;
+
+function normalizeRentalSearch(value?: string | null) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR');
+}
+
+function RentalPagination({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / RENTAL_PAGE_SIZE));
+  if (pages <= 1) return null;
+  return (
+    <div className="mt-5 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-[var(--hairline)] bg-[var(--control-fill)] px-4 py-3">
+      <p className="text-[11px] text-[var(--text-low)]">
+        Página <b className="text-[var(--text-mid)]">{page}</b> de <b className="text-[var(--text-mid)]">{pages}</b>
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onChange(Math.max(1, page - 1))} disabled={page <= 1}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--hairline)] px-3 py-2 text-[11px] font-bold text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] disabled:opacity-35">
+          <ChevronLeft size={14} /> Anterior
+        </button>
+        <button type="button" onClick={() => onChange(Math.min(pages, page + 1))} disabled={page >= pages}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--hairline)] px-3 py-2 text-[11px] font-bold text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] disabled:opacity-35">
+          Próxima <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const MAX_BOLETO_BYTES = 6 * 1024 * 1024;
 
@@ -1217,6 +1248,83 @@ export function LocacaoArea() {
     CLIENT_FINANCIAL_OPERATIONS_ENABLED ? null : false,
   );
   const [billingAccountSandbox, setBillingAccountSandbox] = useState(false);
+  const [contractQuery, setContractQuery] = useState('');
+  const [contractStatusFilter, setContractStatusFilter] = useState<'todos' | Contract['status']>('ativo');
+  const [contractFinancialFilter, setContractFinancialFilter] = useState<'todos' | RentalFinancialStatus>('todos');
+  const [contractSort, setContractSort] = useState<'prioridade' | 'vencimento' | 'nome' | 'valor'>('prioridade');
+  const [contractDisplay, setContractDisplay] = useState<'lista' | 'cards'>('lista');
+  const [contractPage, setContractPage] = useState(1);
+  const [tenantQuery, setTenantQuery] = useState('');
+  const [tenantStatusFilter, setTenantStatusFilter] = useState<'todos' | Tenant['status']>('todos');
+  const [tenantFinancialFilter, setTenantFinancialFilter] = useState<'todos' | RentalFinancialStatus>('todos');
+  const [tenantSort, setTenantSort] = useState<'prioridade' | 'nome' | 'valor_atraso'>('prioridade');
+  const [tenantDisplay, setTenantDisplay] = useState<'lista' | 'cards'>('lista');
+  const [tenantPage, setTenantPage] = useState(1);
+
+  const contractCounts = useMemo(() => {
+    const list = contracts || [];
+    return {
+      active: list.filter((item) => item.status === 'ativo').length,
+      overdue: list.filter((item) => item.status === 'ativo' && item.financial_status === 'inadimplente').length,
+      current: list.filter((item) => item.status === 'ativo' && item.financial_status === 'adimplente').length,
+      noCharge: list.filter((item) => item.status === 'ativo' && item.financial_status === 'sem_cobranca').length,
+      closed: list.filter((item) => item.status === 'encerrado').length,
+    };
+  }, [contracts]);
+
+  const filteredContracts = useMemo(() => {
+    const query = normalizeRentalSearch(contractQuery);
+    const priority: Record<RentalFinancialStatus, number> = { inadimplente: 0, sem_cobranca: 1, adimplente: 2 };
+    return [...(contracts || [])]
+      .filter((item) => contractStatusFilter === 'todos' || item.status === contractStatusFilter)
+      .filter((item) => contractFinancialFilter === 'todos' || item.financial_status === contractFinancialFilter)
+      .filter((item) => !query || normalizeRentalSearch([
+        item.tenant_name, item.tenant_phone, item.tenant_cpf_cnpj, item.property, item.owner_name, item.owner_phone,
+      ].filter(Boolean).join(' ')).includes(query))
+      .sort((a, b) => {
+        if (contractSort === 'nome') return a.tenant_name.localeCompare(b.tenant_name, 'pt-BR');
+        if (contractSort === 'vencimento') return a.due_day - b.due_day || a.tenant_name.localeCompare(b.tenant_name, 'pt-BR');
+        if (contractSort === 'valor') return b.rent_amount_cents - a.rent_amount_cents || a.tenant_name.localeCompare(b.tenant_name, 'pt-BR');
+        if (a.status !== b.status) return a.status === 'ativo' ? -1 : 1;
+        const statusDifference = (priority[a.financial_status || 'sem_cobranca'] ?? 3) - (priority[b.financial_status || 'sem_cobranca'] ?? 3);
+        if (statusDifference !== 0) return statusDifference;
+        return (b.overdue_amount_cents || 0) - (a.overdue_amount_cents || 0) || a.due_day - b.due_day;
+      });
+  }, [contracts, contractQuery, contractStatusFilter, contractFinancialFilter, contractSort]);
+
+  const tenantCounts = useMemo(() => {
+    const list = tenants || [];
+    return {
+      total: list.length,
+      overdue: list.filter((item) => item.financial_status === 'inadimplente').length,
+      current: list.filter((item) => item.financial_status === 'adimplente').length,
+      noCharge: list.filter((item) => item.financial_status === 'sem_cobranca').length,
+      inactive: list.filter((item) => item.status === 'inativo').length,
+    };
+  }, [tenants]);
+
+  const filteredTenants = useMemo(() => {
+    const query = normalizeRentalSearch(tenantQuery);
+    const priority: Record<RentalFinancialStatus, number> = { inadimplente: 0, sem_cobranca: 1, adimplente: 2 };
+    return [...(tenants || [])]
+      .filter((item) => tenantStatusFilter === 'todos' || item.status === tenantStatusFilter)
+      .filter((item) => tenantFinancialFilter === 'todos' || item.financial_status === tenantFinancialFilter)
+      .filter((item) => !query || normalizeRentalSearch([
+        item.full_name, item.phone, item.email, item.cpf_cnpj,
+        ...item.contract_history.map((contract) => contract.property || ''),
+      ].filter(Boolean).join(' ')).includes(query))
+      .sort((a, b) => {
+        if (tenantSort === 'nome') return a.full_name.localeCompare(b.full_name, 'pt-BR');
+        if (tenantSort === 'valor_atraso') return b.overdue_amount_cents - a.overdue_amount_cents || a.full_name.localeCompare(b.full_name, 'pt-BR');
+        const statusDifference = (priority[a.financial_status || 'sem_cobranca'] ?? 3) - (priority[b.financial_status || 'sem_cobranca'] ?? 3);
+        if (statusDifference !== 0) return statusDifference;
+        if (a.status !== b.status) return a.status === 'ativo' ? -1 : 1;
+        return b.overdue_amount_cents - a.overdue_amount_cents || a.full_name.localeCompare(b.full_name, 'pt-BR');
+      });
+  }, [tenants, tenantQuery, tenantStatusFilter, tenantFinancialFilter, tenantSort]);
+
+  const pagedContracts = filteredContracts.slice((contractPage - 1) * RENTAL_PAGE_SIZE, contractPage * RENTAL_PAGE_SIZE);
+  const pagedTenants = filteredTenants.slice((tenantPage - 1) * RENTAL_PAGE_SIZE, tenantPage * RENTAL_PAGE_SIZE);
 
   const loadDashboard = () => {
     fetch('/api/locacao/dashboard', { headers: authService.getAuthHeaders() })
@@ -1269,6 +1377,16 @@ export function LocacaoArea() {
       })
       .catch(() => setBillingAccountConfigured(false));
   }, []);
+  useEffect(() => { setContractPage(1); }, [contractQuery, contractStatusFilter, contractFinancialFilter, contractSort]);
+  useEffect(() => { setTenantPage(1); }, [tenantQuery, tenantStatusFilter, tenantFinancialFilter, tenantSort]);
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(filteredContracts.length / RENTAL_PAGE_SIZE));
+    if (contractPage > lastPage) setContractPage(lastPage);
+  }, [filteredContracts.length, contractPage]);
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(filteredTenants.length / RENTAL_PAGE_SIZE));
+    if (tenantPage > lastPage) setTenantPage(lastPage);
+  }, [filteredTenants.length, tenantPage]);
 
   async function handleCharge(c: Contract) {
     setChargingId(c.id);
@@ -1412,6 +1530,87 @@ export function LocacaoArea() {
 
       {view === 'contracts' && dashboard && <RentalDashboard data={dashboard} />}
 
+      {view === 'contracts' && !isEmpty && (
+        <div className="mt-5 mb-5 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
+            <button type="button" onClick={() => { setContractStatusFilter('ativo'); setContractFinancialFilter('todos'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${contractStatusFilter === 'ativo' && contractFinancialFilter === 'todos' ? 'border-sky-400/35 bg-sky-500/12' : 'border-[var(--hairline)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)]'}`}>
+              <span className="block text-[18px] font-black text-[var(--text-hi)] tabular-nums">{contractCounts.active}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">Ativos</span>
+            </button>
+            <button type="button" onClick={() => { setContractStatusFilter('ativo'); setContractFinancialFilter('inadimplente'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${contractFinancialFilter === 'inadimplente' ? 'border-red-400/35 bg-red-500/12' : 'border-red-400/15 bg-red-500/[0.06] hover:bg-red-500/10'}`}>
+              <span className="flex items-center gap-2 text-[18px] font-black text-red-200 tabular-nums"><AlertTriangle size={15} />{contractCounts.overdue}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-300/75">Em atraso</span>
+            </button>
+            <button type="button" onClick={() => { setContractStatusFilter('ativo'); setContractFinancialFilter('adimplente'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${contractFinancialFilter === 'adimplente' ? 'border-emerald-400/35 bg-emerald-500/12' : 'border-emerald-400/15 bg-emerald-500/[0.05] hover:bg-emerald-500/10'}`}>
+              <span className="flex items-center gap-2 text-[18px] font-black text-emerald-200 tabular-nums"><ShieldCheck size={15} />{contractCounts.current}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300/75">Em dia</span>
+            </button>
+            <button type="button" onClick={() => { setContractStatusFilter('ativo'); setContractFinancialFilter('sem_cobranca'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${contractFinancialFilter === 'sem_cobranca' ? 'border-amber-400/35 bg-amber-500/12' : 'border-amber-400/15 bg-amber-500/[0.05] hover:bg-amber-500/10'}`}>
+              <span className="block text-[18px] font-black text-amber-200 tabular-nums">{contractCounts.noCharge}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300/75">Sem cobrança</span>
+            </button>
+            <button type="button" onClick={() => { setContractStatusFilter('encerrado'); setContractFinancialFilter('todos'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${contractStatusFilter === 'encerrado' ? 'border-[var(--glass-border-strong)] bg-[var(--control-fill-hover)]' : 'border-[var(--hairline)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)]'}`}>
+              <span className="block text-[18px] font-black text-[var(--text-mid)] tabular-nums">{contractCounts.closed}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">Encerrados</span>
+            </button>
+          </div>
+
+          <GlassCard className="!p-3 sm:!p-4">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+              <label className="relative flex-1 min-w-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-low)]" />
+                <input value={contractQuery} onChange={(event) => setContractQuery(event.target.value)}
+                  placeholder="Buscar inquilino, imóvel, proprietário ou telefone"
+                  className="w-full rounded-xl py-2.5 pl-10 pr-4 text-[12px] text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] outline-none focus:border-[var(--glass-border-strong)]" />
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <label className="relative">
+                  <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-low)] pointer-events-none" />
+                  <select value={contractStatusFilter} onChange={(event) => setContractStatusFilter(event.target.value as typeof contractStatusFilter)}
+                    className="w-full sm:w-auto rounded-xl py-2.5 pl-9 pr-8 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                    <option value="todos" style={optionStyle}>Todos os contratos</option>
+                    <option value="ativo" style={optionStyle}>Somente ativos</option>
+                    <option value="encerrado" style={optionStyle}>Somente encerrados</option>
+                  </select>
+                </label>
+                <select value={contractFinancialFilter} onChange={(event) => setContractFinancialFilter(event.target.value as typeof contractFinancialFilter)}
+                  className="w-full sm:w-auto rounded-xl px-3 py-2.5 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                  <option value="todos" style={optionStyle}>Qualquer situação</option>
+                  <option value="inadimplente" style={optionStyle}>Em atraso</option>
+                  <option value="adimplente" style={optionStyle}>Em dia</option>
+                  <option value="sem_cobranca" style={optionStyle}>Sem cobrança</option>
+                </select>
+                <select value={contractSort} onChange={(event) => setContractSort(event.target.value as typeof contractSort)}
+                  className="w-full sm:w-auto rounded-xl px-3 py-2.5 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                  <option value="prioridade" style={optionStyle}>Prioridade operacional</option>
+                  <option value="vencimento" style={optionStyle}>Dia do vencimento</option>
+                  <option value="nome" style={optionStyle}>Nome do inquilino</option>
+                  <option value="valor" style={optionStyle}>Maior aluguel</option>
+                </select>
+                <div className="inline-flex rounded-xl border border-[var(--hairline-strong)] bg-[var(--control-fill)] p-1" aria-label="Modo de visualização">
+                  <button type="button" onClick={() => setContractDisplay('lista')} aria-label="Visualização em lista" title="Lista compacta"
+                    className={`p-1.5 rounded-lg ${contractDisplay === 'lista' ? 'bg-sky-500/20 text-sky-200' : 'text-[var(--text-low)]'}`}><List size={15} /></button>
+                  <button type="button" onClick={() => setContractDisplay('cards')} aria-label="Visualização em cartões" title="Cartões detalhados"
+                    className={`p-1.5 rounded-lg ${contractDisplay === 'cards' ? 'bg-sky-500/20 text-sky-200' : 'text-[var(--text-low)]'}`}><LayoutGrid size={15} /></button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1">
+              <p className="text-[11px] text-[var(--text-low)]"><b className="text-[var(--text-mid)]">{filteredContracts.length}</b> resultado{filteredContracts.length === 1 ? '' : 's'} · 12 por página</p>
+              {(contractQuery || contractStatusFilter !== 'ativo' || contractFinancialFilter !== 'todos' || contractSort !== 'prioridade') && (
+                <button type="button" onClick={() => { setContractQuery(''); setContractStatusFilter('ativo'); setContractFinancialFilter('todos'); setContractSort('prioridade'); }}
+                  className="text-[11px] font-bold text-sky-300 hover:text-sky-200">Limpar filtros</button>
+              )}
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
       {view === 'contracts' && (isEmpty ? (
         <GlassCard className="!py-14 text-center">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
@@ -1424,9 +1623,66 @@ export function LocacaoArea() {
             <Plus className="w-4 h-4" /> Cadastrar o primeiro
           </button>
         </GlassCard>
+      ) : filteredContracts.length === 0 ? (
+        <GlassCard className="!py-12 text-center">
+          <Search className="w-5 h-5 text-[var(--text-low)] mx-auto mb-3" />
+          <p className="text-[14px] font-bold text-[var(--text-mid)]">Nenhum contrato encontrado</p>
+          <p className="text-[11px] text-[var(--text-low)] mt-1 mb-4">Tente outro termo ou remova os filtros aplicados.</p>
+          <button type="button" onClick={() => { setContractQuery(''); setContractStatusFilter('ativo'); setContractFinancialFilter('todos'); setContractSort('prioridade'); }}
+            className="text-[11px] font-bold text-sky-300 hover:text-sky-200">Limpar filtros</button>
+        </GlassCard>
+      ) : contractDisplay === 'lista' ? (
+        <>
+          <div className="overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--control-fill)]">
+            <div className="hidden lg:grid grid-cols-[minmax(220px,1.5fr)_minmax(160px,1fr)_130px_140px_150px] gap-4 border-b border-[var(--hairline)] px-4 py-2.5 text-[9px] font-bold uppercase tracking-wider text-[var(--text-low)]">
+              <span>Inquilino e imóvel</span><span>Situação</span><span>Aluguel</span><span>Vencimento</span><span className="text-right">Ações</span>
+            </div>
+            <div className="divide-y divide-[var(--hairline)]">
+              {pagedContracts.map((c) => (
+                <div key={c.id} className={`grid grid-cols-1 lg:grid-cols-[minmax(220px,1.5fr)_minmax(160px,1fr)_130px_140px_150px] lg:items-center gap-3 lg:gap-4 px-4 py-3.5 transition-colors hover:bg-[var(--control-fill-hover)] ${c.financial_status === 'inadimplente' ? 'bg-red-500/[0.035]' : ''}`}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-[13px] font-bold text-[var(--text-hi)] truncate">{c.tenant_name}</p>
+                      <span className={`lg:hidden shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border ${c.status === 'ativo' ? 'bg-emerald-400/10 text-emerald-200 border-emerald-300/15' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>{c.status}</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-low)] truncate mt-0.5">{c.property || 'Imóvel não vinculado'} · Proprietário: {c.owner_name}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {c.status === 'ativo' && c.financial_status ? (
+                      <>
+                        <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border ${FINANCIAL_STATUS_LABEL[c.financial_status].cls}`}>{FINANCIAL_STATUS_LABEL[c.financial_status].label}</span>
+                        {c.financial_status === 'inadimplente' && <span className="text-[10px] text-red-300">{centsToReais(c.overdue_amount_cents || 0)}</span>}
+                      </>
+                    ) : <span className="text-[10px] font-bold uppercase text-[var(--text-low)]">Encerrado</span>}
+                  </div>
+                  <div>
+                    <span className="lg:hidden text-[9px] uppercase tracking-wider text-[var(--text-low)] mr-2">Aluguel</span>
+                    <span className="text-[12px] font-black cr-money">{centsToReais(c.rent_amount_cents)}</span>
+                  </div>
+                  <div className="text-[11px] text-[var(--text-mid)]">
+                    <span className="lg:hidden text-[9px] uppercase tracking-wider text-[var(--text-low)] mr-2">Vencimento</span>
+                    Todo dia <b className="text-[var(--text-hi)]">{c.due_day}</b>
+                  </div>
+                  <div className="flex items-center gap-1.5 lg:justify-end">
+                    <button type="button" onClick={() => setLedgerContract(c)} title="Controle mensal" aria-label={`Controle mensal de ${c.tenant_name}`}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-sky-400/20 bg-sky-500/10 px-2.5 py-2 text-[10px] font-bold text-sky-200 hover:bg-sky-500/20">
+                      <ReceiptText size={13} /> <span className="lg:hidden xl:inline">Mensal</span>
+                    </button>
+                    <button type="button" onClick={() => setDiaryContract(c)} title="Diário e piloto" aria-label={`Diário de ${c.tenant_name}`}
+                      className="rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] p-2 text-[var(--text-low)] hover:text-[var(--text-hi)]"><History size={13} /></button>
+                    <button type="button" onClick={() => setEditingContract(c)} title="Editar contrato" aria-label={`Editar contrato de ${c.tenant_name}`}
+                      className="rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] p-2 text-[var(--text-low)] hover:text-[var(--text-hi)]"><Pencil size={13} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <RentalPagination page={contractPage} total={filteredContracts.length} onChange={setContractPage} />
+        </>
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {contracts!.map((c) => (
+          {pagedContracts.map((c) => (
             <div key={c.id}>
               <GlassCard className="!p-5">
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -1563,7 +1819,89 @@ export function LocacaoArea() {
             </div>
           ))}
         </div>
+        <RentalPagination page={contractPage} total={filteredContracts.length} onChange={setContractPage} />
+        </>
       ))}
+
+      {view === 'tenants' && !tenantsEmpty && (
+        <div className="mb-5 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
+            <button type="button" onClick={() => { setTenantStatusFilter('todos'); setTenantFinancialFilter('todos'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${tenantStatusFilter === 'todos' && tenantFinancialFilter === 'todos' ? 'border-sky-400/35 bg-sky-500/12' : 'border-[var(--hairline)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)]'}`}>
+              <span className="block text-[18px] font-black text-[var(--text-hi)] tabular-nums">{tenantCounts.total}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">Cadastrados</span>
+            </button>
+            <button type="button" onClick={() => { setTenantStatusFilter('todos'); setTenantFinancialFilter('inadimplente'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${tenantFinancialFilter === 'inadimplente' ? 'border-red-400/35 bg-red-500/12' : 'border-red-400/15 bg-red-500/[0.06] hover:bg-red-500/10'}`}>
+              <span className="flex items-center gap-2 text-[18px] font-black text-red-200 tabular-nums"><AlertTriangle size={15} />{tenantCounts.overdue}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-300/75">Em atraso</span>
+            </button>
+            <button type="button" onClick={() => { setTenantStatusFilter('todos'); setTenantFinancialFilter('adimplente'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${tenantFinancialFilter === 'adimplente' ? 'border-emerald-400/35 bg-emerald-500/12' : 'border-emerald-400/15 bg-emerald-500/[0.05] hover:bg-emerald-500/10'}`}>
+              <span className="flex items-center gap-2 text-[18px] font-black text-emerald-200 tabular-nums"><ShieldCheck size={15} />{tenantCounts.current}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300/75">Em dia</span>
+            </button>
+            <button type="button" onClick={() => { setTenantStatusFilter('todos'); setTenantFinancialFilter('sem_cobranca'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${tenantFinancialFilter === 'sem_cobranca' ? 'border-amber-400/35 bg-amber-500/12' : 'border-amber-400/15 bg-amber-500/[0.05] hover:bg-amber-500/10'}`}>
+              <span className="block text-[18px] font-black text-amber-200 tabular-nums">{tenantCounts.noCharge}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300/75">Sem cobrança</span>
+            </button>
+            <button type="button" onClick={() => { setTenantStatusFilter('inativo'); setTenantFinancialFilter('todos'); }}
+              className={`rounded-2xl border px-3.5 py-3 text-left transition-colors ${tenantStatusFilter === 'inativo' ? 'border-[var(--glass-border-strong)] bg-[var(--control-fill-hover)]' : 'border-[var(--hairline)] bg-[var(--control-fill)] hover:bg-[var(--control-fill-hover)]'}`}>
+              <span className="block text-[18px] font-black text-[var(--text-mid)] tabular-nums">{tenantCounts.inactive}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">Inativos</span>
+            </button>
+          </div>
+
+          <GlassCard className="!p-3 sm:!p-4">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+              <label className="relative flex-1 min-w-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-low)]" />
+                <input value={tenantQuery} onChange={(event) => setTenantQuery(event.target.value)}
+                  placeholder="Buscar por nome, imóvel, telefone, e-mail ou CPF/CNPJ"
+                  className="w-full rounded-xl py-2.5 pl-10 pr-4 text-[12px] text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] placeholder-[var(--text-low)] outline-none focus:border-[var(--glass-border-strong)]" />
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <label className="relative">
+                  <SlidersHorizontal className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-low)] pointer-events-none" />
+                  <select value={tenantStatusFilter} onChange={(event) => setTenantStatusFilter(event.target.value as typeof tenantStatusFilter)}
+                    className="w-full sm:w-auto rounded-xl py-2.5 pl-9 pr-8 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                    <option value="todos" style={optionStyle}>Ativos e inativos</option>
+                    <option value="ativo" style={optionStyle}>Somente ativos</option>
+                    <option value="inativo" style={optionStyle}>Somente inativos</option>
+                  </select>
+                </label>
+                <select value={tenantFinancialFilter} onChange={(event) => setTenantFinancialFilter(event.target.value as typeof tenantFinancialFilter)}
+                  className="w-full sm:w-auto rounded-xl px-3 py-2.5 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                  <option value="todos" style={optionStyle}>Qualquer situação</option>
+                  <option value="inadimplente" style={optionStyle}>Em atraso</option>
+                  <option value="adimplente" style={optionStyle}>Em dia</option>
+                  <option value="sem_cobranca" style={optionStyle}>Sem cobrança</option>
+                </select>
+                <select value={tenantSort} onChange={(event) => setTenantSort(event.target.value as typeof tenantSort)}
+                  className="w-full sm:w-auto rounded-xl px-3 py-2.5 text-[11px] font-semibold text-[var(--text-mid)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] [color-scheme:dark] outline-none">
+                  <option value="prioridade" style={optionStyle}>Prioridade operacional</option>
+                  <option value="valor_atraso" style={optionStyle}>Maior atraso</option>
+                  <option value="nome" style={optionStyle}>Nome do inquilino</option>
+                </select>
+                <div className="inline-flex rounded-xl border border-[var(--hairline-strong)] bg-[var(--control-fill)] p-1" aria-label="Modo de visualização">
+                  <button type="button" onClick={() => setTenantDisplay('lista')} aria-label="Visualização em lista" title="Lista compacta"
+                    className={`p-1.5 rounded-lg ${tenantDisplay === 'lista' ? 'bg-sky-500/20 text-sky-200' : 'text-[var(--text-low)]'}`}><List size={15} /></button>
+                  <button type="button" onClick={() => setTenantDisplay('cards')} aria-label="Visualização em cartões" title="Cartões detalhados"
+                    className={`p-1.5 rounded-lg ${tenantDisplay === 'cards' ? 'bg-sky-500/20 text-sky-200' : 'text-[var(--text-low)]'}`}><LayoutGrid size={15} /></button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1">
+              <p className="text-[11px] text-[var(--text-low)]"><b className="text-[var(--text-mid)]">{filteredTenants.length}</b> resultado{filteredTenants.length === 1 ? '' : 's'} · 12 por página</p>
+              {(tenantQuery || tenantStatusFilter !== 'todos' || tenantFinancialFilter !== 'todos' || tenantSort !== 'prioridade') && (
+                <button type="button" onClick={() => { setTenantQuery(''); setTenantStatusFilter('todos'); setTenantFinancialFilter('todos'); setTenantSort('prioridade'); }}
+                  className="text-[11px] font-bold text-sky-300 hover:text-sky-200">Limpar filtros</button>
+              )}
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
       {view === 'tenants' && (tenantsEmpty ? (
         <GlassCard className="!py-14 text-center">
@@ -1576,9 +1914,62 @@ export function LocacaoArea() {
             <Plus className="w-4 h-4" /> Cadastrar inquilino
           </button>
         </GlassCard>
+      ) : filteredTenants.length === 0 ? (
+        <GlassCard className="!py-12 text-center">
+          <Search className="w-5 h-5 text-[var(--text-low)] mx-auto mb-3" />
+          <p className="text-[14px] font-bold text-[var(--text-mid)]">Nenhum inquilino encontrado</p>
+          <p className="text-[11px] text-[var(--text-low)] mt-1 mb-4">Tente outro termo ou remova os filtros aplicados.</p>
+          <button type="button" onClick={() => { setTenantQuery(''); setTenantStatusFilter('todos'); setTenantFinancialFilter('todos'); setTenantSort('prioridade'); }}
+            className="text-[11px] font-bold text-sky-300 hover:text-sky-200">Limpar filtros</button>
+        </GlassCard>
+      ) : tenantDisplay === 'lista' ? (
+        <>
+          <div className="overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--control-fill)]">
+            <div className="hidden lg:grid grid-cols-[minmax(220px,1.35fr)_minmax(180px,1fr)_minmax(180px,1fr)_150px_90px] gap-4 border-b border-[var(--hairline)] px-4 py-2.5 text-[9px] font-bold uppercase tracking-wider text-[var(--text-low)]">
+              <span>Inquilino</span><span>Contrato atual</span><span>Contato</span><span>Situação</span><span className="text-right">Ações</span>
+            </div>
+            <div className="divide-y divide-[var(--hairline)]">
+              {pagedTenants.map((tenant) => {
+                const activeContracts = tenant.contract_history.filter((item) => item.status === 'ativo');
+                const currentContract = activeContracts[0];
+                return (
+                  <div key={tenant.id} className={`grid grid-cols-1 lg:grid-cols-[minmax(220px,1.35fr)_minmax(180px,1fr)_minmax(180px,1fr)_150px_90px] lg:items-center gap-3 lg:gap-4 px-4 py-3.5 transition-colors hover:bg-[var(--control-fill-hover)] ${tenant.financial_status === 'inadimplente' ? 'bg-red-500/[0.035]' : ''}`}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p className="text-[13px] font-bold text-[var(--text-hi)] truncate">{tenant.full_name}</p>
+                        <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border ${tenant.status === 'ativo' ? 'bg-emerald-400/10 text-emerald-200 border-emerald-300/15' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>{tenant.status}</span>
+                      </div>
+                      {tenant.cpf_cnpj && <p className="text-[10px] text-[var(--text-low)] mt-0.5">{maskCpfCnpj(tenant.cpf_cnpj)}</p>}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-[var(--text-mid)] truncate">{currentContract?.property || (activeContracts.length ? 'Imóvel não vinculado' : 'Sem contrato ativo')}</p>
+                      <p className="text-[10px] text-[var(--text-low)]">{activeContracts.length} ativo{activeContracts.length === 1 ? '' : 's'} · {tenant.contract_history.length} no histórico</p>
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      {tenant.phone ? <p className="text-[11px] text-[var(--text-mid)] truncate">+{tenant.phone}</p> : <p className="text-[10px] text-amber-200">Sem telefone</p>}
+                      {tenant.email && <p className="text-[10px] text-[var(--text-low)] truncate">{tenant.email}</p>}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border ${FINANCIAL_STATUS_LABEL[tenant.financial_status || 'sem_cobranca'].cls}`}>{FINANCIAL_STATUS_LABEL[tenant.financial_status || 'sem_cobranca'].label}</span>
+                      {tenant.financial_status === 'inadimplente' && <span className="text-[10px] text-red-300">{centsToReais(tenant.overdue_amount_cents)}</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 lg:justify-end">
+                      <button type="button" onClick={() => setEditingTenant(tenant)} title="Editar inquilino" aria-label={`Editar ${tenant.full_name}`}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-2.5 py-2 text-[10px] font-bold text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)]">
+                        <Pencil size={13} /> Editar
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <RentalPagination page={tenantPage} total={filteredTenants.length} onChange={setTenantPage} />
+        </>
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {tenants!.map((tenant) => {
+          {pagedTenants.map((tenant) => {
             const activeContracts = tenant.contract_history.filter((item) => item.status === 'ativo').length;
             return (
               <GlassCard key={tenant.id} className="!p-5">
@@ -1646,6 +2037,8 @@ export function LocacaoArea() {
             );
           })}
         </div>
+        <RentalPagination page={tenantPage} total={filteredTenants.length} onChange={setTenantPage} />
+        </>
       ))}
 
       {showCreate && (

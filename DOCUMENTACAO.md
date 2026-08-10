@@ -1004,7 +1004,12 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   mantém acordo sem pagamento no saldo inadimplente. O KPI geral de
   inadimplência usa o saldo vencido da competência atual, em vez de confundir
   todo valor ainda não recebido com atraso. O contrato guarda a
-  fotografia cadastral da vinculação; um
+  fotografia cadastral da vinculação. Para carteiras de até 100 clientes, as
+  telas de contratos e inquilinos usam uma fila operacional compacta por
+  padrão, com inadimplentes primeiro, busca por pessoa/imóvel/contato/documento,
+  filtros de situação, ordenação, atalhos de ação e paginação de 12 registros.
+  Os cartões completos continuam disponíveis pelo seletor de visualização para
+  consultas detalhadas e histórico. Um
   trigger impede relacionar inquilino e contrato de contas diferentes. A
   automação financeira exige, cumulativamente, a flag global, geração e régua
   ligadas na conta e piloto ligado no contrato. Backend, scheduler e agenda

@@ -62,6 +62,21 @@ test("interface de alugueis oferece cadastro e historico sem sair do modulo", as
   assert.match(source, /Inadimplente/);
 });
 
+test("carteira de locacao continua operavel com dezenas de clientes", async () => {
+  const source = await read("../src/experience/LocacaoArea.tsx");
+
+  assert.match(source, /const RENTAL_PAGE_SIZE = 12/);
+  assert.match(source, /Prioridade operacional/);
+  assert.match(source, /Buscar inquilino, im.vel, propriet.rio ou telefone/);
+  assert.match(source, /Buscar por nome, im.vel, telefone, e-mail ou CPF\/CNPJ/);
+  assert.match(source, /contractFinancialFilter/);
+  assert.match(source, /tenantFinancialFilter/);
+  assert.match(source, /contractDisplay === 'lista'/);
+  assert.match(source, /tenantDisplay === 'lista'/);
+  assert.match(source, /RentalPagination page=\{contractPage\}/);
+  assert.match(source, /RentalPagination page=\{tenantPage\}/);
+});
+
 test("api consolida adimplencia por contrato ativo sem confiar no cliente", async () => {
   const source = await read("../server/routes/locacao.ts");
 

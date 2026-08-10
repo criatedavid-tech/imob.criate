@@ -1,6 +1,20 @@
 # Estado do projeto
 
-## Locação — adimplência por inquilino pronta localmente (2026-08-10)
+## Locação — operação escalável para até 100 clientes pronta localmente (2026-08-10)
+
+As abas **Imóveis alugados** e **Inquilinos** agora abrem em uma fila compacta,
+ordenada por prioridade operacional: inadimplentes primeiro, depois cadastros
+sem cobrança e clientes em dia. Foram adicionados busca por nome, imóvel,
+proprietário, telefone, e-mail e CPF/CNPJ; filtros rápidos por situação;
+ordenações; alternância entre lista e cartões; contagem de resultados; estados
+vazios orientativos; e paginação de 12 registros. Assim, uma carteira de 10 a
+100 locatários permanece escaneável sem uma rolagem contínua de cartões.
+
+A lista mantém em um clique as ações de controle mensal, diário/piloto e edição;
+os cartões detalhados continuam disponíveis para cobranças e histórico. A
+implementação é somente de interface e não exige migration.
+
+## Locação — adimplência por inquilino publicada (2026-08-10)
 
 A aba **Locação → Inquilinos** agora mostra a situação financeira consolidada
 de cada locatário: **Adimplente**, **Inadimplente** ou **Sem cobrança**. Em caso
@@ -12,8 +26,8 @@ incluindo pagamentos parciais e acordos ainda não pagos. Cobranças futuras nã
 geram falso atraso e a virada do dia respeita `America/Sao_Paulo`. O KPI
 superior de inadimplência usa somente o saldo vencido do mês, não todo valor
 ainda aguardando o vencimento. Não exige migration. Validação local aprovada:
-TypeScript, 181 testes, Knip, build de produção e `git diff --check`.
-Publicação pendente.
+  TypeScript, 181 testes, Knip, build de produção e `git diff --check`.
+  Publicada e validada em produção no workflow **Deploy V2 to Fly.io #143**.
 
 ## Locação — controle híbrido de pagamento pronto localmente (2026-08-10)
 
