@@ -41,6 +41,15 @@ export interface RentalCompetency {
 
 const REFERENCE_MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
+export function todayIsoInBrasilia(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
 export function normalizeReferenceMonth(value: string): string {
   const match = REFERENCE_MONTH_PATTERN.exec(value);
   if (!match) throw new Error("Competencia invalida. Use o formato AAAA-MM.");
@@ -115,7 +124,77 @@ export function buildRentalCompetency(
 export function effectiveRentalPaymentStatus(
   status: RentalPaymentStatus,
   dueDate: string,
-  today = new Date().toISOString().slice(0, 10),
+  today = todayIsoInBrasilia(),
 ): RentalPaymentStatus {
   return (status === "pending" || status === "partial") && dueDate < today ? "overdue" : status;
+}
+
+type RentalFinancialStatus = "adimplente" | "inadimplente" | "sem_cobranca";
+
+export interface RentalFinancialHealth {
+  financial_status: RentalFinancialStatus;
+  overdue_amount_cents: number;
+  overdue_count: number;
+}
+
+export interface RentalFinancialHealthPayment {
+  status: RentalPaymentStatus;
+  due_date: string;
+  amount_cents: number;
+  amount_paid_cents?: number | null;
+}
+
+/**
+ * Resume a saude financeira de um contrato sem confundir cobranca futura com
+ * inadimplencia. Uma negociacao continua em aberto ate o pagamento ser
+ * confirmado; cobrancas canceladas ou com falha nao tornam o inquilino
+ * inadimplente.
+ */
+export function summarizeRentalFinancialHealth(
+  openPayments: RentalFinancialHealthPayment[],
+  currentMonthStatus: RentalPaymentStatus | null | undefined,
+  today = todayIsoInBrasilia(),
+): RentalFinancialHealth {
+  let overdueAmountCents = 0;
+  let overdueCount = 0;
+
+  for (const payment of openPayments) {
+    const remaining = Math.max(0, payment.amount_cents - (payment.amount_paid_cents || 0));
+    if (remaining === 0 || ["paid", "canceled", "failed"].includes(payment.status)) continue;
+
+    const effectiveStatus = effectiveRentalPaymentStatus(payment.status, payment.due_date, today);
+    if (effectiveStatus === "overdue" || effectiveStatus === "negotiated") {
+      overdueAmountCents += remaining;
+      overdueCount += 1;
+    }
+  }
+
+  const hasCurrentCharge = Boolean(
+    currentMonthStatus && !["canceled", "failed"].includes(currentMonthStatus),
+  );
+
+  return {
+    financial_status: overdueCount > 0
+      ? "inadimplente"
+      : hasCurrentCharge
+        ? "adimplente"
+        : "sem_cobranca",
+    overdue_amount_cents: overdueAmountCents,
+    overdue_count: overdueCount,
+  };
+}
+
+export function summarizeTenantFinancialHealth(
+  activeContracts: RentalFinancialHealth[],
+): RentalFinancialHealth {
+  const overdueAmountCents = activeContracts.reduce((sum, item) => sum + item.overdue_amount_cents, 0);
+  const overdueCount = activeContracts.reduce((sum, item) => sum + item.overdue_count, 0);
+
+  if (overdueCount > 0) {
+    return { financial_status: "inadimplente", overdue_amount_cents: overdueAmountCents, overdue_count: overdueCount };
+  }
+  if (activeContracts.length === 0 || activeContracts.some((item) => item.financial_status === "sem_cobranca")) {
+    return { financial_status: "sem_cobranca", overdue_amount_cents: 0, overdue_count: 0 };
+  }
+  return { financial_status: "adimplente", overdue_amount_cents: 0, overdue_count: 0 };
 }

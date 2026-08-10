@@ -57,4 +57,17 @@ test("interface de alugueis oferece cadastro e historico sem sair do modulo", as
   assert.match(source, /function TenantModal/);
   assert.match(source, /function PropertyHistoryModal/);
   assert.match(source, /\/api\/locacao\/tenants/);
+  assert.match(source, /Situação financeira/);
+  assert.match(source, /Adimplente/);
+  assert.match(source, /Inadimplente/);
+});
+
+test("api consolida adimplencia por contrato ativo sem confiar no cliente", async () => {
+  const source = await read("../server/routes/locacao.ts");
+
+  assert.match(source, /loadContractFinancialHealth/);
+  assert.match(source, /summarizeRentalFinancialHealth/);
+  assert.match(source, /summarizeTenantFinancialHealth/);
+  assert.match(source, /overdue_amount_cents/);
+  assert.match(source, /overdue_count/);
 });

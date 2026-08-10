@@ -1,5 +1,18 @@
 # Estado do projeto
 
+## Locação — adimplência por inquilino pronta localmente (2026-08-10)
+
+A aba **Locação → Inquilinos** agora mostra a situação financeira consolidada
+de cada locatário: **Adimplente**, **Inadimplente** ou **Sem cobrança**. Em caso
+de atraso, exibe quantidade de cobranças e saldo vencido. O cartão de cada
+contrato ativo também apresenta o indicador para consulta rápida.
+
+O backend calcula o resultado a partir das competências dos contratos ativos,
+incluindo pagamentos parciais e acordos ainda não pagos. Cobranças futuras não
+geram falso atraso e a virada do dia respeita `America/Sao_Paulo`. Não exige
+migration. Validação local aprovada: TypeScript, 180 testes, Knip, build de
+produção e `git diff --check`. Publicação pendente.
+
 ## Locação — controle híbrido de pagamento pronto localmente (2026-08-10)
 
 Implementado o fluxo de ponta a ponta para cobranças Asaas e externas. O Asaas

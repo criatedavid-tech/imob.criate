@@ -50,6 +50,9 @@ interface Contract {
   adjustment_interval_months?: number;
   next_adjustment_date?: string;
   current_month_payment_status?: PaymentStatus | null;
+  financial_status?: RentalFinancialStatus;
+  overdue_amount_cents?: number;
+  overdue_count?: number;
   tenant_profile?: Pick<Tenant, 'id' | 'full_name' | 'phone' | 'email' | 'cpf_cnpj' | 'status'> | null;
 }
 
@@ -75,9 +78,13 @@ interface Tenant {
   notes?: string | null;
   status: 'ativo' | 'inativo';
   contract_history: TenantContractHistory[];
+  financial_status: RentalFinancialStatus;
+  overdue_amount_cents: number;
+  overdue_count: number;
 }
 
 type PaymentStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'negotiated' | 'canceled' | 'failed';
+type RentalFinancialStatus = 'adimplente' | 'inadimplente' | 'sem_cobranca';
 
 interface PaymentReceipt {
   id: string;
@@ -125,6 +132,12 @@ const PAYMENT_LABEL: Record<string, { label: string; cls: string }> = {
   negotiated: { label: 'Negociado', cls: 'bg-violet-400/15 text-violet-200 border-violet-300/20' },
   canceled: { label: 'Cancelado', cls: 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]' },
   failed: { label: 'Falhou', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
+};
+
+const FINANCIAL_STATUS_LABEL: Record<RentalFinancialStatus, { label: string; cls: string }> = {
+  adimplente: { label: 'Adimplente', cls: 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20' },
+  inadimplente: { label: 'Inadimplente', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
+  sem_cobranca: { label: 'Sem cobrança', cls: 'bg-amber-400/10 text-amber-200 border-amber-300/20' },
 };
 
 const MAX_BOLETO_BYTES = 6 * 1024 * 1024;
@@ -1455,6 +1468,18 @@ export function LocacaoArea() {
                   </div>
                 )}
                 <p className="text-[12px] text-[var(--text-low)] mb-1.5">Proprietário: {c.owner_name}</p>
+                {c.status === 'ativo' && c.financial_status && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border ${FINANCIAL_STATUS_LABEL[c.financial_status].cls}`}>
+                      {FINANCIAL_STATUS_LABEL[c.financial_status].label}
+                    </span>
+                    {c.financial_status === 'inadimplente' && (
+                      <span className="text-[11px] text-red-300">
+                        {c.overdue_count || 0} pendência{c.overdue_count === 1 ? '' : 's'} · {centsToReais(c.overdue_amount_cents || 0)} em atraso
+                      </span>
+                    )}
+                  </div>
+                )}
                 <p className="text-[20px] font-black cr-money mt-2">{centsToReais(c.rent_amount_cents)}<span className="text-[12px] font-semibold text-[var(--text-low)]">/mês</span></p>
                 <p className="text-[11px] text-[var(--text-low)] mt-1">Vencimento todo dia {c.due_day}</p>
 
@@ -1565,6 +1590,26 @@ export function LocacaoArea() {
                   <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border ${tenant.status === 'ativo' ? 'bg-emerald-400/15 text-emerald-200 border-emerald-300/20' : 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]'}`}>
                     {tenant.status}
                   </span>
+                </div>
+
+                <div className="mt-3 rounded-xl px-3 py-2.5 bg-[var(--control-fill)] border border-[var(--hairline)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-low)]">Situação financeira</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border ${FINANCIAL_STATUS_LABEL[tenant.financial_status || 'sem_cobranca'].cls}`}>
+                      {FINANCIAL_STATUS_LABEL[tenant.financial_status || 'sem_cobranca'].label}
+                    </span>
+                  </div>
+                  {tenant.financial_status === 'inadimplente' ? (
+                    <p className="text-[11px] text-red-300 mt-2">
+                      {tenant.overdue_count} cobrança{tenant.overdue_count === 1 ? '' : 's'} · {centsToReais(tenant.overdue_amount_cents)} em atraso
+                    </p>
+                  ) : tenant.financial_status === 'adimplente' ? (
+                    <p className="text-[11px] text-emerald-200 mt-2">Nenhuma cobrança vencida em aberto.</p>
+                  ) : (
+                    <p className="text-[11px] text-amber-200 mt-2">
+                      {activeContracts > 0 ? 'Ainda não há cobrança válida para o mês.' : 'Nenhum contrato ativo para avaliar.'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5 mt-4">

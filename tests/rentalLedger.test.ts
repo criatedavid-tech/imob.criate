@@ -5,6 +5,9 @@ import {
   buildRentalCompetency,
   effectiveRentalPaymentStatus,
   normalizeReferenceMonth,
+  summarizeRentalFinancialHealth,
+  summarizeTenantFinancialHealth,
+  todayIsoInBrasilia,
 } from "../server/services/rentalLedger";
 
 const contract = {
@@ -51,6 +54,46 @@ test("status vencido considera saldo parcial e nunca sobrescreve pagamento integ
   assert.equal(effectiveRentalPaymentStatus("partial", "2026-08-01", "2026-08-10"), "overdue");
   assert.equal(effectiveRentalPaymentStatus("partial", "2026-08-10", "2026-08-10"), "partial");
   assert.equal(effectiveRentalPaymentStatus("paid", "2026-08-01", "2026-08-10"), "paid");
+});
+
+test("virada UTC nao antecipa inadimplencia no horario de Brasilia", () => {
+  assert.equal(todayIsoInBrasilia(new Date("2026-08-11T00:30:00.000Z")), "2026-08-10");
+});
+
+test("saude financeira separa cobranca futura de inadimplencia real", () => {
+  const future = summarizeRentalFinancialHealth([
+    { status: "pending", due_date: "2026-08-11", amount_cents: 500_000, amount_paid_cents: 0 },
+  ], "pending", "2026-08-10");
+  assert.deepEqual(future, {
+    financial_status: "adimplente",
+    overdue_amount_cents: 0,
+    overdue_count: 0,
+  });
+
+  const overdue = summarizeRentalFinancialHealth([
+    { status: "partial", due_date: "2026-08-09", amount_cents: 500_000, amount_paid_cents: 125_000 },
+    { status: "negotiated", due_date: "2026-08-01", amount_cents: 100_000, amount_paid_cents: 0 },
+  ], "partial", "2026-08-10");
+  assert.deepEqual(overdue, {
+    financial_status: "inadimplente",
+    overdue_amount_cents: 475_000,
+    overdue_count: 2,
+  });
+});
+
+test("saude do inquilino consolida todos os contratos ativos", () => {
+  assert.equal(summarizeTenantFinancialHealth([]).financial_status, "sem_cobranca");
+  assert.equal(summarizeTenantFinancialHealth([
+    { financial_status: "adimplente", overdue_amount_cents: 0, overdue_count: 0 },
+  ]).financial_status, "adimplente");
+  assert.deepEqual(summarizeTenantFinancialHealth([
+    { financial_status: "adimplente", overdue_amount_cents: 0, overdue_count: 0 },
+    { financial_status: "inadimplente", overdue_amount_cents: 250_000, overdue_count: 1 },
+  ]), {
+    financial_status: "inadimplente",
+    overdue_amount_cents: 250_000,
+    overdue_count: 1,
+  });
 });
 
 test("rotas de locacao registram recebimento externo sem criar cobranca", async () => {

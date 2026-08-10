@@ -997,7 +997,12 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   encerrado para preservar o histórico. Boleto/PIX do cliente continua
   desativado por padrão e nenhum valor passa pela Criate. Inquilinos têm
   cadastro independente por conta, histórico de contratos e estado
-  ativo/inativo. O contrato guarda a fotografia cadastral da vinculação; um
+  ativo/inativo. A aba **Inquilinos** consolida a situação financeira dos
+  contratos ativos em **Adimplente**, **Inadimplente** ou **Sem cobrança**, com
+  quantidade e saldo vencido; o mesmo indicador aparece no cartão do contrato.
+  O cálculo usa o fuso de Brasília, não considera cobrança futura como atraso e
+  mantém acordo sem pagamento no saldo inadimplente. O contrato guarda a
+  fotografia cadastral da vinculação; um
   trigger impede relacionar inquilino e contrato de contas diferentes. A
   automação financeira exige, cumulativamente, a flag global, geração e régua
   ligadas na conta e piloto ligado no contrato. Backend, scheduler e agenda

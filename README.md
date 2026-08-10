@@ -91,7 +91,11 @@ Inquilinos são cadastrados uma única vez e podem ser vinculados a contratos
 sucessivos. O perfil atual pode ser atualizado sem reescrever a fotografia
 cadastral já preservada nos contratos; a interface mostra o histórico por
 inquilino e por imóvel. Vínculos de outra conta são rejeitados no backend e no
-banco.
+banco. Em **Locação → Inquilinos**, a situação financeira consolidada informa
+**Adimplente**, **Inadimplente** ou **Sem cobrança**. O cartão do contrato repete
+o indicador e, quando há atraso, mostra quantidade de pendências e saldo
+vencido. Cobrança futura não conta como inadimplência; acordo só deixa de ser
+dívida após a confirmação do pagamento.
 
 ## Dois agentes, três canais
 

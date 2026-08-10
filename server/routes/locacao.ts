@@ -32,6 +32,10 @@ import { assertClientAsaasEnvironmentAllowed, ClientAsaasAccountRequiredError } 
 import {
   buildRentalCompetency,
   effectiveRentalPaymentStatus,
+  summarizeRentalFinancialHealth,
+  summarizeTenantFinancialHealth,
+  todayIsoInBrasilia,
+  type RentalFinancialHealth,
   type RentalPaymentStatus,
 } from "../services/rentalLedger";
 import { removeRentalBoleto, signedRentalBoletoUrl, uploadRentalBoleto } from "../services/rentalBoleto";
@@ -210,6 +214,55 @@ async function findTenantForBroker(brokerId: string, tenantId: string) {
   return data;
 }
 
+type ContractFinancialHealth = RentalFinancialHealth & {
+  current_month_payment_status: RentalPaymentStatus | null;
+};
+
+async function loadContractFinancialHealth(contractIds: string[]): Promise<Map<string, ContractFinancialHealth>> {
+  const result = new Map<string, ContractFinancialHealth>();
+  if (contractIds.length === 0) return result;
+
+  const today = todayIsoInBrasilia();
+  const monthIso = `${today.slice(0, 7)}-01`;
+  const [openResult, currentResult] = await Promise.all([
+    supabase
+      .from("imf_rental_payments")
+      .select("contract_id, status, due_date, amount_cents, amount_paid_cents")
+      .in("contract_id", contractIds)
+      .in("status", ["pending", "partial", "overdue", "negotiated"]),
+    supabase
+      .from("imf_rental_payments")
+      .select("contract_id, status, due_date")
+      .in("contract_id", contractIds)
+      .eq("reference_month", monthIso),
+  ]);
+  if (openResult.error) throw openResult.error;
+  if (currentResult.error) throw currentResult.error;
+
+  const openByContract = new Map<string, any[]>();
+  for (const payment of openResult.data || []) {
+    const items = openByContract.get(payment.contract_id) || [];
+    items.push(payment);
+    openByContract.set(payment.contract_id, items);
+  }
+  const currentByContract = new Map<string, RentalPaymentStatus>();
+  for (const payment of currentResult.data || []) {
+    currentByContract.set(
+      payment.contract_id,
+      effectiveRentalPaymentStatus(payment.status as RentalPaymentStatus, payment.due_date, today),
+    );
+  }
+
+  for (const contractId of contractIds) {
+    const currentStatus = currentByContract.get(contractId) || null;
+    result.set(contractId, {
+      ...summarizeRentalFinancialHealth(openByContract.get(contractId) || [], currentStatus, today),
+      current_month_payment_status: currentStatus,
+    });
+  }
+  return result;
+}
+
 async function ownsProperty(brokerId: string, propertyId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from("imf_properties")
@@ -276,9 +329,23 @@ locacaoRouter.get("/api/locacao/tenants", async (req, res) => {
       historyByTenant.set(contract.tenant_id, history);
     }
 
+    const activeContracts = contracts.filter((contract: any) => contract.status === "ativo");
+    const financialHealthByContract = await loadContractFinancialHealth(
+      activeContracts.map((contract: any) => contract.id),
+    );
+    const financialHealthByTenant = new Map<string, RentalFinancialHealth>();
+    for (const tenant of tenants || []) {
+      const tenantHealth = activeContracts
+        .filter((contract: any) => contract.tenant_id === tenant.id)
+        .map((contract: any) => financialHealthByContract.get(contract.id))
+        .filter((health): health is ContractFinancialHealth => Boolean(health));
+      financialHealthByTenant.set(tenant.id, summarizeTenantFinancialHealth(tenantHealth));
+    }
+
     return res.json((tenants || []).map((tenant: any) => ({
       ...tenant,
       contract_history: historyByTenant.get(tenant.id) || [],
+      ...(financialHealthByTenant.get(tenant.id) || summarizeTenantFinancialHealth([])),
     })));
   } catch (err: any) {
     console.error("Erro GET /api/locacao/tenants:", err);
@@ -400,37 +467,18 @@ locacaoRouter.get("/api/locacao/contracts", requireUser, async (req, res) => {
 
     const contracts = data || [];
     const ids = contracts.map((c: any) => c.id);
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    const monthIso = monthStart.toISOString().split("T")[0];
-
-    // Status do pagamento do mês atual, por contrato — base real de
-    // inadimplência (usada no cockpit da Imobiliária). null = ainda não gerou cobrança.
-    // Enforcement lazy: se está "pending" mas o vencimento já passou, mostra
-    // "overdue" na hora — não depende só do webhook do Asaas ter chegado
-    // (mesmo padrão do grace_until em billing.ts).
-    const today = new Date().toISOString().split("T")[0];
-    const paymentByContract: Record<string, string> = {};
-    if (ids.length > 0) {
-      const { data: payments } = await supabase
-        .from("imf_rental_payments")
-        .select("contract_id, status, due_date")
-        .in("contract_id", ids)
-        .eq("reference_month", monthIso);
-      for (const p of payments || []) {
-        paymentByContract[p.contract_id] = effectiveRentalPaymentStatus(
-          p.status as RentalPaymentStatus,
-          p.due_date,
-          today,
-        );
-      }
-    }
+    const financialHealthByContract = await loadContractFinancialHealth(ids);
 
     res.json(contracts.map((c: any) => ({
       ...c,
       property: c.imf_properties?.title || null,
       tenant_profile: c.imf_rental_tenants || null,
-      current_month_payment_status: paymentByContract[c.id] || null,
+      ...(financialHealthByContract.get(c.id) || {
+        current_month_payment_status: null,
+        financial_status: "sem_cobranca",
+        overdue_amount_cents: 0,
+        overdue_count: 0,
+      }),
     })));
   } catch (err: any) {
     console.error("Erro GET /api/locacao/contracts:", err);
