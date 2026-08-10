@@ -23,7 +23,12 @@ conteúdo deixa de existir na memória da IA e some do painel ao recarregar.
 Validação local aprovada: TypeScript, 167 testes, Knip, build e
 `git diff --check`. A migration foi aplicada em produção pelo SQL Editor em
 10/08/2026 e verificada com UUIDs inexistentes: `ok=true`, quatro contagens
-iguais a zero. Código pronto para publicação pelo workflow da branch `v2`.
+iguais a zero. Publicado no commit `31c2b93` pelo GitHub Actions run `#139`;
+os jobs **Validate V2** e **Deploy imobiflow-v2** concluíram com sucesso. O Fly
+publicou a imagem `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, as seis Machines
+atingiram estado saudável e o smoke pós-deploy confirmou HTTP 200 em `/`,
+`/login` e `/app`. O comando não foi executado automaticamente na conta real:
+o aceite funcional pelo usuário permanece deliberadamente pendente.
 
 ## WhatsApp Pai — aceite de produção e isolamento concluído (2026-08-10)
 

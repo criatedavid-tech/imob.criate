@@ -1,6 +1,6 @@
 # ImobiFlow V2 — referência atual do projeto
 
-> Estado consolidado do código da branch `v2` em 2026-07-27.
+> Estado consolidado do código da branch `v2` em 2026-08-10.
 >
 > Este arquivo descreve somente como o sistema está estruturado e o que é
 > verdade agora. Guias de integrações desativadas não fazem parte da V2.
@@ -32,11 +32,12 @@ A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
 ### Estado conhecido de produção
 
 O deploy é publicado automaticamente pelo workflow `deploy-v2.yml` a partir
-do HEAD da branch `v2`. O baseline funcional auditado em 27/07/2026 estava no
-commit `4ee40d6`, release Fly `v185`, imagem
-`deployment-01KYJM7KMYQV7899GVAAZWEVR4`, região `gru`. O pacote documental
-posterior preserva esse mesmo código; consultar Fly/GitHub para o número da
-release documental mais recente.
+do HEAD da branch `v2`. O baseline funcional auditado e publicado em
+10/08/2026 está no commit `31c2b93`, GitHub Actions run `#139`, imagem Fly
+`deployment-01KZNWFBXDY55ZP94QF33TJV3K`, região `gru`. Os jobs **Validate V2**
+e **Deploy imobiflow-v2** concluíram com sucesso; as seis Machines atualizadas
+atingiram estado saudável e `/`, `/login` e `/app` responderam HTTP 200 após o
+rollout.
 
 A topologia observada possui três Machines `web` iniciadas e saudáveis, uma
 Machine `scheduler` iniciada e o grupo `worker` com uma Machine ativa e uma
@@ -783,7 +784,10 @@ continuam visíveis no aparelho, porém deixam de ser memória da IA.
 Migration aplicada no Supabase de produção em 10/08/2026 e verificada por
 chamada neutra com UUIDs inexistentes, que retornou `ok=true` e quatro contagens
 iguais a zero. Validação local: TypeScript, Knip, build, `git diff --check` e
-167 testes aprovados.
+167 testes aprovados. Código publicado no commit `31c2b93`, GitHub Actions run
+`#139`, imagem Fly `deployment-01KZNWFBXDY55ZP94QF33TJV3K`; smoke público
+pós-deploy aprovado em `/`, `/login` e `/app`. O aceite de `@reset` na conta
+real permanece manual para não apagar histórico do usuário sem sua ação.
 
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 

@@ -5,10 +5,12 @@ O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
 agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
 para a operação diária.
 
-> Baseline funcional auditado em 10/08/2026: branch `v2`, commit `4c525f2`,
-> release Fly `v234`, em `https://imobiflow-v2.fly.dev`. O pacote `@reset`
-> descrito abaixo tem migration aplicada e usa o mesmo pipeline. A V1 (`main`
-> e app `imobiflow`) está congelada e não recebe alterações.
+> Baseline funcional auditado e publicado em 10/08/2026: branch `v2`, commit
+> `31c2b93`, GitHub Actions run `#139` e imagem Fly
+> `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, em
+> `https://imobiflow-v2.fly.dev`. A migration do pacote `@reset` foi aplicada
+> e verificada antes do deploy. A V1 (`main` e app `imobiflow`) está congelada
+> e não recebe alterações.
 
 ## Arquitetura em produção
 

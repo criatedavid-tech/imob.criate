@@ -1,19 +1,23 @@
 # Próximas tarefas — ImobiFlow V2
 
-## `@reset` do Assistente IA — migration aplicada; deploy/aceite pendentes
+## `@reset` do Assistente IA — publicado; aceite funcional pendente
 
 Migration `supabase/migrations/20260810a_agent_conversation_reset.sql` aplicada
-e verificada em produção em 10/08/2026. Depois do deploy, enviar **somente**
-`@reset` ao WhatsApp Pai e confirmar: resposta de histórico zerado, Assistente
-IA vazio ao recarregar, nenhum lead/imóvel/agenda removido e nenhuma entrada do
-número Pai em Conversas. As mensagens antigas continuam no aplicativo do
-WhatsApp, mas não permanecem como memória da IA.
+e verificada em produção em 10/08/2026. Código publicado no commit `31c2b93`,
+GitHub Actions run `#139`, imagem Fly
+`deployment-01KZNWFBXDY55ZP94QF33TJV3K`; `/`, `/login` e `/app` responderam
+HTTP 200 após o rollout. Para o aceite funcional, enviar **somente** `@reset`
+ao WhatsApp Pai e confirmar: resposta de histórico zerado, Assistente IA vazio
+ao recarregar, nenhum lead/imóvel/agenda removido e nenhuma entrada do número
+Pai em Conversas. As mensagens antigas continuam no aplicativo do WhatsApp,
+mas não permanecem como memória da IA.
 
 ## WhatsApp Pai — Fases 1-7 publicadas; aceite final em andamento
 
-**Estado confirmado em produção em 10/08/2026:** commit `4c525f2`, release
-Fly 234 e migration `20260807h_whatsapp_pai_internal_conversation.sql`
-aplicada. O número Pai `556299982218` está pareado e com webhook ativo. A
+**Estado confirmado em produção em 10/08/2026:** HEAD `31c2b93`, imagem Fly
+`deployment-01KZNWFBXDY55ZP94QF33TJV3K` e migration
+`20260807h_whatsapp_pai_internal_conversation.sql` aplicada. O número Pai
+`556299982218` está pareado e com webhook ativo. A
 auditoria encontrou 22 eventos concluídos, zero item `dead`, zero ação
 pendente, zero mídia/documento temporário vencido, 6 mídias permanentes no
 Assistente IA e 2 vínculos de equipe verificados.

@@ -1,8 +1,9 @@
 # Arquitetura — ImobiFlow V2
 
-> Fotografia técnica do baseline funcional auditado em 10/08/2026: branch
-> `v2`, commit `4c525f2`, release Fly `v234`. O pacote `@reset` descrito abaixo
-> tem migration aplicada e segue pelo mesmo pipeline de publicação.
+> Fotografia técnica do baseline funcional auditado e publicado em 10/08/2026:
+> branch `v2`, commit `31c2b93`, GitHub Actions run `#139` e imagem Fly
+> `deployment-01KZNWFBXDY55ZP94QF33TJV3K`. A migration do pacote `@reset` foi
+> aplicada e verificada antes do deploy.
 
 ## Visão geral
 
