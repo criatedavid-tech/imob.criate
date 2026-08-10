@@ -1,5 +1,29 @@
 # Estado do projeto
 
+## Locação — validação segura dos disparos e contraste dos selects (2026-08-10)
+
+O contrato de teste **casa teste** / inquilino **antonio** apareceu corretamente
+na agenda de 14 dias, mas com `0 de 1` contrato no piloto e todos os itens como
+**Simulação**. Nesse estado nenhum WhatsApp é enviado. A auditoria também
+encontrou que a flag global `CLIENT_FINANCIAL_OPERATIONS_ENABLED` era exibida
+na interface, porém não era revalidada dentro dos dois jobs do scheduler.
+
+Os jobs de geração de cobrança e régua agora falham fechado quando a flag
+global está desligada; as rotas impedem ligar conta/contrato nesse estado, mas
+continuam permitindo desligar uma configuração antiga. A agenda também marca
+o item como bloqueado em vez de programado quando a trava global está fechada.
+
+Para validar o canal sem gerar boleto ou PIX, o **Diário do contrato** ganhou o
+botão **Testar WhatsApp**. Ele exige confirmação humana, limita cinco tentativas
+por usuário a cada 15 minutos, valida contrato/conta/telefone, envia uma mensagem
+com o prefixo `[TESTE ImobiFlow]` e registra o resultado no diário. O seletor
+nativo recebeu cores sólidas de opção nos temas claro e escuro, corrigindo o
+“Sim/Não” transparente observado no Chrome/Windows.
+
+Validação local aprovada: 170 testes, TypeScript, Knip, build e
+`git diff --check`. O aceite externo ainda exige um clique manual no botão de
+teste e confirmação do recebimento no WhatsApp do inquilino.
+
 ## Assistente IA — comando pessoal `@reset` (2026-08-10)
 
 Implementado um reset único para o histórico compartilhado entre WhatsApp Pai

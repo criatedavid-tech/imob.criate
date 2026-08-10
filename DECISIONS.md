@@ -1,5 +1,17 @@
 # Decisões vigentes
 
+## Locação: teste de canal não liga operação financeira (2026-08-10)
+
+- `CLIENT_FINANCIAL_OPERATIONS_ENABLED` é uma trava de backend e scheduler,
+  não apenas um recurso visual. Com ela desligada, geração e régua são no-op.
+- Configuração antiga ainda pode ser desligada, mas não ligada, enquanto a
+  trava global estiver fechada. Isso evita automação armada silenciosamente.
+- O teste do WhatsApp é uma ação humana separada: envia texto claramente
+  identificado, tem rate limit, registra evento e nunca cria boleto/PIX nem
+  avança `dunning_step`.
+- Simulação na agenda não é disparo programado. Somente status `programado`,
+  com as quatro chaves ativas, representa uma automação que poderá sair.
+
 ## `@reset`: apaga contexto pessoal, não dados de negócio (2026-08-10)
 
 - O comando só é reconhecido quando a mensagem inteira é exatamente `@reset`,

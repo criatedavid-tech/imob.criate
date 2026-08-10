@@ -167,3 +167,16 @@ export const whatsappLinkLimiter = rateLimit({
   store: makeRedisStore('whatsapp-link', 15 * 60 * 1000),
   skip: skipInDev,
 });
+
+// Teste explícito do canal de cobrança: envia uma única mensagem identificada
+// ao telefone do inquilino, sem criar boleto/PIX nem avançar a régua.
+export const rentalTestDispatchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Limite de testes de WhatsApp atingido. Aguarde 15 minutos.' },
+  store: makeRedisStore('rental-test-dispatch', 15 * 60 * 1000),
+  skip: skipInDev,
+});

@@ -328,7 +328,7 @@ function StatusCard({ ativo, onToggle, saving }: {
       detalhe: 'Emite o boleto com PIX antes do vencimento, sem você precisar lembrar.',
       acao: (
         <button onClick={() => onToggle('charge_generation_enabled', !ativo.geracao_conta)}
-          disabled={!ativo.global || saving === 'charge_generation_enabled'}
+          disabled={(!ativo.global && !ativo.geracao_conta) || saving === 'charge_generation_enabled'}
           className={`shrink-0 px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-colors disabled:opacity-40 ${
             ativo.geracao_conta ? 'text-emerald-300 bg-emerald-500/15' : 'text-[var(--text-mid)] bg-[var(--control-fill-hover)]'
           }`}>
@@ -342,7 +342,7 @@ function StatusCard({ ativo, onToggle, saving }: {
       detalhe: 'É a régua abaixo. Sem isso a cobrança é gerada, mas ninguém é avisado.',
       acao: (
         <button onClick={() => onToggle('dunning_enabled', !ativo.regua_conta)}
-          disabled={!ativo.global || saving === 'dunning_enabled'}
+          disabled={(!ativo.global && !ativo.regua_conta) || saving === 'dunning_enabled'}
           className={`shrink-0 px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-colors disabled:opacity-40 ${
             ativo.regua_conta ? 'text-emerald-300 bg-emerald-500/15' : 'text-[var(--text-mid)] bg-[var(--control-fill-hover)]'
           }`}>

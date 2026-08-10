@@ -25,6 +25,8 @@ import {
 } from "../services/rentalTemplates";
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 import { normalizePhoneBR } from "../lib/crypto";
+import { rentalTestDispatchLimiter } from "../middleware/rateLimits";
+import { resolveOutboundInstanceToken, sendUazapiText } from "../services/uazapi";
 import { requireAccountCapability } from "../services/accountCapabilities";
 import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
 import {
@@ -42,7 +44,7 @@ export const locacaoRouter = express.Router();
 // nao ha como filtrar "so os meus contratos" porque essa nocao nao existe.
 function classifyLocacaoAction(req: { method: string; path: string }): PermissionAction {
   if (req.method === "GET") return "visualizar";
-  if (req.path.includes("/ai-settings") || req.path.includes("/autopilot") || req.path.includes("/regua")) {
+  if (req.path.includes("/ai-settings") || req.path.includes("/autopilot") || req.path.includes("/regua") || req.path.includes("/test-dispatch")) {
     return "gerenciar";
   }
   if (req.method === "POST") return "criar";
@@ -856,6 +858,12 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
     const enabled = !!req.body?.enabled;
+    if (enabled && !CLIENT_FINANCIAL_OPERATIONS_ENABLED) {
+      return res.status(403).json({
+        error: "A automação financeira está desativada na plataforma. Use o teste de WhatsApp sem gerar cobrança.",
+        code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
+      });
+    }
 
     const { data, error } = await supabase
       .from("imf_rental_contracts")
@@ -882,6 +890,59 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
   }
 });
 
+// Valida o caminho real de saída (conta -> instância UAZAPI -> telefone) sem
+// criar cobrança, sem alterar a régua e sem depender da flag financeira.
+// A mensagem é deliberadamente identificada como teste e exige clique humano.
+locacaoRouter.post(
+  "/api/locacao/contracts/:id/test-dispatch",
+  requireUser,
+  rentalTestDispatchLimiter,
+  async (req, res) => {
+    try {
+      const brokerId = await getBrokerId((req as any).userId);
+      if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+
+      const { data: contract, error } = await supabase
+        .from("imf_rental_contracts")
+        .select("id, tenant_name, tenant_phone, status")
+        .eq("id", req.params.id)
+        .eq("broker_id", brokerId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!contract) return res.status(404).json({ error: "Contrato não encontrado." });
+      if (contract.status !== "ativo") return res.status(409).json({ error: "O contrato precisa estar ativo." });
+
+      const phone = normalizePhoneBR(contract.tenant_phone || "");
+      if (!phone) return res.status(422).json({ error: "Cadastre o WhatsApp do inquilino antes do teste." });
+
+      const instanceToken = await resolveOutboundInstanceToken(brokerId, phone);
+      if (!instanceToken) {
+        return res.status(409).json({ error: "Nenhuma instância de WhatsApp está conectada para esta conta." });
+      }
+
+      const firstName = String(contract.tenant_name || "").trim().split(/\s+/)[0] || "inquilino";
+      const message = `[TESTE ImobiFlow]\nOlá, ${firstName}! Esta é uma mensagem de teste do canal de locação. Nenhuma cobrança foi gerada.`;
+      const sent = await sendUazapiText(instanceToken, phone, message);
+      if (!sent.ok) {
+        console.warn(`[Locação] teste de disparo falhou (contrato ${contract.id}, HTTP ${sent.status})`);
+        return res.status(502).json({ error: "O provedor de WhatsApp não confirmou o envio do teste." });
+      }
+
+      await logRentalEvent({
+        brokerId,
+        contractId: contract.id,
+        type: "teste_disparo_enviado",
+        actor: "humano",
+        description: "Mensagem de teste do canal de cobrança enviada; nenhuma cobrança foi criada.",
+      });
+      return res.json({ ok: true, sent: true });
+    } catch (err: any) {
+      console.error("Erro POST /api/locacao/contracts/:id/test-dispatch:", err?.message);
+      return res.status(500).json({ error: "Não foi possível enviar a mensagem de teste." });
+    }
+  },
+);
+
 // Alçada da IA de cobrança (o que ela pode fazer sem perguntar).
 locacaoRouter.get("/api/locacao/ai-settings", requireUser, async (req, res) => {
   try {
@@ -897,6 +958,16 @@ locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) =>
   try {
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
+    if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED && (
+      req.body?.enabled === true
+      || req.body?.charge_generation_enabled === true
+      || req.body?.dunning_enabled === true
+    )) {
+      return res.status(403).json({
+        error: "A automação financeira está desativada na plataforma.",
+        code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
+      });
+    }
 
     const allowed = [
       "enabled", "charge_generation_enabled", "dunning_enabled", "can_send_second_copy",
@@ -1322,7 +1393,7 @@ locacaoRouter.get("/api/locacao/agenda", requireUser, async (req, res) => {
               step: "geracao",
               valor_cents: contract.rent_amount_cents,
               status: !contract.autopilot_enabled ? "simulado"
-                : !ativo.geracao_conta ? "bloqueado" : "programado",
+                : !ativo.global || !ativo.geracao_conta ? "bloqueado" : "programado",
               mensagem: "",
             });
           }
@@ -1345,7 +1416,7 @@ locacaoRouter.get("/api/locacao/agenda", requireUser, async (req, res) => {
           const status = jaEnviado !== null && step.offset_days <= jaEnviado ? "enviado"
             : !contract.autopilot_enabled ? "simulado"
             : promessaAtiva ? "pausado"
-            : !ativo.regua_conta ? "bloqueado"
+            : !ativo.global || !ativo.regua_conta ? "bloqueado"
             : !contract.tenant_phone ? "sem_telefone"
             : "programado";
 

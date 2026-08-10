@@ -1,5 +1,18 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Locação — confirmar o teste real do WhatsApp
+
+No contrato **casa teste** / **antonio**, abrir **Diário e piloto** e clicar
+**Testar WhatsApp**. Confirmar que o telefone do inquilino recebe uma mensagem
+iniciada por `[TESTE ImobiFlow]` e que o diário registra **Teste de WhatsApp
+enviado**. Esse teste não gera cobrança, boleto ou PIX e não liga o piloto.
+
+A automação financeira real permanece bloqueada enquanto
+`CLIENT_FINANCIAL_OPERATIONS_ENABLED=false`. Para liberá-la no futuro, será
+necessária decisão explícita, conta Asaas própria da imobiliária e validação das
+quatro chaves mostradas na aba **Cobrança automática**; não alterar a flag apenas
+para executar o teste de canal.
+
 ## `@reset` do Assistente IA — publicado; aceite funcional pendente
 
 Migration `supabase/migrations/20260810a_agent_conversation_reset.sql` aplicada

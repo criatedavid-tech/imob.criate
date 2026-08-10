@@ -950,7 +950,12 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   desativado por padrão e nenhum valor passa pela Criate. Inquilinos têm
   cadastro independente por conta, histórico de contratos e estado
   ativo/inativo. O contrato guarda a fotografia cadastral da vinculação; um
-  trigger impede relacionar inquilino e contrato de contas diferentes.
+  trigger impede relacionar inquilino e contrato de contas diferentes. A
+  automação financeira exige, cumulativamente, a flag global, geração e régua
+  ligadas na conta e piloto ligado no contrato. Backend, scheduler e agenda
+  revalidam a flag global. O **Diário do contrato** oferece **Testar WhatsApp**:
+  mensagem identificada e limitada que valida a saída UAZAPI sem criar boleto,
+  PIX, competência ou avanço da régua.
 - **Lançamentos:** empreendimentos, unidades, simulador, reserva operacional,
   documentos privados e venda. O PIX de sinal está desativado por padrão.
   Exclusão de unidade/empreendimento só é bloqueada quando existe reserva
