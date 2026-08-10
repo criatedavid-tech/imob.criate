@@ -130,3 +130,14 @@ test("cobrança própria garante webhook autenticado antes da emissão", async (
   assert.match(rental, /timeZone: "America\/Sao_Paulo"/);
   assert.match(reservation, /await ensureClientAsaasPaymentWebhook\(creds\)/);
 });
+
+test("cada mensagem opcional da régua tem chave visível e persistida", async () => {
+  const panel = await read("../src/experience/CobrancaPanel.tsx");
+
+  assert.match(panel, /role="switch"/);
+  assert.match(panel, /aria-checked=\{p\.enabled\}/);
+  assert.match(panel, /passos: \[\{ step: step\.step, enabled \}\]/);
+  assert.match(panel, /p\.can_disable \? \(p\.enabled \? 'Envia' : 'Não envia'\) : 'Obrigatório'/);
+  assert.match(panel, /setRegua\(previous\)/);
+  assert.match(panel, /api\(`\/api\/locacao\/agenda\?days=14&simular=/);
+});

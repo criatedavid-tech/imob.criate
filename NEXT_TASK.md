@@ -1,5 +1,13 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Locação — aceitar as chaves individuais da régua
+
+Na aba **Cobrança automática**, desligar uma mensagem opcional e confirmar:
+o cartão mostra **Não envia**, o ponto correspondente fica desligado na linha
+do tempo e o item desaparece da agenda. Recarregar a página e confirmar que a
+preferência permaneceu. Ligar novamente e repetir a conferência. A última etapa
+de entrega humana deve aparecer como **Obrigatório**.
+
 ## Locação — publicar e homologar a cobrança sandbox
 
 1. Publicar a branch `v2` e confirmar o workflow/deploy saudável.

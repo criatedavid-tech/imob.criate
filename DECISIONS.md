@@ -1,5 +1,16 @@
 # Decisões vigentes
 
+## Régua de cobrança: mensagens selecionáveis por etapa (2026-08-10)
+
+- Cada mensagem opcional possui uma chave **Envia / Não envia** diretamente no
+  cartão da etapa. A alteração é individual por conta e persiste no mesmo
+  template personalizado já usado pelo motor e pela agenda.
+- O salvamento é imediato, atualiza a agenda e restaura o estado anterior se a
+  API falhar. Desligar uma mensagem faz o motor ignorar somente aquele degrau.
+- A etapa final de entrega para uma pessoa permanece obrigatória como rede de
+  segurança. Seu texto continua editável e pode ficar vazio, mas a entrega
+  humana não pode ser eliminada pela chave.
+
 ## Locação: piloto financeiro restrito ao Asaas sandbox (2026-08-10)
 
 - O deploy V2 libera a interface e o backend financeiro apenas para homologação.

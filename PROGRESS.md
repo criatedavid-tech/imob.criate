@@ -1,5 +1,16 @@
 # Estado do projeto
 
+## Locação — chave individual nas mensagens da régua (2026-08-10)
+
+Os cartões da régua agora exibem uma chave acessível **Envia / Não envia** ao
+lado de **Editar**. A preferência é salva imediatamente por etapa, reflete na
+linha do tempo e recarrega a agenda de 14 dias sem fechar a tela. Durante o
+salvamento a chave mostra progresso; em erro, a interface restaura o estado
+anterior. A etapa de entrega humana continua obrigatória e aparece como tal.
+
+Não exige migration: o campo `enabled` por conta e por etapa já existia em
+`imf_rental_message_templates` e já era respeitado pelo scheduler.
+
 ## Locação — piloto financeiro sandbox pronto para publicação (2026-08-10)
 
 O fluxo de aluguel foi preparado para gerar cobranças reais apenas dentro do
