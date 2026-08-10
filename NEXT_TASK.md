@@ -1,40 +1,102 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Inquilinos (Locação): visão de detalhe — pronto localmente; commit pendente
+## Inquilinos (Locação): visão de detalhe — commitado localmente; deploy pendente
 
 Etapas A (visão de Detalhe do Inquilino, reaproveitando `PaymentLedgerModal`/
 `ContractDiaryModal` sem mudança de backend) e B (enxugar linha/cartão +
 paridade de ações lista↔cartões) concluídas e testadas ao vivo — ver seção
-detalhada em `PROGRESS.md`. Antes de commitar: a árvore de trabalho local
-também tem, ao lado, a feature de reset do Assistente IA do Codex ainda não
-commitada (`server/routes/agent.ts`, `server/services/whatsappPaiQueue.ts`,
+detalhada em `PROGRESS.md`. Commitado (`2a7114b`), depois mesclado com o
+trabalho que o Codex publicou em paralelo no `origin/v2` (payment control,
+adimplência, agenda/calendário) — sem tocar nos arquivos da feature de reset
+do Assistente que ainda estava só local nesse momento
+(`server/routes/agent.ts`, `server/services/whatsappPaiQueue.ts`,
 `src/experience/CommandBar.tsx`, `package.json`,
 `server/services/agentConversationReset.ts`, migration
-`20260810a_agent_conversation_reset.sql`, `tests/agentConversationReset.test.ts`)
-— o commit de Inquilinos precisa incluir SÓ os arquivos de Locação (mais
-`src/experience/ui.tsx`, que ganhou passthrough de acessibilidade usado
-pelo card clicável) pra não misturar as duas features nem tocar no trabalho
-em andamento do Codex.
+`20260810a_agent_conversation_reset.sql`, `tests/agentConversationReset.test.ts`
+— essa feature já tinha sido publicada antes, no commit `31c2b93`; o que
+ficou de fora do merge foi só a iteração local mais recente do Codex em cima
+dela).
 
 Etapa C (opcional, registrada no plano): linkar de volta, a partir de um
 contrato na aba "Imóveis alugados", pro detalhe do inquilino correspondente,
 usando o `tenant_profile` que `GET /api/locacao/contracts` já devolve mas
 nunca é consumido hoje.
 
-## `@reset` do Assistente IA — pronto localmente; migration/deploy pendentes
+## Locação — aplicar migration e homologar o controle híbrido
 
-Migration: `supabase/migrations/20260810a_agent_conversation_reset.sql`.
-Aplicá-la antes de publicar o código. Depois do deploy, enviar **somente**
-`@reset` ao WhatsApp Pai e confirmar: resposta de histórico zerado, Assistente
-IA vazio ao recarregar, nenhum lead/imóvel/agenda removido e nenhuma entrada do
-número Pai em Conversas. As mensagens antigas continuam no aplicativo do
-WhatsApp, mas não permanecem como memória da IA.
+1. ~~Aplicar manualmente no Supabase, antes do deploy,
+   `supabase/migrations/20260810b_rental_payment_control.sql`.~~ Concluído e
+   verificado em 10/08/2026.
+2. Publicar a branch `v2` somente depois de TypeScript, testes, Knip, build e
+   `git diff --check` aprovarem.
+3. No contrato sandbox, abrir **Controle mensal**, clicar **Consultar Asaas** e
+   simular o pagamento no Asaas. Em até 10 minutos (ou imediatamente pela
+   consulta manual), confirmar **Pago** e nenhum novo item da régua.
+4. Criar uma competência externa isolada, importar um PDF pequeno, visualizar
+   o link assinado e fazer somente um envio para o número autorizado.
+5. Marcar essa competência como **Pago** e confirmar que saiu da régua; depois
+   marcar **Não pago** e confirmar que voltou a ficar elegível. Se houver
+   recibos externos gravados, a reabertura direta deve ser recusada.
+
+Não usar chave Asaas de produção nem números de terceiros durante a
+homologação. O boleto importado fica em Storage privado e o link expira.
+
+## Locação — aceitar as chaves individuais da régua
+
+Na aba **Cobrança automática**, desligar uma mensagem opcional e confirmar:
+o cartão mostra **Não envia**, o ponto correspondente fica desligado na linha
+do tempo e o item desaparece da agenda. Recarregar a página e confirmar que a
+preferência permaneceu. Ligar novamente e repetir a conferência. A última etapa
+de entrega humana deve aparecer como **Obrigatório**.
+
+## Locação — publicar e homologar a cobrança sandbox
+
+1. Publicar a branch `v2` e confirmar o workflow/deploy saudável.
+2. Em **Configurações → Conta de cobrança**, confirmar a chave própria como
+   **Sandbox**; se ela foi salva antes desta versão, salvá-la novamente apenas
+   se a tela solicitar reconexão.
+3. No contrato **casa teste** / **antonio**, clicar **Gerar cobrança do mês** e
+   validar boleto, PIX, valor de R$ 5.000,00, vencimento e registro no controle
+   mensal. O backend garante o webhook antes de emitir.
+4. Na aba **Cobrança automática**, ligar geração e mensagens da conta. Depois,
+   em **Diário e piloto**, ligar somente o contrato de teste. Confirmar que a
+   agenda troca de **Simulação** para **Programado**.
+5. Confirmar o WhatsApp recebido e simular o pagamento no Asaas sandbox para
+   validar o webhook e a mudança do status para pago.
+
+Não alterar `CLIENT_FINANCIAL_SANDBOX_ONLY=true` durante esta homologação.
+A migration `20260810b_rental_payment_control.sql` passa a ser obrigatória
+antes da publicação deste pacote.
+
+## Locação — confirmar o teste real do WhatsApp
+
+No contrato **casa teste** / **antonio**, abrir **Diário e piloto** e clicar
+**Testar WhatsApp**. Confirmar que o telefone do inquilino recebe uma mensagem
+iniciada por `[TESTE ImobiFlow]` e que o diário registra **Teste de WhatsApp
+enviado**. Esse teste não gera cobrança, boleto ou PIX e não liga o piloto.
+
+A automação financeira passa a ser liberada somente no sandbox após o novo
+deploy. A produção continua bloqueada pela trava dedicada; o teste simples de
+canal permanece disponível e não cria boleto ou PIX.
+
+## `@reset` do Assistente IA — publicado; aceite funcional pendente
+
+Migration `supabase/migrations/20260810a_agent_conversation_reset.sql` aplicada
+e verificada em produção em 10/08/2026. Código publicado no commit `31c2b93`,
+GitHub Actions run `#139`, imagem Fly
+`deployment-01KZNWFBXDY55ZP94QF33TJV3K`; `/`, `/login` e `/app` responderam
+HTTP 200 após o rollout. Para o aceite funcional, enviar **somente** `@reset`
+ao WhatsApp Pai e confirmar: resposta de histórico zerado, Assistente IA vazio
+ao recarregar, nenhum lead/imóvel/agenda removido e nenhuma entrada do número
+Pai em Conversas. As mensagens antigas continuam no aplicativo do WhatsApp,
+mas não permanecem como memória da IA.
 
 ## WhatsApp Pai — Fases 1-7 publicadas; aceite final em andamento
 
-**Estado confirmado em produção em 10/08/2026:** commit `4c525f2`, release
-Fly 234 e migration `20260807h_whatsapp_pai_internal_conversation.sql`
-aplicada. O número Pai `556299982218` está pareado e com webhook ativo. A
+**Estado confirmado em produção em 10/08/2026:** HEAD `31c2b93`, imagem Fly
+`deployment-01KZNWFBXDY55ZP94QF33TJV3K` e migration
+`20260807h_whatsapp_pai_internal_conversation.sql` aplicada. O número Pai
+`556299982218` está pareado e com webhook ativo. A
 auditoria encontrou 22 eventos concluídos, zero item `dead`, zero ação
 pendente, zero mídia/documento temporário vencido, 6 mídias permanentes no
 Assistente IA e 2 vínculos de equipe verificados.

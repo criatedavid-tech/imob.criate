@@ -8,6 +8,7 @@ import { PUBLIC_APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
 import { resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
+import { formatAgendaByDay } from "./agendaFormatter";
 import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
 import type { AccountCapability } from "./accountCapabilities";
 import { hasPermission, type PermissionModule, type PermissionAction } from "./permissions";
@@ -407,7 +408,7 @@ async function queryAgendaRange(brokerId: string, userId: string, dateFrom?: str
 
   const query = supabase
     .from("imf_agenda")
-    .select("scheduled_at, client_name, status, imf_properties(title)")
+    .select("scheduled_at, client_name, title, status, imf_properties(title)")
     .eq("broker_id", brokerId)
     .eq("event_type", "visita")
     .gte("scheduled_at", `${from}T00:00:00-03:00`)
@@ -420,6 +421,9 @@ async function queryAgendaRange(brokerId: string, userId: string, dateFrom?: str
   const periodo = from === to
     ? new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
     : `${new Date(`${from}T12:00:00`).toLocaleDateString("pt-BR")} a ${new Date(`${to}T12:00:00`).toLocaleDateString("pt-BR")}`;
+
+  const agendaPorDia = formatAgendaByDay(from, to, data || []);
+  if (agendaPorDia) return agendaPorDia;
 
   if (!data || data.length === 0) {
     return `Não há nenhuma visita registrada em ${periodo}.`;

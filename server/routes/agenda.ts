@@ -1,9 +1,10 @@
 import express from "express";
+import { PUBLIC_APP_URL } from "../config";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireInternalToken } from "../middleware/internalAuth";
-import { n8nInternalLimiter } from "../middleware/rateLimits";
-import { normalizePhoneBR } from "../lib/crypto";
+import { calendarFeedReadLimiter, n8nInternalLimiter } from "../middleware/rateLimits";
+import { decryptKey, encryptKey, normalizePhoneBR } from "../lib/crypto";
 import {
   N8nInputValidationError,
   parseN8nAgendaContext,
@@ -13,8 +14,151 @@ import {
   parseN8nAgendaUpdate,
 } from "../security/n8nGuardrails";
 import { advanceLeadToVisitStage } from "../services/crmPipelines";
+import {
+  buildCalendarFeedUrl,
+  calendarFeedTokenHash,
+  generateAgendaIcs,
+  generateCalendarFeedToken,
+  isValidCalendarFeedToken,
+} from "../services/calendarFeed";
 
 export const agendaRouter = express.Router();
+
+// Assinatura privada iCalendar para Google Agenda e Apple Calendar.
+agendaRouter.get('/api/agenda/calendar-sync', requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+
+    const { data, error } = await supabase
+      .from('imf_agenda_calendar_feeds')
+      .select('token_enc, include_all, created_at, rotated_at, last_accessed_at')
+      .eq('broker_id', brokerId)
+      .eq('owner_user_id', userId)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.json({ configured: false });
+
+    const token = decryptKey(data.token_enc);
+    res.json({
+      configured: true,
+      subscription_url: buildCalendarFeedUrl(PUBLIC_APP_URL, token),
+      scope: data.include_all ? 'account' : 'user',
+      created_at: data.created_at,
+      rotated_at: data.rotated_at,
+      last_accessed_at: data.last_accessed_at,
+    });
+  } catch (err) {
+    console.error('[Agenda Calendar] GET status:', err);
+    res.status(500).json({ error: 'Não foi possível consultar a sincronização.' });
+  }
+});
+
+agendaRouter.post('/api/agenda/calendar-sync', requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+
+    const token = generateCalendarFeedToken();
+    const includeAll = await isBrokerOwner(userId, brokerId);
+    const rotatedAt = new Date().toISOString();
+    const { error } = await supabase
+      .from('imf_agenda_calendar_feeds')
+      .upsert({
+        broker_id: brokerId,
+        owner_user_id: userId,
+        token_hash: calendarFeedTokenHash(token),
+        token_enc: encryptKey(token),
+        include_all: includeAll,
+        rotated_at: rotatedAt,
+        revoked_at: null,
+      }, { onConflict: 'owner_user_id' });
+    if (error) throw error;
+
+    res.json({
+      configured: true,
+      subscription_url: buildCalendarFeedUrl(PUBLIC_APP_URL, token),
+      scope: includeAll ? 'account' : 'user',
+      rotated_at: rotatedAt,
+    });
+  } catch (err) {
+    console.error('[Agenda Calendar] POST rotate:', err);
+    res.status(500).json({ error: 'Não foi possível gerar o link privado.' });
+  }
+});
+
+agendaRouter.delete('/api/agenda/calendar-sync', requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+
+    const { error } = await supabase
+      .from('imf_agenda_calendar_feeds')
+      .delete()
+      .eq('broker_id', brokerId)
+      .eq('owner_user_id', userId);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Agenda Calendar] DELETE:', err);
+    res.status(500).json({ error: 'Não foi possível desativar a sincronização.' });
+  }
+});
+
+agendaRouter.get('/api/agenda/calendar-feed/:token.ics', calendarFeedReadLimiter, async (req, res) => {
+  try {
+    const token = String(req.params.token || '');
+    if (!isValidCalendarFeedToken(token)) return res.status(404).send('Calendário indisponível.');
+    const tokenHash = calendarFeedTokenHash(token);
+
+    const { data: feed, error: feedError } = await supabase
+      .from('imf_agenda_calendar_feeds')
+      .select('broker_id, owner_user_id, include_all')
+      .eq('token_hash', tokenHash)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if (feedError || !feed) return res.status(404).send('Calendário indisponível.');
+
+    const now = Date.now();
+    let query = supabase
+      .from('imf_agenda')
+      .select('id, client_name, client_phone, client_email, scheduled_at, duration_minutes, title, notes, status, created_at, updated_at, imf_properties(title)')
+      .eq('broker_id', feed.broker_id)
+      .eq('event_type', 'visita')
+      .gte('scheduled_at', new Date(now - 366 * 24 * 60 * 60_000).toISOString())
+      .lte('scheduled_at', new Date(now + 3 * 366 * 24 * 60 * 60_000).toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(5_000);
+    if (!feed.include_all) query = query.eq('owner_user_id', feed.owner_user_id);
+
+    const { data: appointments, error: agendaError } = await query;
+    if (agendaError) throw agendaError;
+    let uidDomain = 'imobiflow.app';
+    try { uidDomain = new URL(PUBLIC_APP_URL).hostname || uidDomain; } catch { /* origem validada no deploy */ }
+    const calendar = generateAgendaIcs((appointments || []).map((item: any) => ({
+      ...item,
+      property: item.imf_properties?.title || null,
+    })), { uidDomain });
+
+    supabase
+      .from('imf_agenda_calendar_feeds')
+      .update({ last_accessed_at: new Date().toISOString() })
+      .eq('token_hash', tokenHash)
+      .then(() => {}, () => {});
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="imobiflow-agenda.ics"');
+    res.setHeader('Cache-Control', 'private, max-age=300, stale-while-revalidate=300');
+    res.send(calendar);
+  } catch (err) {
+    console.error('[Agenda Calendar] GET feed:', err);
+    res.status(500).send('Não foi possível montar o calendário.');
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // AGENDA — CRUD completo

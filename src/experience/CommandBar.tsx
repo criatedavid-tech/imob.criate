@@ -102,11 +102,16 @@ export function CommandBar({
     if (clearingHistory || busy) return;
     setClearingHistory(true);
     try {
-      await fetch('/api/agent/history', { method: 'DELETE', headers: authService.getAuthHeaders() });
-    } catch {
-      // best-effort — mesmo se falhar, limpa a tela; próxima abertura recarrega do banco
-    } finally {
+      const res = await fetch('/api/agent/history', { method: 'DELETE', headers: authService.getAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Não consegui limpar o histórico agora.');
       setTurns([]);
+    } catch (error: any) {
+      // Se existir uma ação em execução, o backend preserva o contexto para
+      // impedir duplicidade. Nesse caso a tela também não pode fingir que
+      // apagou: mantém os turnos e mostra o motivo recebido.
+      setTurns((cur) => [...cur, { role: 'ai', text: error?.message || 'Não consegui limpar o histórico agora.' }]);
+    } finally {
       setClearingHistory(false);
     }
   };
@@ -278,6 +283,13 @@ export function CommandBar({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao falar com a IA.');
+
+      // @reset apaga o historico compartilhado no backend. Remove tambem o
+      // turno otimista que foi colocado na tela antes da resposta chegar.
+      if (data.reset) {
+        setTurns([]);
+        return;
+      }
 
       pushTurn({
         role: 'ai',

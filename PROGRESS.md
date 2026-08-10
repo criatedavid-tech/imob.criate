@@ -80,6 +80,138 @@ Locação). Etapa C (opcional, ver plano): usar o `tenant_profile` que
 `GET /api/locacao/contracts` já devolve mas nunca usa, pra linkar de volta
 de um contrato em "Imóveis alugados" pro detalhe do inquilino correspondente.
 
+## Agenda — sincronização com Google e iPhone pronta localmente (2026-08-10)
+
+A Agenda agora oferece uma assinatura privada compatível com **Google Agenda**
+e **Calendário do iPhone/iCloud**. O usuário gera o endereço dentro da própria
+tela, copia para o Google ou abre a assinatura no iPhone. Criações, edições e
+cancelamentos feitos no ImobiFlow aparecem no calendário externo conforme a
+frequência de atualização definida pelo Google ou pela Apple.
+
+A integração é deliberadamente somente leitura no calendário externo. O link
+é individual, usa token aleatório de 256 bits, é guardado por hash e cópia
+criptografada, respeita o escopo do membro, possui rate limit e pode ser trocado
+ou desativado. A migration necessária é
+`20260810c_agenda_calendar_feed.sql`. Publicação pendente até a aplicação da
+migration.
+
+## Locação — diretório de inquilinos separado (2026-08-10)
+
+**Inquilinos** agora abre como uma tela própria e focada dentro do módulo de
+Locação. Ao entrar no diretório, o cabeçalho, os indicadores e as abas da gestão
+de Aluguéis deixam de competir com a consulta dos locatários. A tela apresenta
+somente o cadastro, contatos, contratos e situação financeira dos inquilinos,
+com ações próprias para criar e editar registros e um botão explícito de
+**Voltar para Aluguéis**.
+
+A mudança preserva a mesma fonte de dados e as regras já existentes, sem criar
+cadastros paralelos. É uma alteração somente de interface e não exige migration.
+
+## Locação — operação escalável para até 100 clientes pronta localmente (2026-08-10)
+
+As abas **Imóveis alugados** e **Inquilinos** agora abrem em uma fila compacta,
+ordenada por prioridade operacional: inadimplentes primeiro, depois cadastros
+sem cobrança e clientes em dia. Foram adicionados busca por nome, imóvel,
+proprietário, telefone, e-mail e CPF/CNPJ; filtros rápidos por situação;
+ordenações; alternância entre lista e cartões; contagem de resultados; estados
+vazios orientativos; e paginação de 12 registros. Assim, uma carteira de 10 a
+100 locatários permanece escaneável sem uma rolagem contínua de cartões.
+
+A lista mantém em um clique as ações de controle mensal, diário/piloto e edição;
+os cartões detalhados continuam disponíveis para cobranças e histórico. A
+implementação é somente de interface e não exige migration.
+
+## Locação — adimplência por inquilino publicada (2026-08-10)
+
+A aba **Locação → Inquilinos** agora mostra a situação financeira consolidada
+de cada locatário: **Adimplente**, **Inadimplente** ou **Sem cobrança**. Em caso
+de atraso, exibe quantidade de cobranças e saldo vencido. O cartão de cada
+contrato ativo também apresenta o indicador para consulta rápida.
+
+O backend calcula o resultado a partir das competências dos contratos ativos,
+incluindo pagamentos parciais e acordos ainda não pagos. Cobranças futuras não
+geram falso atraso e a virada do dia respeita `America/Sao_Paulo`. O KPI
+superior de inadimplência usa somente o saldo vencido do mês, não todo valor
+ainda aguardando o vencimento. Não exige migration. Validação local aprovada:
+  TypeScript, 181 testes, Knip, build de produção e `git diff --check`.
+  Publicada e validada em produção no workflow **Deploy V2 to Fly.io #143**.
+
+## Locação — controle híbrido de pagamento pronto localmente (2026-08-10)
+
+Implementado o fluxo de ponta a ponta para cobranças Asaas e externas. O Asaas
+continua usando webhook e agora também possui conciliação de recuperação a
+cada 10 minutos. Pagamento confirmado muda a competência para **Pago** e a
+remove da consulta da régua; pendente/atrasado continua elegível.
+
+O **Controle mensal** ganhou consulta imediata ao Asaas, baixa/reabertura
+manual, importação de boleto PDF, link temporário para visualização e envio
+pontual pelo WhatsApp. A cobrança externa segue a régua sem exigir chave Asaas.
+O envio manual tem confirmação e rate limit de 5 por 15 minutos. Todas as
+operações validam conta + contrato + cobrança e registram eventos no diário.
+
+Migration aplicada e verificada em produção em 10/08/2026:
+`supabase/migrations/20260810b_rental_payment_control.sql`. Ela adiciona
+auditoria do status, estado da última consulta Asaas e o bucket privado
+`imf-rental-bills` (PDF, 6 MB). A verificação confirmou 8 colunas, bucket
+privado e índice de conciliação. Publicação e aceite funcional permanecem
+pendentes.
+
+Validação local aprovada: TypeScript, 176 testes, Knip, build de produção e
+`git diff --check`.
+
+## Locação — chave individual nas mensagens da régua (2026-08-10)
+
+Os cartões da régua agora exibem uma chave acessível **Envia / Não envia** ao
+lado de **Editar**. A preferência é salva imediatamente por etapa, reflete na
+linha do tempo e recarrega a agenda de 14 dias sem fechar a tela. Durante o
+salvamento a chave mostra progresso; em erro, a interface restaura o estado
+anterior. A etapa de entrega humana continua obrigatória e aparece como tal.
+
+Não exige migration: o campo `enabled` por conta e por etapa já existia em
+`imf_rental_message_templates` e já era respeitado pelo scheduler.
+
+## Locação — piloto financeiro sandbox pronto para publicação (2026-08-10)
+
+O fluxo de aluguel foi preparado para gerar cobranças reais apenas dentro do
+Asaas sandbox. O build do frontend e o backend do deploy V2 passam a habilitar
+o módulo, enquanto `CLIENT_FINANCIAL_SANDBOX_ONLY=true` bloqueia qualquer chave
+de produção. A restrição é revalidada nas rotas de configuração, no piloto do
+contrato, nas flags da conta, na geração e na régua do scheduler.
+
+A conexão financeira mostra de forma explícita o modo de validação e oferece
+somente **Sandbox (teste)**. O cartão do contrato identifica a cobrança como
+teste. Antes de emitir, o backend cria ou atualiza de forma idempotente o
+webhook autenticado da conta Asaas própria; sem retorno confirmado, nenhum
+cliente ou boleto é criado. Não há migration nova: foram reutilizadas as flags
+por conta e por contrato, ambas desligadas por padrão.
+
+Alterações ainda locais, aguardando push/deploy e aceite no contrato **casa
+teste** / inquilino **antonio**.
+
+## Locação — validação segura dos disparos e contraste dos selects (2026-08-10)
+
+O contrato de teste **casa teste** / inquilino **antonio** apareceu corretamente
+na agenda de 14 dias, mas com `0 de 1` contrato no piloto e todos os itens como
+**Simulação**. Nesse estado nenhum WhatsApp é enviado. A auditoria também
+encontrou que a flag global `CLIENT_FINANCIAL_OPERATIONS_ENABLED` era exibida
+na interface, porém não era revalidada dentro dos dois jobs do scheduler.
+
+Os jobs de geração de cobrança e régua agora falham fechado quando a flag
+global está desligada; as rotas impedem ligar conta/contrato nesse estado, mas
+continuam permitindo desligar uma configuração antiga. A agenda também marca
+o item como bloqueado em vez de programado quando a trava global está fechada.
+
+Para validar o canal sem gerar boleto ou PIX, o **Diário do contrato** ganhou o
+botão **Testar WhatsApp**. Ele exige confirmação humana, limita cinco tentativas
+por usuário a cada 15 minutos, valida contrato/conta/telefone, envia uma mensagem
+com o prefixo `[TESTE ImobiFlow]` e registra o resultado no diário. O seletor
+nativo recebeu cores sólidas de opção nos temas claro e escuro, corrigindo o
+“Sim/Não” transparente observado no Chrome/Windows.
+
+Validação local aprovada: 170 testes, TypeScript, Knip, build e
+`git diff --check`. O aceite externo ainda exige um clique manual no botão de
+teste e confirmação do recebimento no WhatsApp do inquilino.
+
 ## Assistente IA — comando pessoal `@reset` (2026-08-10)
 
 Implementado um reset único para o histórico compartilhado entre WhatsApp Pai
@@ -101,7 +233,14 @@ integração não pode apagar retroativamente o histórico do aplicativo — mas
 conteúdo deixa de existir na memória da IA e some do painel ao recarregar.
 
 Validação local aprovada: TypeScript, 167 testes, Knip, build e
-`git diff --check`. Migration ainda precisa ser aplicada antes do deploy.
+`git diff --check`. A migration foi aplicada em produção pelo SQL Editor em
+10/08/2026 e verificada com UUIDs inexistentes: `ok=true`, quatro contagens
+iguais a zero. Publicado no commit `31c2b93` pelo GitHub Actions run `#139`;
+os jobs **Validate V2** e **Deploy imobiflow-v2** concluíram com sucesso. O Fly
+publicou a imagem `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, as seis Machines
+atingiram estado saudável e o smoke pós-deploy confirmou HTTP 200 em `/`,
+`/login` e `/app`. O comando não foi executado automaticamente na conta real:
+o aceite funcional pelo usuário permanece deliberadamente pendente.
 
 ## WhatsApp Pai — aceite de produção e isolamento concluído (2026-08-10)
 

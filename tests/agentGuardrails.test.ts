@@ -9,6 +9,7 @@ import {
   parseAgentModelResponse,
   requiresHumanConfirmation,
 } from "../server/security/agentGuardrails";
+import { formatAgendaByDay } from "../server/services/agendaFormatter";
 
 const PROPERTY_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -141,4 +142,46 @@ test("arquitetura não autoexecuta mutação no modo piloto", async () => {
   assert.ok(promptStart >= 0 && promptEnd > promptStart);
   assert.equal(source.slice(promptStart, promptEnd).includes("snap."), false);
   assert.match(route, /autonomy[^\n]+"copiloto"/);
+});
+
+test("agenda semanal separa os sete dias, ordena horários e mostra dias vazios", () => {
+  const response = formatAgendaByDay("2026-08-10", "2026-08-16", [
+    {
+      scheduled_at: "2026-08-10T17:30:00.000Z",
+      client_name: "Pedro",
+      title: "Reunião com o cliente",
+      status: "confirmado",
+    },
+    {
+      scheduled_at: "2026-08-12T13:00:00.000Z",
+      client_name: "Ana",
+      title: "Retorno para o proprietário",
+      status: "pendente",
+    },
+    {
+      scheduled_at: "2026-08-10T12:00:00.000Z",
+      client_name: "Carlos",
+      status: "pendente",
+      imf_properties: { title: "Casa no Setor Oeste" },
+    },
+  ]);
+
+  assert.ok(response);
+  assert.match(response, /^\*Segunda-feira, dia 10\*/);
+  assert.match(response, /\*Terça-feira, dia 11\*\n• Nenhum compromisso agendado/);
+  assert.match(response, /\*Quarta-feira, dia 12\*\n• 10:00 — Retorno para o proprietário \(pendente\)/);
+  assert.match(response, /\*Domingo, dia 16\*\n• Nenhum compromisso agendado$/);
+  assert.ok(response.indexOf("09:00 — Visita com Carlos") < response.indexOf("14:30 — Reunião com o cliente"));
+  assert.equal((response.match(/Nenhum compromisso agendado/g) || []).length, 5);
+});
+
+test("agenda diária vazia mantém o dia consultado explícito", () => {
+  assert.equal(
+    formatAgendaByDay("2026-08-11", "2026-08-11", []),
+    "*Terça-feira, dia 11*\n• Nenhum compromisso agendado",
+  );
+});
+
+test("intervalos maiores que uma semana continuam disponíveis para resposta compacta", () => {
+  assert.equal(formatAgendaByDay("2026-08-01", "2026-08-31", []), null);
 });
