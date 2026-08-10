@@ -4,7 +4,7 @@ import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { hasPermission } from "../services/permissions";
 import { requireClientFinancialOperations } from "../middleware/clientFinancialOperations";
 import { normalizePhoneBR, normalizePhoneBRFull, encryptKey, decryptKey } from "../lib/crypto";
-import { TERMS_VERSION, UAZAPI_HOST, N8N_AGENT_MODEL } from "../config";
+import { CLIENT_FINANCIAL_SANDBOX_ONLY, TERMS_VERSION, UAZAPI_HOST, N8N_AGENT_MODEL } from "../config";
 import { fetchWithTimeout } from "../lib/http";
 import { ensureBrokerInstance, ensureMemberInstance, disconnectUazapiInstance, setUazapiWebhook } from "../services/provisioning";
 import { asaasBaseUrlForEnv } from "../services/asaasCredentials";
@@ -448,12 +448,15 @@ brokersRouter.get("/api/brokers/asaas-key", requireUser, async (req, res) => {
       }
     }
 
+    const blockedBySandboxMode = configured && CLIENT_FINANCIAL_SANDBOX_ONLY && data?.asaas_env !== "sandbox";
     res.json({
-      configured,
+      configured: configured && !blockedBySandboxMode,
       needs_reconnect: !!data?.asaas_api_key_enc && !configured,
       env: data?.asaas_env || null,
       key_last4: keyLast4,
       can_manage: await hasPermission(userId, brokerId, "integracoes", "gerenciar"),
+      sandbox_only: CLIENT_FINANCIAL_SANDBOX_ONLY,
+      blocked_by_sandbox_mode: blockedBySandboxMode,
     });
   } catch (err: any) {
     console.error("Erro GET /api/brokers/asaas-key:", err);
@@ -480,6 +483,12 @@ brokersRouter.post(
     if (!apiKey) return res.status(400).json({ error: "Informe a chave de API do Asaas." });
     if (!["sandbox", "production"].includes(env)) {
       return res.status(400).json({ error: "Ambiente inválido (use sandbox ou produção)." });
+    }
+    if (CLIENT_FINANCIAL_SANDBOX_ONLY && env !== "sandbox") {
+      return res.status(409).json({
+        error: "Durante a validação, somente uma chave Asaas sandbox pode ser conectada.",
+        code: "CLIENT_ASAAS_SANDBOX_REQUIRED",
+      });
     }
 
     await validateAsaasKey(apiKey, env);

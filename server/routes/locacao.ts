@@ -28,7 +28,7 @@ import { normalizePhoneBR } from "../lib/crypto";
 import { rentalTestDispatchLimiter } from "../middleware/rateLimits";
 import { resolveOutboundInstanceToken, sendUazapiText } from "../services/uazapi";
 import { requireAccountCapability } from "../services/accountCapabilities";
-import { ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
+import { assertClientAsaasEnvironmentAllowed, ClientAsaasAccountRequiredError } from "../services/asaasCredentials";
 import {
   buildRentalCompetency,
   effectiveRentalPaymentStatus,
@@ -864,6 +864,7 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
         code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
       });
     }
+    if (enabled) await assertClientAsaasEnvironmentAllowed(brokerId);
 
     const { data, error } = await supabase
       .from("imf_rental_contracts")
@@ -886,6 +887,9 @@ locacaoRouter.patch("/api/locacao/contracts/:id/autopilot", requireUser, async (
     });
     res.json(data);
   } catch (err: any) {
+    if (err instanceof ClientAsaasAccountRequiredError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -968,6 +972,13 @@ locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) =>
         code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
       });
     }
+    if (
+      req.body?.enabled === true
+      || req.body?.charge_generation_enabled === true
+      || req.body?.dunning_enabled === true
+    ) {
+      await assertClientAsaasEnvironmentAllowed(brokerId);
+    }
 
     const allowed = [
       "enabled", "charge_generation_enabled", "dunning_enabled", "can_send_second_copy",
@@ -985,6 +996,9 @@ locacaoRouter.patch("/api/locacao/ai-settings", requireUser, async (req, res) =>
     if (error) throw error;
     res.json(data);
   } catch (err: any) {
+    if (err instanceof ClientAsaasAccountRequiredError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
     res.status(500).json({ error: err.message });
   }
 });

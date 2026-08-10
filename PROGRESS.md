@@ -1,5 +1,23 @@
 # Estado do projeto
 
+## Locação — piloto financeiro sandbox pronto para publicação (2026-08-10)
+
+O fluxo de aluguel foi preparado para gerar cobranças reais apenas dentro do
+Asaas sandbox. O build do frontend e o backend do deploy V2 passam a habilitar
+o módulo, enquanto `CLIENT_FINANCIAL_SANDBOX_ONLY=true` bloqueia qualquer chave
+de produção. A restrição é revalidada nas rotas de configuração, no piloto do
+contrato, nas flags da conta, na geração e na régua do scheduler.
+
+A conexão financeira mostra de forma explícita o modo de validação e oferece
+somente **Sandbox (teste)**. O cartão do contrato identifica a cobrança como
+teste. Antes de emitir, o backend cria ou atualiza de forma idempotente o
+webhook autenticado da conta Asaas própria; sem retorno confirmado, nenhum
+cliente ou boleto é criado. Não há migration nova: foram reutilizadas as flags
+por conta e por contrato, ambas desligadas por padrão.
+
+Alterações ainda locais, aguardando push/deploy e aceite no contrato **casa
+teste** / inquilino **antonio**.
+
 ## Locação — validação segura dos disparos e contraste dos selects (2026-08-10)
 
 O contrato de teste **casa teste** / inquilino **antonio** apareceu corretamente

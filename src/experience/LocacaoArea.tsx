@@ -1036,6 +1036,7 @@ export function LocacaoArea() {
   const [billingAccountConfigured, setBillingAccountConfigured] = useState<boolean | null>(
     CLIENT_FINANCIAL_OPERATIONS_ENABLED ? null : false,
   );
+  const [billingAccountSandbox, setBillingAccountSandbox] = useState(false);
 
   const loadDashboard = () => {
     fetch('/api/locacao/dashboard', { headers: authService.getAuthHeaders() })
@@ -1082,7 +1083,10 @@ export function LocacaoArea() {
     if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED) return;
     fetch('/api/brokers/asaas-key', { headers: authService.getAuthHeaders() })
       .then((r) => (r.ok ? r.json() : { configured: false }))
-      .then((data) => setBillingAccountConfigured(data?.configured === true))
+      .then((data) => {
+        setBillingAccountConfigured(data?.configured === true);
+        setBillingAccountSandbox(data?.configured === true && data?.env === 'sandbox');
+      })
       .catch(() => setBillingAccountConfigured(false));
   }, []);
 
@@ -1310,6 +1314,9 @@ export function LocacaoArea() {
                 {c.status === 'ativo' && (
                   <>
                     {CLIENT_FINANCIAL_OPERATIONS_ENABLED && billingAccountConfigured ? <div className="mt-3 pt-3 border-t border-[var(--hairline)]">
+                      {billingAccountSandbox && (
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-200 mb-2">Sandbox · cobrança de teste</p>
+                      )}
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[11px] text-[var(--text-low)]">Cobrança do mês</span>
                         {c.current_month_payment_status ? (

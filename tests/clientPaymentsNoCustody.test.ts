@@ -90,3 +90,43 @@ test("opções nativas de select têm contraste explícito nos dois temas", asyn
   assert.match(css, /select option\s*\{[^}]*color:\s*#EAF0FF;[^}]*background-color:\s*#0E1626;/s);
   assert.match(css, /data-theme="light"\] select option\s*\{[^}]*color:\s*#141C2E;[^}]*background-color:\s*#FFFFFF;/s);
 });
+
+test("piloto financeiro do deploy V2 fica habilitado somente em sandbox", async () => {
+  const [config, fly, docker, credentials, brokers, autopilot] = await Promise.all([
+    read("../server/config.ts"),
+    read("../fly.toml"),
+    read("../Dockerfile"),
+    read("../server/services/asaasCredentials.ts"),
+    read("../server/routes/brokers.ts"),
+    read("../server/services/rentalAutopilot.ts"),
+  ]);
+
+  assert.match(config, /CLIENT_FINANCIAL_SANDBOX_ONLY\s*=\s*\n?\s*process\.env\.CLIENT_FINANCIAL_SANDBOX_ONLY !== "false"/);
+  assert.match(fly, /VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED = "true"/);
+  assert.match(fly, /CLIENT_FINANCIAL_OPERATIONS_ENABLED = "true"/);
+  assert.match(fly, /CLIENT_FINANCIAL_SANDBOX_ONLY = "true"/);
+  assert.match(docker, /ARG VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false/);
+  assert.match(credentials, /data\.asaas_env !== "sandbox"/);
+  assert.match(credentials, /CLIENT_ASAAS_SANDBOX_REQUIRED/);
+  assert.match(credentials, /https:\/\/api-sandbox\.asaas\.com\/v3/);
+  assert.match(credentials, /"User-Agent": "ImobiFlow\/2\.0/);
+  assert.match(brokers, /CLIENT_FINANCIAL_SANDBOX_ONLY && env !== "sandbox"/);
+  assert.match(autopilot, /assertClientAsaasEnvironmentAllowed\(contract\.broker_id\)/);
+});
+
+test("cobrança própria garante webhook autenticado antes da emissão", async () => {
+  const [credentials, rental, reservation] = await Promise.all([
+    read("../server/services/asaasCredentials.ts"),
+    read("../server/services/rentalBilling.ts"),
+    read("../server/services/unitReservationBilling.ts"),
+  ]);
+
+  assert.match(credentials, /ensureClientAsaasPaymentWebhook/);
+  assert.match(credentials, /ASAAS_WEBHOOK_TOKEN\.length < 32/);
+  assert.match(credentials, /\/webhooks\?offset=0&limit=100/);
+  assert.match(credentials, /PAYMENT_RECEIVED/);
+  assert.match(credentials, /authToken: ASAAS_WEBHOOK_TOKEN/);
+  assert.match(rental, /await ensureClientAsaasPaymentWebhook\(creds\)/);
+  assert.match(rental, /timeZone: "America\/Sao_Paulo"/);
+  assert.match(reservation, /await ensureClientAsaasPaymentWebhook\(creds\)/);
+});

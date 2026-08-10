@@ -71,9 +71,10 @@ convidados e convidados com WhatsApp próprio. A migration
 código correspondente foi publicado em 04/08/2026 no commit `d0a5ac2`.
 
 O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
-pagamentos de clientes permanece desligada por
-`CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e pela flag Vite equivalente.
-Mesmo numa futura ativação explícita, essas cobranças exigem a integração
+pagamentos de clientes fica desligada por padrão em ambientes genéricos. Na
+V2, o piloto é habilitado somente com `CLIENT_FINANCIAL_SANDBOX_ONLY=true`, que
+recusa chaves de produção.
+Mesmo na ativação explícita, essas cobranças exigem a integração
 própria da conta cliente: não existe fallback para a conta Asaas global da
 Criate, custódia de valores ou repasse financeiro pelo ImobiFlow.
 

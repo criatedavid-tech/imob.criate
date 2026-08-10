@@ -2,6 +2,7 @@ import { supabase } from "../supabase";
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 import { sendUazapiText, resolveOutboundInstanceToken } from "./uazapi";
 import { generateRentCharge } from "./rentalBilling";
+import { assertClientAsaasEnvironmentAllowed } from "./asaasCredentials";
 import {
   getRentalLadder,
   renderRentalMessage,
@@ -179,6 +180,7 @@ export async function runRentalChargeGenerationTick(): Promise<void> {
           settingsCache.set(contract.broker_id, settings);
         }
         if (!settings.charge_generation_enabled) continue;
+        await assertClientAsaasEnvironmentAllowed(contract.broker_id);
 
         // Gera quando faltam CHARGE_LEAD_DAYS para o vencimento do mês corrente.
         const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), contract.due_day);
@@ -280,6 +282,7 @@ export async function runRentalDunningTick(): Promise<void> {
 
     const contractCache = new Map<string, any>();
     const settingsCache = new Map<string, RentalAiSettings>();
+    const allowedEnvironmentCache = new Map<string, boolean>();
     const ladderCache = new Map<string, LadderStep[]>();
     const propertyCache = new Map<string, string>();
 
@@ -304,6 +307,17 @@ export async function runRentalDunningTick(): Promise<void> {
           settingsCache.set(contract.broker_id, settings);
         }
         if (!settings.dunning_enabled) continue;
+        let environmentAllowed = allowedEnvironmentCache.get(contract.broker_id);
+        if (environmentAllowed === undefined) {
+          try {
+            await assertClientAsaasEnvironmentAllowed(contract.broker_id);
+            environmentAllowed = true;
+          } catch {
+            environmentAllowed = false;
+          }
+          allowedEnvironmentCache.set(contract.broker_id, environmentAllowed);
+        }
+        if (!environmentAllowed) continue;
         // Cobrança fora de hora é o caminho mais rápido para o número ser
         // denunciado e bloqueado no WhatsApp.
         if (isQuietHour(settings)) continue;

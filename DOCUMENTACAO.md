@@ -8,6 +8,25 @@
 > houver divergência, prevalecem o estado de produção abaixo e as seções
 > arquiteturais atuais.
 
+### Piloto financeiro sandbox (preparado em 2026-08-10)
+
+O deploy V2 habilita o módulo financeiro de clientes em modo de homologação,
+com `CLIENT_FINANCIAL_OPERATIONS_ENABLED=true` no runtime e a flag Vite
+equivalente no build. A trava adicional
+`CLIENT_FINANCIAL_SANDBOX_ONLY=true` aceita somente a chave Asaas sandbox da
+própria conta cliente. Produção é recusada nas rotas, no resolvedor de
+credenciais e no scheduler. Geração, régua e contrato continuam desligados por
+padrão e exigem ativação explícita em três níveis.
+
+Antes de emitir aluguel ou sinal de reserva, o backend lista os webhooks da
+conta Asaas própria e cria/atualiza a URL
+`PUBLIC_APP_URL/api/webhooks/asaas`, usando `ASAAS_WEBHOOK_TOKEN` e apenas os
+eventos financeiros necessários. Se o token tiver menos de 32 caracteres ou o
+Asaas não confirmar a configuração, a emissão é bloqueada antes da criação da
+cobrança. Essa etapa permite homologar também a conciliação do pagamento.
+O endpoint sandbox segue a URL oficial atual
+`https://api-sandbox.asaas.com/v3` e envia `User-Agent` próprio da integração.
+
 ## 1. Produto, escopo e ambientes
 
 O ImobiFlow é uma plataforma imobiliária multi-tenant com três experiências no
@@ -2052,8 +2071,9 @@ e uma standby parada. Ver `SCALABILITY_TEST_PLAN.md` antes de alterar escala.
 
 - Asaas: `ASAAS_API_KEY`, `ASAAS_ENV`, `ASAAS_WEBHOOK_TOKEN`,
   `SUBSCRIPTION_VALUE`, `PLAN_INCLUDED_TICKETS`, `PLAN_OVERAGE_PRICE`;
-- limite de produto: `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e
-  `VITE_CLIENT_FINANCIAL_OPERATIONS_ENABLED=false`;
+- limite de produto: padrão genérico com
+  `CLIENT_FINANCIAL_OPERATIONS_ENABLED=false` e flag Vite `false`; o deploy V2
+  de homologação usa ambas `true` com `CLIENT_FINANCIAL_SANDBOX_ONLY=true`;
 - UAZAPI: `UAZAPI_HOST`, `UAZAPI_TOKEN`, `UAZAPI_PLATFORM_SESSION`;
 - N8N/IA: `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_TOKEN`, `N8N_AGENT_MODEL`,
   `OPENROUTER_N8N_MODELS`, `INTERNAL_PROXY_TOKEN`,

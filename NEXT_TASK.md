@@ -1,5 +1,23 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Locação — publicar e homologar a cobrança sandbox
+
+1. Publicar a branch `v2` e confirmar o workflow/deploy saudável.
+2. Em **Configurações → Conta de cobrança**, confirmar a chave própria como
+   **Sandbox**; se ela foi salva antes desta versão, salvá-la novamente apenas
+   se a tela solicitar reconexão.
+3. No contrato **casa teste** / **antonio**, clicar **Gerar cobrança do mês** e
+   validar boleto, PIX, valor de R$ 5.000,00, vencimento e registro no controle
+   mensal. O backend garante o webhook antes de emitir.
+4. Na aba **Cobrança automática**, ligar geração e mensagens da conta. Depois,
+   em **Diário e piloto**, ligar somente o contrato de teste. Confirmar que a
+   agenda troca de **Simulação** para **Programado**.
+5. Confirmar o WhatsApp recebido e simular o pagamento no Asaas sandbox para
+   validar o webhook e a mudança do status para pago.
+
+Não alterar `CLIENT_FINANCIAL_SANDBOX_ONLY=true` durante esta homologação.
+Nenhuma migration adicional é necessária.
+
 ## Locação — confirmar o teste real do WhatsApp
 
 No contrato **casa teste** / **antonio**, abrir **Diário e piloto** e clicar
@@ -7,11 +25,9 @@ No contrato **casa teste** / **antonio**, abrir **Diário e piloto** e clicar
 iniciada por `[TESTE ImobiFlow]` e que o diário registra **Teste de WhatsApp
 enviado**. Esse teste não gera cobrança, boleto ou PIX e não liga o piloto.
 
-A automação financeira real permanece bloqueada enquanto
-`CLIENT_FINANCIAL_OPERATIONS_ENABLED=false`. Para liberá-la no futuro, será
-necessária decisão explícita, conta Asaas própria da imobiliária e validação das
-quatro chaves mostradas na aba **Cobrança automática**; não alterar a flag apenas
-para executar o teste de canal.
+A automação financeira passa a ser liberada somente no sandbox após o novo
+deploy. A produção continua bloqueada pela trava dedicada; o teste simples de
+canal permanece disponível e não cria boleto ou PIX.
 
 ## `@reset` do Assistente IA — publicado; aceite funcional pendente
 

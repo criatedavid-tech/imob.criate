@@ -1,5 +1,5 @@
 import { supabase } from "../supabase";
-import { resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
+import { ensureClientAsaasPaymentWebhook, resolveAsaasCredentials, type AsaasCreds } from "./asaasCredentials";
 import { fetchWithTimeout } from "../lib/http";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -7,13 +7,9 @@ import { fetchWithTimeout } from "../lib/http";
 // ImobiFlow (ver server/services/billing.ts: asaasHeaders, POST /customers,
 // POST /payments). Aqui o cliente Asaas é o INQUILINO, não o corretor.
 //
-// ⚠️ NÃO testado ao vivo: o .env local aponta ASAAS_ENV=production (Asaas de
-// verdade, dinheiro real) — não existe sandbox configurado neste ambiente.
-// Gerar uma cobrança de teste aqui criaria um cliente e um boleto reais.
-// Este código segue fielmente o mesmo formato de chamada já comprovado em
-// produção pela assinatura (mesmos headers, mesmo /customers, mesmo
-// /payments) — mas o primeiro disparo real deve ser feito com cautela,
-// olhando o resultado, não em lote.
+// Durante a validação, CLIENT_FINANCIAL_SANDBOX_ONLY impede que uma credencial
+// de produção chegue a este serviço. A liberação oficial exige uma mudança
+// explícita de ambiente; a conta global da assinatura nunca é usada aqui.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface RentalContract {
@@ -25,6 +21,17 @@ interface RentalContract {
   asaas_customer_id: string | null;
   rent_amount_cents: number;
   due_day: number;
+}
+
+function todayIsoInBrasilia(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value || "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
 async function ensureAsaasTenantCustomer(contract: RentalContract, creds: AsaasCreds): Promise<string> {
@@ -63,6 +70,9 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   // A cobrança só pode ser criada na conta própria da imobiliária. A conta
   // global da Criate é exclusiva da assinatura SaaS e nunca recebe aluguel.
   const creds = await resolveAsaasCredentials(contract.broker_id);
+  // Falha antes de criar cliente/cobrança caso a confirmação assíncrona não
+  // possa voltar para o ImobiFlow. Assim o teste cobre emissão e conciliação.
+  await ensureClientAsaasPaymentWebhook(creds);
 
   const refMonthStart = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), 1);
   const refMonthIso = refMonthStart.toISOString().split("T")[0];
@@ -96,7 +106,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   // atrasado vence HOJE em vez de manter a data original no passado.
   const rawDueDate = new Date(refMonthStart.getFullYear(), refMonthStart.getMonth(), contract.due_day);
   const rawDueDateIso = rawDueDate.toISOString().split("T")[0];
-  const todayIso = new Date().toISOString().split("T")[0];
+  const todayIso = todayIsoInBrasilia();
   const dueDateIso = rawDueDateIso < todayIso ? todayIso : rawDueDateIso;
   const amount = contract.rent_amount_cents / 100;
 

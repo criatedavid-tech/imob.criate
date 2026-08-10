@@ -1,5 +1,21 @@
 # Decisões vigentes
 
+## Locação: piloto financeiro restrito ao Asaas sandbox (2026-08-10)
+
+- O deploy V2 libera a interface e o backend financeiro apenas para homologação.
+  `CLIENT_FINANCIAL_SANDBOX_ONLY=true` é fail-closed e recusa credenciais de
+  produção ao salvar, gerar cobranças, ligar a conta, ligar contratos e rodar
+  os jobs do scheduler.
+- As três travas operacionais continuam obrigatórias: geração ligada na conta,
+  régua ligada na conta e piloto ligado individualmente no contrato. Os padrões
+  do banco permanecem desligados.
+- Antes de criar cliente ou cobrança, o backend garante na conta Asaas própria
+  um webhook autenticado para a URL canônica do ImobiFlow. Sem token seguro ou
+  sem confirmação do Asaas, a emissão falha antes de criar a cobrança.
+- A liberação oficial de produção exigirá decisão separada, QA concluído e
+  alteração explícita de `CLIENT_FINANCIAL_SANDBOX_ONLY=false`. A conta Asaas
+  global da assinatura continua proibida para aluguéis e reservas.
+
 ## Locação: teste de canal não liga operação financeira (2026-08-10)
 
 - `CLIENT_FINANCIAL_OPERATIONS_ENABLED` é uma trava de backend e scheduler,

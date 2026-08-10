@@ -33,7 +33,7 @@ export const PUBLIC_APP_URL = (
 export const ASAAS_API_KEY       = process.env.ASAAS_API_KEY       || "";
 export const ASAAS_BASE_URL      = process.env.ASAAS_ENV === 'production'
   ? 'https://api.asaas.com/v3'
-  : 'https://sandbox.asaas.com/api/v3';
+  : 'https://api-sandbox.asaas.com/v3';
 // Versão vigente dos Termos de Uso / Política de Privacidade (data de vigência).
 // Ao alterar os documentos de forma relevante, mude esta constante — usuários
 // logados com versão aceita divergente verão o modal de re-aceite (TermsGate).
@@ -45,7 +45,8 @@ export const N8N_WEBHOOK_URL     = process.env.N8N_WEBHOOK_URL
 export const SUBSCRIPTION_VALUE      = Number(process.env.SUBSCRIPTION_VALUE      || "49.90");
 // Token configurado no painel Asaas (Configurações → Integrações → Webhooks → Token de Acesso).
 // O Asaas envia este valor no header 'asaas-access-token' em cada evento.
-// Sem ele configurado, a verificação é pulada (compatibilidade com sandbox sem token).
+// Sem ele (ou com menos de 32 caracteres), o endpoint e novas cobranças de
+// clientes falham fechado; o mesmo token autentica sandbox e produção.
 export const ASAAS_WEBHOOK_TOKEN     = process.env.ASAAS_WEBHOOK_TOKEN             || "";
 // Plano: 100 atendimentos inclusos; excedente R$ 3,00/ticket cobrado automaticamente no ciclo seguinte.
 // Para alterar sem redeploy: fly secrets set PLAN_INCLUDED_TICKETS=100 PLAN_OVERAGE_PRICE=3.00
@@ -61,6 +62,11 @@ export const MEMBER_WHATSAPP_SLOT_MAX   = Number(process.env.MEMBER_WHATSAPP_SLO
 // desligadas por padrão. A assinatura do próprio ImobiFlow não usa esta flag.
 export const CLIENT_FINANCIAL_OPERATIONS_ENABLED =
   process.env.CLIENT_FINANCIAL_OPERATIONS_ENABLED === "true";
+// Enquanto o produto financeiro estiver em validação, somente credenciais
+// próprias do ambiente Asaas sandbox podem gerar cobranças. Fail-closed: para
+// liberar produção no futuro será necessário definir explicitamente `false`.
+export const CLIENT_FINANCIAL_SANDBOX_ONLY =
+  process.env.CLIENT_FINANCIAL_SANDBOX_ONLY !== "false";
 // ─── PROXY LLM ────────────────────────────────────────────────────────────────
 // Token interno: N8N → servidor (substitui "credential" estática no N8N).
 // Enc key: AES-256-GCM para guardar as keys OpenRouter dos corretores no banco.
