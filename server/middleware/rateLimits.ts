@@ -180,3 +180,16 @@ export const rentalTestDispatchLimiter = rateLimit({
   store: makeRedisStore('rental-test-dispatch', 15 * 60 * 1000),
   skip: skipInDev,
 });
+
+// Envio manual de uma cobranca real. A trava e separada do teste de canal
+// porque esta rota inclui boleto/PIX e nao pode virar ferramenta de disparo.
+export const rentalBillingDispatchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Limite de envios de cobranca atingido. Aguarde 15 minutos.' },
+  store: makeRedisStore('rental-billing-dispatch', 15 * 60 * 1000),
+  skip: skipInDev,
+});

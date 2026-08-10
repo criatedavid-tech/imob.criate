@@ -1,5 +1,28 @@
 # Estado do projeto
 
+## Locação — controle híbrido de pagamento pronto localmente (2026-08-10)
+
+Implementado o fluxo de ponta a ponta para cobranças Asaas e externas. O Asaas
+continua usando webhook e agora também possui conciliação de recuperação a
+cada 10 minutos. Pagamento confirmado muda a competência para **Pago** e a
+remove da consulta da régua; pendente/atrasado continua elegível.
+
+O **Controle mensal** ganhou consulta imediata ao Asaas, baixa/reabertura
+manual, importação de boleto PDF, link temporário para visualização e envio
+pontual pelo WhatsApp. A cobrança externa segue a régua sem exigir chave Asaas.
+O envio manual tem confirmação e rate limit de 5 por 15 minutos. Todas as
+operações validam conta + contrato + cobrança e registram eventos no diário.
+
+Migration aplicada e verificada em produção em 10/08/2026:
+`supabase/migrations/20260810b_rental_payment_control.sql`. Ela adiciona
+auditoria do status, estado da última consulta Asaas e o bucket privado
+`imf-rental-bills` (PDF, 6 MB). A verificação confirmou 8 colunas, bucket
+privado e índice de conciliação. Publicação e aceite funcional permanecem
+pendentes.
+
+Validação local aprovada: TypeScript, 176 testes, Knip, build de produção e
+`git diff --check`.
+
 ## Locação — chave individual nas mensagens da régua (2026-08-10)
 
 Os cartões da régua agora exibem uma chave acessível **Envia / Não envia** ao

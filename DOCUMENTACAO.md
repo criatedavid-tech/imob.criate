@@ -27,6 +27,35 @@ cobrança. Essa etapa permite homologar também a conciliação do pagamento.
 O endpoint sandbox segue a URL oficial atual
 `https://api-sandbox.asaas.com/v3` e envia `User-Agent` próprio da integração.
 
+### Controle híbrido de pagamento de aluguel
+
+A competência mensal possui dois modos compatíveis:
+
+- **Asaas:** o webhook continua sendo a confirmação principal e o scheduler
+  consulta cobranças pendentes/atrasadas a cada 10 minutos para recuperar
+  eventos perdidos. `RECEIVED`, `CONFIRMED` e `RECEIVED_IN_CASH` dão baixa,
+  registram a origem Asaas e interrompem a régua porque a competência deixa de
+  estar pendente/atrasada.
+- **Externo/manual:** o usuário cria a competência, importa um boleto PDF no
+  bucket privado `imf-rental-bills`, envia a cobrança pelo WhatsApp e acompanha
+  o recebimento. O boleto é entregue por URL assinada temporária; o arquivo não
+  é público. Esse modo não exige chave Asaas.
+
+No **Controle mensal**, `Marcar pago` dá baixa manual auditável e interrompe os
+próximos follow-ups. `Marcar não pago` reabre como pendente/atrasado e torna a
+competência novamente elegível, desde que as chaves globais da régua e o piloto
+do contrato estejam ligados. Uma confirmação posterior do Asaas sempre vence
+o override manual e limpa a marca manual. Uma baixa externa que possui recibos
+não pode ser reaberta diretamente, porque isso exigiria estornar o histórico.
+
+O envio manual exige confirmação na interface, contrato ativo, telefone
+válido, boleto ou PIX e tem limite de cinco envios por usuário a cada 15
+minutos. A migration aditiva obrigatória é
+`supabase/migrations/20260810b_rental_payment_control.sql`; ela adiciona os
+campos de auditoria/conciliação, o índice parcial e o bucket privado.
+Foi aplicada e verificada em produção em 10/08/2026: 8 colunas encontradas,
+bucket privado presente e índice de conciliação ativo.
+
 ## 1. Produto, escopo e ambientes
 
 O ImobiFlow é uma plataforma imobiliária multi-tenant com três experiências no

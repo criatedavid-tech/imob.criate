@@ -27,6 +27,7 @@ test("processo scheduler registra todos os jobs recorrentes esperados", async ()
     "runInboundMediaBackfillTick",
     "runRentalChargeGenerationTick",
     "runRentalDunningTick",
+    "runRentalPaymentReconciliationTick",
     "runKeyOverdueAlertTick",
     "expirePaiPendingActions",
     "expireStagedWhatsappMedia",

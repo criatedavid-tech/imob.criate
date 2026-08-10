@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail } from 'lucide-react';
+import { Loader2, Plus, X, User, Phone, Home as HomeIcon, Calendar, Building2, Pencil, Trash2, ReceiptText, Users, History, Mail, Upload, Send, CheckCircle2, Undo2, RefreshCw, ExternalLink } from 'lucide-react';
 import { authService } from '../services/auth';
 import { GlassCard } from './ui';
 import { RentalDashboard, AvailableTab, ContractDiaryModal, type RentalDashboardData } from './LocacaoPanels';
@@ -101,6 +101,13 @@ interface RentalPayment {
   remaining_cents: number;
   line_items: Array<{ code: string; label: string; amount_cents: number }>;
   receipts: PaymentReceipt[];
+  boleto_url?: string | null;
+  boleto_file_name?: string | null;
+  pix_copy_paste?: string | null;
+  manual_status?: 'paid' | 'unpaid' | null;
+  status_source?: 'system' | 'asaas' | 'manual';
+  asaas_last_status?: string | null;
+  asaas_checked_at?: string | null;
 }
 
 interface ChargeInfo {
@@ -119,6 +126,17 @@ const PAYMENT_LABEL: Record<string, { label: string; cls: string }> = {
   canceled: { label: 'Cancelado', cls: 'bg-[var(--control-fill)] text-[var(--text-low)] border-[var(--hairline)]' },
   failed: { label: 'Falhou', cls: 'bg-red-500/15 text-red-300 border-red-400/20' },
 };
+
+const MAX_BOLETO_BYTES = 6 * 1024 * 1024;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Arquivo invalido.'));
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 interface PropertyOption {
   id: string;
@@ -783,6 +801,7 @@ function PaymentLedgerModal({
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10));
   const [receiptNotes, setReceiptNotes] = useState('');
   const [savingReceipt, setSavingReceipt] = useState(false);
+  const [paymentAction, setPaymentAction] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const loadPayments = async () => {
@@ -865,6 +884,91 @@ function PaymentLedgerModal({
     }
   }
 
+  async function setManualStatus(payment: RentalPayment, paid: boolean) {
+    const question = paid
+      ? 'Marcar esta cobranca como PAGA? Os proximos follow-ups serao interrompidos.'
+      : 'Marcar esta cobranca como NAO PAGA? Os follow-ups futuros poderao continuar.';
+    if (!window.confirm(question)) return;
+    setPaymentAction(`status:${payment.id}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/locacao/contracts/${contract.id}/payments/${payment.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ paid }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || 'Falha ao atualizar a cobranca.');
+      await loadPayments();
+      onChanged();
+    } catch (statusError: any) {
+      setError(statusError?.message || 'Falha ao atualizar a cobranca.');
+    } finally {
+      setPaymentAction(null);
+    }
+  }
+
+  async function importBoleto(payment: RentalPayment, file?: File) {
+    if (!file) return;
+    const looksLikePdf = file.type === 'application/pdf' || (!file.type && file.name.toLowerCase().endsWith('.pdf'));
+    if (!looksLikePdf) { setError('Envie o boleto em PDF.'); return; }
+    if (!file.size || file.size > MAX_BOLETO_BYTES) { setError('O boleto deve ter no maximo 6 MB.'); return; }
+    setPaymentAction(`boleto:${payment.id}`);
+    setError('');
+    try {
+      const fileData = await readFileAsDataUrl(file);
+      const response = await fetch(`/api/locacao/contracts/${contract.id}/payments/${payment.id}/boleto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authService.getAuthHeaders() },
+        body: JSON.stringify({ file_data: fileData, file_name: file.name }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || 'Falha ao importar o boleto.');
+      await loadPayments();
+      onChanged();
+    } catch (uploadError: any) {
+      setError(uploadError?.message || 'Falha ao importar o boleto.');
+    } finally {
+      setPaymentAction(null);
+    }
+  }
+
+  async function sendPayment(payment: RentalPayment) {
+    if (!window.confirm('Enviar esta cobranca agora pelo WhatsApp do inquilino?')) return;
+    setPaymentAction(`send:${payment.id}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/locacao/contracts/${contract.id}/payments/${payment.id}/send`, {
+        method: 'POST', headers: authService.getAuthHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || 'Falha ao enviar a cobranca.');
+      window.alert('Cobranca confirmada pelo provedor de WhatsApp.');
+    } catch (sendError: any) {
+      setError(sendError?.message || 'Falha ao enviar a cobranca.');
+    } finally {
+      setPaymentAction(null);
+    }
+  }
+
+  async function syncAsaas(payment: RentalPayment) {
+    setPaymentAction(`sync:${payment.id}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/locacao/contracts/${contract.id}/payments/${payment.id}/sync`, {
+        method: 'POST', headers: authService.getAuthHeaders(),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || 'Falha ao consultar o Asaas.');
+      await loadPayments();
+      onChanged();
+    } catch (syncError: any) {
+      setError(syncError?.message || 'Falha ao consultar o Asaas.');
+    } finally {
+      setPaymentAction(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
@@ -884,7 +988,7 @@ function PaymentLedgerModal({
         <div className="overflow-y-auto p-4 sm:p-6 space-y-4">
           <div className="rounded-2xl px-4 py-3 bg-sky-500/10 border border-sky-400/20">
             <p className="text-xs text-[var(--text-mid)]">
-              O pagamento acontece fora do ImobiFlow. Esta tela apenas registra a competência e o recebimento informado pela imobiliária.
+              A cobrança pode ser conciliada automaticamente pelo Asaas ou controlada manualmente. Marcar como pago interrompe os próximos follow-ups; marcar como não pago mantém a cobrança elegível para a régua ativa.
             </p>
           </div>
 
@@ -909,6 +1013,7 @@ function PaymentLedgerModal({
               {payments.map((payment) => {
                 const status = PAYMENT_LABEL[payment.status] || PAYMENT_LABEL.pending;
                 const monthLabel = new Date(`${payment.reference_month}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                const busy = paymentAction?.endsWith(payment.id) === true;
                 return (
                   <div key={payment.id} className="rounded-2xl p-4 bg-[var(--control-fill)] border border-[var(--hairline)]">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -952,6 +1057,68 @@ function PaymentLedgerModal({
                         ))}
                       </div>
                     )}
+
+                    <div className="mt-3 pt-3 border-t border-[var(--hairline)] space-y-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-low)]">
+                        <span>{payment.source === 'asaas' ? 'Cobrança Asaas' : 'Controle externo'}</span>
+                        {payment.manual_status && (
+                          <span className="text-amber-200">
+                            Controle manual: {payment.manual_status === 'paid' ? 'pago' : 'não pago'}
+                          </span>
+                        )}
+                        {payment.source === 'asaas' && payment.asaas_checked_at && (
+                          <span>Consultado em {new Date(payment.asaas_checked_at).toLocaleString('pt-BR')}</span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {payment.boleto_url && (
+                          <a href={payment.boleto_url} target="_blank" rel="noreferrer"
+                            className="py-2 rounded-xl text-xs font-bold text-center text-sky-200 bg-sky-500/10 border border-sky-400/20 hover:bg-sky-500/15 inline-flex items-center justify-center gap-2">
+                            <ExternalLink size={14} /> Ver boleto
+                          </a>
+                        )}
+
+                        {payment.source === 'external' && !['paid', 'canceled', 'failed'].includes(payment.status) && (
+                          <label className={`py-2 rounded-xl text-xs font-bold text-center text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-white/5 inline-flex items-center justify-center gap-2 ${busy ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                            {paymentAction === `boleto:${payment.id}` ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            {payment.boleto_file_name ? 'Trocar boleto' : 'Importar boleto PDF'}
+                            <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={busy}
+                              onChange={(event) => { void importBoleto(payment, event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                          </label>
+                        )}
+
+                        {!['paid', 'canceled', 'failed'].includes(payment.status) && (payment.boleto_url || payment.pix_copy_paste) && (
+                          <button onClick={() => void sendPayment(payment)} disabled={busy}
+                            className="py-2 rounded-xl text-xs font-bold text-[var(--text-hi)] bg-blue-600/70 border border-blue-400/25 hover:bg-blue-600/80 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                            {paymentAction === `send:${payment.id}` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            Enviar cobrança
+                          </button>
+                        )}
+
+                        {payment.source === 'asaas' && (
+                          <button onClick={() => void syncAsaas(payment)} disabled={busy}
+                            className="py-2 rounded-xl text-xs font-bold text-[var(--text-hi)] bg-violet-500/10 border border-violet-400/20 hover:bg-violet-500/15 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                            {paymentAction === `sync:${payment.id}` ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            Consultar Asaas
+                          </button>
+                        )}
+
+                        {payment.status === 'paid' ? (
+                          <button onClick={() => void setManualStatus(payment, false)} disabled={busy}
+                            className="py-2 rounded-xl text-xs font-bold text-amber-200 bg-amber-500/10 border border-amber-400/20 hover:bg-amber-500/15 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                            {paymentAction === `status:${payment.id}` ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
+                            Marcar não pago
+                          </button>
+                        ) : !['canceled', 'failed'].includes(payment.status) && (
+                          <button onClick={() => void setManualStatus(payment, true)} disabled={busy}
+                            className="py-2 rounded-xl text-xs font-bold text-emerald-200 bg-emerald-500/10 border border-emerald-400/20 hover:bg-emerald-500/15 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                            {paymentAction === `status:${payment.id}` ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                            Marcar pago
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
                     {payment.source === 'external' && payment.remaining_cents > 0 && !['canceled', 'failed'].includes(payment.status) && (
                       <button onClick={() => openReceipt(payment)}

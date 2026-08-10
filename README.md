@@ -80,7 +80,10 @@ Criate, custódia de valores ou repasse financeiro pelo ImobiFlow.
 
 O módulo de Locação mantém contrato, garantia, encargos e reajuste e permite
 registrar competências e pagamentos realizados externamente. Esse lançamento
-é declaratório: não cria cobrança, não consulta banco e não transfere dinheiro.
+manual pode receber boleto PDF privado, ser enviado por WhatsApp e ter baixa
+**Pago/Não pago**. Quando a conta usa Asaas, webhook e conciliação periódica
+confirmam o pagamento automaticamente. Em nenhum modo o ImobiFlow recebe ou
+repassa o dinheiro: ele gera/importa a cobrança e acompanha o status.
 Depois que existe histórico financeiro, o contrato só pode ser encerrado, não
 apagado.
 

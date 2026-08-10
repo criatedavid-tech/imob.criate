@@ -180,7 +180,7 @@ export async function handleRentalPaymentWebhook(event: any): Promise<boolean> {
 
   const { data: row } = await supabase
     .from("imf_rental_payments")
-    .select("id, amount_cents")
+    .select("id, amount_cents, manual_status")
     .eq("asaas_payment_id", p.id)
     .maybeSingle();
   if (!row) return false; // não é uma cobrança de aluguel — deixa o handler de assinatura tratar
@@ -189,13 +189,129 @@ export async function handleRentalPaymentWebhook(event: any): Promise<boolean> {
     await supabase.from("imf_rental_payments").update({
       status: "paid",
       amount_paid_cents: row.amount_cents,
-      paid_at: new Date().toISOString(),
+      paid_at: p.confirmedDate || p.paymentDate || new Date().toISOString(),
+      manual_status: null,
+      manual_status_at: null,
+      manual_status_by_user_id: null,
+      status_source: "asaas",
+      asaas_last_status: p.status || event.event,
+      asaas_checked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq("id", row.id);
   } else if (event.event === "PAYMENT_OVERDUE") {
-    await supabase.from("imf_rental_payments").update({ status: "overdue", updated_at: new Date().toISOString() }).eq("id", row.id);
+    await supabase.from("imf_rental_payments").update({
+      ...(row.manual_status === "paid" ? {} : { status: "overdue" }),
+      status_source: row.manual_status === "paid" ? "manual" : "asaas",
+      asaas_last_status: p.status || event.event,
+      asaas_checked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id);
   } else if (event.event === "PAYMENT_DELETED") {
-    await supabase.from("imf_rental_payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", row.id);
+    await supabase.from("imf_rental_payments").update({
+      ...(row.manual_status === "paid" ? {} : { status: "failed" }),
+      status_source: row.manual_status === "paid" ? "manual" : "asaas",
+      asaas_last_status: p.status || event.event,
+      asaas_checked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id);
   }
   return true;
+}
+
+export type ReconciledRentalStatus = "pending" | "paid" | "overdue" | "canceled" | "failed" | null;
+
+export function rentalStatusFromAsaas(status: string | null | undefined): ReconciledRentalStatus {
+  switch (String(status || "").toUpperCase()) {
+    case "RECEIVED":
+    case "CONFIRMED":
+    case "RECEIVED_IN_CASH":
+      return "paid";
+    case "OVERDUE":
+      return "overdue";
+    case "PENDING":
+    case "AWAITING_RISK_ANALYSIS":
+      return "pending";
+    case "REFUNDED":
+    case "REFUND_REQUESTED":
+    case "CHARGEBACK_REQUESTED":
+    case "CHARGEBACK_DISPUTE":
+      return "canceled";
+    case "DELETED":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+async function brokerIdForRentalContract(contractId: string): Promise<string | null> {
+  const { data } = await supabase.from("imf_rental_contracts")
+    .select("broker_id").eq("id", contractId).maybeSingle();
+  return data?.broker_id || null;
+}
+
+export async function syncRentalPaymentWithAsaas(paymentId: string): Promise<any> {
+  const { data: row, error } = await supabase.from("imf_rental_payments")
+    .select("id, contract_id, source, asaas_payment_id, status, amount_cents, manual_status")
+    .eq("id", paymentId).maybeSingle();
+  if (error) throw error;
+  if (!row) throw new Error("Cobranca nao encontrada.");
+  if (row.source !== "asaas" || !row.asaas_payment_id) throw new Error("Esta cobranca nao pertence ao Asaas.");
+
+  const brokerId = await brokerIdForRentalContract(row.contract_id);
+  if (!brokerId) throw new Error("Conta da cobranca nao encontrada.");
+  const creds = await resolveAsaasCredentials(brokerId);
+  const response = await fetchWithTimeout(`${creds.baseUrl}/payments/${row.asaas_payment_id}`, {
+    headers: creds.headers,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.errors?.[0]?.description || "Nao foi possivel consultar a cobranca no Asaas.");
+
+  const reconciled = rentalStatusFromAsaas(payload.status);
+  const checkedAt = new Date().toISOString();
+  const updates: Record<string, any> = {
+    asaas_last_status: String(payload.status || "UNKNOWN"),
+    asaas_checked_at: checkedAt,
+    updated_at: checkedAt,
+  };
+  if (reconciled === "paid") {
+    Object.assign(updates, {
+      status: "paid",
+      amount_paid_cents: row.amount_cents,
+      paid_at: payload.confirmedDate || payload.paymentDate || checkedAt,
+      manual_status: null,
+      manual_status_at: null,
+      manual_status_by_user_id: null,
+      status_source: "asaas",
+    });
+  } else if (reconciled && row.manual_status !== "paid") {
+    Object.assign(updates, {
+      status: reconciled,
+      amount_paid_cents: 0,
+      paid_at: null,
+      status_source: row.manual_status === "unpaid" ? "manual" : "asaas",
+    });
+  }
+
+  const { data: updated, error: updateError } = await supabase.from("imf_rental_payments")
+    .update(updates).eq("id", row.id).select().single();
+  if (updateError) throw updateError;
+  return updated;
+}
+
+export async function runRentalPaymentReconciliationTick(): Promise<void> {
+  const { data, error } = await supabase.from("imf_rental_payments")
+    .select("id")
+    .eq("source", "asaas")
+    .not("asaas_payment_id", "is", null)
+    .in("status", ["pending", "overdue"])
+    .order("asaas_checked_at", { ascending: true, nullsFirst: true })
+    .limit(100);
+  if (error) throw error;
+  for (const row of data || []) {
+    try {
+      await syncRentalPaymentWithAsaas(row.id);
+    } catch (error: any) {
+      console.error(`[Locacao] falha ao reconciliar cobranca ${row.id}:`, error?.message || "erro desconhecido");
+    }
+  }
 }

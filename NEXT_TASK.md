@@ -1,5 +1,24 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Locação — aplicar migration e homologar o controle híbrido
+
+1. ~~Aplicar manualmente no Supabase, antes do deploy,
+   `supabase/migrations/20260810b_rental_payment_control.sql`.~~ Concluído e
+   verificado em 10/08/2026.
+2. Publicar a branch `v2` somente depois de TypeScript, testes, Knip, build e
+   `git diff --check` aprovarem.
+3. No contrato sandbox, abrir **Controle mensal**, clicar **Consultar Asaas** e
+   simular o pagamento no Asaas. Em até 10 minutos (ou imediatamente pela
+   consulta manual), confirmar **Pago** e nenhum novo item da régua.
+4. Criar uma competência externa isolada, importar um PDF pequeno, visualizar
+   o link assinado e fazer somente um envio para o número autorizado.
+5. Marcar essa competência como **Pago** e confirmar que saiu da régua; depois
+   marcar **Não pago** e confirmar que voltou a ficar elegível. Se houver
+   recibos externos gravados, a reabertura direta deve ser recusada.
+
+Não usar chave Asaas de produção nem números de terceiros durante a
+homologação. O boleto importado fica em Storage privado e o link expira.
+
 ## Locação — aceitar as chaves individuais da régua
 
 Na aba **Cobrança automática**, desligar uma mensagem opcional e confirmar:
@@ -24,7 +43,8 @@ de entrega humana deve aparecer como **Obrigatório**.
    validar o webhook e a mudança do status para pago.
 
 Não alterar `CLIENT_FINANCIAL_SANDBOX_ONLY=true` durante esta homologação.
-Nenhuma migration adicional é necessária.
+A migration `20260810b_rental_payment_control.sql` passa a ser obrigatória
+antes da publicação deste pacote.
 
 ## Locação — confirmar o teste real do WhatsApp
 

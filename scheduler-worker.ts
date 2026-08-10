@@ -21,6 +21,7 @@ import {
   runRentalDunningTick,
   runKeyOverdueAlertTick,
 } from "./server/services/rentalAutopilot";
+import { runRentalPaymentReconciliationTick } from "./server/services/rentalBilling";
 
 const jobs: RecurringJob[] = [
   {
@@ -85,6 +86,14 @@ const jobs: RecurringJob[] = [
     intervalMs: 30 * 60 * 1_000,
     runOnStart: false,
     task: runRentalDunningTick,
+  },
+  {
+    // O webhook e o caminho principal. Esta consulta recupera eventos
+    // perdidos e encerra a regua assim que o Asaas confirma o pagamento.
+    name: "cobranca de aluguel (conciliacao Asaas)",
+    intervalMs: 10 * 60 * 1_000,
+    runOnStart: true,
+    task: runRentalPaymentReconciliationTick,
   },
   {
     // Chave que passou do prazo de devolução: avisa o corretor.
