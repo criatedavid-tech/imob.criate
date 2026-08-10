@@ -12,6 +12,11 @@ import {
   resolveAccountCapabilities,
   type AccountType,
 } from "../services/accountCapabilities";
+import {
+  isAgentResetCommand,
+  resetAgentConversation,
+  resetReply,
+} from "../services/agentConversationReset";
 
 export const agentRouter = express.Router();
 
@@ -101,9 +106,9 @@ agentRouter.delete("/api/agent/history", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
 
-    const { error } = await supabase.from("imf_agent_log").delete().eq("broker_id", brokerId).eq("user_id", userId);
-    if (error) throw error;
-    res.json({ ok: true });
+    const result = await resetAgentConversation(userId, brokerId);
+    if (!result.ok) return res.status(409).json({ error: resetReply(result), ...result });
+    res.json(result);
   } catch (err: any) {
     console.error("Erro DELETE /api/agent/history:", err);
     res.status(500).json({ error: err.message });
@@ -120,6 +125,14 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
 
     const { message, persona, autonomy, history, imageUrls } = req.body || {};
     if (!message || !String(message).trim()) return res.status(400).json({ error: "Mensagem vazia." });
+
+    // Comando local e deterministico: nunca envia @reset ao modelo. O mesmo
+    // reset atomico e usado pelo WhatsApp Pai e pelo botao "Nova conversa".
+    if (isAgentResetCommand(message)) {
+      const reset = await resetAgentConversation(userId, brokerId);
+      if (!reset.ok) return res.status(409).json({ error: resetReply(reset), ...reset });
+      return res.json({ reply: resetReply(reset), reset: true });
+    }
 
     // Histórico curto (últimos turnos da própria tela) — sem isso a IA esquece
     // o que já foi dito 1 mensagem atrás (ex.: nome do cliente dado antes da

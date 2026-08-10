@@ -1,5 +1,51 @@
 # Estado do projeto
 
+## Assistente IA — comando pessoal `@reset` (2026-08-10)
+
+Implementado um reset único para o histórico compartilhado entre WhatsApp Pai
+e Assistente IA do painel. Quando a mensagem inteira é exatamente `@reset`
+(sem texto adicional), o backend não chama o modelo: apaga `imf_agent_log`,
+cancela a proposta ainda não executada e remove fotos/documentos temporários do
+mesmo `user_id` + `broker_id`. Leads, imóveis, agenda, ações já executadas,
+conversas comerciais e a inbox técnica do webhook não são alterados.
+
+A limpeza usa a RPC transacional `imf_reset_agent_conversation`, criada pela
+migration `20260810a_agent_conversation_reset.sql` e exclusiva da
+`service_role`. Se uma mutação estiver em `executing` ou `executed` aguardando
+entrega da resposta, o reset retorna 409 e preserva a trava de idempotência; o
+usuário deve aguardar e tentar novamente. O botão **Nova conversa** do painel
+passou a usar a mesma limpeza. Digitar `@reset` no painel também limpa a tela.
+
+No WhatsApp, as bolhas antigas continuam visíveis fisicamente no aparelho — a
+integração não pode apagar retroativamente o histórico do aplicativo — mas o
+conteúdo deixa de existir na memória da IA e some do painel ao recarregar.
+
+Validação local aprovada: TypeScript, 167 testes, Knip, build e
+`git diff --check`. A migration foi aplicada em produção pelo SQL Editor em
+10/08/2026 e verificada com UUIDs inexistentes: `ok=true`, quatro contagens
+iguais a zero. Código pronto para publicação pelo workflow da branch `v2`.
+
+## WhatsApp Pai — aceite de produção e isolamento concluído (2026-08-10)
+
+As Fases 1–7 estão publicadas no commit `4c525f2` (Fly release 234). A
+migration `20260807h_whatsapp_pai_internal_conversation.sql` foi aplicada pelo
+usuário e os registros comerciais antigos do número Pai foram removidos.
+Hunter e demais canais comerciais agora bloqueiam `556299982218`; sua conversa
+permanece somente no Assistente IA.
+
+Auditoria read-only de produção: instância central com webhook ativo e
+provisionamento concluído; 22 entradas da inbox do Pai em `completed`, zero
+`dead`, zero ação pendente, staging de fotos/documentos vazio, 6 mídias
+permanentes no log do agente e 2 vínculos de equipe verificados. Isso também
+confirma que a limpeza por TTL executou corretamente depois dos testes.
+
+O aceite visual não foi concluído nesta auditoria porque a nova sessão do
+navegador abriu em `/login`. Assim que houver login, confirmar as 6 fotos no
+Assistente IA e a ausência do Pai em Conversas. O único smoke funcional ainda
+pendente é um PDF pequeno pela Fase 7. O branch `v2` estava limpo e sincronizado
+com `origin/v2` no início desta retomada; conferir novamente antes de qualquer
+novo commit porque outro desenvolvedor também trabalha no projeto.
+
 ## WhatsApp Pai — pareamento oficial e hardening do webhook (2026-08-07)
 
 A migration `20260807e_whatsapp_pai_staged_documents.sql` foi aplicada

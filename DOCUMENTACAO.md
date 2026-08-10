@@ -751,6 +751,40 @@ O guardião periódico passou a incluir também a linha `key='pai'` de
 membros, permitindo o Pai aparecer conectado com inbound silenciosamente
 desviado.
 
+### Assistente IA — reset unificado de painel e WhatsApp Pai (2026-08-10)
+
+O histórico operacional do Assistente IA é pessoal por `broker_id` +
+`user_id` e compartilhado entre a CommandBar do painel e o WhatsApp Pai. Para
+começar um teste ou atendimento sem contexto anterior, a mensagem inteira
+`@reset` é interceptada deterministicamente antes de qualquer chamada ao
+modelo. `@RESET` e espaços externos são aceitos; frases que apenas contenham o
+token não são tratadas como reset.
+
+A migration `20260810a_agent_conversation_reset.sql` cria a RPC transacional
+`imf_reset_agent_conversation`, exclusiva da `service_role`. Ela apaga:
+
+- `imf_agent_log` do usuário/conta;
+- proposta do WhatsApp Pai ainda não executada;
+- fotos staged ainda não vinculadas a imóvel;
+- contexto textual de documentos staged.
+
+Leads, imóveis, agenda, contatos, conversas comerciais, ações já executadas e
+`imf_pai_inbox` não são tocados. A inbox permanece porque é a fonte de
+idempotência e auditoria técnica. Se uma ação estiver em `executing` ou
+`executed` aguardando entrega, a RPC retorna `action_in_progress`; remover essa
+linha poderia permitir repetição após falha do provedor.
+
+`DELETE /api/agent/history`, o botão **Nova conversa** e o comando digitado no
+painel usam a mesma RPC. No WhatsApp, a confirmação do reset não é gravada de
+volta no `imf_agent_log`, mantendo a tela vazia ao recarregar. O produto não
+consegue apagar retroativamente as bolhas locais do aplicativo WhatsApp; elas
+continuam visíveis no aparelho, porém deixam de ser memória da IA.
+
+Migration aplicada no Supabase de produção em 10/08/2026 e verificada por
+chamada neutra com UUIDs inexistentes, que retornou `ok=true` e quatro contagens
+iguais a zero. Validação local: TypeScript, Knip, build, `git diff --check` e
+167 testes aprovados.
+
 ### Follow-Up Inteligente: de 3 passos fixos para até 8 (2026-08-06)
 
 A régua de reativação automática de lead (`/app` → Assistente IA,
@@ -2057,7 +2091,11 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260803_account_capability_overrides.sql` | aplicada e verificada pelo usuário em 03/08/2026 | combinações de Locação/Lançamentos/Financeiro/Equipe por conta |
 | `20260803b_rental_contract_management.sql` | aplicada manualmente pelo usuário em 03/08/2026 | termos completos de locação, competências mensais e recebimentos externos transacionais |
 | `20260803c_rental_tenants.sql` | aplicada manualmente pelo usuário em 03/08/2026 | cadastro reutilizável de inquilinos, backfill de contratos e defesa de vínculo entre contas |
-| `20260807e_whatsapp_pai_staged_documents.sql` | versionada; aplicação pendente | contexto temporário e isolado de documentos recebidos pelo WhatsApp Pai |
+| `20260807e_whatsapp_pai_staged_documents.sql` | aplicada e verificada | contexto temporário e isolado de documentos recebidos pelo WhatsApp Pai |
+| `20260807f_whatsapp_pai_release_hardening.sql` | aplicada e verificada | recuperação idempotente de confirmação, mídia e ativação explícita do webhook |
+| `20260807g_whatsapp_phone_verification_conflict_fix.sql` | aplicada e verificada | remove ambiguidade da RPC de verificação do telefone Pai |
+| `20260807h_whatsapp_pai_internal_conversation.sql` | aplicada e verificada | mantém o número Pai apenas no Assistente IA e recupera mídia no histórico |
+| `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

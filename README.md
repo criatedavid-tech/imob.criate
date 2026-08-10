@@ -5,9 +5,9 @@ O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
 agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
 para a operação diária.
 
-> Baseline funcional auditado em 27/07/2026: branch `v2`, commit `4ee40d6`,
-> release Fly `v185`, em `https://imobiflow-v2.fly.dev`. Releases posteriores
-> que alterem somente documentação preservam esse mesmo código. A V1 (`main`
+> Baseline funcional auditado em 10/08/2026: branch `v2`, commit `4c525f2`,
+> release Fly `v234`, em `https://imobiflow-v2.fly.dev`. O pacote `@reset`
+> descrito abaixo tem migration aplicada e usa o mesmo pipeline. A V1 (`main`
 > e app `imobiflow`) está congelada e não recebe alterações.
 
 ## Arquitetura em produção
@@ -87,12 +87,15 @@ cadastral já preservada nos contratos; a interface mostra o histórico por
 inquilino e por imóvel. Vínculos de outra conta são rejeitados no backend e no
 banco.
 
-## Dois agentes diferentes
+## Dois agentes, três canais
 
 1. A **Assistente IA interna** atende o corretor dentro do app. Consulta o
    snapshot autorizado da conta, navega e responde; qualquer mutação exige
    confirmação humana, inclusive no modo piloto.
-2. O **agente de atendimento do WhatsApp** roda no N8N e conversa com clientes
+2. O **WhatsApp Pai** é outra entrada da mesma Assistente IA interna. Resolve o
+   usuário pelo telefone verificado, compartilha histórico/permissões com o
+   painel e nunca deve aparecer em Conversas ou chegar ao Hunter.
+3. O **agente de atendimento do WhatsApp** roda no N8N e conversa com clientes
    finais. O backend expõe catálogo/configuração sob autenticação interna e
    envia `event_id` estável para deduplicação.
 
@@ -107,13 +110,18 @@ imagens e documentos suportados ficam acessíveis na conversa por URL de
 Storage, e um job de backfill tenta recuperar mídia histórica incompleta.
 Outro job reafirma periodicamente os webhooks UAZAPI.
 
+O comando exato `@reset`, disponível no WhatsApp Pai e no painel, limpa o
+histórico pessoal compartilhado, propostas não executadas e anexos temporários.
+Ele não apaga dados de negócio nem as bolhas já existentes no aplicativo
+WhatsApp. O botão **Nova conversa** usa a mesma operação transacional.
+
 ## Estrutura principal
 
 ```text
 imob.criate/
 ├── server.ts                       # bootstrap HTTP/Express e SPA
 ├── webhook-worker.ts               # worker de inbox/outbox
-├── scheduler-worker.ts             # 11 jobs periódicos singleton
+├── scheduler-worker.ts             # 17 jobs periódicos singleton
 ├── server/
 │   ├── config.ts                   # configuração centralizada
 │   ├── lib/                        # Redis, Sentry e infraestrutura comum

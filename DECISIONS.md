@@ -1,5 +1,21 @@
 # Decisões vigentes
 
+## `@reset`: apaga contexto pessoal, não dados de negócio (2026-08-10)
+
+- O comando só é reconhecido quando a mensagem inteira é exatamente `@reset`,
+  sem texto adicional. Ele é determinístico e nunca chega ao modelo de IA.
+- O histórico é único por `user_id` + `broker_id` e compartilhado pelo
+  WhatsApp Pai e Assistente IA do painel. O botão **Nova conversa** usa a mesma
+  operação para os dois canais não divergirem.
+- A limpeza transacional remove `imf_agent_log`, proposta ainda não executada e
+  staging de foto/documento. Não remove leads, imóveis, agenda, ações já
+  executadas, conversas comerciais ou a inbox técnica do webhook.
+- Uma ação em `executing`/`executed` aguardando entrega bloqueia o reset. Apagar
+  sua trava de recuperação poderia permitir duplicidade numa tentativa futura.
+- Mensagens antigas continuam visíveis fisicamente no aplicativo WhatsApp. O
+  produto apaga sua própria memória e interface, não o histórico local do
+  aparelho do usuário.
+
 ## WhatsApp Pai: conexão só fica pronta com webhook público reafirmado (2026-08-07)
 
 - Pareamento e webhook são estados diferentes: uma instância pode aparecer

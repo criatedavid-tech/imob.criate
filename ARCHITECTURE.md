@@ -1,8 +1,8 @@
 # Arquitetura — ImobiFlow V2
 
-> Fotografia técnica do baseline funcional auditado em 27/07/2026: branch
-> `v2`, commit `4ee40d6`, release Fly `v185`. Releases exclusivamente
-> documentais posteriores não mudam esta topologia/código.
+> Fotografia técnica do baseline funcional auditado em 10/08/2026: branch
+> `v2`, commit `4c525f2`, release Fly `v234`. O pacote `@reset` descrito abaixo
+> tem migration aplicada e segue pelo mesmo pipeline de publicação.
 
 ## Visão geral
 
@@ -107,6 +107,11 @@ entitlements sem alterar novamente o modelo de navegação.
   documentos textuais são reduzidos a contexto factual temporário em
   `imf_whatsapp_staged_documents`; o arquivo bruto não é persistido, o texto
   expira em 60 minutos e é consumido pelo próximo comando do mesmo usuário.
+- O Assistente IA do painel e o WhatsApp Pai compartilham `imf_agent_log` por
+  `broker_id` + `user_id`. A RPC `imf_reset_agent_conversation` limpa esse
+  histórico, ação proposta e staging temporário numa transação. O comando
+  exato `@reset` é interceptado antes de histórico/modelo; a inbox técnica não
+  é apagada porque permanece como fonte de idempotência.
 
 Redis não substitui essas filas. Ele é usado para rate limit compartilhado
 entre as três `web`. A integração força IPv6 para o host Upstash/Fly quando
@@ -128,6 +133,10 @@ O agente interno recebe um snapshot autorizado do tenant. Textos variáveis
 ficam em `UNTRUSTED_ACCOUNT_CONTEXT`; a saída passa por Zod estrito. Consultas
 e navegação podem ser imediatas, mas qualquer criação, edição, cancelamento ou
 envio exige confirmação humana, inclusive no modo piloto.
+
+`@reset` não é uma ação do modelo: é um comando local exato. Se existir mutação
+em execução ou resultado aguardando entrega, a limpeza retorna conflito e
+preserva a trava contra duplicidade.
 
 O N8N busca configuração pelo backend e pode trocar o modelo por secret sem
 editar o workflow. Na produção auditada não existe secret

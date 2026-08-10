@@ -17,6 +17,11 @@ import {
   extractPaiDocument,
   isPaiDocumentMessage,
 } from "./whatsappPaiDocuments";
+import {
+  isAgentResetCommand,
+  resetAgentConversation,
+  resetReply,
+} from "./agentConversationReset";
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHATSAPP PAI — fila de inbound (Fase 4)
@@ -601,6 +606,16 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
       await markPaiCompleted(row.id);
       return;
     }
+  }
+
+  // @reset e tratado antes da leitura de pendencia/historico e nunca chega ao
+  // modelo. A resposta nao e gravada no imf_agent_log para que o Assistente IA
+  // da aplicacao fique realmente vazio ao recarregar.
+  if (isAgentResetCommand(text)) {
+    const reset = await resetAgentConversation(userId, brokerId);
+    await sendPaiReply(platformToken, row.sender_phone, resetReply(reset));
+    await markPaiCompleted(row.id);
+    return;
   }
 
   const userLogText = receivedDocumentName ? `[Documento: ${receivedDocumentName}] ${text}` : text;
