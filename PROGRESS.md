@@ -1,5 +1,20 @@
 # Estado do projeto
 
+## Agenda — sincronização com Google e iPhone pronta localmente (2026-08-10)
+
+A Agenda agora oferece uma assinatura privada compatível com **Google Agenda**
+e **Calendário do iPhone/iCloud**. O usuário gera o endereço dentro da própria
+tela, copia para o Google ou abre a assinatura no iPhone. Criações, edições e
+cancelamentos feitos no ImobiFlow aparecem no calendário externo conforme a
+frequência de atualização definida pelo Google ou pela Apple.
+
+A integração é deliberadamente somente leitura no calendário externo. O link
+é individual, usa token aleatório de 256 bits, é guardado por hash e cópia
+criptografada, respeita o escopo do membro, possui rate limit e pode ser trocado
+ou desativado. A migration necessária é
+`20260810c_agenda_calendar_feed.sql`. Publicação pendente até a aplicação da
+migration.
+
 ## Locação — diretório de inquilinos separado (2026-08-10)
 
 **Inquilinos** agora abre como uma tela própria e focada dentro do módulo de

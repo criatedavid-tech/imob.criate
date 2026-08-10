@@ -1738,6 +1738,18 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   endpoints novos `GET`/`DELETE /api/agent/scheduled-followups`, ver seção
   10). `create_reminder`/`schedule_followup` passaram a devolver
   `navigate:'lembretes'` (antes: `'agenda'`/nenhum).
+- **Sincronização externa da Agenda (2026-08-10):** a Agenda oferece uma
+  assinatura privada no padrão iCalendar (`.ics`), compatível com **Google
+  Agenda** e **Calendário do iPhone/iCloud**. O endereço é individual por
+  usuário: proprietários da conta recebem a agenda consolidada; membros
+  recebem somente registros com seu `owner_user_id`. O calendário externo é
+  somente leitura — alterações continuam sendo feitas no ImobiFlow e são
+  refletidas na próxima atualização do provedor. O token possui 256 bits, é
+  localizado por SHA-256 e só possui cópia recuperável criptografada por
+  AES-256-GCM; pode ser rotacionado ou revogado na interface. A rota pública
+  valida formato e hash, aplica rate limit, retorna somente visitas e limita a
+  janela a um ano anterior e três anos futuros. Migration:
+  `20260810c_agenda_calendar_feed.sql`.
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo
@@ -2170,6 +2182,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260807g_whatsapp_phone_verification_conflict_fix.sql` | aplicada e verificada | remove ambiguidade da RPC de verificação do telefone Pai |
 | `20260807h_whatsapp_pai_internal_conversation.sql` | aplicada e verificada | mantém o número Pai apenas no Assistente IA e recupera mídia no histórico |
 | `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
+| `20260810c_agenda_calendar_feed.sql` | pronta para aplicação | link privado e revogável de assinatura da Agenda no Google/iPhone |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

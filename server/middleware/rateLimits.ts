@@ -1,4 +1,5 @@
 import rateLimit from "express-rate-limit";
+import { createHash } from "node:crypto";
 import { makeRedisStore } from "../lib/infra";
 
 // Em dev (NODE_ENV != production) todo o tráfego sai do mesmo IP (localhost),
@@ -165,6 +166,20 @@ export const whatsappLinkLimiter = rateLimit({
   keyGenerator: authenticatedUserKey,
   message: { error: 'Muitas tentativas de vínculo. Aguarde 15 minutos e tente novamente.' },
   store: makeRedisStore('whatsapp-link', 15 * 60 * 1000),
+  skip: skipInDev,
+});
+
+// Google/Apple costumam buscar calendários assinados a partir de poucos IPs
+// compartilhados. Limitar por IP faria uma conta prejudicar outra; por isso a
+// chave é o hash do token da própria assinatura (o segredo nunca vai ao Redis).
+export const calendarFeedReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `feed:${createHash('sha256').update(String(req.params?.token || 'invalid')).digest('hex')}`,
+  message: 'Muitas atualizações deste calendário. Tente novamente em instantes.',
+  store: makeRedisStore('calendar-feed', 60 * 1000),
   skip: skipInDev,
 });
 
