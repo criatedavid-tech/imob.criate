@@ -34,6 +34,7 @@ import {
   effectiveRentalPaymentStatus,
   summarizeRentalFinancialHealth,
   summarizeTenantFinancialHealth,
+  rentalDelinquencyPercent,
   todayIsoInBrasilia,
   type RentalFinancialHealth,
   type RentalPaymentStatus,
@@ -1027,9 +1028,13 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
           .limit(2000)
       : { data: [] as any[] };
 
-    const hojeIso = hoje.toISOString().slice(0, 10);
-    const abertos = (payments || []).filter((p: any) => ["pending", "overdue"].includes(p.status));
-    const atrasados = abertos.filter((p: any) => p.due_date < hojeIso);
+    const hojeIso = todayIsoInBrasilia(hoje);
+    const abertos = (payments || []).filter((p: any) => ["pending", "partial", "overdue", "negotiated"].includes(p.status));
+    const atrasados = abertos.filter((p: any) => {
+      const status = effectiveRentalPaymentStatus(p.status as RentalPaymentStatus, p.due_date, hojeIso);
+      return status === "overdue" || status === "negotiated";
+    });
+    const remainingCents = (payment: any) => Math.max(0, (payment.amount_cents || 0) - (payment.amount_paid_cents || 0));
 
     const receitaPrevista = ativos.reduce((s: number, c: any) => s + (c.rent_amount_cents || 0), 0);
     const taxaAdmin = ativos.reduce(
@@ -1044,15 +1049,18 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
       serie.push({
         mes: d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""),
         previsto: doMes.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
-        recebido: doMes.filter((p: any) => p.status === "paid")
-          .reduce((s: number, p: any) => s + (p.amount_paid_cents || p.amount_cents || 0), 0),
+        recebido: doMes.reduce((s: number, p: any) => (
+          s + (p.amount_paid_cents || (p.status === "paid" ? p.amount_cents || 0 : 0))
+        ), 0),
       });
     }
 
     const totalMes = serie[serie.length - 1];
-    const inadimplencia = totalMes && totalMes.previsto > 0
-      ? Math.round(((totalMes.previsto - totalMes.recebido) / totalMes.previsto) * 100)
-      : 0;
+    const currentMonthKey = hojeIso.slice(0, 7);
+    const currentMonthOverdueCents = atrasados
+      .filter((payment: any) => String(payment.reference_month || "").slice(0, 7) === currentMonthKey)
+      .reduce((sum: number, payment: any) => sum + remainingCents(payment), 0);
+    const inadimplencia = rentalDelinquencyPercent(currentMonthOverdueCents, totalMes?.previsto || 0);
 
     res.json({
       contratos_ativos: ativos.length,
@@ -1061,9 +1069,9 @@ locacaoRouter.get("/api/locacao/dashboard", requireUser, async (req, res) => {
       receita_mensal_cents: receitaPrevista,
       taxa_admin_mensal_cents: taxaAdmin,
       em_aberto_qtd: abertos.length,
-      em_aberto_cents: abertos.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      em_aberto_cents: abertos.reduce((s: number, p: any) => s + remainingCents(p), 0),
       atrasados_qtd: atrasados.length,
-      atrasados_cents: atrasados.reduce((s: number, p: any) => s + (p.amount_cents || 0), 0),
+      atrasados_cents: atrasados.reduce((s: number, p: any) => s + remainingCents(p), 0),
       com_promessa_qtd: abertos.filter((p: any) => p.promise_date).length,
       escalados_qtd: abertos.filter((p: any) => p.escalated_at).length,
       inadimplencia_percent: inadimplencia,

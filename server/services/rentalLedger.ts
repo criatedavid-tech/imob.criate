@@ -198,3 +198,8 @@ export function summarizeTenantFinancialHealth(
   }
   return { financial_status: "adimplente", overdue_amount_cents: 0, overdue_count: 0 };
 }
+
+export function rentalDelinquencyPercent(overdueCents: number, expectedCents: number): number {
+  if (!Number.isFinite(overdueCents) || !Number.isFinite(expectedCents) || expectedCents <= 0) return 0;
+  return Math.max(0, Math.round((overdueCents / expectedCents) * 100));
+}

@@ -9,9 +9,11 @@ contrato ativo também apresenta o indicador para consulta rápida.
 
 O backend calcula o resultado a partir das competências dos contratos ativos,
 incluindo pagamentos parciais e acordos ainda não pagos. Cobranças futuras não
-geram falso atraso e a virada do dia respeita `America/Sao_Paulo`. Não exige
-migration. Validação local aprovada: TypeScript, 180 testes, Knip, build de
-produção e `git diff --check`. Publicação pendente.
+geram falso atraso e a virada do dia respeita `America/Sao_Paulo`. O KPI
+superior de inadimplência usa somente o saldo vencido do mês, não todo valor
+ainda aguardando o vencimento. Não exige migration. Validação local aprovada:
+TypeScript, 181 testes, Knip, build de produção e `git diff --check`.
+Publicação pendente.
 
 ## Locação — controle híbrido de pagamento pronto localmente (2026-08-10)
 

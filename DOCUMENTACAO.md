@@ -1001,7 +1001,9 @@ defesa adicional; o filtro explícito em cada rota continua obrigatório.
   contratos ativos em **Adimplente**, **Inadimplente** ou **Sem cobrança**, com
   quantidade e saldo vencido; o mesmo indicador aparece no cartão do contrato.
   O cálculo usa o fuso de Brasília, não considera cobrança futura como atraso e
-  mantém acordo sem pagamento no saldo inadimplente. O contrato guarda a
+  mantém acordo sem pagamento no saldo inadimplente. O KPI geral de
+  inadimplência usa o saldo vencido da competência atual, em vez de confundir
+  todo valor ainda não recebido com atraso. O contrato guarda a
   fotografia cadastral da vinculação; um
   trigger impede relacionar inquilino e contrato de contas diferentes. A
   automação financeira exige, cumulativamente, a flag global, geração e régua

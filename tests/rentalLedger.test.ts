@@ -7,6 +7,7 @@ import {
   normalizeReferenceMonth,
   summarizeRentalFinancialHealth,
   summarizeTenantFinancialHealth,
+  rentalDelinquencyPercent,
   todayIsoInBrasilia,
 } from "../server/services/rentalLedger";
 
@@ -58,6 +59,12 @@ test("status vencido considera saldo parcial e nunca sobrescreve pagamento integ
 
 test("virada UTC nao antecipa inadimplencia no horario de Brasilia", () => {
   assert.equal(todayIsoInBrasilia(new Date("2026-08-11T00:30:00.000Z")), "2026-08-10");
+});
+
+test("inadimplencia considera somente o saldo vencido, nao tudo que ainda vai vencer", () => {
+  assert.equal(rentalDelinquencyPercent(0, 500_000), 0);
+  assert.equal(rentalDelinquencyPercent(250_000, 500_000), 50);
+  assert.equal(rentalDelinquencyPercent(500_000, 0), 0);
 });
 
 test("saude financeira separa cobranca futura de inadimplencia real", () => {
