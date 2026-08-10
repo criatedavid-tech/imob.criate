@@ -56,6 +56,29 @@ campos de auditoria/conciliação, o índice parcial e o bucket privado.
 Foi aplicada e verificada em produção em 10/08/2026: 8 colunas encontradas,
 bucket privado presente e índice de conciliação ativo.
 
+### Controle de retirada e devolução de chaves
+
+Na aba **Aluguéis → Para alugar**, cada imóvel disponível mostra somente a
+posse atual da chave. A retirada exige nome, telefone brasileiro válido quando
+informado, finalidade e uma previsão futura de devolução. O cartão diferencia
+explicitamente os estados **Em posse** e **Em atraso**; a devolução é uma ação
+separada, chamada **Registrar devolução**, e exige confirmação para evitar que
+um clique seja confundido com a leitura de um status.
+
+O botão de histórico preserva e exibe todas as retiradas e devoluções do
+imóvel, inclusive quem levou, finalidade, telefone, horários previstos e reais.
+O scheduler verifica chaves vencidas a cada 15 minutos e envia um único alerta
+ao telefone de notificação do responsável. A API mantém no máximo uma retirada
+em aberto por imóvel e nunca esconde falhas de leitura como uma lista vazia.
+
+A migration original `20260804_rental_autopilot.sql` está aplicada e a tabela
+foi verificada em 10/08/2026. O hardening incremental obrigatório
+`20260810d_property_keys_hardening.sql` ativa RLS, revoga acesso direto do
+navegador e impõe integridade para novos registros sem alterar o histórico
+legado. Foi aplicado e verificado em produção em 10/08/2026: o backend com
+`service_role` continuou acessando os 7 registros existentes e uma consulta
+direta com a chave pública do navegador passou a ser recusada com HTTP 401.
+
 ## 1. Produto, escopo e ambientes
 
 O ImobiFlow é uma plataforma imobiliária multi-tenant com três experiências no
@@ -2185,12 +2208,14 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260803_account_capability_overrides.sql` | aplicada e verificada pelo usuário em 03/08/2026 | combinações de Locação/Lançamentos/Financeiro/Equipe por conta |
 | `20260803b_rental_contract_management.sql` | aplicada manualmente pelo usuário em 03/08/2026 | termos completos de locação, competências mensais e recebimentos externos transacionais |
 | `20260803c_rental_tenants.sql` | aplicada manualmente pelo usuário em 03/08/2026 | cadastro reutilizável de inquilinos, backfill de contratos e defesa de vínculo entre contas |
+| `20260804_rental_autopilot.sql` | aplicada e verificada em 10/08/2026 | cobrança autônoma, eventos, configurações da IA e tabela de controle de chaves |
 | `20260807e_whatsapp_pai_staged_documents.sql` | aplicada e verificada | contexto temporário e isolado de documentos recebidos pelo WhatsApp Pai |
 | `20260807f_whatsapp_pai_release_hardening.sql` | aplicada e verificada | recuperação idempotente de confirmação, mídia e ativação explícita do webhook |
 | `20260807g_whatsapp_phone_verification_conflict_fix.sql` | aplicada e verificada | remove ambiguidade da RPC de verificação do telefone Pai |
 | `20260807h_whatsapp_pai_internal_conversation.sql` | aplicada e verificada | mantém o número Pai apenas no Assistente IA e recupera mídia no histórico |
 | `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
 | `20260810c_agenda_calendar_feed.sql` | pronta para aplicação | link privado e revogável de assinatura da Agenda no Google/iPhone |
+| `20260810d_property_keys_hardening.sql` | aplicada e verificada em 10/08/2026 | RLS, revogação do acesso direto e integridade dos novos registros de retirada/devolução |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

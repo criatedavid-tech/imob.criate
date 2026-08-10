@@ -1,5 +1,29 @@
 # Estado do projeto
 
+## Controle de chaves auditável e protegido (2026-08-10)
+
+A auditoria da aba **Aluguéis → Para alugar** confirmou que as retiradas eram
+gravadas, mas a interface mostrava somente a chave em aberto e escondia todo o
+histórico após a devolução. O texto clicável **Devolvida** também parecia um
+status, embora executasse imediatamente a baixa: os 7 registros encontrados no
+banco tinham sido marcados como devolvidos em menos de um minuto, 3 deles em
+até 10 segundos. Quatro registros legados continham telefone inválido porque o
+formulário não possuía limite nem validação.
+
+O cartão agora separa estado e ação: mostra **Em posse** ou **Em atraso**,
+exibe pessoa, finalidade, telefone e prazo, e oferece **Registrar devolução**
+com confirmação explícita. Cada imóvel ganhou um histórico completo de
+retiradas e devoluções. Nome, telefone brasileiro e previsão futura são
+validados no navegador e novamente no backend. Falhas ao consultar a tabela de
+chaves deixaram de ser convertidas silenciosamente em listas vazias.
+
+A migration `20260810d_property_keys_hardening.sql` foi aplicada e verificada:
+RLS ativo, acesso direto do navegador recusado com HTTP 401 e acesso do backend
+preservado. As restrições `NOT VALID` protegem novos INSERTs/UPDATEs sem apagar
+ou reescrever os registros de teste anteriores. Integração refeita sobre o
+deploy do Claude (`f4bd194`) sem conflito funcional. TypeScript, 192 testes,
+build de produção e `git diff --check` aprovados.
+
 ## Inquilinos (Locação) — visão de detalhe (Etapas A e B) (2026-08-10)
 
 Pedido do usuário: a aba Inquilinos precisa escalar pra 100+ cadastros e
@@ -73,10 +97,9 @@ mobile 375px sem overflow horizontal e com o detalhe em tela cheia.
 `npx tsc --noEmit`, `npx knip`, `npm test` (179/179) e `npm run build`
 limpos.
 
-**Pendente**: autorização de commit/push (nada commitado ainda — a árvore
-de trabalho ainda tem a feature de reset do Codex pendente ao lado, então
-o commit desta mudança precisa ser cuidadoso pra incluir só os arquivos de
-Locação). Etapa C (opcional, ver plano): usar o `tenant_profile` que
+**Publicado**: a visão de detalhe entrou no commit `2a7114b` e foi integrada
+ao estado completo da V2 pelo merge `f4bd194`; o workflow de deploy terminou
+com sucesso em 10/08/2026. Etapa C (opcional, ver plano): usar o `tenant_profile` que
 `GET /api/locacao/contracts` já devolve mas nunca usa, pra linkar de volta
 de um contrato em "Imóveis alugados" pro detalhe do inquilino correspondente.
 

@@ -1,6 +1,6 @@
 # Próximas tarefas — ImobiFlow V2
 
-## Inquilinos (Locação): visão de detalhe — commitado localmente; deploy pendente
+## Inquilinos (Locação): visão de detalhe — publicada
 
 Etapas A (visão de Detalhe do Inquilino, reaproveitando `PaymentLedgerModal`/
 `ContractDiaryModal` sem mudança de backend) e B (enxugar linha/cartão +
@@ -21,6 +21,16 @@ Etapa C (opcional, registrada no plano): linkar de volta, a partir de um
 contrato na aba "Imóveis alugados", pro detalhe do inquilino correspondente,
 usando o `tenant_profile` que `GET /api/locacao/contracts` já devolve mas
 nunca é consumido hoje.
+
+## Controle de chaves — homologação visual
+
+A migration de proteção `20260810d_property_keys_hardening.sql` já foi aplicada
+e verificada. Depois do deploy do código, criar uma única retirada de teste na
+aba **Para alugar** e confirmar: telefone inválido é recusado; o cartão mostra
+**Em posse**; o registro aparece em **Histórico de chaves**; clicar em
+**Registrar devolução** abre a confirmação; após confirmar, o cartão volta a
+**Entregar chave** e o histórico preserva os dois horários. Não é necessário
+apagar os 7 registros legados — eles documentam as devoluções de teste.
 
 ## Locação — aplicar migration e homologar o controle híbrido
 
