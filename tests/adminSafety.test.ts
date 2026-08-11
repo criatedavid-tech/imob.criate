@@ -46,3 +46,9 @@ test("drawer fecha somente depois de salvar funcionalidades com sucesso", () => 
   );
   assert.match(saveSource, /catch \(err: any\) \{\s*setActionMsg/);
 });
+
+test("atualizar painel recarrega também a aba administrativa ativa", () => {
+  assert.match(adminSource, /function refreshPanel\(\)/);
+  assert.match(adminSource, /onClick=\{refreshPanel\}/);
+  assert.match(adminSource, /AdminWhatsappPai key=\{`whatsapp-pai-\$\{refreshKey\}`\}/);
+});

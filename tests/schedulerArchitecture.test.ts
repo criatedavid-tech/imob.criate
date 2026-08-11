@@ -50,4 +50,7 @@ test("Fly declara scheduler singleton sem serviço HTTP", async () => {
   // capacidade e não deve ser fixada aqui — antes o teste exigia web=1
   // literal, o que impedia escalar a camada web sem quebrar o CI.
   assert.match(workflow, /scale count[^\n]*scheduler=1/);
+  assert.match(workflow, /name: Ensure scheduler is running/);
+  assert.match(workflow, /fly_process_group.*scheduler/);
+  assert.match(workflow, /flyctl machine start "\$scheduler_id"/);
 });

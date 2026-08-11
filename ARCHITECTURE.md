@@ -183,6 +183,11 @@ limit já foram separados.
   para compatibilidade de links e assinaturas antigas.
 - Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
   automático pelo GitHub Actions.
+- Depois da escala, o workflow localiza e inicia explicitamente a única Machine
+  `scheduler`, pois o Fly pode atualizá-la e deixá-la parada mesmo mantendo a
+  contagem correta.
+- A saúde do webhook do WhatsApp Pai é tri-state: saudável, divergente ou não
+  verificável. Indisponibilidade do GET da UAZAPI não vira falso alerta vermelho.
 
 ## Limites ainda não comprovados
 
