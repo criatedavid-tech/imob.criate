@@ -157,7 +157,7 @@ export default function JoinTeam() {
                   </div>
                 </div>
               </div>
-              <button type="submit" disabled={loading} className={btnPrimary}>
+              <button type="submit" disabled={loading} className={`${btnPrimary} w-full`}>
                 {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <>Entrar na equipe <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>}
               </button>
             </form>
