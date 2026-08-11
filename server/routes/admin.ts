@@ -53,6 +53,16 @@ const trialVoucherCreateSchema = z.object({
   }
 });
 
+// Alteração de um voucher já emitido. Ambos os campos são opcionais para a
+// tela poder mandar só o que mudou, mas ao menos um precisa vir.
+const trialVoucherUpdateSchema = z.object({
+  invite_expires_at: z.string().datetime({ offset: true }).optional(),
+  trial_days: z.number().int().min(1).max(180).optional(),
+}).refine(
+  (input) => input.invite_expires_at !== undefined || input.trial_days !== undefined,
+  { message: "Informe ao menos um campo para alterar." },
+);
+
 // ─────────────────────────────────────────────────────────────────────────
 // PAINEL ADMIN
 // ─────────────────────────────────────────────────────────────────────────
@@ -307,6 +317,61 @@ adminRouter.get("/api/admin/trial-vouchers", async (req, res) => {
       code: err?.code || "UNKNOWN",
     });
     res.status(500).json({ error: "Não foi possível listar os vouchers." });
+  }
+});
+
+// Corrige um convite JÁ ENVIADO sem precisar cancelar e gerar outro: o código
+// e o link continuam os mesmos, só o prazo e/ou a duração do teste mudam.
+// Condicionado a status='active' porque, uma vez resgatado, trial_days já foi
+// copiado para a conta e mexer aqui não teria efeito nenhum — nesse caso o
+// controle certo é PATCH /api/admin/brokers/:id/trial-days. A condição também
+// serve de trava contra um resgate acontecendo em paralelo.
+adminRouter.patch("/api/admin/trial-vouchers/:id", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    if (!z.string().uuid().safeParse(req.params.id).success) {
+      return res.status(400).json({ error: "Voucher inválido." });
+    }
+    const parsed = trialVoucherUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Dados inválidos.",
+        details: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+      });
+    }
+
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (parsed.data.invite_expires_at !== undefined) {
+      // Mesma janela da emissão: não adianta prorrogar para o passado (o
+      // próprio GET marcaria como expirado no carregamento seguinte).
+      const expiresAt = new Date(parsed.data.invite_expires_at);
+      const now = new Date();
+      const latestAllowed = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+      if (expiresAt <= now || expiresAt > latestAllowed) {
+        return res.status(400).json({ error: "A validade do convite deve estar entre agora e 365 dias." });
+      }
+      patch.invite_expires_at = expiresAt.toISOString();
+    }
+    if (parsed.data.trial_days !== undefined) patch.trial_days = parsed.data.trial_days;
+
+    const { data, error } = await supabase
+      .from("imf_trial_vouchers")
+      .update(patch)
+      .eq("id", req.params.id)
+      .eq("status", "active")
+      .select("id, code_hint, account_type, invite_expires_at, trial_days, member_limit, whatsapp_member_limit, status, created_at, used_at, broker_id, cancelled_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      return res.status(409).json({ error: "Somente vouchers ativos e ainda não utilizados podem ser alterados." });
+    }
+    res.json(data);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/admin/trial-vouchers/:id:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível alterar o voucher." });
   }
 });
 

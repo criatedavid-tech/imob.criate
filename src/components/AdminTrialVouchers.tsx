@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Ban, Building2, Check, Copy, Gift, Landmark, Loader2, RefreshCw, User } from 'lucide-react';
+import { Ban, Building2, Check, Copy, Gift, Landmark, Loader2, Pencil, RefreshCw, User } from 'lucide-react';
 import { authService } from '../services/auth';
 
 type AccountType = 'corretor' | 'imobiliaria' | 'incorporadora';
@@ -44,6 +44,15 @@ function localTomorrowAtNoon() {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+// O <input type="datetime-local"> só entende horário LOCAL sem fuso; o banco
+// devolve ISO em UTC. Sem descontar o offset, editar um voucher exibiria a
+// hora deslocada e "salvar sem mexer" mudaria o prazo sozinho.
+function toLocalInputValue(iso: string) {
+  const date = new Date(iso);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function formatDate(value: string | null) {
   if (!value) return '—';
   return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -54,6 +63,9 @@ export default function AdminTrialVouchers() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ invite_expires_at: '', trial_days: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [created, setCreated] = useState<CreatedVoucher | null>(null);
   const [copied, setCopied] = useState<'code' | 'url' | null>(null);
@@ -131,6 +143,53 @@ export default function AdminTrialVouchers() {
       window.setTimeout(() => setCopied(null), 1500);
     } catch {
       setMessage({ type: 'error', text: 'O navegador não permitiu copiar. Selecione o texto manualmente.' });
+    }
+  }
+
+  function startEdit(voucher: Voucher) {
+    setEditingId(voucher.id);
+    setEditForm({
+      invite_expires_at: toLocalInputValue(voucher.invite_expires_at),
+      trial_days: String(voucher.trial_days),
+    });
+    setMessage(null);
+  }
+
+  // Altera o voucher no lugar: o código e o link já enviados continuam valendo.
+  // Só faz sentido enquanto ninguém resgatou — depois disso os dias já foram
+  // copiados para a conta, e o ajuste é feito na aba Contas.
+  async function saveEdit(voucher: Voucher) {
+    const trialDays = Number(editForm.trial_days);
+    if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 180) {
+      setMessage({ type: 'error', text: 'Dias de experimentação: informe um número inteiro entre 1 e 180.' });
+      return;
+    }
+    const expiresAt = new Date(editForm.invite_expires_at);
+    if (Number.isNaN(expiresAt.getTime())) {
+      setMessage({ type: 'error', text: 'Informe uma data de validade válida.' });
+      return;
+    }
+    if (expiresAt <= new Date()) {
+      setMessage({ type: 'error', text: 'A validade do convite precisa ser no futuro.' });
+      return;
+    }
+    setSavingEdit(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/trial-vouchers/${voucher.id}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invite_expires_at: expiresAt.toISOString(), trial_days: trialDays }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Não foi possível alterar o voucher.');
+      setVouchers((current) => current.map((item) => (item.id === voucher.id ? { ...item, ...data } : item)));
+      setEditingId(null);
+      setMessage({ type: 'success', text: 'Voucher atualizado. O link já enviado continua o mesmo — não precisa reenviar.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Não foi possível alterar o voucher.' });
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -261,7 +320,8 @@ export default function AdminTrialVouchers() {
                 || (voucher.status === 'used' && (!voucher.used_by_account || voucher.used_by_account.plan === 'experimentacao'));
               const revokesAccess = voucher.status === 'used' && Boolean(voucher.used_by_account);
               return (
-                <div key={voucher.id} className="p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3">
+                <div key={voucher.id} className="p-4 md:p-5">
+                  <div className="flex flex-col md:flex-row md:items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-sm text-[var(--text-hi)]">{account?.label}</span>
@@ -277,11 +337,55 @@ export default function AdminTrialVouchers() {
                       <p className="text-xs text-amber-300/80 mt-1">Registro legado sem conta vinculada. Pode ser revogado sem bloquear nenhum usuário.</p>
                     )}
                   </div>
-                  {canRevoke && (
-                    <button type="button" onClick={() => revokeVoucher(voucher)} disabled={revokingId === voucher.id} className="self-start md:self-auto h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-red-300 bg-red-500/10 border border-red-400/20 disabled:opacity-50">
-                      {revokingId === voucher.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
-                      {revokesAccess ? 'Revogar acesso' : 'Revogar voucher'}
-                    </button>
+                  <div className="flex items-center gap-2 self-start md:self-auto">
+                    {voucher.status === 'active' && (
+                      <button type="button" onClick={() => (editingId === voucher.id ? setEditingId(null) : startEdit(voucher))}
+                        className="h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-[var(--text-hi)] bg-[var(--control-fill)] border border-[var(--hairline-strong)] hover:bg-[var(--control-fill-hover)] transition-colors">
+                        <Pencil className="w-3.5 h-3.5" />
+                        {editingId === voucher.id ? 'Fechar' : 'Editar'}
+                      </button>
+                    )}
+                    {canRevoke && (
+                      <button type="button" onClick={() => revokeVoucher(voucher)} disabled={revokingId === voucher.id} className="h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-red-300 bg-red-500/10 border border-red-400/20 disabled:opacity-50">
+                        {revokingId === voucher.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                        {revokesAccess ? 'Revogar acesso' : 'Revogar voucher'}
+                      </button>
+                    )}
+                  </div>
+                  </div>
+
+                  {editingId === voucher.id && (
+                    <div className="mt-4 rounded-xl border border-[var(--hairline-strong)] bg-[var(--control-fill)] p-4 space-y-3">
+                      <p className="text-[11px] leading-relaxed text-[var(--text-low)]">
+                        O código e o link continuam os mesmos: quem já recebeu o convite não precisa de um link novo.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="space-y-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-low)]">Voucher válido até</span>
+                          <input type="datetime-local" value={editForm.invite_expires_at}
+                            onChange={(event) => setEditForm((current) => ({ ...current, invite_expires_at: event.target.value }))}
+                            className={`${fieldClass} [color-scheme:dark]`} />
+                        </label>
+                        <label className="space-y-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-low)]">Dias de experimentação</span>
+                          <input type="number" min="1" max="180" value={editForm.trial_days}
+                            onChange={(event) => setEditForm((current) => ({ ...current, trial_days: event.target.value }))}
+                            className={fieldClass} />
+                          <span className="block text-[10px] leading-relaxed text-[var(--text-low)]">Vale a partir do resgate. Depois que a conta for criada, ajuste em Contas.</span>
+                        </label>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => saveEdit(voucher)} disabled={savingEdit}
+                          className="h-9 px-4 rounded-lg inline-flex items-center gap-2 text-xs font-bold bg-violet-500/25 border border-violet-400/35 text-violet-100 disabled:opacity-50">
+                          {savingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          Salvar alterações
+                        </button>
+                        <button type="button" onClick={() => setEditingId(null)} disabled={savingEdit}
+                          className="h-9 px-4 rounded-lg text-xs font-bold text-[var(--text-low)] bg-[var(--control-fill)] border border-[var(--hairline)] hover:text-[var(--text-hi)] transition-colors disabled:opacity-50">
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
