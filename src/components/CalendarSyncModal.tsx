@@ -27,6 +27,7 @@ interface IPhoneState {
   id?: string;
   status?: string;
   server?: string;
+  account_url?: string;
   caldav_username?: string;
   username?: string;
   password?: string;
@@ -250,14 +251,16 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
                       <CredentialRow label="Servidor" value={iphone.server || ''} />
                       <CredentialRow label="Usuário" value={iphoneUsername} />
                     </div>
+                    <CredentialRow label="URL da conta" value={iphone.account_url || ''} />
                     {iphone.password && <CredentialRow label="Senha" value={iphone.password} secret />}
                     <div className="rounded-2xl border border-[var(--hairline)] bg-black/[0.08] p-4">
                       <p className="text-[11px] font-bold text-[var(--text-hi)]">No iPhone</p>
                       <ol className="mt-2 space-y-1 text-[10px] leading-relaxed text-[var(--text-low)]">
                         <li>1. Ajustes → Apps → Calendário → Contas do Calendário.</li>
                         <li>2. Adicionar Conta → Outra → Adicionar Conta CalDAV.</li>
-                        <li>3. Preencha servidor, usuário e senha acima; descrição “ImobiFlow”.</li>
-                        <li>4. Ao criar um evento, selecione o calendário <b>ImobiFlow</b>.</li>
+                        <li>3. Preencha servidor, usuário, senha e descrição “ImobiFlow”.</li>
+                        <li>4. Em Avançado: ative SSL, porta <b>443</b> e use a URL da conta acima.</li>
+                        <li>5. Ao criar um evento, selecione o calendário <b>ImobiFlow</b>.</li>
                       </ol>
                     </div>
                     <div className="flex flex-wrap justify-between gap-2">

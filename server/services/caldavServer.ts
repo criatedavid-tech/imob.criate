@@ -40,6 +40,10 @@ export function calDavServerAddress(publicAppUrl = PUBLIC_APP_URL): string {
   return new URL(publicAppUrl).host;
 }
 
+export function calDavAccountUrl(publicAppUrl = PUBLIC_APP_URL): string {
+  return `${new URL(publicAppUrl).origin}/caldav/`;
+}
+
 function xmlEscape(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')

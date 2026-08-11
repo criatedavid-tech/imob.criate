@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { calDavServerAddress, generateCalDavCredentials, parseCalDavEvent } from '../server/services/caldavServer';
+import { calDavAccountUrl, calDavServerAddress, generateCalDavCredentials, parseCalDavEvent } from '../server/services/caldavServer';
 import {
   agendaToGoogleEvent,
   buildGoogleAuthorizationUrl,
@@ -19,6 +19,7 @@ test('credencial CalDAV é forte, revogável e a senha não compõe o usuário',
   assert.match(credentials.password, /^[A-Za-z0-9_-]{32}$/);
   assert.equal(credentials.passwordHash, createHash('sha256').update(credentials.password).digest('hex'));
   assert.equal(calDavServerAddress('https://imobiflow-v2.fly.dev/'), 'imobiflow-v2.fly.dev');
+  assert.equal(calDavAccountUrl('https://imobiflow-v2.fly.dev/app'), 'https://imobiflow-v2.fly.dev/caldav/');
 });
 
 test('parser CalDAV preserva o horário de São Paulo já homologado', () => {
@@ -86,6 +87,8 @@ test('backend e migration mantêm credenciais fora do navegador e sincronizaçã
   assert.match(route, /hashOAuthState/);
   assert.match(route, /calendarConnectionLimiter/);
   assert.match(route, /calendarDavLimiter/);
+  assert.match(route, /agendaRouter\.all\(\['\/\.well-known\/caldav', '\/\.well-known\/caldav\/'\]/);
+  assert.doesNotMatch(route, /agendaRouter\.get\('\/\.well-known\/caldav'/);
   assert.match(route, /express\.text\(\{ type: \(\) => true, limit: '256kb' \}\)/);
   assert.match(migration, /refresh_token_enc TEXT/);
   assert.match(migration, /caldav_password_hash TEXT/);

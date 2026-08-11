@@ -39,6 +39,7 @@ import {
   type CalendarConnection,
 } from "../services/googleCalendarSync";
 import {
+  calDavAccountUrl,
   calDavServerAddress,
   generateCalDavCredentials,
   handleCalDavRequest,
@@ -174,6 +175,7 @@ agendaRouter.get('/api/agenda/iphone-sync', requireUser, async (req, res) => {
       configured: !!data,
       ...(data || {}),
       server: calDavServerAddress(),
+      account_url: calDavAccountUrl(),
       scope: data?.include_all ? 'account' : 'user',
     });
   } catch (err) {
@@ -206,6 +208,7 @@ agendaRouter.post('/api/agenda/iphone-sync', requireUser, calendarConnectionLimi
       configured: true,
       ...data,
       server: calDavServerAddress(),
+      account_url: calDavAccountUrl(),
       username: credentials.username,
       password: credentials.password,
       password_visible_once: true,
@@ -231,7 +234,14 @@ agendaRouter.delete('/api/agenda/iphone-sync', requireUser, calendarConnectionLi
   }
 });
 
-agendaRouter.get('/.well-known/caldav', (_req, res) => res.redirect(308, '/caldav/'));
+// O iOS faz a descoberta com PROPFIND (e, conforme a versão, OPTIONS), não
+// necessariamente com GET. Restringir esta rota a GET devolvia 404 e deixava
+// a tela presa indefinidamente em "Verifying". O 308 preserva o método e o
+// corpo ao redirecionar para a coleção CalDAV real.
+agendaRouter.all(['/.well-known/caldav', '/.well-known/caldav/'], (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.redirect(308, '/caldav/');
+});
 agendaRouter.all(
   ['/caldav', '/caldav/*'],
   calendarDavLimiter,
