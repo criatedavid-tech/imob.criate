@@ -136,9 +136,12 @@ export default function AdminTrialVouchers() {
 
   async function revokeVoucher(voucher: Voucher) {
     const used = voucher.status === 'used';
-    const warning = used
+    const revokesAccess = used && Boolean(voucher.used_by_account);
+    const warning = revokesAccess
       ? `Revogar o acesso concedido pelo voucher ${voucher.code_hint}?\n\nA conta ${voucher.used_by_account?.name || 'vinculada'} perderá o acesso à plataforma imediatamente. Os dados serão preservados e a conta poderá contratar um plano posteriormente.`
-      : `Revogar o voucher ${voucher.code_hint}? O link deixará de funcionar imediatamente.`;
+      : used
+        ? `Revogar o voucher legado ${voucher.code_hint}?\n\nEste registro não possui uma conta vinculada, portanto nenhuma conta será bloqueada.`
+        : `Revogar o voucher ${voucher.code_hint}? O link deixará de funcionar imediatamente.`;
     if (!confirm(warning)) return;
     setRevokingId(voucher.id);
     setMessage(null);
@@ -153,7 +156,7 @@ export default function AdminTrialVouchers() {
         ? { ...item, status: 'cancelled', cancelled_at: data.cancelled_at }
         : item));
       if (created?.id === voucher.id) setCreated(null);
-      setMessage({ type: 'success', text: data.revoked_access ? 'Voucher e acesso de experimentação revogados.' : 'Voucher revogado.' });
+      setMessage({ type: 'success', text: data.revoked_access ? 'Voucher e acesso de experimentação revogados.' : 'Voucher revogado. Nenhuma conta ativa estava vinculada.' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err?.message || 'Não foi possível revogar o voucher.' });
     } finally {
@@ -250,12 +253,13 @@ export default function AdminTrialVouchers() {
           <div className="divide-y divide-[var(--hairline)]">
             {vouchers.map((voucher) => {
               const baseStatus = STATUS[voucher.status];
-              const status = voucher.status === 'cancelled' && voucher.used_at
+              const status = voucher.status === 'cancelled' && voucher.used_at && voucher.used_by_account
                 ? { ...baseStatus, label: 'Acesso revogado' }
                 : baseStatus;
               const account = ACCOUNT_TYPES.find((item) => item.value === voucher.account_type);
               const canRevoke = voucher.status === 'active'
-                || (voucher.status === 'used' && voucher.used_by_account?.plan === 'experimentacao');
+                || (voucher.status === 'used' && (!voucher.used_by_account || voucher.used_by_account.plan === 'experimentacao'));
+              const revokesAccess = voucher.status === 'used' && Boolean(voucher.used_by_account);
               return (
                 <div key={voucher.id} className="p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3">
                   <div className="min-w-0 flex-1">
@@ -269,11 +273,14 @@ export default function AdminTrialVouchers() {
                       {voucher.account_type !== 'corretor' ? ` · ${voucher.member_limit} corretor(es) · ${voucher.whatsapp_member_limit || 0} WhatsApp(s) próprio(s)` : ''}
                     </p>
                     {voucher.used_by_account && <p className="text-xs text-blue-300/80 mt-1">Usado por {voucher.used_by_account.name} ({voucher.used_by_account.email}) em {formatDate(voucher.used_at)}</p>}
+                    {voucher.status === 'used' && !voucher.used_by_account && (
+                      <p className="text-xs text-amber-300/80 mt-1">Registro legado sem conta vinculada. Pode ser revogado sem bloquear nenhum usuário.</p>
+                    )}
                   </div>
                   {canRevoke && (
                     <button type="button" onClick={() => revokeVoucher(voucher)} disabled={revokingId === voucher.id} className="self-start md:self-auto h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-red-300 bg-red-500/10 border border-red-400/20 disabled:opacity-50">
                       {revokingId === voucher.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
-                      {voucher.status === 'used' ? 'Revogar acesso' : 'Revogar voucher'}
+                      {revokesAccess ? 'Revogar acesso' : 'Revogar voucher'}
                     </button>
                   )}
                 </div>

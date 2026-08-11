@@ -166,6 +166,9 @@ test("admin revoga convite ou acesso de experimentacao de forma atomica", async 
   assert.match(route, /invalidateAccountAccessCache\(\)/);
   assert.match(ui, /Revogar acesso/);
   assert.match(ui, /Revogar voucher/);
+  assert.match(route, /voucher\.status === "used" && !voucher\.broker_id/);
+  assert.match(route, /\.is\("broker_id", null\)/);
+  assert.match(ui, /Registro legado sem conta vinculada/);
 });
 
 test("cadastro com voucher usa RPC e remove usuario se o resgate falhar", async () => {

@@ -93,6 +93,12 @@ conta durante a alteração, exige administrador global também dentro do banco 
 não afeta contas que já migraram para um plano diferente. Depende da migration
 `20260811c_trial_voucher_revocation.sql`.
 
+Vouchers legados que foram marcados como utilizados sem `broker_id`/`used_by`
+também podem ser revogados no Admin. Nessa situação, identificada visualmente
+como **registro legado sem conta vinculada**, somente o voucher é encerrado;
+nenhuma conta é bloqueada. A rota administrativa faz uma atualização atômica
+condicionada a `status = used` e `broker_id IS NULL`; não há migration adicional.
+
 Essas estruturas dependem da migration
 `20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
 

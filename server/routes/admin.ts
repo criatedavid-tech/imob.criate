@@ -313,6 +313,50 @@ adminRouter.patch("/api/admin/trial-vouchers/:id/revoke", async (req, res) => {
     if (!z.string().uuid().safeParse(req.params.id).success) {
       return res.status(400).json({ error: "Voucher inválido." });
     }
+
+    // A primeira versão dos vouchers podia deixar um registro como `used`
+    // antes de salvar broker_id/used_by. Não há acesso de conta a revogar
+    // nesses casos. Encerramos somente o voucher com uma atualização
+    // condicionada, para não correr o risco de atingir um vínculo criado em
+    // paralelo entre a leitura e a gravação.
+    const { data: voucher, error: voucherError } = await supabase
+      .from("imf_trial_vouchers")
+      .select("id, status, broker_id")
+      .eq("id", req.params.id)
+      .maybeSingle();
+    if (voucherError) throw voucherError;
+    if (!voucher) return res.status(404).json({ error: "Voucher não encontrado." });
+
+    if (voucher.status === "used" && !voucher.broker_id) {
+      const now = new Date().toISOString();
+      const { data: legacyVoucher, error: legacyError } = await supabase
+        .from("imf_trial_vouchers")
+        .update({
+          status: "cancelled",
+          cancelled_at: now,
+          cancelled_by: (req as any).userId,
+          updated_at: now,
+        })
+        .eq("id", req.params.id)
+        .eq("status", "used")
+        .is("broker_id", null)
+        .select("id, status, cancelled_at")
+        .maybeSingle();
+      if (legacyError) throw legacyError;
+      if (!legacyVoucher) {
+        return res.status(409).json({ error: "O voucher mudou enquanto era revogado. Atualize o painel e tente novamente." });
+      }
+      console.log(`[ADMIN] Voucher legado revogado sem conta vinculada: voucher=${req.params.id} por user=${(req as any).userId}`);
+      return res.json({
+        voucher_id: legacyVoucher.id,
+        voucher_status: legacyVoucher.status,
+        broker_id: null,
+        broker_status: null,
+        revoked_access: false,
+        cancelled_at: legacyVoucher.cancelled_at,
+      });
+    }
+
     const { data, error } = await supabase.rpc("imf_revoke_trial_voucher", {
       p_voucher_id: req.params.id,
       p_admin_user_id: (req as any).userId,
