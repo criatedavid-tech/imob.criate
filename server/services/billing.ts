@@ -49,12 +49,29 @@ async function updateAsaasSubscriptionValue(
   if (!response.ok) throw await asaasResponseError(response, 'Falha ao atualizar assinatura no Asaas');
 }
 
+// O objetivo aqui não é "executar um cancelamento", é GARANTIR que a assinatura
+// não siga cobrando — então a operação é idempotente. Um 404 significa que ela
+// não existe no Asaas (removida por lá, ou criada em outro ambiente/chave), ou
+// seja: o objetivo já está cumprido.
+//
+// Tratar 404 como falha travava PERMANENTEMENTE o cancelamento de plano e a
+// exclusão da conta em server/routes/admin.ts, que abortam quando esta função
+// lança. Como nenhuma tentativa futura mudaria a resposta do Asaas, o "tente
+// novamente" da mensagem nunca teria efeito.
+//
+// Os demais erros continuam propagando de propósito: em 401/403 (chave inválida)
+// ou 5xx/timeout não dá para afirmar que a cobrança parou, e aí a trava está
+// certa — é melhor não excluir a conta do que deixar um cliente sendo cobrado.
 export async function cancelAsaasSubscription(subscriptionId: string): Promise<void> {
   if (!ASAAS_API_KEY) throw new Error('ASAAS_API_KEY não configurada.');
   const response = await fetchWithTimeout(`${ASAAS_BASE_URL}/subscriptions/${subscriptionId}/cancel`, {
     method: 'POST',
     headers: asaasHeaders(),
   });
+  if (response.status === 404) {
+    console.warn(`[Asaas] assinatura ${subscriptionId} não existe (HTTP 404) — nada a cancelar.`);
+    return;
+  }
   if (!response.ok) throw await asaasResponseError(response, 'Falha ao cancelar assinatura no Asaas');
 }
 
