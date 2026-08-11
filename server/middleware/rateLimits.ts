@@ -183,6 +183,37 @@ export const calendarFeedReadLimiter = rateLimit({
   skip: skipInDev,
 });
 
+// Criar/rotacionar conexões externas envolve credenciais e, no Google, abre
+// um fluxo OAuth. Limite por usuário autenticado evita abuso sem misturar os
+// membros que compartilham o mesmo IP da imobiliária.
+export const calendarConnectionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authenticatedUserKey,
+  message: { error: 'Muitas alterações de sincronização. Aguarde alguns minutos.' },
+  store: makeRedisStore('calendar-connection', 15 * 60 * 1000),
+  skip: skipInDev,
+});
+
+// Um cliente CalDAV faz várias requisições por ciclo (discovery, lista,
+// multiget e recursos). A chave deriva do usuário Basic sem armazená-lo em
+// claro no Redis e mantém contas distintas isoladas mesmo atrás do mesmo IP.
+export const calendarDavLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => {
+    const auth = String(req.headers?.authorization || 'anonymous');
+    return `caldav:${createHash('sha256').update(auth.slice(0, 512)).digest('hex')}`;
+  },
+  message: 'Muitas atualizações deste calendário. Tente novamente em instantes.',
+  store: makeRedisStore('calendar-dav', 60 * 1000),
+  skip: skipInDev,
+});
+
 // Teste explícito do canal de cobrança: envia uma única mensagem identificada
 // ao telefone do inquilino, sem criar boleto/PIX nem avançar a régua.
 export const rentalTestDispatchLimiter = rateLimit({

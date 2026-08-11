@@ -12,7 +12,7 @@ const CARGO_DPO     = 'Proprietário';
 const EMAIL_DPO     = 'criateoficial@gmail.com';
 const EMAIL_CONTATO = 'criateoficial@gmail.com';
 const CIDADE_ESTADO = 'Goiânia/GO';
-const DATA_VIGENCIA = '28 de julho de 2026';
+const DATA_VIGENCIA = '11 de agosto de 2026';
 
 export default function Privacidade() {
   const navigate = useNavigate();
@@ -112,6 +112,13 @@ export default function Privacidade() {
             <p className="mt-2">
               <strong>3.6 Chave de API de terceiros:</strong> chave OpenRouter do corretor, armazenada em formato{' '}
               <strong>criptografado (AES-256)</strong>, nunca exposta em texto puro ou em logs.
+            </p>
+            <p className="mt-2">
+              <strong>3.7 Google Agenda:</strong> quando o usuário opta pela sincronização bidirecional, o ImobiFlow
+              recebe um token OAuth e trata os títulos, descrições, datas, horários e identificadores dos eventos da
+              agenda secundária criada pelo próprio aplicativo. O escopo utilizado é{' '}
+              <code>calendar.app.created</code>; ele não concede acesso à agenda principal nem aos outros calendários
+              pessoais do usuário.
             </p>
           </section>
 
@@ -240,6 +247,10 @@ export default function Privacidade() {
                 <strong>n8n / instância própria</strong> — automações de fluxo e webhooks internos.
               </li>
               <li>
+                <strong>Google Calendar API</strong> — sincronização opcional de eventos exclusivamente na agenda
+                secundária criada pelo ImobiFlow, após autorização expressa do usuário;
+              </li>
+              <li>
                 <strong>Upstash / Redis</strong> — filas, coordenação de processamento, limitação de requisições e
                 armazenamento técnico temporário necessário à estabilidade do serviço;
               </li>
@@ -249,6 +260,21 @@ export default function Privacidade() {
                 antes do envio dos eventos.
               </li>
             </ul>
+          </section>
+
+          <section>
+            <h2>9.1 Uso de dados da API do Google</h2>
+            <p>
+              O uso e a transferência, pelo ImobiFlow, de informações recebidas das APIs do Google obedecem à{' '}
+              <strong>Google API Services User Data Policy</strong>, inclusive aos requisitos de <em>Limited Use</em>.
+              Esses dados são usados somente para exibir e sincronizar os compromissos solicitados pelo usuário e não
+              são utilizados para publicidade, venda de dados ou treinamento de modelos de inteligência artificial.
+            </p>
+            <p className="mt-2">
+              O token de acesso permanece protegido no servidor. O usuário pode interromper a integração na opção
+              <strong> Agenda → Sincronizar calendário → Desconectar Google</strong>. A desconexão revoga a autorização,
+              remove as credenciais armazenadas pelo ImobiFlow e interrompe as sincronizações futuras.
+            </p>
           </section>
 
           <section>

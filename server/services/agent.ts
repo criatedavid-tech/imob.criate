@@ -6,7 +6,7 @@ import { isBrokerOwner } from "../middleware/auth";
 import { fetchWithTimeout } from "../lib/http";
 import { PUBLIC_APP_URL } from "../config";
 import { recordConversationMessage } from "./conversationTickets";
-import { resolveNewLeadStage } from "./crmPipelines";
+import { ensureDefaultPipeline, resolveNewLeadStage } from "./crmPipelines";
 import { scheduleAgentFollowup } from "./agentScheduledFollowups";
 import { formatAgendaByDay } from "./agendaFormatter";
 import { parsePropertyPurpose, type PropertyPurpose } from "./propertyPurpose";
@@ -19,6 +19,8 @@ import {
   parseAgentModelResponse,
   requiresHumanConfirmation,
 } from "../security/agentGuardrails";
+import { recordSystemError } from "./systemErrorLogs";
+import { summarizeConversationWithFollowup } from "./conversationInsights";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -92,7 +94,7 @@ function resolveDueAt(action: { date?: string; time?: string; delay_value?: stri
 }
 
 export interface AgentAction {
-  type: "answer" | "navigate" | "create_lead" | "create_visit" | "query_agenda" | "query_leads" | "query_report" | "send_message"
+  type: "answer" | "navigate" | "create_lead" | "move_lead_stage" | "create_visit" | "query_agenda" | "query_leads" | "query_report" | "summarize_conversation" | "send_message"
       | "broadcast_message"
       | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
       | "create_reminder" | "schedule_followup";
@@ -101,6 +103,8 @@ export interface AgentAction {
   name?: string;
   phone?: string;
   property_id?: string;
+  lead_id?: string;
+  stage_id?: string;
   // create_visit / update_visit; também o par ABSOLUTO opcional de
   // create_reminder / schedule_followup (ver resolveDueAt e delay_value
   // abaixo — os dois usam o mesmo par date+time de create_visit).
@@ -218,6 +222,8 @@ interface Snapshot {
   conversationsTotal: number;
   conversationCounts: { ia: number; aguardando: number; encerrado: number };
   recentConversations: { phone: string; name: string | null; lastMessage: string | null; hasUpcomingVisit: boolean }[];
+  recentLeads: { id: string; name: string; phone: string; status: string; pipeline_name: string; stage_id: string | null; stage_name: string }[];
+  crmStages: { id: string; pipeline_id: string; pipeline_name: string; name: string; stage_type: string }[];
 }
 
 async function buildSnapshot(brokerId: string, userId: string, capabilities: readonly AccountCapability[]): Promise<Snapshot> {
@@ -234,18 +240,60 @@ async function buildSnapshot(brokerId: string, userId: string, capabilities: rea
 
   const propIds = (props || []).map((p: any) => p.id);
 
-  const leadCounts: Record<string, number> = {};
-  let leadsTotal = 0;
-  if (propIds.length > 0) {
-    let leadsQuery = supabase.from("leads").select("status").in("property_id", propIds);
-    if (!owner) leadsQuery = leadsQuery.eq("owner_user_id", userId);
-    const { data: leads } = await leadsQuery;
-    for (const l of leads || []) {
-      const s = l.status || "new";
-      leadCounts[s] = (leadCounts[s] || 0) + 1;
-      leadsTotal++;
-    }
+  await ensureDefaultPipeline(brokerId);
+  let propertyLeadsQuery = supabase.from("leads")
+    .select("id, name, phone, status, pipeline_id, pipeline_stage_id, property_id, owner_user_id, created_at")
+    .in("property_id", propIds.length ? propIds : ["00000000-0000-0000-0000-000000000000"]);
+  let directLeadsQuery = supabase.from("leads")
+    .select("id, name, phone, status, pipeline_id, pipeline_stage_id, property_id, owner_user_id, created_at")
+    .eq("broker_id", brokerId);
+  if (!owner) {
+    propertyLeadsQuery = propertyLeadsQuery.eq("owner_user_id", userId);
+    directLeadsQuery = directLeadsQuery.eq("owner_user_id", userId);
   }
+  const [{ data: propertyLeads }, { data: directLeads }, { data: crmPipelines }] = await Promise.all([
+    propertyLeadsQuery,
+    directLeadsQuery,
+    supabase.from("imf_crm_pipelines").select("id, name").eq("broker_id", brokerId).eq("active", true),
+  ]);
+  const leadsById = new Map<string, any>();
+  for (const lead of [...(propertyLeads || []), ...(directLeads || [])]) leadsById.set(lead.id, lead);
+  const allLeads = [...leadsById.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  const leadCounts: Record<string, number> = {};
+  for (const lead of allLeads) {
+    const status = lead.status || "new";
+    leadCounts[status] = (leadCounts[status] || 0) + 1;
+  }
+  const leadsTotal = allLeads.length;
+  const pipelineIds = (crmPipelines || []).map((pipeline: any) => pipeline.id);
+  const { data: crmStageRows } = pipelineIds.length
+    ? await supabase.from("imf_crm_pipeline_stages")
+        .select("id, pipeline_id, name, stage_type, position")
+        .in("pipeline_id", pipelineIds)
+        .eq("active", true)
+        .order("position", { ascending: true })
+    : { data: [] as any[] };
+  const pipelineNameById = new Map((crmPipelines || []).map((pipeline: any) => [pipeline.id, pipeline.name]));
+  const stageById = new Map((crmStageRows || []).map((stage: any) => [stage.id, stage]));
+  const crmStages: Snapshot["crmStages"] = (crmStageRows || []).map((stage: any) => ({
+    id: stage.id,
+    pipeline_id: stage.pipeline_id,
+    pipeline_name: pipelineNameById.get(stage.pipeline_id) || "Pipeline",
+    name: stage.name,
+    stage_type: stage.stage_type,
+  }));
+  const recentLeads: Snapshot["recentLeads"] = allLeads.slice(0, 30).map((lead: any) => {
+    const stage = stageById.get(lead.pipeline_stage_id);
+    return {
+      id: lead.id,
+      name: lead.name || "Sem nome",
+      phone: lead.phone || "",
+      status: lead.status || "new",
+      pipeline_name: pipelineNameById.get(lead.pipeline_id) || "Pipeline padrão",
+      stage_id: lead.pipeline_stage_id || null,
+      stage_name: stage?.name || lead.status || "Novo",
+    };
+  });
 
   const visitsQuery = supabase
     .from("imf_agenda")
@@ -386,6 +434,8 @@ async function buildSnapshot(brokerId: string, userId: string, capabilities: rea
     conversationsTotal,
     conversationCounts,
     recentConversations,
+    recentLeads,
+    crmStages,
   };
 }
 
@@ -535,8 +585,10 @@ function buildSystemPrompt(persona: string, capabilities: readonly AccountCapabi
 
   let actionNum = 6;
   const extraActions: string[] = [];
+  extraActions.push(`${++actionNum}. "move_lead_stage" — mover um lead existente entre etapas do CRM. Use quando o corretor pedir "move o João para Proposta", "passa Maria para Visita" ou equivalente. Preencha lead_id usando SOMENTE um id exato de recentLeads e stage_id usando SOMENTE um id exato de crmStages. A etapa precisa pertencer ao pipeline desejado. Se houver dois leads com o mesmo nome, se o lead não estiver em recentLeads ou se a etapa não existir, use "answer" e peça um identificador adicional/oriente abrir o CRM; nunca adivinhe ids.`);
   extraActions.push(`${++actionNum}. "query_leads" — SEMPRE que perguntarem quantos leads chegaram numa data/período (ex.: "quantos leads hoje", "leads dessa semana") ou pedirem os leads SEM ATENDIMENTO ainda — dado que NÃO está coberto pelo snapshot acima (que só tem a contagem total por estágio, não uma janela de datas). Preencha date_from (YYYY-MM-DD, obrigatório — pra "hoje" use a data de hoje informada acima) e date_to (opcional, só se for um intervalo). filter="nao_atendidos" quando o pedido for especificamente sobre leads ainda sem contato feito (estágio inicial); omita ou use "todos" nos demais casos. Você NÃO tem esse dado agora; o sistema busca de verdade e só depois responde — nunca use "answer" pra chutar essa contagem.`);
   extraActions.push(`${++actionNum}. "query_report" — SEMPRE que pedirem um relatório/resumo de desempenho (ex.: "relatório do mês", "como foi o trimestre", "resumo do ano", "fechei quanto esse mês") — dado que o snapshot acima não tem (é só um retrato do momento atual, não um período fechado). Preencha period com um de "mes" (padrão se não especificarem), "trimestre", "semestre" ou "ano". Você NÃO tem esses números agora; o sistema calcula de verdade e só depois responde.`);
+  extraActions.push(`${++actionNum}. "summarize_conversation" — abrir a conversa REAL de um contato e devolver um resumo junto com um modelo de follow-up contextual. Use quando o corretor pedir "resume a conversa com João", "o que ficou combinado com Maria", "veja o contato Hunter e prepare um follow" ou equivalente. Preencha name com o nome citado e phone somente quando o corretor informar um número. Esta ação é SOMENTE LEITURA: ela nunca envia o follow-up. O sistema busca as mensagens, respeita as permissões da aba Conversas e gera a sugestão; se o corretor quiser enviar depois, ele precisa pedir explicitamente em uma nova solicitação.`);
   extraActions.push(`${++actionNum}. "broadcast_message" — enviar UMA mensagem de WhatsApp pra TODOS os seus contatos salvos de uma vez. Use quando o corretor falar no plural/coletivo: "manda pros meus contatos", "avisa todo mundo", "divulga meus imóveis pra minha lista/base". Precisa SÓ de message (o texto que você compõe; NUNCA phone — o sistema envia pra cada contato salvo sozinho). Se for divulgação de imóveis, siga a REGRA DE DIVULGAÇÃO abaixo (mensagem-convite + link da vitrine). É diferente de "send_message", que é pra UM contato específico (aí sim tem phone). O sistema mostra pra você confirmar (com a contagem real de contatos) antes de disparar qualquer coisa.`);
   extraActions.push(`${++actionNum}. "create_property" — cadastrar um imóvel NOVO na carteira (o corretor está descrevendo um imóvel que ainda não existe na lista acima, não editando um existente). Precisa de price e location (bairro/cidade/endereço). title é opcional (se não vier, gere um curto a partir do tipo+localização, ex.: "Apartamento no Setor Oeste"). description é opcional mas recomendado: escreva um texto de venda natural e atraente com TUDO que não couber nos campos estruturados abaixo (andar, detalhes do prédio/condomínio, etc.).
    CAMPOS ESTRUTURADOS — isto NÃO é opcional: sempre que o corretor mencionar qualquer um destes, você TEM que preencher o campo correspondente, MESMO que a mesma informação também apareça em texto na description. Nunca deixe um campo vazio só porque "já está na descrição" — description e os campos estruturados são preenchidos JUNTOS, o campo estruturado é o que alimenta o formulário de verdade, a descrição é só o texto de venda.
@@ -592,6 +644,7 @@ Regras:
 - Para ações de criar/editar/enviar/cancelar/remarcar, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro." / "Vou cancelar a visita com o João.").
 - phone: pode vir como o corretor falar, ou resolvido a partir de um nome da lista de Contatos; não precisa formatar.
 - "enviar/mandar mensagem" é SEMPRE send_message (um contato) ou broadcast_message (todos os contatos), nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
+- "resumir/analisar conversa" é SEMPRE summarize_conversation e nunca send_message. Trazer um modelo de follow-up não autoriza o envio; só envie se o corretor pedir explicitamente depois.
 - REGRA DE DIVULGAÇÃO: quando o corretor pedir pra DIVULGAR / COMPARTILHAR / MOSTRAR / MANDAR os imóveis dele pra um contato ou pra todos os contatos, a mensagem que você compõe (em send_message ou broadcast_message) DEVE convidar o cliente a ver os imóveis e INCLUIR o link da vitrine pública — o valor exato está no campo "vitrineUrl" do contexto (UNTRUSTED_ACCOUNT_CONTEXT); copie-o como está, nunca invente uma URL. NUNCA escreva "minha área de divulgação" nem descreva ferramentas/telas internas do corretor: o cliente não tem área nenhuma, ele só quer ver imóvel. Ex. de mensagem boa: "Oi! Reuni meus imóveis disponíveis num link só, dá uma olhada quando puder: {vitrineUrl} — se algum te interessar, me chama que agendo uma visita." Um contato só = send_message; todos os contatos = broadcast_message.
 - Só use uma ação de mutação (create/update/cancel/send) quando o pedido for claramente isso. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).
 - Para perguntas sobre imóveis à venda ou para aluguel, use EXCLUSIVAMENTE properties[].finalidade. Nunca infira a finalidade pelo título, preço ou status. "aluguel" inclui finalidade "aluguel" ou "ambos"; "venda" inclui "venda" ou "ambos". Só chame um imóvel de disponível se status for "disponivel".
@@ -666,7 +719,9 @@ export const AGENT_ACTION_PERMISSION: Partial<Record<AgentAction["type"], { modu
   query_agenda: { module: "agenda", action: "visualizar" },
   query_leads: { module: "negocios", action: "visualizar" },
   query_report: { module: "relatorios", action: "visualizar" },
+  summarize_conversation: { module: "conversas", action: "visualizar" },
   create_lead: { module: "negocios", action: "criar" },
+  move_lead_stage: { module: "negocios", action: "editar" },
   create_visit: { module: "agenda", action: "criar" },
   update_visit: { module: "agenda", action: "editar" },
   cancel_visit: { module: "agenda", action: "excluir" },
@@ -720,6 +775,48 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
     });
     if (error) throw error;
     return { summary: `Lead ${action.name} cadastrado em "${prop.title}".`, navigate: "negocios" };
+  }
+
+  if (action.type === "move_lead_stage") {
+    if (!action.lead_id || !action.stage_id) throw new Error("Preciso identificar o lead e a etapa de destino.");
+    const { data: lead } = await supabase.from("leads")
+      .select("id, name, property_id, broker_id, owner_user_id")
+      .eq("id", action.lead_id)
+      .maybeSingle();
+    if (!lead) throw new Error("Lead não encontrado.");
+    let leadInAccount = lead.broker_id === brokerId;
+    if (!leadInAccount && lead.property_id) {
+      const { data: property } = await supabase.from("imf_properties")
+        .select("id")
+        .eq("id", lead.property_id)
+        .eq("broker_id", brokerId)
+        .maybeSingle();
+      leadInAccount = !!property;
+    }
+    if (!leadInAccount || (!owner && lead.owner_user_id !== userId)) {
+      throw new Error("Esse lead não pertence à sua área de trabalho.");
+    }
+    const { data: stage } = await supabase.from("imf_crm_pipeline_stages")
+      .select("id, name, pipeline_id")
+      .eq("id", action.stage_id)
+      .eq("active", true)
+      .maybeSingle();
+    if (!stage) throw new Error("Etapa de destino não encontrada ou arquivada.");
+    const { data: pipeline } = await supabase.from("imf_crm_pipelines")
+      .select("id, name")
+      .eq("id", stage.pipeline_id)
+      .eq("broker_id", brokerId)
+      .eq("active", true)
+      .maybeSingle();
+    if (!pipeline) throw new Error("A etapa de destino não pertence a esta conta.");
+    const { data: moved, error } = await supabase.from("leads")
+      .update({ pipeline_stage_id: stage.id })
+      .eq("id", lead.id)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!moved) throw new Error("Não foi possível mover o lead.");
+    return { summary: `Lead ${lead.name || "sem nome"} movido para "${stage.name}" no CRM "${pipeline.name}".`, navigate: "negocios" };
   }
 
   if (action.type === "create_visit") {
@@ -1076,7 +1173,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 // garante JSON válido) — reforçado em texto no fim do system prompt também
 // (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|query_leads|query_report|send_message|broadcast_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "filter"?: "todos|nao_atendidos", "period"?: "mes|trimestre|semestre|ano", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|move_lead_stage|create_visit|query_agenda|query_leads|query_report|summarize_conversation|send_message|broadcast_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "lead_id"?: "string", "stage_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "filter"?: "todos|nao_atendidos", "period"?: "mes|trimestre|semestre|ano", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
@@ -1131,6 +1228,7 @@ export async function runAgent(opts: {
   history?: AgentTurn[];
   imageUrls?: string[]; // fotos anexadas na conversa (já enviadas ao Storage)
   documentContexts?: { fileName: string; mimeType: string; text: string }[];
+  channel?: "whatsapp_pai" | "painel_interno";
 }): Promise<AgentResult> {
   const history = opts.history || [];
   // OpenRouter é a ÚNICA fonte de IA do agente (decisão explícita
@@ -1163,6 +1261,20 @@ export async function runAgent(opts: {
   } catch (err: any) {
     const msg = String(err?.message || "");
     console.error("[Agent] erro OpenRouter:", msg);
+    const publicMessage = msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")
+      ? "A IA atingiu o limite de uso da chave configurada. Verifique o plano/cota da chave do servidor."
+      : "Tive um problema pra pensar nisso agora. Pode tentar de novo?";
+    await recordSystemError({
+      brokerId: opts.brokerId,
+      userId: opts.userId,
+      channel: opts.channel || "painel_interno",
+      category: "integration_failure",
+      requestedAction: opts.message,
+      stage: "interpretacao_openrouter",
+      publicMessage,
+      technicalMessage: msg || "Resposta invalida ou vazia do provedor de IA.",
+      context: { provider: "openrouter" },
+    });
     if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
       // Cota/limite é um estado operacional, não um bug — mensagem honesta e
       // distinta pra você saber que é a chave da IA, não o código.
@@ -1174,14 +1286,27 @@ export async function runAgent(opts: {
   const action = parsed.action || { type: "answer" };
   const reply = parsed.reply || "Certo.";
 
+  if (action.type === "answer" && /(?:n[aã]o (?:entendi|consegui entender|sei como)|pode (?:tentar|explicar) de novo)/i.test(reply)) {
+    await recordSystemError({
+      brokerId: opts.brokerId,
+      userId: opts.userId,
+      channel: opts.channel || "painel_interno",
+      category: "agent_unhandled",
+      requestedAction: opts.message,
+      stage: "interpretacao_da_solicitacao",
+      publicMessage: reply,
+      technicalMessage: "O modelo respondeu sem identificar uma acao executavel ou uma resposta conclusiva.",
+    });
+  }
+
   // Fotos anexadas na conversa nunca vêm do modelo — anexadas aqui,
   // mecanicamente, só quando a ação é criar um imóvel novo.
   if (action.type === "create_property" && opts.imageUrls?.length) {
     action.image_urls = opts.imageUrls;
   }
 
-  // answer, navigate, query_agenda, query_leads e query_report nunca são
-  // mutação — seguem direto, autonomia não se aplica.
+  // Respostas e consultas (inclusive resumo de conversa) nunca são mutação —
+  // seguem direto, autonomia não se aplica.
   if (action.type === "answer") return { reply };
   if (action.type === "navigate") {
     const areas = agentAreas(opts.capabilities);
@@ -1209,6 +1334,34 @@ export async function runAgent(opts: {
     const realReply = await queryReportSummary(opts.brokerId, opts.userId, action.period);
     return { reply: realReply };
   }
+  if (action.type === "summarize_conversation") {
+    if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+      return { reply: "Você não tem permissão para consultar conversas no ImobiFlow." };
+    }
+    try {
+      const realReply = await summarizeConversationWithFollowup({
+        brokerId: opts.brokerId,
+        userId: opts.userId,
+        name: action.name,
+        phone: action.phone,
+      });
+      return { reply: realReply };
+    } catch (error: any) {
+      const publicMessage = "Não consegui analisar essa conversa agora. Pode tentar novamente?";
+      await recordSystemError({
+        brokerId: opts.brokerId,
+        userId: opts.userId,
+        channel: opts.channel || "painel_interno",
+        category: "tool_failure",
+        requestedAction: opts.message,
+        stage: "resumo_conversa_followup",
+        publicMessage,
+        technicalMessage: error?.stack || error?.message || error,
+        context: { action_type: action.type },
+      });
+      return { reply: publicMessage };
+    }
+  }
 
   // Gate soft: nem propõe a ação se o membro não pode executá-la — evita a
   // UX ruim de mostrar "vou fazer X, confirma?" pra só negar na hora do
@@ -1217,11 +1370,35 @@ export async function runAgent(opts: {
     return { reply: "Você não tem permissão para fazer essa ação no ImobiFlow. Fale com quem administra sua equipe se precisar de acesso." };
   }
 
-  // Defesa contra prompt injection: nenhuma mutação é executada apenas pela
-  // decisão do modelo. Mesmo no modo piloto, o corretor precisa confirmar na
-  // interface. answer/navigate/query_agenda/query_leads/query_report já
-  // retornaram nos branches acima.
+  // Defesa contra prompt injection continua nos schemas, no contexto isolado,
+  // nas permissoes e na revalidacao de posse. O modo governa apenas o passo
+  // operacional seguinte: Piloto executa; Copiloto/Manual pedem confirmacao.
   if (requiresHumanConfirmation(action)) {
+    if (opts.autonomy === "piloto") {
+      try {
+        const executed = await executeAction(opts.brokerId, opts.userId, action);
+        return {
+          reply,
+          executed: executed.summary,
+          navigate: executed.navigate,
+          refresh: true,
+        };
+      } catch (error: any) {
+        const publicMessage = `Não consegui concluir essa ação: ${error?.message || "erro desconhecido"}`;
+        await recordSystemError({
+          brokerId: opts.brokerId,
+          userId: opts.userId,
+          channel: opts.channel || "painel_interno",
+          category: "execution_error",
+          requestedAction: opts.message,
+          stage: `execucao_${action.type}`,
+          publicMessage,
+          technicalMessage: error?.stack || error?.message || error,
+          context: { action_type: action.type, autonomy: opts.autonomy },
+        });
+        return { reply: publicMessage };
+      }
+    }
     // Broadcast: a UI de confirmação só exibe o `reply`, então ele passa a ser
     // AUTORITATIVO — reescrito aqui com a contagem REAL de contatos (do
     // snapshot, não do que o modelo eventualmente chute) + a prévia do texto

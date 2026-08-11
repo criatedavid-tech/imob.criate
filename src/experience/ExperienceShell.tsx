@@ -45,11 +45,7 @@ const AUTONOMY_MOBILE_LABEL: Record<Autonomy, string> = {
   manual: 'Manual',
 };
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
-// Só troca o rótulo — desde o hardening contra prompt injection (22/07/2026),
-// os 3 modos se comportam igual: toda ação do Assistente IA (cadastrar,
-// enviar mensagem, agendar etc.) sempre pede confirmação antes de executar,
-// nunca roda sozinha, nem no Piloto automático.
-const AUTONOMY_HINT = 'Toda ação do Assistente IA (cadastrar, enviar mensagem, agendar etc.) sempre pede sua confirmação antes de executar — em qualquer um dos 3 modos.';
+const AUTONOMY_HINT = 'Piloto executa ações diretamente. Copiloto e Manual mantêm a confirmação antes de alterar ou enviar algo.';
 
 // Toggle Dia/Noite. Liberado a pedido do usuário pra QA ao vivo do modo Dia.
 // O modo Noite é o padrão; o Dia já é funcional (neutros/acentos/semânticos
@@ -146,6 +142,16 @@ export function ExperienceShell() {
     return () => { cancelled = true; };
   }, [navigate]);
 
+  useEffect(() => {
+    if (checkingAuth || !authService.isLoggedIn()) return;
+    fetch('/api/agent/preferences', { headers: authService.getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data && AUTONOMY_ORDER.includes(data.autonomy)) setAutonomy(data.autonomy);
+      })
+      .catch(() => {});
+  }, [checkingAuth]);
+
   // As 3 personas têm cockpit com dado real agora (Locação/Lançamentos/
   // Relatórios já existem) — nenhuma cai mais em mock puro.
   useEffect(() => {
@@ -196,8 +202,21 @@ export function ExperienceShell() {
     };
   }, []);
 
-  const cycleAutonomy = () =>
-    setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
+  const cycleAutonomy = async () => {
+    const previous = autonomy;
+    const next = AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(previous) + 1) % AUTONOMY_ORDER.length];
+    setAutonomy(next);
+    try {
+      const response = await fetch('/api/agent/preferences', {
+        method: 'PUT',
+        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autonomy: next }),
+      });
+      if (!response.ok) throw new Error('Falha ao salvar o modo.');
+    } catch {
+      setAutonomy(previous);
+    }
+  };
 
   // Centraliza toda troca de área: sair de Relatórios por qualquer caminho
   // (menu lateral, canvas, command bar) limpa o drill-down de membro, pra

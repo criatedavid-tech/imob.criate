@@ -1,5 +1,120 @@
 # Estado do projeto
 
+## Domínio próprio e OAuth Google (2026-08-11)
+
+- `realestate.criate.online` foi criado como CNAME isolado para o app Fly
+  `imobiflow-v2`; nenhum registro DNS preexistente da Criate foi alterado.
+- O certificado TLS está ativo e `/api/health`, `/sobre`, `/privacidade` e
+  `/termos` respondem HTTP 200 no novo domínio.
+- `criate.online` foi comprovado por TXT no Google Search Console. O cliente
+  OAuth preserva origem/callback `fly.dev` e adiciona origem/callback do domínio
+  próprio para uma migração sem interrupção.
+- As URLs públicas do Branding apontam ao domínio próprio e a reavaliação da
+  marca foi enviada ao Google. A origem canônica versionada passa a ser
+  `PUBLIC_APP_URL=https://realestate.criate.online`.
+
+## Logs movidos para o Painel Admin (local, 2026-08-11)
+
+- A tela global de Logs deixou o menu operacional do `/app` e passou a ser uma
+  aba do `/admin`, junto de Contas, Vouchers, Saúde do sistema e WhatsApp Pai.
+- O bloqueio do backend continua exigindo `imf_brokers.is_admin`; a mudança é
+  de organização da experiência e não amplia permissões.
+- A navegação administrativa ganhou quebra responsiva para acomodar as cinco
+  seções no celular. Não há migration.
+
+## Revogação administrativa de vouchers (local, 2026-08-11)
+
+- Voucher ativo pode ser revogado e o link deixa de funcionar imediatamente.
+- Voucher utilizado pode ter o acesso concedido revogado enquanto a conta ainda
+  estiver em `experimentacao`; os dados são preservados e a conta fica
+  `inativo`, podendo seguir para contratação.
+- A RPC transacional `imf_revoke_trial_voucher` trava voucher e conta, registra
+  administrador/data da revogação e recusa afetar uma conta que já trocou de
+  plano.
+- Requer a migration `20260811c_trial_voucher_revocation.sql`.
+
+## Resumo de conversa pelo WhatsApp Pai (local, 2026-08-11)
+
+- Nova ação estrita e não mutável `summarize_conversation` no agente interno,
+  disponível tanto no painel quanto no WhatsApp Pai.
+- O contato é resolvido por nome ou telefone e o sistema consulta até as 80
+  mensagens mais recentes do ticket atual para entregar resumo, pendência,
+  próximo passo e modelo de follow-up.
+- A consulta exige permissão `conversas:visualizar`; o acesso ao histórico é
+  novamente limitado por titular, permissão de gerenciamento, atribuição do
+  ticket ou propriedade do lead.
+- Histórico do cliente entra no modelo como contexto não confiável. Pedidos de
+  resumo nunca enviam mensagens; o envio requer solicitação explícita posterior.
+- Ambiguidades não expõem a lista de contatos antes da autorização específica e
+  pedidos de interrupção de contato eliminam a sugestão de mensagem.
+- Cobertura adicionada a `conversationInsights.test.ts` e ao teste permanente
+  do projeto. Não há migration.
+
+## Piloto real, lote de fotos, logs administrativos e CRM pelo Pai (2026-08-11)
+
+Revisão completa da cautela histórica confirmou que `runAgent` sempre devolvia
+proposta e que o WhatsApp Pai forçava `autonomy: "copiloto"`; o seletor do topo
+nem sequer era persistido. A decisão foi substituída: o painel autoexecuta no
+Piloto e o Pai persiste primeiro a proposta/idempotência e a confirma
+automaticamente. Copiloto/Manual continuam intactos.
+
+O álbum do Pai agora abre um lote persistente, espera quatro segundos de
+silêncio e entrega uma única confirmação ou um único comando com até 15 fotos.
+Texto e áudio enviados logo após as imagens aguardam o mesmo lote. O erro real
+“uma resposta por foto” deixa de existir no servidor, não apenas na interface.
+
+Criada a área global de Logs, visível somente para `is_admin`, com filtros,
+detalhe sanitizado e workflow operacional. Falhas do OpenRouter, execução do
+agente, mídia, fila do Pai e lotes são registradas best-effort sem derrubar o
+fluxo observado. Logs resolvidos têm retenção de 180 dias.
+
+O agente ganhou `move_lead_stage`. O snapshot inclui leads recentes, pipelines
+e etapas ativas; a execução revalida conta, autoria do membro e destino antes de
+mover. Como painel e Pai chamam o mesmo cérebro, a ferramenta vale nos dois.
+
+Migration criada e ainda pendente de aplicação:
+`20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+
+Os secrets oficiais do Google Agenda foram instalados no Fly e as três classes
+de máquina voltaram saudáveis. O projeto Google incorreto foi encerrado e ficou
+agendado para exclusão após o prazo de recuperação do provedor.
+
+## Controle de chaves auditável e protegido (2026-08-10)
+
+A auditoria da aba **Aluguéis → Para alugar** confirmou que as retiradas eram
+gravadas, mas a interface mostrava somente a chave em aberto e escondia todo o
+histórico após a devolução. O texto clicável **Devolvida** também parecia um
+status, embora executasse imediatamente a baixa: os 7 registros encontrados no
+banco tinham sido marcados como devolvidos em menos de um minuto, 3 deles em
+até 10 segundos. Quatro registros legados continham telefone inválido porque o
+formulário não possuía limite nem validação.
+
+O cartão agora separa estado e ação: mostra **Em posse** ou **Em atraso**,
+exibe pessoa, finalidade, telefone e prazo, e oferece **Registrar devolução**
+com confirmação explícita. Cada imóvel ganhou um histórico completo de
+retiradas e devoluções. Nome, telefone brasileiro e previsão futura são
+validados no navegador e novamente no backend. Falhas ao consultar a tabela de
+chaves deixaram de ser convertidas silenciosamente em listas vazias.
+
+Correção posterior no mesmo fluxo: o número **Visitas** do cartão consultava
+somente eventos futuros de `imf_agenda`, embora o usuário estivesse registrando
+as visitas pelo controle de chaves. O cartão agora mostra **Visitas feitas** e
+conta retiradas com finalidade `visita` já devolvidas; o KPI **Visitas
+marcadas** permanece restrito à Agenda futura e ignora eventos cancelados.
+
+Refino visual posterior: o modal de entrega deixou de usar o `select` nativo,
+que abria claro e quebrava o tema escuro. A finalidade agora usa botões
+segmentados responsivos; data e hora ocupam uma linha completa; cabeçalho,
+aviso e rodapé possuem separação visual; no celular, campos e ações empilham
+sem colisão ou texto sobreposto.
+
+A migration `20260810d_property_keys_hardening.sql` foi aplicada e verificada:
+RLS ativo, acesso direto do navegador recusado com HTTP 401 e acesso do backend
+preservado. As restrições `NOT VALID` protegem novos INSERTs/UPDATEs sem apagar
+ou reescrever os registros de teste anteriores. Integração refeita sobre o
+deploy do Claude (`f4bd194`) sem conflito funcional. TypeScript, 192 testes,
+build de produção e `git diff --check` aprovados.
+
 ## Inquilinos (Locação) — visão de detalhe (Etapas A e B) (2026-08-10)
 
 Pedido do usuário: a aba Inquilinos precisa escalar pra 100+ cadastros e
@@ -73,10 +188,9 @@ mobile 375px sem overflow horizontal e com o detalhe em tela cheia.
 `npx tsc --noEmit`, `npx knip`, `npm test` (179/179) e `npm run build`
 limpos.
 
-**Pendente**: autorização de commit/push (nada commitado ainda — a árvore
-de trabalho ainda tem a feature de reset do Codex pendente ao lado, então
-o commit desta mudança precisa ser cuidadoso pra incluir só os arquivos de
-Locação). Etapa C (opcional, ver plano): usar o `tenant_profile` que
+**Publicado**: a visão de detalhe entrou no commit `2a7114b` e foi integrada
+ao estado completo da V2 pelo merge `f4bd194`; o workflow de deploy terminou
+com sucesso em 10/08/2026. Etapa C (opcional, ver plano): usar o `tenant_profile` que
 `GET /api/locacao/contracts` já devolve mas nunca usa, pra linkar de volta
 de um contrato em "Imóveis alugados" pro detalhe do inquilino correspondente.
 
@@ -94,6 +208,34 @@ criptografada, respeita o escopo do membro, possui rate limit e pode ser trocado
 ou desativado. A migration necessária é
 `20260810c_agenda_calendar_feed.sql`. Publicação pendente até a aplicação da
 migration.
+
+## Agenda — sincronização bidirecional Google + iPhone implementada localmente (2026-08-11)
+
+O update deixou de ser apenas roadmap. Foram adicionados:
+
+- OAuth Google com `state` aleatório de uso único, acesso offline, tokens
+  AES-256-GCM e escopo restrito `calendar.app.created`;
+- agenda secundária Google “ImobiFlow”, importação incremental por `syncToken`,
+  exportação idempotente por vínculo local↔externo e ciclo no scheduler a cada
+  dois minutos;
+- lease atômico no Postgres para o botão manual e o scheduler nunca criarem o
+  mesmo evento simultaneamente;
+- servidor CalDAV gravável compatível com a configuração de conta do iPhone,
+  usando credencial própria do ImobiFlow, hash SHA-256 de uma senha aleatória
+  de 192 bits e sem pedir Apple ID/senha do iCloud;
+- discovery, `PROPFIND`, `calendar-query`, `calendar-multiget`, leitura,
+  criação, edição e exclusão de `VEVENT`, com ETag para bloquear sobrescrita
+  concorrente;
+- interface separando Google bidirecional, iPhone bidirecional e `.ics` legado
+  somente leitura.
+
+O fuso `America/Sao_Paulo` e a conversão ISO validados pelo usuário foram
+preservados. A migration nova é
+`20260811a_agenda_bidirectional_sync.sql`, aplicada e verificada em 11/08/2026:
+as três tabelas e as duas RPCs de lease responderam sem erro. Para ativar o
+Google ainda faltam as credenciais OAuth do projeto Google Cloud; secrets e
+deploy não foram executados nesta implementação local. Suíte integral,
+TypeScript, Knip, build e `git diff --check` aprovados em 11/08/2026.
 
 ## Locação — diretório de inquilinos separado (2026-08-10)
 

@@ -9,6 +9,7 @@ import { runVisitWhatsappAlertTick } from "./server/services/visitAlerts";
 import { expireDueUnitReservations } from "./server/services/unitReservationBilling";
 import {
   purgeExpiredWebhookLogs,
+  purgeResolvedSystemLogs,
   purgeResolvedQueueRows,
   expirePaiPendingActions,
   expireStagedWhatsappMedia,
@@ -22,6 +23,7 @@ import {
   runKeyOverdueAlertTick,
 } from "./server/services/rentalAutopilot";
 import { runRentalPaymentReconciliationTick } from "./server/services/rentalBilling";
+import { runGoogleCalendarSyncTick } from "./server/services/googleCalendarSync";
 
 const jobs: RecurringJob[] = [
   {
@@ -48,6 +50,15 @@ const jobs: RecurringJob[] = [
     task: runVisitWhatsappAlertTick,
   },
   {
+    // Sincroniza a agenda secundária criada pelo ImobiFlow no Google. O job
+    // singleton evita dois ciclos concorrentes; cada conexão ainda é
+    // idempotente pelos vínculos local↔externo persistidos no banco.
+    name: "sincronização Google Agenda",
+    intervalMs: 2 * 60_000,
+    runOnStart: true,
+    task: runGoogleCalendarSyncTick,
+  },
+  {
     name: "preparação de billing",
     intervalMs: 60 * 60 * 1_000,
     runOnStart: true,
@@ -70,6 +81,12 @@ const jobs: RecurringJob[] = [
     intervalMs: 24 * 60 * 60 * 1_000,
     runOnStart: true,
     task: purgeExpiredWebhookLogs,
+  },
+  {
+    name: "retenção de logs operacionais resolvidos",
+    intervalMs: 24 * 60 * 60 * 1_000,
+    runOnStart: true,
+    task: purgeResolvedSystemLogs,
   },
   {
     // Gera a cobrança do aluguel do mês (D-5 do vencimento). Determinístico,

@@ -8,6 +8,138 @@
 > houver divergência, prevalecem o estado de produção abaixo e as seções
 > arquiteturais atuais.
 
+### Assistente interno e WhatsApp Pai (estado local em 2026-08-11)
+
+O seletor **Piloto automático / Copiloto / Manual** deixou de ser apenas estado
+visual. A preferência é persistida por usuário e conta e é consumida tanto
+pelo painel quanto pelo WhatsApp Pai. Piloto executa ações mutáveis diretamente;
+Copiloto e Manual conservam a confirmação. Em todos os modos continuam ativos
+o schema estrito da saída da IA, as permissões granulares, o isolamento por
+conta/membro e a revalidação do objeto imediatamente antes da alteração.
+
+O Pai grava uma proposta pendente antes da autoexecução, usando a mesma trava
+de idempotência do fluxo confirmado. Assim, uma queda entre execução e resposta
+não transforma automaticamente o retry em uma segunda criação ou um segundo
+envio. O painel interno executa pelo mesmo `executeAction`.
+
+Álbuns de imóveis usam `imf_whatsapp_media_batches`: cada imagem continua com
+ID próprio e URL própria, porém o lote só é fechado depois de quatro segundos
+sem nova foto. Até 15 imagens são anexadas à mesma ação `create_property`.
+Legenda, texto ou áudio enviados em seguida aguardam a janela e viram um único
+comando. Sem descrição, o corretor recebe somente uma confirmação consolidada,
+nunca uma resposta por imagem.
+
+As ferramentas do agente são compartilhadas entre painel e Pai. Além das ações
+já existentes, `move_lead_stage` usa os 30 leads recentes e as etapas ativas
+reais da conta para mover um negócio, inclusive entre pipelines personalizados.
+IDs não são aceitos do texto livre: vêm do snapshot; ambiguidade deve gerar
+pergunta, não adivinhação.
+
+#### Resumo de conversa e sugestão de follow-up
+
+O WhatsApp Pai e o Assistente IA reconhecem pedidos como **“resuma a conversa
+com Maria”**, **“o que ficou combinado com o contato 62999999999?”** e **“veja
+a conversa com João e prepare um follow”**. A ação
+`summarize_conversation` localiza o contato pelo nome ou telefone, abre o ciclo
+atual do ticket e lê no máximo as 80 mensagens comerciais mais recentes para
+devolver:
+
+- momento atual e resumo objetivo da conversa;
+- pontos importantes e eventual pendência;
+- próximo passo recomendado;
+- um modelo curto de follow-up coerente com o histórico.
+
+Essa ferramenta é **somente leitura em todos os modos de autonomia**. Pedir o
+resumo ou o modelo nunca envia mensagem ao cliente. O envio só pode ocorrer
+depois de um novo pedido explícito, como **“envie esse follow-up”**, quando volta
+a valer o fluxo normal de `send_message` e suas regras de autonomia.
+
+O histórico é tratado como conteúdo não confiável antes de chegar ao modelo,
+portanto uma instrução escrita pelo cliente não vira comando do sistema. A
+consulta exige `conversas:visualizar`, respeita conta, atribuição e propriedade
+do lead; quem não administra todas as conversas só acessa as que lhe pertencem.
+Em nomes ambíguos, o agente pede o nome completo ou os últimos dígitos sem
+enumerar outros contatos. Se o cliente pediu para não receber mensagens ou o
+contexto desaconselha insistência, nenhum follow-up é recomendado. A função usa
+as tabelas atuais de conversas e **não exige migration**.
+
+### Logs técnicos administrativos
+
+`imf_system_error_logs` registra falha de integração, execução, ferramenta,
+fila, validação e pedido não interpretado com data/hora, conta, usuário, canal,
+ação solicitada, etapa, mensagem pública, detalhe técnico e estado operacional.
+Textos passam por sanitização de tokens, chaves, senhas, e-mail, telefone e CPF;
+o navegador nunca acessa a tabela diretamente (RLS + service role).
+
+A área **Logs** fica no **Painel Admin** (`/admin`), ao lado de Saúde do sistema,
+e as rotas `/api/system-logs` são globais e exclusivas do administrador da
+plataforma (`imf_brokers.is_admin`). Ela não aparece mais no menu operacional do
+`/app`. Titulares comuns e membros recebem 403 se tentarem chamar a API. O
+administrador pode filtrar, investigar e mudar cada ocorrência entre
+**Pendente**, **Em análise** e **Resolvido**. Somente logs resolvidos há mais de
+180 dias entram na retenção automática.
+
+### Revogação administrativa de vouchers
+
+Na aba **Vouchers** do `/admin`, convites ativos exibem **Revogar voucher** e
+deixam de funcionar imediatamente após a confirmação. Um voucher já utilizado,
+enquanto a conta ainda estiver no plano `experimentacao`, exibe **Revogar
+acesso**: a operação preserva os dados, marca o voucher como revogado e muda a
+conta vinculada para `inativo`, encerrando o acesso à plataforma. A pessoa ainda
+pode entrar no fluxo de contratação de um plano.
+
+A operação é atômica pela RPC `imf_revoke_trial_voucher`, bloqueia voucher e
+conta durante a alteração, exige administrador global também dentro do banco e
+não afeta contas que já migraram para um plano diferente. Depende da migration
+`20260811c_trial_voucher_revocation.sql`.
+
+Vouchers legados que foram marcados como utilizados sem `broker_id`/`used_by`
+também podem ser revogados no Admin. Nessa situação, identificada visualmente
+como **registro legado sem conta vinculada**, somente o voucher é encerrado;
+nenhuma conta é bloqueada. A rota administrativa faz uma atualização atômica
+condicionada a `status = used` e `broker_id IS NULL`; não há migration adicional.
+
+Essas estruturas dependem da migration
+`20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+
+### Recuperação da interface após deploy (2026-08-11)
+
+Uma aba que permanece aberta durante um deploy pode conservar o JavaScript da
+versão anterior e tentar carregar depois um chunk que já não existe. Assets
+ausentes em `/assets/*` agora devolvem 404 explícito e nunca o `index.html` da
+SPA. O cliente compara o entrypoint ao voltar de uma aba suspensa e atualiza a
+página quando encontra uma versão nova. Falhas de importação dinâmica também
+fazem uma única recarga automática por minuto; outros erros de renderização
+caem numa tela recuperável em vez de deixar apenas o fundo preto.
+
+### Google Agenda oficial (2026-08-11)
+
+Os secrets `GOOGLE_CALENDAR_CLIENT_ID` e `GOOGLE_CALENDAR_CLIENT_SECRET` do
+projeto oficial `absolute-point-505213-v3` foram instalados no Fly sem registrar
+seus valores no repositório. As máquinas do `imobiflow-v2` reiniciaram
+saudáveis. O projeto incorreto `scenic-oxygen-505212-k1` foi encerrado na conta
+David e está programado pelo Google para exclusão após 10/09/2026.
+
+O OAuth oficial utiliza exclusivamente o escopo mínimo
+`calendar.app.created`: cria uma agenda secundária do ImobiFlow e não acessa a
+agenda principal do usuário. O cliente Web, a origem e o callback de produção
+estão corretos. O escopo foi declarado em **Acesso a dados** e classificado pelo
+Google como não confidencial. O público é **Externo** e o app está **Em
+produção**, portanto contas Google reais não dependem mais da lista manual de
+testadores. A autorização individual do usuário continua obrigatória.
+
+A aplicação disponibiliza a página pública `/sobre`, a Política de Privacidade
+em `/privacidade` com divulgação específica do uso de dados das APIs do Google
+e os Termos em `/termos`. O HTML inicial de `/sobre` também contém o nome, a
+finalidade e o uso do Google Agenda sem depender da execução do React, para
+atender verificadores automáticos e navegadores sem JavaScript.
+
+**Branding e domínio próprio:** `criate.online` foi comprovado por DNS no Google
+Search Console e `https://realestate.criate.online` está ativo no Fly com TLS.
+O cliente OAuth mantém a origem/callback antigos e os novos durante a transição.
+As páginas públicas de apresentação, privacidade e termos já usam o domínio
+próprio, e a nova análise da marca foi solicitada ao Google em 11/08/2026.
+
 ### Piloto financeiro sandbox (preparado em 2026-08-10)
 
 O deploy V2 habilita o módulo financeiro de clientes em modo de homologação,
@@ -56,6 +188,39 @@ campos de auditoria/conciliação, o índice parcial e o bucket privado.
 Foi aplicada e verificada em produção em 10/08/2026: 8 colunas encontradas,
 bucket privado presente e índice de conciliação ativo.
 
+### Controle de retirada e devolução de chaves
+
+Na aba **Aluguéis → Para alugar**, cada imóvel disponível mostra somente a
+posse atual da chave. A retirada exige nome, telefone brasileiro válido quando
+informado, finalidade e uma previsão futura de devolução. O cartão diferencia
+explicitamente os estados **Em posse** e **Em atraso**; a devolução é uma ação
+separada, chamada **Registrar devolução**, e exige confirmação para evitar que
+um clique seja confundido com a leitura de um status.
+
+O formulário de entrega usa um modal responsivo: pessoa e telefone ficam em
+duas colunas somente quando há largura suficiente, a finalidade é escolhida em
+botões próprios (sem o menu nativo do navegador), e a previsão de devolução
+ocupa uma linha exclusiva. Em telas estreitas, todos os campos e ações empilham
+sem sobreposição.
+
+O botão de histórico preserva e exibe todas as retiradas e devoluções do
+imóvel, inclusive quem levou, finalidade, telefone, horários previstos e reais.
+O indicador **Visitas feitas** contabiliza as retiradas com finalidade
+**Visita** cuja devolução já foi registrada; **Visitas marcadas**, no resumo da
+aba, continua mostrando separadamente os compromissos futuros não cancelados da
+Agenda. Essa separação evita tratar uma reserva futura como visita realizada.
+O scheduler verifica chaves vencidas a cada 15 minutos e envia um único alerta
+ao telefone de notificação do responsável. A API mantém no máximo uma retirada
+em aberto por imóvel e nunca esconde falhas de leitura como uma lista vazia.
+
+A migration original `20260804_rental_autopilot.sql` está aplicada e a tabela
+foi verificada em 10/08/2026. O hardening incremental obrigatório
+`20260810d_property_keys_hardening.sql` ativa RLS, revoga acesso direto do
+navegador e impõe integridade para novos registros sem alterar o histórico
+legado. Foi aplicado e verificado em produção em 10/08/2026: o backend com
+`service_role` continuou acessando os 7 registros existentes e uma consulta
+direta com a chave pública do navegador passou a ser recusada com HTTP 401.
+
 ## 1. Produto, escopo e ambientes
 
 O ImobiFlow é uma plataforma imobiliária multi-tenant com três experiências no
@@ -70,8 +235,9 @@ Ambientes que não devem ser confundidos:
 
 | Ambiente | Endereço | Papel |
 | --- | --- | --- |
-| V2 | `https://imobiflow-v2.fly.dev/app` | produto que substituirá a V1 |
-| Dashboard 1.0 dentro da V2 | `https://imobiflow-v2.fly.dev/` | interface legada ainda roteada e suportada |
+| V2 | `https://realestate.criate.online/app` | produto que substituirá a V1; origem canônica |
+| Hostname Fly da V2 | `https://imobiflow-v2.fly.dev/` | compatibilidade temporária para links e assinaturas antigas |
+| Dashboard 1.0 dentro da V2 | `https://realestate.criate.online/` | interface legada ainda roteada e suportada |
 | V1 | `https://imobiflow.fly.dev/` | aplicação anterior; não alterar durante trabalhos na V2 |
 
 A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
@@ -93,8 +259,9 @@ standby parada. A segunda worker fornece failover de host, não throughput
 adicional enquanto parada. Redis Upstash e Sentry estão ativos. O painel Admin
 confirma saúde de filas, N8N e Redis e oferece intervenções idempotentes.
 
-Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
-`imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
+Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** no app
+Fly `imobiflow-v2`, hoje exposto por `realestate.criate.online`, via GitHub
+Actions (`.github/workflows/deploy-v2.yml`,
 gatilho `push`, secret `FLY_API_TOKEN_V2` — separado do `FLY_API_TOKEN` da
 v1). Não existe mais um passo manual de deploy nem uma revisão entre commit
 e publicação: `npx tsc --noEmit`/`npm run build`/`git diff --check` precisam
@@ -1758,6 +1925,35 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   valida formato e hash, aplica rate limit, retorna somente visitas e limita a
   janela a um ano anterior e três anos futuros. Migration:
   `20260810c_agenda_calendar_feed.sql`.
+- **Agenda bidirecional (implementada e homologada em 11/08/2026):**
+  - **Google Agenda:** OAuth de servidor com acesso offline e escopo mínimo
+    `calendar.app.created`. O ImobiFlow cria uma agenda secundária isolada, sem
+    ler a agenda pessoal do usuário. Tokens são cifrados por AES-256-GCM. Um
+    job singleton sincroniza a cada dois minutos e o botão permite execução
+    imediata. `syncToken`, ETag, hashes de payload e vínculos persistidos
+    garantem incrementalidade e idempotência; uma lease atômica no banco evita
+    concorrência web↔scheduler. Em conflito dos dois lados entre ciclos, a
+    alteração externa recebida no início do ciclo vence.
+  - **iPhone:** o ImobiFlow expõe uma conta CalDAV gravável descoberta por
+    `/.well-known/caldav`. O usuário recebe servidor, usuário aleatório e senha
+    de 192 bits mostrada uma única vez; só o SHA-256 da senha fica no banco.
+    Apple ID e senha do iCloud nunca são pedidos. O servidor implementa
+    discovery, `PROPFIND`, `calendar-query`, `calendar-multiget`, GET/HEAD,
+    PUT, DELETE e ETag/`If-Match`. Eventos recorrentes e de dia inteiro são
+    recusados nesta primeira versão para não degradar silenciosamente os dados.
+  - **Compatibilidade:** a assinatura `.ics` anterior permanece disponível e
+    somente leitura. Todas as modalidades respeitam escopo da conta/membro,
+    somente eventos `event_type='visita'`, janela de um ano anterior a três
+    anos futuros e limite de 5.000 itens. O fuso `America/Sao_Paulo` homologado
+    em 10/08/2026 não foi alterado.
+  - **Ativação técnica:** `20260811a_agenda_bidirectional_sync.sql` aplicada e
+    verificada em 11/08/2026; Google Calendar API, cliente OAuth Web, callback
+    `PUBLIC_APP_URL/api/agenda/google/callback` e secrets do Fly configurados.
+    Google e iPhone foram validados nos dois sentidos. O projeto Google está
+    **Em produção**, com público externo e escopo não confidencial; a liberação
+    geral está concluída. O domínio próprio foi configurado e comprovado em
+    11/08/2026, e a nova verificação da marca está em andamento no Google (ver
+    seção "Google Agenda oficial").
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo
@@ -2185,12 +2381,16 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260803_account_capability_overrides.sql` | aplicada e verificada pelo usuário em 03/08/2026 | combinações de Locação/Lançamentos/Financeiro/Equipe por conta |
 | `20260803b_rental_contract_management.sql` | aplicada manualmente pelo usuário em 03/08/2026 | termos completos de locação, competências mensais e recebimentos externos transacionais |
 | `20260803c_rental_tenants.sql` | aplicada manualmente pelo usuário em 03/08/2026 | cadastro reutilizável de inquilinos, backfill de contratos e defesa de vínculo entre contas |
+| `20260804_rental_autopilot.sql` | aplicada e verificada em 10/08/2026 | cobrança autônoma, eventos, configurações da IA e tabela de controle de chaves |
 | `20260807e_whatsapp_pai_staged_documents.sql` | aplicada e verificada | contexto temporário e isolado de documentos recebidos pelo WhatsApp Pai |
 | `20260807f_whatsapp_pai_release_hardening.sql` | aplicada e verificada | recuperação idempotente de confirmação, mídia e ativação explícita do webhook |
 | `20260807g_whatsapp_phone_verification_conflict_fix.sql` | aplicada e verificada | remove ambiguidade da RPC de verificação do telefone Pai |
 | `20260807h_whatsapp_pai_internal_conversation.sql` | aplicada e verificada | mantém o número Pai apenas no Assistente IA e recupera mídia no histórico |
 | `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
 | `20260810c_agenda_calendar_feed.sql` | pronta para aplicação | link privado e revogável de assinatura da Agenda no Google/iPhone |
+| `20260811a_agenda_bidirectional_sync.sql` | aplicada e verificada em 11/08/2026 | conexões Google OAuth/CalDAV, vínculos idempotentes, states OAuth, lápides de exclusão e lease de sincronização |
+| `20260811c_trial_voucher_revocation.sql` | pronta para aplicação | revoga convite ativo ou encerra atomicamente o acesso concedido por voucher utilizado ainda em experimentação |
+| `20260810d_property_keys_hardening.sql` | aplicada e verificada em 10/08/2026 | RLS, revogação do acesso direto e integridade dos novos registros de retirada/devolução |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e
 zero unidades vendidas sem `sold_at`. A execução manual do SQL não substitui a

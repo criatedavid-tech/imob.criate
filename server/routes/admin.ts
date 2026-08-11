@@ -282,14 +282,19 @@ adminRouter.get("/api/admin/trial-vouchers", async (req, res) => {
     if (error) throw error;
 
     const brokerIds = Array.from(new Set((data || []).map((row: any) => row.broker_id).filter(Boolean)));
-    const brokersById = new Map<string, { name: string; email: string }>();
+    const brokersById = new Map<string, { name: string; email: string; plan: string; status: string }>();
     if (brokerIds.length > 0) {
       const { data: brokerRows, error: brokerError } = await supabase
         .from("imf_brokers")
-        .select("id, name, email")
+        .select("id, name, email, plan, status")
         .in("id", brokerIds);
       if (brokerError) throw brokerError;
-      for (const broker of brokerRows || []) brokersById.set(broker.id, { name: broker.name, email: broker.email });
+      for (const broker of brokerRows || []) brokersById.set(broker.id, {
+        name: broker.name,
+        email: broker.email,
+        plan: broker.plan,
+        status: broker.status,
+      });
     }
 
     res.json((data || []).map((row: any) => ({
@@ -328,6 +333,89 @@ adminRouter.patch("/api/admin/trial-vouchers/:id/cancel", async (req, res) => {
       code: err?.code || "UNKNOWN",
     });
     res.status(500).json({ error: "Não foi possível cancelar o voucher." });
+  }
+});
+
+// Revoga tanto um convite ainda não usado quanto o acesso concedido por um
+// voucher já resgatado. A RPC bloqueia voucher + conta na mesma transação para
+// não existir estado intermediário (conta bloqueada com voucher ainda válido,
+// ou o inverso). Contas que já contrataram outro plano não são afetadas.
+adminRouter.patch("/api/admin/trial-vouchers/:id/revoke", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  try {
+    if (!z.string().uuid().safeParse(req.params.id).success) {
+      return res.status(400).json({ error: "Voucher inválido." });
+    }
+
+    // A primeira versão dos vouchers podia deixar um registro como `used`
+    // antes de salvar broker_id/used_by. Não há acesso de conta a revogar
+    // nesses casos. Encerramos somente o voucher com uma atualização
+    // condicionada, para não correr o risco de atingir um vínculo criado em
+    // paralelo entre a leitura e a gravação.
+    const { data: voucher, error: voucherError } = await supabase
+      .from("imf_trial_vouchers")
+      .select("id, status, broker_id")
+      .eq("id", req.params.id)
+      .maybeSingle();
+    if (voucherError) throw voucherError;
+    if (!voucher) return res.status(404).json({ error: "Voucher não encontrado." });
+
+    if (voucher.status === "used" && !voucher.broker_id) {
+      const now = new Date().toISOString();
+      const { data: legacyVoucher, error: legacyError } = await supabase
+        .from("imf_trial_vouchers")
+        .update({
+          status: "cancelled",
+          cancelled_at: now,
+          cancelled_by: (req as any).userId,
+          updated_at: now,
+        })
+        .eq("id", req.params.id)
+        .eq("status", "used")
+        .is("broker_id", null)
+        .select("id, status, cancelled_at")
+        .maybeSingle();
+      if (legacyError) throw legacyError;
+      if (!legacyVoucher) {
+        return res.status(409).json({ error: "O voucher mudou enquanto era revogado. Atualize o painel e tente novamente." });
+      }
+      console.log(`[ADMIN] Voucher legado revogado sem conta vinculada: voucher=${req.params.id} por user=${(req as any).userId}`);
+      return res.json({
+        voucher_id: legacyVoucher.id,
+        voucher_status: legacyVoucher.status,
+        broker_id: null,
+        broker_status: null,
+        revoked_access: false,
+        cancelled_at: legacyVoucher.cancelled_at,
+      });
+    }
+
+    const { data, error } = await supabase.rpc("imf_revoke_trial_voucher", {
+      p_voucher_id: req.params.id,
+      p_admin_user_id: (req as any).userId,
+    });
+    if (error) {
+      console.warn("[Admin] revogação de voucher recusada:", { code: error.code || "UNKNOWN" });
+      return res.status(409).json({
+        error: "Não foi possível revogar. O voucher pode já estar encerrado ou a conta pode não estar mais em experimentação.",
+      });
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result) return res.status(404).json({ error: "Voucher não encontrado." });
+
+    if (result.broker_id) {
+      // A conta pode ter titular e vários membros com decisões de acesso em
+      // cache. Revogação é rara e precisa valer para todos imediatamente.
+      invalidateAccountAccessCache();
+    }
+    console.log(`[ADMIN] Voucher revogado: voucher=${req.params.id} acesso=${Boolean(result.revoked_access)} por user=${(req as any).userId}`);
+    res.json(result);
+  } catch (err: any) {
+    console.error("Erro PATCH /api/admin/trial-vouchers/:id/revoke:", {
+      name: err?.name || "Error",
+      code: err?.code || "UNKNOWN",
+    });
+    res.status(500).json({ error: "Não foi possível revogar o voucher." });
   }
 });
 

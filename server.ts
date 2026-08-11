@@ -40,6 +40,8 @@ import { vitrineRouter } from "./server/routes/vitrine";
 import { contactsRouter } from "./server/routes/contacts";
 import { whatsappPaiSettingsRouter } from "./server/routes/whatsappPaiSettings";
 import { whatsappPaiRouter } from "./server/routes/whatsappPai";
+import { systemLogsRouter } from "./server/routes/systemLogs";
+import { injectPublicAboutPage } from "./server/services/publicAboutPage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -180,6 +182,7 @@ async function startServer() {
   app.use(contactsRouter);
   app.use(whatsappPaiSettingsRouter);
   app.use(whatsappPaiRouter);
+  app.use(systemLogsRouter);
 
   // Jobs recorrentes não rodam na API. O process group singleton `scheduler`
   // executa scheduler-worker.ts; assim o grupo `web` pode ser escalado sem
@@ -213,6 +216,15 @@ async function startServer() {
         }
       },
     }));
+    // Um asset com hash deixa de existir depois de um novo deploy. Ele nunca
+    // pode cair no fallback da SPA e receber index.html com status 200: o
+    // navegador espera JavaScript/CSS, rejeita o MIME text/html e o React
+    // desmonta a tela. O 404 explícito permite ao cliente reconhecer a versão
+    // antiga e fazer uma única recarga de recuperação.
+    app.use("/assets", (_req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(404).type("text/plain").send("Asset not found");
+    });
     // Rota de API inexistente devolve JSON 404 em vez do HTML da SPA. Sem
     // isso, um GET /api/errado respondia 200 + index.html: erro de front e
     // varredura de bot viravam "sucesso" nas métricas, cada um custando uma
@@ -243,6 +255,21 @@ async function startServer() {
       } catch {
         // Qualquer falha aqui cai no fallback normal da SPA: a página abre
         // igual a antes, só sem a prévia enriquecida.
+        return next();
+      }
+    });
+
+    // O Google valida a página inicial do OAuth sem garantir execução de
+    // JavaScript. Entregamos nome, finalidade, uso do Google Agenda e links
+    // institucionais já no HTML inicial; o React substitui esse conteúdo assim
+    // que o bundle carrega. Isso também mantém /sobre útil sem JavaScript.
+    app.get("/sobre", async (_req, res, next) => {
+      try {
+        const html = await readFile(path.join(distPath, "index.html"), "utf8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Content-Type", "text/html; charset=UTF-8");
+        return res.send(injectPublicAboutPage(html));
+      } catch {
         return next();
       }
     });

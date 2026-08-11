@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 
 const WEBHOOK_LOG_RETENTION_DAYS = 90;
+const RESOLVED_SYSTEM_LOG_RETENTION_DAYS = 180;
 // Filas: linhas já resolvidas viram só peso. Sem retenção, os índices UNIQUE
 // de dedupe (que cobrem TODO o histórico) crescem para sempre e cada INSERT
 // de ingestão sonda um btree cada vez maior — a latência degrada de forma
@@ -112,6 +113,17 @@ export async function expireStagedWhatsappMedia(): Promise<void> {
     .delete()
     .lt("created_at", cutoff);
   if (error) console.error("[Maintenance] falha ao expirar staging de mídia do WhatsApp Pai:", error.message);
+}
+
+export async function purgeResolvedSystemLogs(): Promise<void> {
+  const cutoff = new Date(Date.now() - RESOLVED_SYSTEM_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1_000).toISOString();
+  const { error } = await supabase.from("imf_system_error_logs")
+    .delete()
+    .eq("status", "resolvido")
+    .lt("resolved_at", cutoff);
+  if (error && !/imf_system_error_logs|schema cache|does not exist/i.test(error.message || "")) {
+    console.error("[Maintenance] falha ao expirar logs resolvidos:", error.message);
+  }
 }
 
 // Documentos do WhatsApp Pai são contexto temporário de uso único. Se o

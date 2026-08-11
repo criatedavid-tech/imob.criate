@@ -3,7 +3,12 @@ import { PUBLIC_APP_URL } from "../config";
 import { supabase } from "../supabase";
 import { requireUser, getBrokerId, isBrokerOwner } from "../middleware/auth";
 import { requireInternalToken } from "../middleware/internalAuth";
-import { calendarFeedReadLimiter, n8nInternalLimiter } from "../middleware/rateLimits";
+import {
+  calendarConnectionLimiter,
+  calendarDavLimiter,
+  calendarFeedReadLimiter,
+  n8nInternalLimiter,
+} from "../middleware/rateLimits";
 import { decryptKey, encryptKey, normalizePhoneBR } from "../lib/crypto";
 import {
   N8nInputValidationError,
@@ -21,8 +26,228 @@ import {
   generateCalendarFeedToken,
   isValidCalendarFeedToken,
 } from "../services/calendarFeed";
+import {
+  buildGoogleAuthorizationUrl,
+  calendarOAuthClientScript,
+  completeGoogleCalendarConnection,
+  disconnectGoogleCalendar,
+  generateOAuthState,
+  googleCalendarConfigured,
+  googleOAuthCompletionHtml,
+  hashOAuthState,
+  syncGoogleCalendarConnection,
+  type CalendarConnection,
+} from "../services/googleCalendarSync";
+import {
+  calDavAccountUrl,
+  calDavServerAddress,
+  generateCalDavCredentials,
+  handleCalDavRequest,
+} from "../services/caldavServer";
 
 export const agendaRouter = express.Router();
+
+// ─── Sincronização bidirecional: Google Agenda ─────────────────────────────
+agendaRouter.get('/api/agenda/google-sync', requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+    const { data, error } = await supabase
+      .from('imf_agenda_calendar_connections')
+      .select('id, include_all, status, last_synced_at, last_error, created_at')
+      .eq('broker_id', brokerId)
+      .eq('owner_user_id', userId)
+      .eq('provider', 'google')
+      .maybeSingle();
+    if (error) throw error;
+    res.json({
+      available: googleCalendarConfigured(),
+      configured: !!data,
+      ...(data || {}),
+      scope: data?.include_all ? 'account' : 'user',
+    });
+  } catch (err) {
+    console.error('[Agenda Google] GET status:', err);
+    res.status(500).json({ error: 'Não foi possível consultar a conexão do Google.' });
+  }
+});
+
+agendaRouter.post('/api/agenda/google-sync/connect', requireUser, calendarConnectionLimiter, async (req, res) => {
+  try {
+    if (!googleCalendarConfigured()) return res.status(503).json({ error: 'Google Agenda ainda não foi configurado no servidor.' });
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+    const state = generateOAuthState();
+    const includeAll = await isBrokerOwner(userId, brokerId);
+    const { error } = await supabase.from('imf_agenda_calendar_oauth_states').insert({
+      state_hash: hashOAuthState(state),
+      broker_id: brokerId,
+      owner_user_id: userId,
+      include_all: includeAll,
+      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    });
+    if (error) throw error;
+    res.json({ authorization_url: buildGoogleAuthorizationUrl(state) });
+  } catch (err) {
+    console.error('[Agenda Google] POST connect:', err);
+    res.status(500).json({ error: 'Não foi possível iniciar a conexão com o Google.' });
+  }
+});
+
+agendaRouter.get('/api/agenda/google/callback', async (req, res) => {
+  const state = String(req.query.state || '');
+  const code = String(req.query.code || '');
+  const providerError = String(req.query.error || '');
+  try {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state)) throw new Error('State OAuth inválido.');
+    const stateHash = hashOAuthState(state);
+    const { data, error } = await supabase
+      .from('imf_agenda_calendar_oauth_states')
+      .select('broker_id, owner_user_id, include_all, expires_at')
+      .eq('state_hash', stateHash)
+      .maybeSingle();
+    if (error || !data || new Date(data.expires_at) <= new Date()) throw new Error('Esta tentativa de conexão expirou. Inicie novamente.');
+    // Uso único antes de trocar o code. Um replay não pode reutilizar o state.
+    await supabase.from('imf_agenda_calendar_oauth_states').delete().eq('state_hash', stateHash);
+    if (providerError || !code) throw new Error(providerError === 'access_denied' ? 'A permissão do Google foi cancelada.' : 'O Google não devolveu o código de autorização.');
+    const connectionId = await completeGoogleCalendarConnection({
+      code,
+      brokerId: data.broker_id,
+      userId: data.owner_user_id,
+      includeAll: !!data.include_all,
+    });
+    // A conexão já está persistida; a primeira carga não bloqueia o retorno do OAuth.
+    syncGoogleCalendarConnection(connectionId).catch((syncError) => console.error('[Agenda Google] primeira sincronização:', syncError));
+    res.type('html').send(googleOAuthCompletionHtml(true));
+  } catch (err: any) {
+    const message = String(err?.message || 'Falha ao conectar Google Agenda.').slice(0, 180);
+    console.error('[Agenda Google] callback:', message);
+    res.status(400).type('html').send(googleOAuthCompletionHtml(false, message));
+  }
+});
+
+agendaRouter.get('/calendar-oauth-complete.js', (_req, res) => {
+  res.type('application/javascript').send(calendarOAuthClientScript);
+});
+
+agendaRouter.post('/api/agenda/google-sync/run', requireUser, calendarConnectionLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    const { data } = await supabase.from('imf_agenda_calendar_connections')
+      .select('id').eq('broker_id', brokerId).eq('owner_user_id', userId).eq('provider', 'google').maybeSingle();
+    if (!data) return res.status(404).json({ error: 'Google Agenda não conectado.' });
+    await syncGoogleCalendarConnection(data.id);
+    res.json({ ok: true, synced_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error('[Agenda Google] sincronização manual:', err);
+    res.status(502).json({ error: String(err?.message || 'Falha ao sincronizar com o Google.').slice(0, 300) });
+  }
+});
+
+agendaRouter.delete('/api/agenda/google-sync', requireUser, calendarConnectionLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    const { data } = await supabase.from('imf_agenda_calendar_connections')
+      .select('*').eq('broker_id', brokerId).eq('owner_user_id', userId).eq('provider', 'google').maybeSingle();
+    if (data) await disconnectGoogleCalendar(data as CalendarConnection);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Agenda Google] desconectar:', err);
+    res.status(500).json({ error: 'Não foi possível desconectar o Google Agenda.' });
+  }
+});
+
+// ─── Sincronização bidirecional: Calendário do iPhone via CalDAV ───────────
+agendaRouter.get('/api/agenda/iphone-sync', requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+    const { data, error } = await supabase.from('imf_agenda_calendar_connections')
+      .select('id, include_all, status, caldav_username, last_synced_at, last_error, created_at')
+      .eq('broker_id', brokerId).eq('owner_user_id', userId).eq('provider', 'caldav').maybeSingle();
+    if (error) throw error;
+    res.json({
+      configured: !!data,
+      ...(data || {}),
+      server: calDavServerAddress(),
+      account_url: calDavAccountUrl(),
+      scope: data?.include_all ? 'account' : 'user',
+    });
+  } catch (err) {
+    console.error('[Agenda iPhone] GET status:', err);
+    res.status(500).json({ error: 'Não foi possível consultar a conexão do iPhone.' });
+  }
+});
+
+agendaRouter.post('/api/agenda/iphone-sync', requireUser, calendarConnectionLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    if (!userId || !brokerId) return res.status(403).json({ error: 'Conta não encontrada.' });
+    const includeAll = await isBrokerOwner(userId, brokerId);
+    const credentials = generateCalDavCredentials();
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from('imf_agenda_calendar_connections').upsert({
+      broker_id: brokerId,
+      owner_user_id: userId,
+      provider: 'caldav',
+      include_all: includeAll,
+      status: 'active',
+      caldav_username: credentials.username,
+      caldav_password_hash: credentials.passwordHash,
+      last_error: null,
+      updated_at: now,
+    }, { onConflict: 'owner_user_id,provider' }).select('id, include_all, status, caldav_username, created_at').single();
+    if (error) throw error;
+    res.json({
+      configured: true,
+      ...data,
+      server: calDavServerAddress(),
+      account_url: calDavAccountUrl(),
+      username: credentials.username,
+      password: credentials.password,
+      password_visible_once: true,
+      scope: includeAll ? 'account' : 'user',
+    });
+  } catch (err) {
+    console.error('[Agenda iPhone] gerar credencial:', err);
+    res.status(500).json({ error: 'Não foi possível gerar a conexão segura do iPhone.' });
+  }
+});
+
+agendaRouter.delete('/api/agenda/iphone-sync', requireUser, calendarConnectionLimiter, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId) : null;
+    const { error } = await supabase.from('imf_agenda_calendar_connections').delete()
+      .eq('broker_id', brokerId).eq('owner_user_id', userId).eq('provider', 'caldav');
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[Agenda iPhone] desconectar:', err);
+    res.status(500).json({ error: 'Não foi possível desativar a conexão do iPhone.' });
+  }
+});
+
+// O iOS faz a descoberta com PROPFIND (e, conforme a versão, OPTIONS), não
+// necessariamente com GET. Restringir esta rota a GET devolvia 404 e deixava
+// a tela presa indefinidamente em "Verifying". O 308 preserva o método e o
+// corpo ao redirecionar para a coleção CalDAV real.
+agendaRouter.all(['/.well-known/caldav', '/.well-known/caldav/'], (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.redirect(308, '/caldav/');
+});
+agendaRouter.all(
+  ['/caldav', '/caldav/*'],
+  calendarDavLimiter,
+  express.text({ type: () => true, limit: '256kb' }),
+  (req, res) => { void handleCalDavRequest(req, res); },
+);
 
 // Assinatura privada iCalendar para Google Agenda e Apple Calendar.
 agendaRouter.get('/api/agenda/calendar-sync', requireUser, async (req, res) => {

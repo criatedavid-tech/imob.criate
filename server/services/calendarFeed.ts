@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 export interface CalendarFeedAppointment {
   id: string;
+  uid?: string | null;
   client_name?: string | null;
   client_phone?: string | null;
   client_email?: string | null;
@@ -75,7 +76,7 @@ function appointmentStatus(status?: string | null): 'CANCELLED' | 'CONFIRMED' | 
 
 export function generateAgendaIcs(
   appointments: CalendarFeedAppointment[],
-  options: { calendarName?: string; uidDomain?: string } = {},
+  options: { calendarName?: string; uidDomain?: string; includeMethod?: boolean } = {},
 ): string {
   const calendarName = escapeIcsText(options.calendarName || 'ImobiFlow - Agenda');
   const uidDomain = (options.uidDomain || 'imobiflow.app').replace(/[^a-z0-9.-]/gi, '') || 'imobiflow.app';
@@ -84,11 +85,11 @@ export function generateAgendaIcs(
     'VERSION:2.0',
     'PRODID:-//Criate//ImobiFlow Agenda//PT-BR',
     'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
     `X-WR-CALNAME:${calendarName}`,
     'X-WR-TIMEZONE:America/Sao_Paulo',
     'X-PUBLISHED-TTL:PT5M',
   ];
+  if (options.includeMethod !== false) lines.splice(4, 0, 'METHOD:PUBLISH');
 
   for (const appointment of appointments) {
     const start = new Date(appointment.scheduled_at);
@@ -111,7 +112,7 @@ export function generateAgendaIcs(
 
     lines.push(
       'BEGIN:VEVENT',
-      `UID:${escapeIcsText(appointment.id)}@${uidDomain}`,
+      `UID:${escapeIcsText(appointment.uid || `${appointment.id}@${uidDomain}`)}`,
       `DTSTAMP:${formatIcsDate(stamp)}`,
       `LAST-MODIFIED:${formatIcsDate(stamp)}`,
       `DTSTART:${formatIcsDate(start)}`,

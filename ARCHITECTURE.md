@@ -178,7 +178,9 @@ limit já foram separados.
   erro sanitizados: sem PII, corpo, cabeçalhos, cookies, query string, IP,
   contexto de usuário, variáveis locais ou breadcrumbs de console; tracing
   permanece desativado.
-- `PUBLIC_APP_URL=https://imobiflow-v2.fly.dev` é a origem canônica.
+- `PUBLIC_APP_URL=https://realestate.criate.online` é a origem canônica. O
+  hostname `imobiflow-v2.fly.dev` continua atendendo temporariamente apenas
+  para compatibilidade de links e assinaturas antigas.
 - Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
   automático pelo GitHub Actions.
 

@@ -68,13 +68,16 @@ test("migration incremental elimina conflito entre retorno e coluna do telefone"
   assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.imf_start_whatsapp_phone_verification[\s\S]*TO service_role/);
 });
 
-test("album do Pai e tratado pelos eventos individuais e a legenda vira comando adiado", async () => {
+test("album do Pai agrupa eventos individuais e fecha uma unica solicitacao", async () => {
   assert.equal(isPaiAlbumEnvelope({ mediaType: "collection", messageType: "AlbumMessage" }), true);
   assert.equal(isPaiAlbumEnvelope({ mediaType: "image", messageType: "ImageMessage" }), false);
 
   const source = await readFile(new URL("../server/services/whatsappPaiQueue.ts", import.meta.url), "utf8");
   assert.match(source, /Envelope de album; fotos processadas individualmente/);
-  assert.match(source, /enqueueDeferredPhotoCaption\(row\.sender_phone, rawText, executionMessageId\)/);
+  assert.match(source, /stagePhotoBatch\(userId, brokerId, row\.sender_phone, rawText, executionMessageId\)/);
+  assert.match(source, /imf_claim_whatsapp_media_batches/);
+  assert.match(source, /enqueueDeferredPhotoCaption\([\s\S]*batch\.caption/);
+  assert.match(source, /agrupei todas no mesmo cadastro/);
   assert.match(source, /dedupe_key: `photo-caption:\$\{providerMessageId\}`/);
   assert.match(source, /photoUrl, "image"/);
   assert.match(source, /storeAgentMediaFromBase64\(\{/);

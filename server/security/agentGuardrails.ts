@@ -19,6 +19,11 @@ const createLeadAction = z.object({
   phone,
   property_id: uuid,
 }).strict();
+const moveLeadStageAction = z.object({
+  type: z.literal("move_lead_stage"),
+  lead_id: uuid,
+  stage_id: uuid,
+}).strict();
 const createVisitAction = z.object({
   type: z.literal("create_visit"),
   name: shortText(200),
@@ -41,6 +46,11 @@ const queryLeadsAction = z.object({
 const queryReportAction = z.object({
   type: z.literal("query_report"),
   period: z.enum(["mes", "trimestre", "semestre", "ano"]).optional(),
+}).strict();
+const summarizeConversationAction = z.object({
+  type: z.literal("summarize_conversation"),
+  name: optionalText(200),
+  phone: phone.optional(),
 }).strict();
 const sendMessageAction = z.object({
   type: z.literal("send_message"),
@@ -129,10 +139,12 @@ const agentActionSchema = z.discriminatedUnion("type", [
   answerAction,
   navigateAction,
   createLeadAction,
+  moveLeadStageAction,
   createVisitAction,
   queryAgendaAction,
   queryLeadsAction,
   queryReportAction,
+  summarizeConversationAction,
   sendMessageAction,
   broadcastMessageAction,
   createPropertyAction,
@@ -149,10 +161,12 @@ const confirmedAgentActionSchema = z.discriminatedUnion("type", [
   answerAction,
   navigateAction,
   createLeadAction,
+  moveLeadStageAction,
   createVisitAction,
   queryAgendaAction,
   queryLeadsAction,
   queryReportAction,
+  summarizeConversationAction,
   sendMessageAction,
   broadcastMessageAction,
   confirmedCreatePropertyAction,
@@ -189,7 +203,7 @@ export function parseConfirmedAgentAction(input: unknown) {
   return parsed.data;
 }
 
-const NON_MUTATING_ACTIONS = new Set(["answer", "navigate", "query_agenda", "query_leads", "query_report"]);
+const NON_MUTATING_ACTIONS = new Set(["answer", "navigate", "query_agenda", "query_leads", "query_report", "summarize_conversation"]);
 
 export function requiresHumanConfirmation(action: { type: string }): boolean {
   return !NON_MUTATING_ACTIONS.has(action.type);

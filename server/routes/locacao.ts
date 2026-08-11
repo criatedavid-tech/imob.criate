@@ -191,6 +191,38 @@ const boletoImportSchema = z.object({
   file_name: z.string().trim().min(1).max(180).default("boleto.pdf"),
 });
 
+function isValidKeyPhone(raw: string): boolean {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+  return /^[1-9]\d[2-9]\d{7,8}$/.test(digits) && !/^(\d)\1+$/.test(digits);
+}
+
+const keyCheckoutSchema = z.object({
+  property_id: z.string().uuid("Imóvel inválido."),
+  holder_name: z.string().trim().min(2, "Informe o nome de quem está levando a chave.").max(120),
+  holder_phone: z.string().trim().max(20).nullable().optional(),
+  purpose: z.enum(["visita", "vistoria", "obra", "outro"]).default("visita"),
+  due_at: z.string().datetime({ offset: true, message: "Informe uma previsão de devolução válida." }),
+  notes: z.string().trim().max(500).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.holder_phone && !isValidKeyPhone(value.holder_phone)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["holder_phone"],
+      message: "Informe um telefone válido com DDD ou deixe o campo vazio.",
+    });
+  }
+  if (new Date(value.due_at).getTime() <= Date.now()) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["due_at"],
+      message: "A previsão de devolução deve ser uma data futura.",
+    });
+  }
+});
+
 function contractBusinessError(contract: Record<string, any>): string | null {
   if (contract.end_date && contract.end_date < contract.start_date) {
     return "A data final nao pode ser anterior ao inicio do contrato.";
@@ -1276,13 +1308,29 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
     const ids = list.map((p: any) => p.id);
     const nowIso = new Date().toISOString();
 
-    const [{ data: leads }, { data: visits }, { data: keys }] = await Promise.all([
+    const [leadsResult, visitsResult, keysResult, completedVisitKeysResult] = await Promise.all([
       supabase.from("leads").select("id, property_id, name, phone, status, created_at").in("property_id", ids).limit(2000),
       supabase.from("imf_agenda").select("id, property_id, client_name, scheduled_at, status")
-        .in("property_id", ids).gte("scheduled_at", nowIso).limit(500),
+        .in("property_id", ids).gte("scheduled_at", nowIso).neq("status", "cancelado").limit(500),
       supabase.from("imf_property_keys").select("id, property_id, holder_name, holder_phone, due_at, taken_at, purpose")
         .in("property_id", ids).is("returned_at", null).limit(200),
+      // Uma visita realizada é uma retirada de chave com finalidade "visita"
+      // que já teve a devolução registrada. A agenda continua representando
+      // apenas compromissos futuros; misturar os dois conceitos fazia o cartão
+      // mostrar zero mesmo com o histórico de visitas preenchido.
+      supabase.from("imf_property_keys").select("id, property_id")
+        .in("property_id", ids).eq("purpose", "visita").not("returned_at", "is", null).limit(5000),
     ]);
+    if (leadsResult.error) throw new Error(`Falha ao carregar interessados: ${leadsResult.error.message}`);
+    if (visitsResult.error) throw new Error(`Falha ao carregar visitas: ${visitsResult.error.message}`);
+    if (keysResult.error) throw new Error(`Falha ao carregar controle de chaves: ${keysResult.error.message}`);
+    if (completedVisitKeysResult.error) {
+      throw new Error(`Falha ao contabilizar visitas realizadas: ${completedVisitKeysResult.error.message}`);
+    }
+    const leads = leadsResult.data;
+    const visits = visitsResult.data;
+    const keys = keysResult.data;
+    const completedVisitKeys = completedVisitKeysResult.data;
 
     const byProp = (rows: any[] | null): Map<string, any[]> => {
       const m = new Map<string, any[]>();
@@ -1296,6 +1344,7 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
     const leadsMap = byProp(leads as any);
     const visitsMap = byProp(visits as any);
     const keysMap = byProp(keys as any);
+    const completedVisitKeysMap = byProp(completedVisitKeys as any);
 
     res.json(list.map((p: any) => {
       const propLeads = leadsMap.get(p.id) || [];
@@ -1318,6 +1367,7 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
         interessados: propLeads.length,
         dias_sem_lead: ultimoLead ? Math.floor((Date.now() - new Date(ultimoLead).getTime()) / 86_400_000) : null,
         visitas_agendadas: propVisits.length,
+        visitas_realizadas: (completedVisitKeysMap.get(p.id) || []).length,
         proxima_visita: propVisits[0]
           ? { quando: propVisits[0].scheduled_at, cliente: propVisits[0].client_name }
           : null,
@@ -1341,15 +1391,12 @@ locacaoRouter.get("/api/locacao/available", requireUser, async (req, res) => {
 });
 
 // ─── Controle de chaves ─────────────────────────────────────────────────────
-locacaoRouter.post("/api/locacao/keys", requireUser, async (req, res) => {
+locacaoRouter.post("/api/locacao/keys", requireUser, validateBody(keyCheckoutSchema), async (req, res) => {
   try {
     const brokerId = await getBrokerId((req as any).userId);
     if (!brokerId) return res.status(403).json({ error: "Broker not found" });
 
     const { property_id, holder_name, holder_phone, purpose, due_at, notes } = req.body || {};
-    if (!property_id || !holder_name?.trim()) {
-      return res.status(400).json({ error: "Informe o imóvel e com quem está a chave." });
-    }
     const { data: property } = await supabase
       .from("imf_properties").select("id").eq("id", property_id).eq("broker_id", brokerId).maybeSingle();
     if (!property) return res.status(404).json({ error: "Imóvel não encontrado." });
@@ -1357,11 +1404,11 @@ locacaoRouter.post("/api/locacao/keys", requireUser, async (req, res) => {
     const { data, error } = await supabase.from("imf_property_keys").insert({
       broker_id: brokerId,
       property_id,
-      holder_name: String(holder_name).trim().slice(0, 120),
+      holder_name,
       holder_phone: holder_phone ? normalizePhoneBR(String(holder_phone)) : null,
-      purpose: ["visita", "vistoria", "obra", "outro"].includes(purpose) ? purpose : "visita",
-      due_at: due_at || null,
-      notes: notes ? String(notes).slice(0, 500) : null,
+      purpose,
+      due_at,
+      notes: notes || null,
     }).select().single();
 
     if (error) {
@@ -1407,7 +1454,11 @@ locacaoRouter.get("/api/locacao/keys", requireUser, async (req, res) => {
     let query = supabase.from("imf_property_keys")
       .select("id, property_id, holder_name, holder_phone, purpose, taken_at, due_at, returned_at, notes")
       .eq("broker_id", brokerId);
-    if (typeof req.query.property_id === "string") query = query.eq("property_id", req.query.property_id);
+    if (typeof req.query.property_id === "string") {
+      const propertyId = z.string().uuid().safeParse(req.query.property_id);
+      if (!propertyId.success) return res.status(400).json({ error: "Imóvel inválido." });
+      query = query.eq("property_id", propertyId.data);
+    }
     const { data, error } = await query.order("taken_at", { ascending: false }).limit(200);
     if (error) throw error;
     res.json(data || []);
