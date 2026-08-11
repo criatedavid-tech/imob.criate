@@ -113,9 +113,22 @@ test("toda mutação é classificada para confirmação fora do piloto", () => {
   ]) {
     assert.equal(requiresHumanConfirmation({ type }), true, type);
   }
-  for (const type of ["answer", "navigate", "query_agenda"]) {
+  for (const type of ["answer", "navigate", "query_agenda", "query_leads", "query_report", "summarize_conversation"]) {
     assert.equal(requiresHumanConfirmation({ type }), false, type);
   }
+});
+
+test("resumo de conversa é leitura e não aceita texto de envio no contrato", () => {
+  const parsed = parseAgentModelResponse({
+    reply: "Vou consultar a conversa real.",
+    action: { type: "summarize_conversation", name: "João" },
+  });
+  assert.equal(parsed.action.type, "summarize_conversation");
+  assert.equal(requiresHumanConfirmation(parsed.action), false);
+  assert.throws(() => parseAgentModelResponse({
+    reply: "Vou consultar e enviar.",
+    action: { type: "summarize_conversation", name: "João", message: "Oi João" },
+  }), AgentOutputValidationError);
 });
 
 test("isola e limita conteúdo não confiável sem promovê-lo a regra", () => {

@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Resumo de conversa pelo WhatsApp Pai (local, 2026-08-11)
+
+- Nova ação estrita e não mutável `summarize_conversation` no agente interno,
+  disponível tanto no painel quanto no WhatsApp Pai.
+- O contato é resolvido por nome ou telefone e o sistema consulta até as 80
+  mensagens mais recentes do ticket atual para entregar resumo, pendência,
+  próximo passo e modelo de follow-up.
+- A consulta exige permissão `conversas:visualizar`; o acesso ao histórico é
+  novamente limitado por titular, permissão de gerenciamento, atribuição do
+  ticket ou propriedade do lead.
+- Histórico do cliente entra no modelo como contexto não confiável. Pedidos de
+  resumo nunca enviam mensagens; o envio requer solicitação explícita posterior.
+- Ambiguidades não expõem a lista de contatos antes da autorização específica e
+  pedidos de interrupção de contato eliminam a sugestão de mensagem.
+- Cobertura adicionada a `conversationInsights.test.ts` e ao teste permanente
+  do projeto. Não há migration.
+
 ## Piloto real, lote de fotos, logs administrativos e CRM pelo Pai (2026-08-11)
 
 Revisão completa da cautela histórica confirmou que `runAgent` sempre devolvia

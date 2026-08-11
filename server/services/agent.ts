@@ -20,6 +20,7 @@ import {
   requiresHumanConfirmation,
 } from "../security/agentGuardrails";
 import { recordSystemError } from "./systemErrorLogs";
+import { summarizeConversationWithFollowup } from "./conversationInsights";
 
 // ─────────────────────────────────────────────────────────────────────────
 // O CÉREBRO REAL (Etapa 13 do UX_MASTERPLAN.md)
@@ -93,7 +94,7 @@ function resolveDueAt(action: { date?: string; time?: string; delay_value?: stri
 }
 
 export interface AgentAction {
-  type: "answer" | "navigate" | "create_lead" | "move_lead_stage" | "create_visit" | "query_agenda" | "query_leads" | "query_report" | "send_message"
+  type: "answer" | "navigate" | "create_lead" | "move_lead_stage" | "create_visit" | "query_agenda" | "query_leads" | "query_report" | "summarize_conversation" | "send_message"
       | "broadcast_message"
       | "create_property" | "update_property" | "cancel_visit" | "update_visit" | "end_rental_contract" | "update_unit"
       | "create_reminder" | "schedule_followup";
@@ -587,6 +588,7 @@ function buildSystemPrompt(persona: string, capabilities: readonly AccountCapabi
   extraActions.push(`${++actionNum}. "move_lead_stage" — mover um lead existente entre etapas do CRM. Use quando o corretor pedir "move o João para Proposta", "passa Maria para Visita" ou equivalente. Preencha lead_id usando SOMENTE um id exato de recentLeads e stage_id usando SOMENTE um id exato de crmStages. A etapa precisa pertencer ao pipeline desejado. Se houver dois leads com o mesmo nome, se o lead não estiver em recentLeads ou se a etapa não existir, use "answer" e peça um identificador adicional/oriente abrir o CRM; nunca adivinhe ids.`);
   extraActions.push(`${++actionNum}. "query_leads" — SEMPRE que perguntarem quantos leads chegaram numa data/período (ex.: "quantos leads hoje", "leads dessa semana") ou pedirem os leads SEM ATENDIMENTO ainda — dado que NÃO está coberto pelo snapshot acima (que só tem a contagem total por estágio, não uma janela de datas). Preencha date_from (YYYY-MM-DD, obrigatório — pra "hoje" use a data de hoje informada acima) e date_to (opcional, só se for um intervalo). filter="nao_atendidos" quando o pedido for especificamente sobre leads ainda sem contato feito (estágio inicial); omita ou use "todos" nos demais casos. Você NÃO tem esse dado agora; o sistema busca de verdade e só depois responde — nunca use "answer" pra chutar essa contagem.`);
   extraActions.push(`${++actionNum}. "query_report" — SEMPRE que pedirem um relatório/resumo de desempenho (ex.: "relatório do mês", "como foi o trimestre", "resumo do ano", "fechei quanto esse mês") — dado que o snapshot acima não tem (é só um retrato do momento atual, não um período fechado). Preencha period com um de "mes" (padrão se não especificarem), "trimestre", "semestre" ou "ano". Você NÃO tem esses números agora; o sistema calcula de verdade e só depois responde.`);
+  extraActions.push(`${++actionNum}. "summarize_conversation" — abrir a conversa REAL de um contato e devolver um resumo junto com um modelo de follow-up contextual. Use quando o corretor pedir "resume a conversa com João", "o que ficou combinado com Maria", "veja o contato Hunter e prepare um follow" ou equivalente. Preencha name com o nome citado e phone somente quando o corretor informar um número. Esta ação é SOMENTE LEITURA: ela nunca envia o follow-up. O sistema busca as mensagens, respeita as permissões da aba Conversas e gera a sugestão; se o corretor quiser enviar depois, ele precisa pedir explicitamente em uma nova solicitação.`);
   extraActions.push(`${++actionNum}. "broadcast_message" — enviar UMA mensagem de WhatsApp pra TODOS os seus contatos salvos de uma vez. Use quando o corretor falar no plural/coletivo: "manda pros meus contatos", "avisa todo mundo", "divulga meus imóveis pra minha lista/base". Precisa SÓ de message (o texto que você compõe; NUNCA phone — o sistema envia pra cada contato salvo sozinho). Se for divulgação de imóveis, siga a REGRA DE DIVULGAÇÃO abaixo (mensagem-convite + link da vitrine). É diferente de "send_message", que é pra UM contato específico (aí sim tem phone). O sistema mostra pra você confirmar (com a contagem real de contatos) antes de disparar qualquer coisa.`);
   extraActions.push(`${++actionNum}. "create_property" — cadastrar um imóvel NOVO na carteira (o corretor está descrevendo um imóvel que ainda não existe na lista acima, não editando um existente). Precisa de price e location (bairro/cidade/endereço). title é opcional (se não vier, gere um curto a partir do tipo+localização, ex.: "Apartamento no Setor Oeste"). description é opcional mas recomendado: escreva um texto de venda natural e atraente com TUDO que não couber nos campos estruturados abaixo (andar, detalhes do prédio/condomínio, etc.).
    CAMPOS ESTRUTURADOS — isto NÃO é opcional: sempre que o corretor mencionar qualquer um destes, você TEM que preencher o campo correspondente, MESMO que a mesma informação também apareça em texto na description. Nunca deixe um campo vazio só porque "já está na descrição" — description e os campos estruturados são preenchidos JUNTOS, o campo estruturado é o que alimenta o formulário de verdade, a descrição é só o texto de venda.
@@ -642,6 +644,7 @@ Regras:
 - Para ações de criar/editar/enviar/cancelar/remarcar, o reply deve resumir a ação em uma frase (ex.: "Vou cadastrar a Maria no Apartamento Centro." / "Vou cancelar a visita com o João.").
 - phone: pode vir como o corretor falar, ou resolvido a partir de um nome da lista de Contatos; não precisa formatar.
 - "enviar/mandar mensagem" é SEMPRE send_message (um contato) ou broadcast_message (todos os contatos), nunca create_lead — são ações diferentes mesmo quando o mesmo número aparece nos dois contextos.
+- "resumir/analisar conversa" é SEMPRE summarize_conversation e nunca send_message. Trazer um modelo de follow-up não autoriza o envio; só envie se o corretor pedir explicitamente depois.
 - REGRA DE DIVULGAÇÃO: quando o corretor pedir pra DIVULGAR / COMPARTILHAR / MOSTRAR / MANDAR os imóveis dele pra um contato ou pra todos os contatos, a mensagem que você compõe (em send_message ou broadcast_message) DEVE convidar o cliente a ver os imóveis e INCLUIR o link da vitrine pública — o valor exato está no campo "vitrineUrl" do contexto (UNTRUSTED_ACCOUNT_CONTEXT); copie-o como está, nunca invente uma URL. NUNCA escreva "minha área de divulgação" nem descreva ferramentas/telas internas do corretor: o cliente não tem área nenhuma, ele só quer ver imóvel. Ex. de mensagem boa: "Oi! Reuni meus imóveis disponíveis num link só, dá uma olhada quando puder: {vitrineUrl} — se algum te interessar, me chama que agendo uma visita." Um contato só = send_message; todos os contatos = broadcast_message.
 - Só use uma ação de mutação (create/update/cancel/send) quando o pedido for claramente isso. Perguntas são sempre "answer" (se o dado já está acima) ou "query_agenda" (se for sobre uma data que você não tem).
 - Para perguntas sobre imóveis à venda ou para aluguel, use EXCLUSIVAMENTE properties[].finalidade. Nunca infira a finalidade pelo título, preço ou status. "aluguel" inclui finalidade "aluguel" ou "ambos"; "venda" inclui "venda" ou "ambos". Só chame um imóvel de disponível se status for "disponivel".
@@ -716,6 +719,7 @@ export const AGENT_ACTION_PERMISSION: Partial<Record<AgentAction["type"], { modu
   query_agenda: { module: "agenda", action: "visualizar" },
   query_leads: { module: "negocios", action: "visualizar" },
   query_report: { module: "relatorios", action: "visualizar" },
+  summarize_conversation: { module: "conversas", action: "visualizar" },
   create_lead: { module: "negocios", action: "criar" },
   move_lead_stage: { module: "negocios", action: "editar" },
   create_visit: { module: "agenda", action: "criar" },
@@ -1169,7 +1173,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
 // garante JSON válido) — reforçado em texto no fim do system prompt também
 // (ver buildSystemPrompt).
 const JSON_SHAPE_HINT = `Responda SEMPRE em JSON válido, exatamente neste formato:
-{"reply": "string", "action": {"type": "answer|navigate|create_lead|create_visit|query_agenda|query_leads|query_report|send_message|broadcast_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "filter"?: "todos|nao_atendidos", "period"?: "mes|trimestre|semestre|ano", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
+{"reply": "string", "action": {"type": "answer|navigate|create_lead|move_lead_stage|create_visit|query_agenda|query_leads|query_report|summarize_conversation|send_message|broadcast_message|create_property|update_property|cancel_visit|update_visit|end_rental_contract|update_unit|create_reminder|schedule_followup", "area"?: "string", "name"?: "string", "phone"?: "string", "property_id"?: "string", "lead_id"?: "string", "stage_id"?: "string", "date"?: "string", "time"?: "string", "date_from"?: "string", "date_to"?: "string", "filter"?: "todos|nao_atendidos", "period"?: "mes|trimestre|semestre|ano", "message"?: "string", "price"?: "string", "title"?: "string", "status"?: "string", "location"?: "string", "description"?: "string", "quartos"?: "string", "banheiros"?: "string", "area_m2"?: "string", "vagas_garagem"?: "string", "piscina"?: "Sim|Não", "tipo_imovel"?: "residencial|comercial", "finalidade"?: "venda|aluguel|ambos", "varanda_gourmet"?: "Sim|Não", "visit_id"?: "string", "contract_id"?: "string", "unit_id"?: "string", "unit_action"?: "reservar|vender|liberar", "buyer_name"?: "string", "buyer_phone"?: "string", "notify_message"?: "string", "delay_value"?: "string", "delay_unit"?: "minutos|horas|dias", "note"?: "string"}}`;
 
 // A resposta anterior da IA é reduzida ao texto de "reply" (sem o JSON de
 // action) — o modelo não precisa reler a própria estrutura de ação, só o que
@@ -1301,8 +1305,8 @@ export async function runAgent(opts: {
     action.image_urls = opts.imageUrls;
   }
 
-  // answer, navigate, query_agenda, query_leads e query_report nunca são
-  // mutação — seguem direto, autonomia não se aplica.
+  // Respostas e consultas (inclusive resumo de conversa) nunca são mutação —
+  // seguem direto, autonomia não se aplica.
   if (action.type === "answer") return { reply };
   if (action.type === "navigate") {
     const areas = agentAreas(opts.capabilities);
@@ -1329,6 +1333,34 @@ export async function runAgent(opts: {
     }
     const realReply = await queryReportSummary(opts.brokerId, opts.userId, action.period);
     return { reply: realReply };
+  }
+  if (action.type === "summarize_conversation") {
+    if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
+      return { reply: "Você não tem permissão para consultar conversas no ImobiFlow." };
+    }
+    try {
+      const realReply = await summarizeConversationWithFollowup({
+        brokerId: opts.brokerId,
+        userId: opts.userId,
+        name: action.name,
+        phone: action.phone,
+      });
+      return { reply: realReply };
+    } catch (error: any) {
+      const publicMessage = "Não consegui analisar essa conversa agora. Pode tentar novamente?";
+      await recordSystemError({
+        brokerId: opts.brokerId,
+        userId: opts.userId,
+        channel: opts.channel || "painel_interno",
+        category: "tool_failure",
+        requestedAction: opts.message,
+        stage: "resumo_conversa_followup",
+        publicMessage,
+        technicalMessage: error?.stack || error?.message || error,
+        context: { action_type: action.type },
+      });
+      return { reply: publicMessage };
+    }
   }
 
   // Gate soft: nem propõe a ação se o membro não pode executá-la — evita a

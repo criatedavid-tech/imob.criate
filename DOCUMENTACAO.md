@@ -35,6 +35,34 @@ reais da conta para mover um negócio, inclusive entre pipelines personalizados.
 IDs não são aceitos do texto livre: vêm do snapshot; ambiguidade deve gerar
 pergunta, não adivinhação.
 
+#### Resumo de conversa e sugestão de follow-up
+
+O WhatsApp Pai e o Assistente IA reconhecem pedidos como **“resuma a conversa
+com Maria”**, **“o que ficou combinado com o contato 62999999999?”** e **“veja
+a conversa com João e prepare um follow”**. A ação
+`summarize_conversation` localiza o contato pelo nome ou telefone, abre o ciclo
+atual do ticket e lê no máximo as 80 mensagens comerciais mais recentes para
+devolver:
+
+- momento atual e resumo objetivo da conversa;
+- pontos importantes e eventual pendência;
+- próximo passo recomendado;
+- um modelo curto de follow-up coerente com o histórico.
+
+Essa ferramenta é **somente leitura em todos os modos de autonomia**. Pedir o
+resumo ou o modelo nunca envia mensagem ao cliente. O envio só pode ocorrer
+depois de um novo pedido explícito, como **“envie esse follow-up”**, quando volta
+a valer o fluxo normal de `send_message` e suas regras de autonomia.
+
+O histórico é tratado como conteúdo não confiável antes de chegar ao modelo,
+portanto uma instrução escrita pelo cliente não vira comando do sistema. A
+consulta exige `conversas:visualizar`, respeita conta, atribuição e propriedade
+do lead; quem não administra todas as conversas só acessa as que lhe pertencem.
+Em nomes ambíguos, o agente pede o nome completo ou os últimos dígitos sem
+enumerar outros contatos. Se o cliente pediu para não receber mensagens ou o
+contexto desaconselha insistência, nenhum follow-up é recomendado. A função usa
+as tabelas atuais de conversas e **não exige migration**.
+
 ### Logs técnicos administrativos
 
 `imf_system_error_logs` registra falha de integração, execução, ferramenta,
