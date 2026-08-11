@@ -122,13 +122,25 @@ David e está programado pelo Google para exclusão após 10/09/2026.
 
 O OAuth oficial utiliza exclusivamente o escopo mínimo
 `calendar.app.created`: cria uma agenda secundária do ImobiFlow e não acessa a
-agenda principal do usuário. O cliente Web e o callback de produção estão
-corretos. Para a publicação externa, a aplicação disponibiliza a página pública
-`/sobre`, a Política de Privacidade em `/privacidade` com divulgação específica
-do uso de dados das APIs do Google e os Termos em `/termos`. No Google Auth
-Platform ainda é necessário declarar o escopo em **Acesso a dados**, preencher
-essas três URLs no **Branding**, mudar o público de **Testando** para
-**Em produção** e concluir a verificação indicada pelo próprio console.
+agenda principal do usuário. O cliente Web, a origem e o callback de produção
+estão corretos. O escopo foi declarado em **Acesso a dados** e classificado pelo
+Google como não confidencial. O público é **Externo** e o app está **Em
+produção**, portanto contas Google reais não dependem mais da lista manual de
+testadores. A autorização individual do usuário continua obrigatória.
+
+A aplicação disponibiliza a página pública `/sobre`, a Política de Privacidade
+em `/privacidade` com divulgação específica do uso de dados das APIs do Google
+e os Termos em `/termos`. O HTML inicial de `/sobre` também contém o nome, a
+finalidade e o uso do Google Agenda sem depender da execução do React, para
+atender verificadores automáticos e navegadores sem JavaScript.
+
+**Pendência opcional de branding:** o fluxo já funciona em produção, mas o nome
+"ImobiFlow" só substituirá o domínio na tela de consentimento depois da
+verificação de marca. O Google exige que a página inicial esteja em um domínio
+próprio comprovado por DNS. `imobiflow-v2.fly.dev` é um subdomínio da Fly.io e
+não pode ser comprovado como propriedade da Criate. Para concluir o branding,
+configurar um domínio próprio no Fly, verificá-lo no Google Search Console e
+atualizar origem, callback e URLs do Branding antes de reenviar a verificação.
 
 ### Piloto financeiro sandbox (preparado em 2026-08-10)
 
@@ -1937,9 +1949,10 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   - **Ativação técnica:** `20260811a_agenda_bidirectional_sync.sql` aplicada e
     verificada em 11/08/2026; Google Calendar API, cliente OAuth Web, callback
     `PUBLIC_APP_URL/api/agenda/google/callback` e secrets do Fly configurados.
-    Google e iPhone foram validados nos dois sentidos. O projeto Google ainda
-    está em modo **Testando**; a liberação geral depende da declaração do
-    escopo, Branding público e verificação/publicação no Google Auth Platform.
+    Google e iPhone foram validados nos dois sentidos. O projeto Google está
+    **Em produção**, com público externo e escopo não confidencial; a liberação
+    geral está concluída. Resta somente a verificação opcional da marca, que
+    depende de um domínio próprio da Criate (ver seção "Google Agenda oficial").
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo

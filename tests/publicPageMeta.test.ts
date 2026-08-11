@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 process.env.SUPABASE_URL ||= "https://exemplo.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "chave-de-teste";
 const { injectPageMeta } = await import("../server/services/publicPageMeta");
+const { injectPublicAboutPage } = await import("../server/services/publicAboutPage");
 const {
   extractEntryModulePath,
   isStaleAssetError,
@@ -11,6 +12,17 @@ const {
 } = await import("../src/lib/appRecovery");
 
 const CASCA = `<!doctype html><html lang="en"><head><meta charset="UTF-8" /><title>Criate</title></head><body><div id="root"></div></body></html>`;
+
+test("página pública explica o ImobiFlow e o uso do Google Agenda sem depender de JavaScript", () => {
+  const html = injectPublicAboutPage(CASCA);
+  assert.match(html, /<strong>ImobiFlow<\/strong>/);
+  assert.match(html, /plataforma imobiliária com inteligência artificial/i);
+  assert.match(html, /Google Agenda/);
+  assert.match(html, /somente os eventos dessa\s+agenda criada pelo próprio aplicativo/i);
+  assert.match(html, /href="\/privacidade"/);
+  assert.match(html, /href="\/termos"/);
+  assert.ok(html.includes('<div id="root">'), "o React precisa conservar seu container");
+});
 
 test("prévia do link no WhatsApp sai com título, descrição e foto", () => {
   const html = injectPageMeta(CASCA, {
@@ -115,6 +127,13 @@ test("título com aspas não escapa do atributo de estilo nem do HTML", () => {
 // HTML velho no cache pedia um .js inexistente, recebia HTML de volta e via
 // TELA BRANCA. O comentário no próprio server.ts já avisava disso.
 const fonteDoServidor = await readFile(new URL("../server.ts", import.meta.url), "utf8");
+
+test("rota pública enriquecida vem antes do fallback genérico da SPA", () => {
+  const rotaSobre = fonteDoServidor.indexOf('app.get("/sobre"');
+  const fallbackSpa = fonteDoServidor.indexOf('app.get("*"');
+  assert.ok(rotaSobre > 0);
+  assert.ok(rotaSobre < fallbackSpa);
+});
 
 test("o HTML da vitrine nunca pode ser cacheado pelo navegador", () => {
   const rota = fonteDoServidor.slice(

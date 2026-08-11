@@ -41,6 +41,7 @@ import { contactsRouter } from "./server/routes/contacts";
 import { whatsappPaiSettingsRouter } from "./server/routes/whatsappPaiSettings";
 import { whatsappPaiRouter } from "./server/routes/whatsappPai";
 import { systemLogsRouter } from "./server/routes/systemLogs";
+import { injectPublicAboutPage } from "./server/services/publicAboutPage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -254,6 +255,21 @@ async function startServer() {
       } catch {
         // Qualquer falha aqui cai no fallback normal da SPA: a página abre
         // igual a antes, só sem a prévia enriquecida.
+        return next();
+      }
+    });
+
+    // O Google valida a página inicial do OAuth sem garantir execução de
+    // JavaScript. Entregamos nome, finalidade, uso do Google Agenda e links
+    // institucionais já no HTML inicial; o React substitui esse conteúdo assim
+    // que o bundle carrega. Isso também mantém /sobre útil sem JavaScript.
+    app.get("/sobre", async (_req, res, next) => {
+      try {
+        const html = await readFile(path.join(distPath, "index.html"), "utf8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Content-Type", "text/html; charset=UTF-8");
+        return res.send(injectPublicAboutPage(html));
+      } catch {
         return next();
       }
     });
