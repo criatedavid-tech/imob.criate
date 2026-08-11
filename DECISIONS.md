@@ -1,5 +1,28 @@
 # Decisões vigentes
 
+## Marca do produto passa a ser "Real Estate" (2026-08-11)
+
+- O produto passa a se chamar **Real Estate**, acompanhando o domínio próprio
+  `realestate.criate.online`. "ImobiFlow" deixa de ser o nome corrente.
+- **Já aplicado**: `<title>` e `<meta name="description">` de `index.html`. A
+  asserção correspondente em `tests/calendarBidirectional.test.ts` foi
+  atualizada (não removida) — ela existe porque o Google confere se a home
+  identifica o app com o mesmo nome da tela de consentimento OAuth.
+- **A troca é incremental, não um "localizar e substituir".** Restam 89
+  ocorrências em 34 arquivos, e parte delas está acoplada a estado que já
+  existe fora do nosso banco: nome de agenda sincronizada no Google/iPhone do
+  usuário, `realm` de autenticação CalDAV, documentos legais vinculados ao
+  CNPJ e as páginas que o Google revisa. Trocar tudo de uma vez quebraria
+  integração de cliente. O inventário classificado está em `NEXT_TASK.md`.
+- **Não muda**: o prefixo `imf_` das tabelas (renomear schema é migration de
+  alto risco sem ganho de produto), o app do Fly `imobiflow-v2`, e a razão
+  social **Criate Tecnologia em Marketing e Vendas LTDA**, que é a entidade
+  jurídica e continua nos Termos, na Privacidade e no rodapé.
+- **Ordem obrigatória para o bloco do Google**: as credenciais OAuth do
+  projeto Google Cloud ainda não existem. A tela de consentimento deve ser
+  criada já como "Real Estate"; só depois as páginas públicas (`Sobre`,
+  `publicAboutPage`) mudam de nome, para os dois baterem na revisão.
+
 ## Assistente interno: autonomia real, mídia agrupada e rastreabilidade (2026-08-11)
 
 - Esta decisão substitui a cautela registrada em 22/07 e 23/07: no modo

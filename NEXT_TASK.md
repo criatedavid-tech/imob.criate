@@ -1,5 +1,75 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Renomear ImobiFlow → Real Estate: o que falta
+
+Decisão em `DECISIONS.md` (2026-08-11). Já feito: `<title>` e `description` de
+`index.html` + a asserção em `tests/calendarBidirectional.test.ts`. Restam **89
+ocorrências em 34 arquivos**, divididas por risco. Conferir com:
+`grep -rc "ImobiFlow" src/ server/ index.html | grep -v ":0$"`.
+
+### Grupo 1 — seguro trocar a qualquer momento (texto sem estado externo)
+
+Nada aqui é lido por sistema de terceiro nem já está gravado no dispositivo de
+ninguém; é rótulo visual, mensagem ou comentário.
+
+- Interface: `src/pages/Admin.tsx` (subtítulo do painel),
+  `src/components/Copyright.tsx` (rodapé — manter a razão social),
+  `src/experience/ConfigArea.tsx`, `LancamentosArea.tsx`, `LocacaoArea.tsx`,
+  `FinanceiroArea.tsx`.
+- `server/services/publicPageMeta.ts` — `og:site_name` do card de link.
+- Cabeçalhos `X-Title` do OpenRouter: `server/services/agent.ts`,
+  `routes/ai.ts`, `services/mediaAi.ts`, `routes/llmProxy.ts`,
+  `services/conversationInsights.ts`. É só rótulo de telemetria.
+- `server/services/asaasCredentials.ts` — `User-Agent` e o `name` do webhook.
+  **Verificado**: a idempotência do webhook é pela URL
+  (`item?.url === url`), não pelo nome, então renomear não duplica.
+- Mensagens ao usuário: `server/routes/auth.ts` (reset de senha por WhatsApp),
+  `services/whatsappStaffLinks.ts` (código de verificação),
+  `routes/locacao.ts` (`[TESTE ImobiFlow]`), prompt e mensagens de erro do
+  agente em `services/agent.ts`.
+- Comentários de código: `lib/http.ts`, `lib/sentryPrivacy.ts`, `config.ts`,
+  `routes/followup.ts`, `routes/conversations.ts`, `routes/brokers.ts`,
+  `services/uazapi.ts`, `services/rentalBilling.ts`,
+  `middleware/clientFinancialOperations.ts`.
+
+**Exceção dentro do grupo**: `services/inboundWebhookQueue.ts` envia o
+cabeçalho `X-ImobiFlow-Event-Id` para o n8n. Antes de renomear, confirmar se
+algum workflow do n8n lê esse nome — se ler, o fluxo quebra silenciosamente.
+
+### Grupo 2 — exige coordenação externa (NÃO trocar isolado)
+
+- **Termos e Privacidade** (`src/pages/Termos.tsx`, `Privacidade.tsx`): a marca
+  aparece vinculada ao CNPJ e a contratos vigentes. Decisão jurídica, não
+  técnica.
+- **Páginas revisadas pelo Google** (`src/pages/Sobre.tsx`,
+  `server/services/publicAboutPage.ts`): só depois que a tela de consentimento
+  OAuth existir como "Real Estate". Nome divergente é motivo comum de recusa.
+- **Nome da agenda no Google** (`services/googleCalendarSync.ts`, `summary:
+  'ImobiFlow'`): renomear afeta só agendas NOVAS. As já criadas continuam
+  "ImobiFlow" no Google Agenda do cliente. Para uniformizar seria preciso um
+  `PATCH` nas agendas existentes — decidir se vale.
+- **CalDAV** (`services/caldavServer.ts`): além do `displayname`, o
+  `CALDAV_REALM` vai no cabeçalho `WWW-Authenticate: Basic realm="..."`.
+  Clientes guardam a credencial indexada pelo realm; trocar pode fazer o
+  iPhone já configurado pedir a senha de novo.
+- **Feed `.ics`** (`services/calendarFeed.ts`): nome do calendário em
+  assinaturas que já estão ativas.
+- **`src/components/CalendarSyncModal.tsx`** (12 ocorrências, o arquivo com
+  mais): são instruções mandando o usuário procurar/digitar o nome
+  "ImobiFlow" no iPhone e no Google. Precisa mudar **junto** com os nomes
+  reais acima — se mudar antes, a instrução deixa de bater com a tela.
+
+### Grupo 3 — não renomear
+
+`imf_` (prefixo de todas as tabelas), app do Fly `imobiflow-v2`, e a razão
+social Criate Tecnologia em Marketing e Vendas LTDA.
+
+### Ao concluir cada grupo
+
+`npx tsc --noEmit`, `npm test`, `npx knip`, `npm run build`. Vários testes
+fixam textos de tela por regex (ex.: `calendarBidirectional.test.ts` cobre
+`Sobre`, `Privacidade` e o `<title>`); atualizar a asserção, nunca removê-la.
+
 ## Assistente/WhatsApp Pai — migration e QA antes da publicação
 
 1. Aplicar no Supabase:
