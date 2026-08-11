@@ -31,6 +31,37 @@ const insightSchema = z.object({
 
 export type ConversationInsight = z.infer<typeof insightSchema>;
 
+const rawInsightSchema = z.object({
+  momento: z.string(),
+  resumo: z.string(),
+  pontos_chave: z.array(z.string()),
+  pendencia: z.string(),
+  proximo_passo: z.string(),
+  follow_up: z.string().nullable(),
+});
+
+function requiredText(value: string, max: number, field: string): string {
+  const text = value.trim().slice(0, max);
+  if (!text) throw new Error(`A análise retornou o campo ${field} vazio.`);
+  return text;
+}
+
+export function normalizeConversationInsight(input: unknown): ConversationInsight {
+  const raw = rawInsightSchema.parse(input);
+  const normalized = {
+    momento: requiredText(raw.momento, 240, "momento"),
+    resumo: requiredText(raw.resumo, 1_000, "resumo"),
+    pontos_chave: raw.pontos_chave
+      .map((point) => point.trim().slice(0, 300))
+      .filter(Boolean)
+      .slice(0, 5),
+    pendencia: requiredText(raw.pendencia, 400, "pendencia"),
+    proximo_passo: requiredText(raw.proximo_passo, 400, "proximo_passo"),
+    follow_up: raw.follow_up?.trim().slice(0, 1_200) || null,
+  };
+  return insightSchema.parse(normalized);
+}
+
 function normalizedText(value: unknown): string {
   return String(value || "")
     .normalize("NFD")
@@ -175,7 +206,7 @@ Responda SOMENTE JSON no formato:
   if (!response.ok) throw new Error(data?.error?.message || `OpenRouter HTTP ${response.status}`);
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error("A análise da conversa voltou vazia.");
-  return insightSchema.parse(JSON.parse(content));
+  return normalizeConversationInsight(JSON.parse(content));
 }
 
 export async function summarizeConversationWithFollowup(options: {

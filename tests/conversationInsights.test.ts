@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   formatConversationInsight,
+  normalizeConversationInsight,
   resolveConversationContact,
 } from "../server/services/conversationInsights";
 
@@ -44,6 +45,21 @@ test("formata resumo e não transforma sugestão em envio", () => {
   assert.match(text, /\*Modelo de follow-up:\*/);
   assert.match(text, /envie esse follow-up/);
   assert.doesNotMatch(text, /mensagem enviada/i);
+});
+
+test("limita respostas extensas da IA sem perder um resumo válido", () => {
+  const insight = normalizeConversationInsight({
+    momento: `Aguardando retorno. ${"detalhe ".repeat(50)}`,
+    resumo: "Cliente interessado no imóvel.",
+    pontos_chave: Array.from({ length: 8 }, (_, index) => `Ponto ${index + 1}`),
+    pendencia: "Confirmar data da visita.",
+    proximo_passo: "Oferecer dois horários.",
+    follow_up: `Oi! ${"mensagem ".repeat(200)}`,
+  });
+
+  assert.equal(insight.momento.length, 240);
+  assert.equal(insight.pontos_chave.length, 5);
+  assert.equal(insight.follow_up?.length, 1_200);
 });
 
 test("WhatsApp Pai usa consulta real, permissão e contexto não confiável", async () => {
