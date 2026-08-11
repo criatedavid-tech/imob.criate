@@ -65,6 +65,12 @@ function unfoldIcs(value: string): string {
   return value.replace(/\r?\n[ \t]/g, '');
 }
 
+function extractVevent(ics: string): string | null {
+  const unfolded = unfoldIcs(ics);
+  const match = unfolded.match(/(?:^|\r?\n)BEGIN:VEVENT\r?\n[\s\S]*?\r?\nEND:VEVENT(?=\r?\n|$)/i);
+  return match ? match[0].replace(/^\r?\n/, '') : null;
+}
+
 function readIcsProperty(ics: string, name: string): { params: string; value: string } | null {
   const match = unfoldIcs(ics).match(new RegExp(`^${name}(?:;([^:]*))?:(.*)$`, 'im'));
   return match ? { params: match[1] || '', value: match[2].trim() } : null;
@@ -91,23 +97,24 @@ function parseCompactDate(value: string, params = ''): Date | null {
 
 export function parseCalDavEvent(ics: string): ParsedIcsEvent {
   if (Buffer.byteLength(ics, 'utf8') > MAX_BODY_BYTES) throw new Error('Evento excede o limite permitido.');
-  if (!/BEGIN:VEVENT/i.test(ics) || !/END:VEVENT/i.test(ics)) throw new Error('VEVENT ausente.');
-  if (/^RRULE:/im.test(unfoldIcs(ics))) throw new Error('Eventos recorrentes ainda não são suportados pelo ImobiFlow.');
-  const startProp = readIcsProperty(ics, 'DTSTART');
+  const eventIcs = extractVevent(ics);
+  if (!eventIcs) throw new Error('VEVENT ausente.');
+  if (/^RRULE(?:;[^:]*)?:/im.test(eventIcs)) throw new Error('Eventos recorrentes ainda não são suportados pelo ImobiFlow.');
+  const startProp = readIcsProperty(eventIcs, 'DTSTART');
   if (startProp && (/VALUE=DATE/i.test(startProp.params) || /^\d{8}$/.test(startProp.value))) {
     throw new Error('Eventos de dia inteiro ainda não são suportados pelo ImobiFlow.');
   }
   const start = startProp ? parseCompactDate(startProp.value, startProp.params) : null;
   if (!start) throw new Error('DTSTART inválido ou ausente.');
-  const endProp = readIcsProperty(ics, 'DTEND');
+  const endProp = readIcsProperty(eventIcs, 'DTEND');
   const end = endProp ? parseCompactDate(endProp.value, endProp.params) : null;
   const duration = end
     ? Math.max(5, Math.min(24 * 60, Math.round((end.getTime() - start.getTime()) / 60_000)))
     : 60;
-  const uid = unescapeIcs(readIcsProperty(ics, 'UID')?.value || randomBytes(16).toString('hex')).slice(0, 255);
-  const summary = unescapeIcs(readIcsProperty(ics, 'SUMMARY')?.value || 'Compromisso do iPhone').trim().slice(0, 200);
-  const description = unescapeIcs(readIcsProperty(ics, 'DESCRIPTION')?.value || '').slice(0, 5_000);
-  const rawStatus = readIcsProperty(ics, 'STATUS')?.value.toUpperCase();
+  const uid = unescapeIcs(readIcsProperty(eventIcs, 'UID')?.value || randomBytes(16).toString('hex')).slice(0, 255);
+  const summary = unescapeIcs(readIcsProperty(eventIcs, 'SUMMARY')?.value || 'Compromisso do iPhone').trim().slice(0, 200);
+  const description = unescapeIcs(readIcsProperty(eventIcs, 'DESCRIPTION')?.value || '').slice(0, 5_000);
+  const rawStatus = readIcsProperty(eventIcs, 'STATUS')?.value.toUpperCase();
   return {
     uid,
     summary: summary || 'Compromisso do iPhone',

@@ -41,6 +41,33 @@ test('parser CalDAV preserva o horário de São Paulo já homologado', () => {
   ].join('\r\n')), /recorrentes ainda não são suportados/);
 });
 
+test('parser CalDAV aceita VTIMEZONE do iPhone sem confundir sua RRULE com recorrência do evento', () => {
+  const event = parseCalDavEvent([
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VTIMEZONE',
+    'TZID:America/Sao_Paulo',
+    'BEGIN:STANDARD',
+    'DTSTART:19700215T000000',
+    'RRULE:FREQ=YEARLY;BYMONTH=2;BYDAY=3SU',
+    'END:STANDARD',
+    'END:VTIMEZONE',
+    'BEGIN:VEVENT',
+    'UID:iphone-teste-ai-ali-o',
+    'DTSTART;TZID=America/Sao_Paulo:20260812T140000',
+    'DTEND;TZID=America/Sao_Paulo:20260812T150000',
+    'SUMMARY:Teste AI Ali o',
+    'DESCRIPTION:Criado no calendário ImobiFlow do iPhone',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'));
+
+  assert.equal(event.uid, 'iphone-teste-ai-ali-o');
+  assert.equal(event.start, '2026-08-12T17:00:00.000Z');
+  assert.equal(event.durationMinutes, 60);
+  assert.equal(event.summary, 'Teste AI Ali o');
+});
+
 test('mapeamento Google é determinístico, bidirecional e preserva duração', () => {
   const local = {
     id: 'agenda-1', broker_id: 'broker-1', client_name: 'Maria',
