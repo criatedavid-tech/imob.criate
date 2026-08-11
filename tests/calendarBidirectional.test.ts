@@ -104,7 +104,7 @@ test('OAuth usa state forte, acesso offline e escopo restrito à agenda criada p
 });
 
 test('backend e migrations mantêm credenciais fora do navegador e sincronização no scheduler', async () => {
-  const [route, migration, sourceMigration, scheduler, modal, privacy, about, app, env] = await Promise.all([
+  const [route, migration, sourceMigration, scheduler, modal, privacy, about, app, indexHtml, env] = await Promise.all([
     read('../server/routes/agenda.ts'),
     read('../supabase/migrations/20260811a_agenda_bidirectional_sync.sql'),
     read('../supabase/migrations/20260811c_agenda_calendar_sources.sql'),
@@ -113,6 +113,7 @@ test('backend e migrations mantêm credenciais fora do navegador e sincronizaç�
     read('../src/pages/Privacidade.tsx'),
     read('../src/pages/Sobre.tsx'),
     read('../src/App.tsx'),
+    read('../index.html'),
     read('../.env.example'),
   ]);
   assert.match(route, /hashOAuthState/);
@@ -143,5 +144,7 @@ test('backend e migrations mantêm credenciais fora do navegador e sincronizaç�
   assert.match(about, /agenda secundária chamada ImobiFlow/);
   assert.match(about, /não solicita acesso à agenda principal/);
   assert.match(app, /path="\/sobre"/);
+  assert.match(indexHtml, /<html lang="pt-BR">/);
+  assert.match(indexHtml, /<title>ImobiFlow \| Plataforma imobiliária com IA<\/title>/);
   assert.match(env, /GOOGLE_CALENDAR_CLIENT_SECRET/);
 });
