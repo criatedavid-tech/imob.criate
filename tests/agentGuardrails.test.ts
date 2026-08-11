@@ -12,6 +12,8 @@ import {
 import { formatAgendaByDay } from "../server/services/agendaFormatter";
 
 const PROPERTY_ID = "11111111-1111-4111-8111-111111111111";
+const LEAD_ID = "22222222-2222-4222-8222-222222222222";
+const STAGE_ID = "33333333-3333-4333-8333-333333333333";
 
 test("aceita somente uma resposta de agente dentro do contrato", () => {
   const parsed = parseAgentModelResponse({
@@ -103,9 +105,9 @@ test("broadcast_message aceita só o texto e rejeita phone (destino é a lista i
   assert.equal(confirmed.type, "broadcast_message");
 });
 
-test("toda mutação exige confirmação humana", () => {
+test("toda mutação é classificada para confirmação fora do piloto", () => {
   for (const type of [
-    "create_lead", "create_visit", "send_message", "broadcast_message", "create_property",
+    "create_lead", "move_lead_stage", "create_visit", "send_message", "broadcast_message", "create_property",
     "update_property", "cancel_visit", "update_visit", "end_rental_contract",
     "update_unit", "create_reminder", "schedule_followup",
   ]) {
@@ -129,12 +131,14 @@ test("isola e limita conteúdo não confiável sem promovê-lo a regra", () => {
   assert.ok(message.length < 5_000);
 });
 
-test("arquitetura não autoexecuta mutação no modo piloto", async () => {
+test("piloto autoexecuta somente depois dos gates; outros modos propõem", async () => {
   const source = await readFile(new URL("../server/services/agent.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../server/routes/agent.ts", import.meta.url), "utf8");
 
-  assert.equal(source.includes('opts.autonomy === "piloto"'), false);
+  assert.equal(source.includes('opts.autonomy === "piloto"'), true);
   assert.match(source, /requiresHumanConfirmation\(action\)/);
+  assert.match(source, /opts\.autonomy === "piloto"[\s\S]*executeAction\(opts\.brokerId, opts\.userId, action\)/);
+  assert.ok(source.indexOf("isActionAllowed(opts.userId, opts.brokerId, action.type)") < source.indexOf('opts.autonomy === "piloto"'));
   assert.match(source, /buildUntrustedContextMessage/);
   assert.match(source, /parseAgentModelResponse/);
   const promptStart = source.indexOf("function buildSystemPrompt");
@@ -142,6 +146,19 @@ test("arquitetura não autoexecuta mutação no modo piloto", async () => {
   assert.ok(promptStart >= 0 && promptEnd > promptStart);
   assert.equal(source.slice(promptStart, promptEnd).includes("snap."), false);
   assert.match(route, /autonomy[^\n]+"copiloto"/);
+  assert.match(route, /\/api\/agent\/preferences/);
+});
+
+test("movimento de CRM exige ids validos de lead e etapa", () => {
+  const parsed = parseAgentModelResponse({
+    reply: "Vou mover a Maria para Proposta.",
+    action: { type: "move_lead_stage", lead_id: LEAD_ID, stage_id: STAGE_ID },
+  });
+  assert.equal(parsed.action.type, "move_lead_stage");
+  assert.throws(() => parseAgentModelResponse({
+    reply: "Vou mover.",
+    action: { type: "move_lead_stage", lead_id: "Maria", stage_id: "Proposta" },
+  }), AgentOutputValidationError);
 });
 
 test("agenda semanal separa os sete dias, ordena horários e mostra dias vazios", () => {

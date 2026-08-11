@@ -20,6 +20,7 @@ export const AREAS: AreaItem[] = [
   { key: 'desempenho',    label: 'Desempenho',    personas: ['imobiliaria', 'incorporadora'], capability: 'team' },
   { key: 'divulgacao',    label: 'Divulgação',    personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'relatorios',    label: 'Relatórios',    personas: ['corretor', 'imobiliaria', 'incorporadora'] },
+  { key: 'logs',          label: 'Logs',          personas: ['corretor', 'imobiliaria', 'incorporadora'] },
   { key: 'config',        label: 'Config',        personas: ['corretor', 'imobiliaria', 'incorporadora'] },
 ];
 

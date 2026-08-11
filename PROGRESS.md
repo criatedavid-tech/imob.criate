@@ -1,5 +1,34 @@
 # Estado do projeto
 
+## Piloto real, lote de fotos, logs administrativos e CRM pelo Pai (2026-08-11)
+
+Revisão completa da cautela histórica confirmou que `runAgent` sempre devolvia
+proposta e que o WhatsApp Pai forçava `autonomy: "copiloto"`; o seletor do topo
+nem sequer era persistido. A decisão foi substituída: o painel autoexecuta no
+Piloto e o Pai persiste primeiro a proposta/idempotência e a confirma
+automaticamente. Copiloto/Manual continuam intactos.
+
+O álbum do Pai agora abre um lote persistente, espera quatro segundos de
+silêncio e entrega uma única confirmação ou um único comando com até 15 fotos.
+Texto e áudio enviados logo após as imagens aguardam o mesmo lote. O erro real
+“uma resposta por foto” deixa de existir no servidor, não apenas na interface.
+
+Criada a área global de Logs, visível somente para `is_admin`, com filtros,
+detalhe sanitizado e workflow operacional. Falhas do OpenRouter, execução do
+agente, mídia, fila do Pai e lotes são registradas best-effort sem derrubar o
+fluxo observado. Logs resolvidos têm retenção de 180 dias.
+
+O agente ganhou `move_lead_stage`. O snapshot inclui leads recentes, pipelines
+e etapas ativas; a execução revalida conta, autoria do membro e destino antes de
+mover. Como painel e Pai chamam o mesmo cérebro, a ferramenta vale nos dois.
+
+Migration criada e ainda pendente de aplicação:
+`20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+
+Os secrets oficiais do Google Agenda foram instalados no Fly e as três classes
+de máquina voltaram saudáveis. O projeto Google incorreto foi encerrado e ficou
+agendado para exclusão após o prazo de recuperação do provedor.
+
 ## Controle de chaves auditável e protegido (2026-08-10)
 
 A auditoria da aba **Aluguéis → Para alugar** confirmou que as retiradas eram
@@ -129,6 +158,34 @@ criptografada, respeita o escopo do membro, possui rate limit e pode ser trocado
 ou desativado. A migration necessária é
 `20260810c_agenda_calendar_feed.sql`. Publicação pendente até a aplicação da
 migration.
+
+## Agenda — sincronização bidirecional Google + iPhone implementada localmente (2026-08-11)
+
+O update deixou de ser apenas roadmap. Foram adicionados:
+
+- OAuth Google com `state` aleatório de uso único, acesso offline, tokens
+  AES-256-GCM e escopo restrito `calendar.app.created`;
+- agenda secundária Google “ImobiFlow”, importação incremental por `syncToken`,
+  exportação idempotente por vínculo local↔externo e ciclo no scheduler a cada
+  dois minutos;
+- lease atômico no Postgres para o botão manual e o scheduler nunca criarem o
+  mesmo evento simultaneamente;
+- servidor CalDAV gravável compatível com a configuração de conta do iPhone,
+  usando credencial própria do ImobiFlow, hash SHA-256 de uma senha aleatória
+  de 192 bits e sem pedir Apple ID/senha do iCloud;
+- discovery, `PROPFIND`, `calendar-query`, `calendar-multiget`, leitura,
+  criação, edição e exclusão de `VEVENT`, com ETag para bloquear sobrescrita
+  concorrente;
+- interface separando Google bidirecional, iPhone bidirecional e `.ics` legado
+  somente leitura.
+
+O fuso `America/Sao_Paulo` e a conversão ISO validados pelo usuário foram
+preservados. A migration nova é
+`20260811a_agenda_bidirectional_sync.sql`, aplicada e verificada em 11/08/2026:
+as três tabelas e as duas RPCs de lease responderam sem erro. Para ativar o
+Google ainda faltam as credenciais OAuth do projeto Google Cloud; secrets e
+deploy não foram executados nesta implementação local. Suíte integral,
+TypeScript, Knip, build e `git diff --check` aprovados em 11/08/2026.
 
 ## Locação — diretório de inquilinos separado (2026-08-10)
 

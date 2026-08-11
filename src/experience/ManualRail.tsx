@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Home, Sparkles, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
   Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
-  TrendingUp,
+  TrendingUp, ScrollText,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -99,6 +99,7 @@ const ICONS: Record<string, React.ReactNode> = {
   desempenho: <TrendingUp className="w-[18px] h-[18px]" />,
   divulgacao: <Megaphone className="w-[18px] h-[18px]" />,
   relatorios: <BarChart3 className="w-[18px] h-[18px]" />,
+  logs: <ScrollText className="w-[18px] h-[18px]" />,
   config: <Settings className="w-[18px] h-[18px]" />,
 };
 
@@ -109,19 +110,21 @@ const ICONS: Record<string, React.ReactNode> = {
 // suspender, ver o retorno de cada corretor); Locação mexe em contrato,
 // dado de inquilino (CPF/CNPJ) e cobrança sem autoria por corretor — nos
 // 3 casos só o titular da conta deve nem ver a aba no rail.
-const OWNER_ONLY_AREAS = new Set(['equipe', 'desempenho', 'locacao']);
+const OWNER_ONLY_AREAS = new Set(['equipe', 'desempenho', 'locacao', 'logs']);
 
 export function ManualRail({
-  capabilities, isOwner, active, onSelect, mobileOpen, onMobileClose,
+  capabilities, isOwner, isAdmin, active, onSelect, mobileOpen, onMobileClose,
 }: {
   capabilities: AccountCapability[];
   isOwner: boolean;
+  isAdmin: boolean;
   active: string;
   onSelect: (key: string) => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
   const areas = areasForCapabilities(capabilities).filter((a) => {
+    if (a.key === 'logs') return isAdmin;
     if (isOwner || !OWNER_ONLY_AREAS.has(a.key)) {
       // Financeiro não é company-wide como as outras: aluguel é sempre
       // dado do titular (zerado pra quem não é, direto no backend), mas

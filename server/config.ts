@@ -98,3 +98,12 @@ export const OPENROUTER_N8N_MODELS = new Set(
 );
 export const SENTRY_DSN           = process.env.SENTRY_DSN           || "";
 export const REDIS_URL            = process.env.REDIS_URL            || "";
+
+// ─── Google Calendar OAuth ────────────────────────────────────────────────
+// Credenciais do tipo "Aplicativo da Web". O redirect autorizado deve ser
+// exatamente PUBLIC_APP_URL + /api/agenda/google/callback.
+export const GOOGLE_CALENDAR_CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID || "";
+export const GOOGLE_CALENDAR_CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || "";
+export const GOOGLE_CALENDAR_REDIRECT_URI =
+  process.env.GOOGLE_CALENDAR_REDIRECT_URI
+  || `${PUBLIC_APP_URL}/api/agenda/google/callback`;

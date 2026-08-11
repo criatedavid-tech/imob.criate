@@ -19,6 +19,11 @@ const createLeadAction = z.object({
   phone,
   property_id: uuid,
 }).strict();
+const moveLeadStageAction = z.object({
+  type: z.literal("move_lead_stage"),
+  lead_id: uuid,
+  stage_id: uuid,
+}).strict();
 const createVisitAction = z.object({
   type: z.literal("create_visit"),
   name: shortText(200),
@@ -129,6 +134,7 @@ const agentActionSchema = z.discriminatedUnion("type", [
   answerAction,
   navigateAction,
   createLeadAction,
+  moveLeadStageAction,
   createVisitAction,
   queryAgendaAction,
   queryLeadsAction,
@@ -149,6 +155,7 @@ const confirmedAgentActionSchema = z.discriminatedUnion("type", [
   answerAction,
   navigateAction,
   createLeadAction,
+  moveLeadStageAction,
   createVisitAction,
   queryAgendaAction,
   queryLeadsAction,

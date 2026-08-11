@@ -1,5 +1,54 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Assistente/WhatsApp Pai — migration e QA antes da publicação
+
+1. Aplicar no Supabase:
+   `supabase/migrations/20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+2. Publicar somente depois da migration.
+3. Validar com conta de teste:
+   - Piloto: criar/mover um lead sem pergunta “sim/não”;
+   - Copiloto e Manual: a mesma ação deve continuar pedindo confirmação;
+   - enviar um álbum de 4 a 15 fotos + texto ou áudio e receber uma única ação;
+   - confirmar que todas as fotos aparecem no mesmo imóvel e no histórico do
+     Assistente IA;
+   - mover um lead para uma etapa de pipeline personalizado pelo Pai;
+   - provocar um pedido não interpretado em conta de teste e conferir a
+     ocorrência na área Logs usando apenas usuário `is_admin`;
+   - verificar 403 e ausência do item Logs com um titular comum.
+
+Nenhum deploy dessas alterações foi feito nesta etapa. A migration acima é
+obrigatória antes de publicar.
+
+## Agenda bidirecional — implementada localmente; infraestrutura aplicada
+
+A sincronização de mão dupla foi implementada para **Google Agenda** e
+**Calendário do iPhone**. O Google usa OAuth offline e uma agenda secundária
+“ImobiFlow”, criada com o escopo restrito `calendar.app.created`. O iPhone usa
+uma conta CalDAV própria do ImobiFlow, com usuário e senha aleatórios e
+revogáveis; nenhuma senha da Apple é solicitada ou armazenada. O feed `.ics`
+anterior continua disponível como alternativa somente leitura.
+
+Para ativar:
+
+1. ~~Aplicar `supabase/migrations/20260811a_agenda_bidirectional_sync.sql`.~~
+   Concluído e verificado em 11/08/2026 (tabelas e RPCs acessíveis).
+2. No Google Cloud, ativar a Calendar API, configurar a tela OAuth e criar um
+   cliente “Aplicativo da Web”. Cadastrar o redirect exato
+   `https://imobiflow-v2.fly.dev/api/agenda/google/callback`.
+3. ~~Configurar os secrets `GOOGLE_CALENDAR_CLIENT_ID` e
+   `GOOGLE_CALENDAR_CLIENT_SECRET` no Fly.io.~~ Concluído em 11/08/2026; app
+   reiniciado e máquinas saudáveis.
+4. Publicar a branch e validar primeiro uma conta Google de teste. Depois,
+   gerar a credencial CalDAV na Agenda e adicioná-la em Ajustes → Apps →
+   Calendário → Contas do Calendário → Outra → Conta CalDAV no iPhone.
+5. Testar criação, edição e exclusão nos três sentidos, sempre com um único
+   compromisso de homologação.
+
+O fuso e os horários já homologados em 10/08/2026 foram preservados. Eventos
+recorrentes e eventos de dia inteiro recebidos por CalDAV são recusados com
+erro explícito nesta primeira versão, em vez de serem gravados com horário
+incorreto.
+
 ## Inquilinos (Locação): visão de detalhe — publicada
 
 Etapas A (visão de Detalhe do Inquilino, reaproveitando `PaymentLedgerModal`/

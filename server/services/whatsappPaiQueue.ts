@@ -22,6 +22,8 @@ import {
   resetAgentConversation,
   resetReply,
 } from "./agentConversationReset";
+import { getAgentAutonomy } from "./agentPreferences";
+import { recordSystemError } from "./systemErrorLogs";
 
 // ─────────────────────────────────────────────────────────────────────────
 // WHATSAPP PAI — fila de inbound (Fase 4)
@@ -131,13 +133,20 @@ async function enqueueDeferredPhotoCaption(
   senderPhone: string,
   caption: string,
   providerMessageId: string,
+  mediaUrl?: string | null,
+  mediaType?: "audio" | null,
 ): Promise<void> {
   const { error } = await supabase.from("imf_pai_inbox").upsert({
     dedupe_key: `photo-caption:${providerMessageId}`,
     sender_phone: senderPhone,
     payload: {
       EventType: "messages",
-      _imobiflow: { kind: "photo_caption", source_message_id: providerMessageId },
+      _imobiflow: {
+        kind: "photo_caption",
+        source_message_id: providerMessageId,
+        media_url: mediaUrl || null,
+        media_type: mediaType || null,
+      },
       message: {
         id: `photo-caption:${providerMessageId}`,
         text: caption,
@@ -152,15 +161,38 @@ async function enqueueDeferredPhotoCaption(
   if (error) throw error;
 }
 
-async function hasDeferredPhotoCaption(senderPhone: string): Promise<boolean> {
-  const { data, error } = await supabase.from("imf_pai_inbox")
-    .select("id")
-    .eq("sender_phone", senderPhone)
-    .in("status", ["pending", "processing"])
-    .like("dedupe_key", "photo-caption:%")
-    .limit(1);
+async function stagePhotoBatch(
+  userId: string,
+  brokerId: string,
+  senderPhone: string,
+  caption: string,
+  providerMessageId: string,
+  mediaUrl?: string | null,
+  mediaType?: "audio" | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("imf_stage_whatsapp_media_batch", {
+    p_user_id: userId,
+    p_broker_id: brokerId,
+    p_sender_phone: senderPhone,
+    p_caption: caption || null,
+    p_caption_message_id: caption ? providerMessageId : null,
+    p_caption_media_url: caption ? mediaUrl || null : null,
+    p_caption_media_type: caption ? mediaType || null : null,
+  });
   if (error) throw error;
-  return !!data?.length;
+}
+
+async function hasOpenPhotoBatch(userId: string, brokerId: string): Promise<boolean> {
+  const { data, error } = await supabase.from("imf_whatsapp_media_batches")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("broker_id", brokerId)
+    .maybeSingle();
+  if (error) {
+    if (/imf_whatsapp_media_batches|schema cache|does not exist/i.test(error.message || "")) return false;
+    throw error;
+  }
+  return !!data;
 }
 
 async function resolveSenderIdentity(phone: string): Promise<{ userId: string; brokerId: string } | null> {
@@ -336,6 +368,17 @@ async function handlePendingAction(
   } catch (err: any) {
     const msg = err?.message || "Não consegui completar essa ação agora.";
     replyText = `Não consegui completar: ${msg}`;
+    await recordSystemError({
+      brokerId,
+      userId,
+      channel: "whatsapp_pai",
+      category: "execution_error",
+      requestedAction: actionType || "Ação confirmada pelo agente",
+      stage: actionType ? `execucao_${actionType}` : "validacao_acao_pendente",
+      publicMessage: replyText,
+      technicalMessage: err?.stack || msg,
+      context: { execution_message_id: executionMessageId },
+    });
   }
 
   const { data: finished, error: finishError } = await supabase.from("imf_whatsapp_pending_actions").update({
@@ -376,6 +419,15 @@ async function handleIncomingPhoto(
     .maybeSingle();
   if (existingError) throw existingError;
   if (existing?.url) return existing.url;
+  const { count: stagedCount, error: countError } = await supabase
+    .from("imf_whatsapp_staged_media")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("broker_id", brokerId);
+  if (countError) throw countError;
+  if ((stagedCount || 0) >= 15) {
+    throw new Error("O limite é de 15 fotos por cadastro. Envie a descrição para concluir este imóvel.");
+  }
   const fileLength = declaredFileLength(message);
   if (fileLength !== null && fileLength > MAX_IMAGE_BYTES) throw new Error("Imagem excede o limite permitido.");
 
@@ -549,21 +601,25 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   // Foto: staging + confirmação, nunca chama o agente — a próxima mensagem
   // de texto do mesmo remetente é que dispara o comando de verdade.
   if (mediaKind === "image") {
-    let replyText: string;
+    let replyText = "";
     let photoUrl: string | null = null;
     try {
       photoUrl = await handleIncomingPhoto(platformToken, message, userId, brokerId, executionMessageId);
-      if (rawText) {
-        await enqueueDeferredPhotoCaption(row.sender_phone, rawText, executionMessageId);
-        replyText = "Foto e descrição recebidas. Vou juntar as imagens antes de preparar o cadastro.";
-      } else if (await hasDeferredPhotoCaption(row.sender_phone)) {
-        replyText = "";
-      } else {
-        replyText = "Foto recebida! Manda mais fotos ou já descreve o imóvel (endereço, quartos, valor...) que eu cadastro.";
-      }
+      await stagePhotoBatch(userId, brokerId, row.sender_phone, rawText, executionMessageId);
     } catch (error: any) {
       logAiProviderError("[WhatsApp Pai] processamento de foto falhou", error);
       replyText = `Não consegui processar essa foto: ${error?.message || "Erro desconhecido."}`;
+      await recordSystemError({
+        brokerId,
+        userId,
+        channel: "whatsapp_pai",
+        category: "tool_failure",
+        requestedAction: "Receber foto para cadastro de imóvel",
+        stage: "download_armazenamento_foto",
+        publicMessage: replyText,
+        technicalMessage: error?.stack || error?.message || error,
+        context: { provider_message_id: executionMessageId },
+      });
     }
     await logPaiTurn(brokerId, userId, "user", "[Foto]", providerMessageId, undefined, photoUrl, "image");
     if (replyText) {
@@ -575,8 +631,8 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   }
 
   let text = rawText;
-  let commandMediaUrl: string | null = null;
-  let commandMediaType: "audio" | null = null;
+  let commandMediaUrl: string | null = optionalString(row.payload?._imobiflow?.media_url) || null;
+  let commandMediaType: "audio" | null = row.payload?._imobiflow?.media_type === "audio" ? "audio" : null;
   if (mediaKind === "audio") {
     try {
       const audio = await downloadIncomingAudio(platformToken, message);
@@ -614,6 +670,15 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   if (isAgentResetCommand(text)) {
     const reset = await resetAgentConversation(userId, brokerId);
     await sendPaiReply(platformToken, row.sender_phone, resetReply(reset));
+    await markPaiCompleted(row.id);
+    return;
+  }
+
+  // Descricao digitada ou ditada logo depois do album pertence ao mesmo lote.
+  // Em vez de correr contra os ultimos webhooks de foto, espera a janela de
+  // silencio e vira um unico comando sintetico com todas as URLs ja staged.
+  if (await hasOpenPhotoBatch(userId, brokerId)) {
+    await stagePhotoBatch(userId, brokerId, row.sender_phone, text, executionMessageId, commandMediaUrl, commandMediaType);
     await markPaiCompleted(row.id);
     return;
   }
@@ -688,6 +753,7 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
   const history: AgentTurn[] = (historyRows || []).reverse().map((h: any) => ({ role: h.role, text: h.text }));
 
   const entitlement = await resolveAccountCapabilities(brokerId);
+  const preference = await getAgentAutonomy(brokerId, userId);
   const stagedPhotoUrls = await fetchStagedPhotoUrls(userId, brokerId);
   const stagedDocuments = await fetchStagedDocuments(userId, brokerId);
   const result = await runAgent({
@@ -695,10 +761,14 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
     message: text.slice(0, 1000),
     persona: entitlement.accountType,
     capabilities: entitlement.enabled,
+    // O worker conserva a proposta primeiro para poder gravar um journal
+    // idempotente antes de qualquer mutacao. No Piloto a confirmacao abaixo e
+    // automatica; nos outros modos o corretor continua recebendo sim/nao.
     autonomy: "copiloto",
     history,
     imageUrls: stagedPhotoUrls.length ? stagedPhotoUrls : undefined,
     documentContexts: stagedDocuments.length ? stagedDocuments : undefined,
+    channel: "whatsapp_pai",
   });
 
   if (result.proposedAction) {
@@ -709,12 +779,29 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
       execution_message_id: null, execution_summary: null, executed_at: null,
     }, { onConflict: "user_id" });
     if (error) throw error;
-    await sendPaiReply(platformToken, row.sender_phone, `${result.reply}\n\nResponda *sim* pra confirmar ou *não* pra cancelar.`);
     await logPaiTurn(
       brokerId, userId, "user", userLogText, providerMessageId,
       undefined, commandMediaUrl, commandMediaType,
     );
-    await logPaiTurn(brokerId, userId, "ai", result.reply, null, result.proposedAction.type);
+    if (preference.autonomy === "piloto" && preference.migrationReady) {
+      await handlePendingAction(
+        {
+          action: result.proposedAction,
+          broker_id: brokerId,
+          status: "pending",
+          expires_at: new Date(Date.now() + PENDING_ACTION_TTL_MS).toISOString(),
+        },
+        "confirm",
+        brokerId,
+        userId,
+        row.sender_phone,
+        platformToken,
+        executionMessageId,
+      );
+    } else {
+      await sendPaiReply(platformToken, row.sender_phone, `${result.reply}\n\nResponda *sim* pra confirmar ou *não* pra cancelar.`);
+      await logPaiTurn(brokerId, userId, "ai", result.reply, null, result.proposedAction.type);
+    }
   } else {
     await sendPaiReply(platformToken, row.sender_phone, result.reply);
     await logPaiTurn(
@@ -744,6 +831,82 @@ async function processPaiInboxRow(row: { id: string; sender_phone: string; paylo
 // padrão já usado em runWebhookInboxTick (inboundWebhookQueue.ts).
 let paiTickRunning = false;
 
+async function finishPhotoBatch(userId: string): Promise<void> {
+  const { error } = await supabase.from("imf_whatsapp_media_batches").delete()
+    .eq("user_id", userId).eq("locked_by", WORKER_ID).eq("status", "processing");
+  if (error) throw error;
+}
+
+async function flushDuePhotoBatches(): Promise<void> {
+  const { data: batches, error } = await supabase.rpc("imf_claim_whatsapp_media_batches", {
+    p_worker_id: WORKER_ID,
+    p_limit: 10,
+    p_lease_seconds: 120,
+  });
+  if (error) {
+    // Compatibilidade de rollout: o worker antigo e o novo podem coexistir
+    // durante alguns segundos no deploy. Ausencia da migration nao derruba a
+    // fila de texto, mas mantem fotos sem auto-processamento ate ela existir.
+    if (/imf_claim_whatsapp_media_batches|schema cache|does not exist/i.test(error.message || "")) return;
+    throw error;
+  }
+
+  for (const batch of batches || []) {
+    try {
+      if (batch.caption) {
+        await enqueueDeferredPhotoCaption(
+          batch.sender_phone,
+          String(batch.caption).slice(0, 1_000),
+          batch.caption_message_id || `batch:${batch.user_id}:${Date.now()}`,
+          batch.caption_media_url || null,
+          batch.caption_media_type === "audio" ? "audio" : null,
+        );
+      } else {
+        const token = await getPlatformInstanceToken();
+        if (!token) throw new Error("Instancia central sem token para confirmar o lote de fotos.");
+        const { count, error: countError } = await supabase
+          .from("imf_whatsapp_staged_media")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", batch.user_id)
+          .eq("broker_id", batch.broker_id);
+        if (countError) throw countError;
+        const total = Math.min(count || 0, 15);
+        if (total > 0) {
+          const reply = total === 1
+            ? "Recebi 1 foto. Pode mandar mais ou enviar a descrição do imóvel para eu cadastrar."
+            : `Recebi ${total} fotos e agrupei todas no mesmo cadastro. Pode enviar a descrição do imóvel para eu concluir.`;
+          await sendPaiReply(token, batch.sender_phone, reply);
+          await logPaiTurn(batch.broker_id, batch.user_id, "ai", reply);
+        }
+      }
+      await finishPhotoBatch(batch.user_id);
+    } catch (batchError: any) {
+      const message = String(batchError?.message || batchError).slice(0, 2_000);
+      await recordSystemError({
+        brokerId: batch.broker_id,
+        userId: batch.user_id,
+        channel: "whatsapp_pai",
+        category: "queue_failure",
+        requestedAction: batch.caption || "Agrupar fotos recebidas",
+        stage: "fechamento_lote_fotos",
+        publicMessage: "Não foi possível concluir o processamento do lote de fotos.",
+        technicalMessage: batchError?.stack || message,
+        context: { attempts: batch.attempts },
+      });
+      const attempts = Number(batch.attempts || 1);
+      const { error: retryError } = await supabase.from("imf_whatsapp_media_batches").update({
+        status: "pending",
+        next_attempt_at: new Date(Date.now() + Math.min(300, 2 ** attempts) * 1_000).toISOString(),
+        locked_at: null,
+        locked_by: null,
+        last_error: message,
+        updated_at: new Date().toISOString(),
+      }).eq("user_id", batch.user_id).eq("locked_by", WORKER_ID);
+      if (retryError) console.warn("[WhatsApp Pai] falha ao reagendar lote de fotos:", retryError.message);
+    }
+  }
+}
+
 export async function runPaiInboxTick(): Promise<void> {
   if (paiTickRunning) return;
   paiTickRunning = true;
@@ -759,6 +922,18 @@ export async function runPaiInboxTick(): Promise<void> {
       } catch (err: any) {
         const message = (err?.message || String(err)).slice(0, 2_000);
         console.error(`[WhatsApp Pai] falha ao processar linha ${row.id}:`, message);
+        const identity = await resolveSenderIdentity(row.sender_phone).catch(() => null);
+        if (identity) await recordSystemError({
+          brokerId: identity.brokerId,
+          userId: identity.userId,
+          channel: "whatsapp_pai",
+          category: "queue_failure",
+          requestedAction: "Processar mensagem recebida no WhatsApp Pai",
+          stage: "processamento_inbox_pai",
+          publicMessage: "A mensagem não pôde ser processada.",
+          technicalMessage: err?.stack || message,
+          context: { inbox_id: row.id, attempts: row.attempts || 1 },
+        });
         const attempts = row.attempts || 1;
         const values = attempts >= MAX_ATTEMPTS
           ? { status: "dead", last_error: message, locked_at: null, locked_by: null }
@@ -770,6 +945,7 @@ export async function runPaiInboxTick(): Promise<void> {
         await updatePaiInboxStatus(row.id, values).catch(() => {});
       }
     }
+    await flushDuePhotoBatches();
   } catch (error: any) {
     console.error("[WhatsApp Pai] tick falhou:", error?.message || error);
   } finally {

@@ -1,5 +1,31 @@
 # Decisões vigentes
 
+## Assistente interno: autonomia real, mídia agrupada e rastreabilidade (2026-08-11)
+
+- Esta decisão substitui a cautela registrada em 22/07 e 23/07: no modo
+  **Piloto automático**, uma mutação validada é executada diretamente. Em
+  **Copiloto** e **Manual**, a proposta continua aguardando confirmação.
+- O modo é persistido por usuário/conta em `imf_agent_preferences`; o painel e
+  o WhatsApp Pai consultam a mesma preferência. Valor inválido ou ausência da
+  migration falha fechado para Copiloto.
+- Execução direta não elimina segurança: saída do modelo continua em schema
+  Zod estrito, contexto externo segue não confiável, permissões e posse são
+  revalidadas imediatamente antes da mutação. No Pai, a proposta é gravada
+  antes da autoexecução para evitar repetição insegura em retries.
+- Fotos do Pai são armazenadas individualmente, mas coordenadas como um lote
+  único após 4 segundos sem nova imagem. Até 15 URLs seguem juntas para um só
+  `create_property`; legenda, texto ou áudio enviados logo após o álbum esperam
+  o fechamento do lote. Sem descrição, sai somente uma confirmação consolidada.
+- O painel e o Pai usam o mesmo `runAgent`. A ferramenta
+  `move_lead_stage` passou a expor leads/etapas reais do CRM e permite mover
+  entre pipelines personalizados sem inventar IDs, sempre respeitando o escopo
+  do membro.
+- `imf_system_error_logs` guarda ocorrências sanitizadas com canal, conta,
+  usuário, ação, etapa, detalhe técnico e status. A tela global é exclusiva de
+  `is_admin`; titular comum e membro recebem 403. Logs resolvidos expiram após
+  180 dias; pendentes/em análise não são removidos pelo job.
+- Migration necessária: `20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+
 ## Régua de cobrança: mensagens selecionáveis por etapa (2026-08-10)
 
 - Cada mensagem opcional possui uma chave **Envia / Não envia** diretamente no
@@ -80,7 +106,8 @@
   exigem conversão para PDF nesta fase, evitando suporte parcial não provado.
 - O texto extraído entra em `UNTRUSTED_ACCOUNT_CONTEXT`. Uma instrução dentro
   do documento nunca vale como comando; somente a mensagem atual do usuário
-  vinculado expressa intenção, e toda mutação continua exigindo confirmação.
+  vinculado expressa intenção. A mutação segue a autonomia vigente: direta no
+  Piloto, confirmada em Copiloto/Manual.
 - O número oficial não é hardcoded no repositório: o pareamento continua sendo
   estado operacional da instância central. Isso preserva a troca futura da
   UAZAPI pela API oficial da Meta atrás da fronteira de transporte.
@@ -352,10 +379,11 @@
   `imobiflow-v2.fly.dev` por padrão. Testes realistas usam staging/conta de
   teste com provedores isolados; produção recebe apenas smoke curto e
   controlado. Critérios estão em `SCALABILITY_TEST_PLAN.md`.
-- **Modelo não autoriza mutação (2026-07-22).** Dados do snapshot e mensagens
-  de clientes são contexto não confiável fora do `system`; JSON do OpenRouter
-  passa por schema Zod estrito. Toda ação mutável exige confirmação humana,
-  mesmo no modo piloto. O modo ausente/inválido falha para `copiloto`.
+- **Modelo não autoriza mutação (2026-07-22; confirmação revista em
+  2026-08-11).** Dados do snapshot e mensagens de clientes são contexto não
+  confiável fora do `system`; JSON do OpenRouter passa por schema Zod estrito.
+  A decisão posterior no topo deste arquivo permite autoexecução somente no
+  Piloto, depois dos mesmos gates. Ausência da migration falha para Copiloto.
 
 - **UAZAPI direta.** Não existe intermediário de mensagens; a reconexão
   reafirma o webhook canônico da V2.
@@ -446,3 +474,14 @@
   pra visita do N8N e do Assistente in-app) pra não notificar o corretor de
   visita que ele mesmo acabou de ditar e não mexer nos relatórios que agrupam
   por `source`. Mesma limitação titular×membro do alerta de lembrete.
+- **Agenda externa bidirecional sem credencial pessoal da Apple
+  (2026-08-11).** Google usa OAuth com o escopo mínimo
+  `calendar.app.created` e uma agenda secundária “ImobiFlow”; não lê a agenda
+  pessoal. Para o iPhone, o ImobiFlow funciona como servidor CalDAV e entrega
+  uma credencial própria, aleatória e revogável. Foi rejeitada a alternativa
+  de guardar Apple ID e senha específica de aplicativo, pois ampliaria o dano
+  de um vazamento e acoplaria a plataforma a credenciais pessoais. O `.ics`
+  existente permanece como fallback somente leitura. A primeira versão
+  CalDAV falha explicitamente para recorrência e dia inteiro, pois
+  `imf_agenda` ainda representa compromissos com início e duração, não séries
+  nem eventos sem horário.

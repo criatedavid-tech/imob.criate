@@ -64,7 +64,7 @@ test('integração aplica isolamento, revogação e interface orientada aos dois
   assert.match(migration, /REVOKE ALL ON TABLE public\.imf_agenda_calendar_feeds FROM PUBLIC, anon, authenticated/);
   assert.doesNotMatch(migration, /\btoken\s+TEXT\b/);
   assert.match(modal, /Google Agenda/);
-  assert.match(modal, /iPhone \/ iCloud/);
+  assert.match(modal, /Calendário do iPhone — bidirecional/);
   assert.match(modal, /A assinatura é somente leitura/);
   assert.match(area, /Sincronizar calendário/);
 });

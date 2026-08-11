@@ -8,6 +8,59 @@
 > houver divergência, prevalecem o estado de produção abaixo e as seções
 > arquiteturais atuais.
 
+### Assistente interno e WhatsApp Pai (estado local em 2026-08-11)
+
+O seletor **Piloto automático / Copiloto / Manual** deixou de ser apenas estado
+visual. A preferência é persistida por usuário e conta e é consumida tanto
+pelo painel quanto pelo WhatsApp Pai. Piloto executa ações mutáveis diretamente;
+Copiloto e Manual conservam a confirmação. Em todos os modos continuam ativos
+o schema estrito da saída da IA, as permissões granulares, o isolamento por
+conta/membro e a revalidação do objeto imediatamente antes da alteração.
+
+O Pai grava uma proposta pendente antes da autoexecução, usando a mesma trava
+de idempotência do fluxo confirmado. Assim, uma queda entre execução e resposta
+não transforma automaticamente o retry em uma segunda criação ou um segundo
+envio. O painel interno executa pelo mesmo `executeAction`.
+
+Álbuns de imóveis usam `imf_whatsapp_media_batches`: cada imagem continua com
+ID próprio e URL própria, porém o lote só é fechado depois de quatro segundos
+sem nova foto. Até 15 imagens são anexadas à mesma ação `create_property`.
+Legenda, texto ou áudio enviados em seguida aguardam a janela e viram um único
+comando. Sem descrição, o corretor recebe somente uma confirmação consolidada,
+nunca uma resposta por imagem.
+
+As ferramentas do agente são compartilhadas entre painel e Pai. Além das ações
+já existentes, `move_lead_stage` usa os 30 leads recentes e as etapas ativas
+reais da conta para mover um negócio, inclusive entre pipelines personalizados.
+IDs não são aceitos do texto livre: vêm do snapshot; ambiguidade deve gerar
+pergunta, não adivinhação.
+
+### Logs técnicos administrativos
+
+`imf_system_error_logs` registra falha de integração, execução, ferramenta,
+fila, validação e pedido não interpretado com data/hora, conta, usuário, canal,
+ação solicitada, etapa, mensagem pública, detalhe técnico e estado operacional.
+Textos passam por sanitização de tokens, chaves, senhas, e-mail, telefone e CPF;
+o navegador nunca acessa a tabela diretamente (RLS + service role).
+
+A área **Logs** do `/app` e as rotas `/api/system-logs` são globais e exclusivas
+do administrador da plataforma (`imf_brokers.is_admin`). Titulares comuns e
+membros não veem o item e recebem 403 se tentarem chamar a API. O administrador
+pode filtrar, investigar e mudar cada ocorrência entre **Pendente**, **Em
+análise** e **Resolvido**. Somente logs resolvidos há mais de 180 dias entram na
+retenção automática.
+
+Essas estruturas dependem da migration
+`20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
+
+### Google Agenda oficial (2026-08-11)
+
+Os secrets `GOOGLE_CALENDAR_CLIENT_ID` e `GOOGLE_CALENDAR_CLIENT_SECRET` do
+projeto oficial `absolute-point-505213-v3` foram instalados no Fly sem registrar
+seus valores no repositório. As máquinas do `imobiflow-v2` reiniciaram
+saudáveis. O projeto incorreto `scenic-oxygen-505212-k1` foi encerrado na conta
+David e está programado pelo Google para exclusão após 10/09/2026.
+
 ### Piloto financeiro sandbox (preparado em 2026-08-10)
 
 O deploy V2 habilita o módulo financeiro de clientes em modo de homologação,
@@ -1791,6 +1844,32 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   valida formato e hash, aplica rate limit, retorna somente visitas e limita a
   janela a um ano anterior e três anos futuros. Migration:
   `20260810c_agenda_calendar_feed.sql`.
+- **Agenda bidirecional (implementada em 11/08/2026, ativação pendente):**
+  - **Google Agenda:** OAuth de servidor com acesso offline e escopo mínimo
+    `calendar.app.created`. O ImobiFlow cria uma agenda secundária isolada, sem
+    ler a agenda pessoal do usuário. Tokens são cifrados por AES-256-GCM. Um
+    job singleton sincroniza a cada dois minutos e o botão permite execução
+    imediata. `syncToken`, ETag, hashes de payload e vínculos persistidos
+    garantem incrementalidade e idempotência; uma lease atômica no banco evita
+    concorrência web↔scheduler. Em conflito dos dois lados entre ciclos, a
+    alteração externa recebida no início do ciclo vence.
+  - **iPhone:** o ImobiFlow expõe uma conta CalDAV gravável descoberta por
+    `/.well-known/caldav`. O usuário recebe servidor, usuário aleatório e senha
+    de 192 bits mostrada uma única vez; só o SHA-256 da senha fica no banco.
+    Apple ID e senha do iCloud nunca são pedidos. O servidor implementa
+    discovery, `PROPFIND`, `calendar-query`, `calendar-multiget`, GET/HEAD,
+    PUT, DELETE e ETag/`If-Match`. Eventos recorrentes e de dia inteiro são
+    recusados nesta primeira versão para não degradar silenciosamente os dados.
+  - **Compatibilidade:** a assinatura `.ics` anterior permanece disponível e
+    somente leitura. Todas as modalidades respeitam escopo da conta/membro,
+    somente eventos `event_type='visita'`, janela de um ano anterior a três
+    anos futuros e limite de 5.000 itens. O fuso `America/Sao_Paulo` homologado
+    em 10/08/2026 não foi alterado.
+  - **Ativação:** `20260811a_agenda_bidirectional_sync.sql` aplicada e
+    verificada em 11/08/2026; falta habilitar Google Calendar API, configurar
+    cliente OAuth Web com redirect
+    `PUBLIC_APP_URL/api/agenda/google/callback`; definir
+    `GOOGLE_CALENDAR_CLIENT_ID` e `GOOGLE_CALENDAR_CLIENT_SECRET`.
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo
@@ -2225,6 +2304,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260807h_whatsapp_pai_internal_conversation.sql` | aplicada e verificada | mantém o número Pai apenas no Assistente IA e recupera mídia no histórico |
 | `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
 | `20260810c_agenda_calendar_feed.sql` | pronta para aplicação | link privado e revogável de assinatura da Agenda no Google/iPhone |
+| `20260811a_agenda_bidirectional_sync.sql` | aplicada e verificada em 11/08/2026 | conexões Google OAuth/CalDAV, vínculos idempotentes, states OAuth, lápides de exclusão e lease de sincronização |
 | `20260810d_property_keys_hardening.sql` | aplicada e verificada em 10/08/2026 | RLS, revogação do acesso direto e integridade dos novos registros de retirada/devolução |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e

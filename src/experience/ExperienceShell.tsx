@@ -32,6 +32,7 @@ const RelatoriosArea = lazy(() => import('./RelatoriosArea').then((m) => ({ defa
 const DivulgacaoArea = lazy(() => import('./DivulgacaoArea').then((m) => ({ default: m.DivulgacaoArea })));
 const ConfigArea = lazy(() => import('./ConfigArea').then((m) => ({ default: m.ConfigArea })));
 const AssistenteIAArea = lazy(() => import('./AssistenteIAArea').then((m) => ({ default: m.AssistenteIAArea })));
+const LogsArea = lazy(() => import('./LogsArea').then((m) => ({ default: m.LogsArea })));
 
 const PERSONAS: Persona[] = ['corretor', 'imobiliaria', 'incorporadora'];
 const AUTONOMY_LABEL: Record<Autonomy, string> = {
@@ -45,11 +46,7 @@ const AUTONOMY_MOBILE_LABEL: Record<Autonomy, string> = {
   manual: 'Manual',
 };
 const AUTONOMY_ORDER: Autonomy[] = ['piloto', 'copiloto', 'manual'];
-// Só troca o rótulo — desde o hardening contra prompt injection (22/07/2026),
-// os 3 modos se comportam igual: toda ação do Assistente IA (cadastrar,
-// enviar mensagem, agendar etc.) sempre pede confirmação antes de executar,
-// nunca roda sozinha, nem no Piloto automático.
-const AUTONOMY_HINT = 'Toda ação do Assistente IA (cadastrar, enviar mensagem, agendar etc.) sempre pede sua confirmação antes de executar — em qualquer um dos 3 modos.';
+const AUTONOMY_HINT = 'Piloto executa ações diretamente. Copiloto e Manual mantêm a confirmação antes de alterar ou enviar algo.';
 
 // Toggle Dia/Noite. Liberado a pedido do usuário pra QA ao vivo do modo Dia.
 // O modo Noite é o padrão; o Dia já é funcional (neutros/acentos/semânticos
@@ -146,6 +143,16 @@ export function ExperienceShell() {
     return () => { cancelled = true; };
   }, [navigate]);
 
+  useEffect(() => {
+    if (checkingAuth || !authService.isLoggedIn()) return;
+    fetch('/api/agent/preferences', { headers: authService.getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data && AUTONOMY_ORDER.includes(data.autonomy)) setAutonomy(data.autonomy);
+      })
+      .catch(() => {});
+  }, [checkingAuth]);
+
   // As 3 personas têm cockpit com dado real agora (Locação/Lançamentos/
   // Relatórios já existem) — nenhuma cai mais em mock puro.
   useEffect(() => {
@@ -196,8 +203,21 @@ export function ExperienceShell() {
     };
   }, []);
 
-  const cycleAutonomy = () =>
-    setAutonomy((a) => AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(a) + 1) % AUTONOMY_ORDER.length]);
+  const cycleAutonomy = async () => {
+    const previous = autonomy;
+    const next = AUTONOMY_ORDER[(AUTONOMY_ORDER.indexOf(previous) + 1) % AUTONOMY_ORDER.length];
+    setAutonomy(next);
+    try {
+      const response = await fetch('/api/agent/preferences', {
+        method: 'PUT',
+        headers: { ...authService.getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autonomy: next }),
+      });
+      if (!response.ok) throw new Error('Falha ao salvar o modo.');
+    } catch {
+      setAutonomy(previous);
+    }
+  };
 
   // Centraliza toda troca de área: sair de Relatórios por qualquer caminho
   // (menu lateral, canvas, command bar) limpa o drill-down de membro, pra
@@ -233,6 +253,7 @@ export function ExperienceShell() {
       <ManualRail
         capabilities={capabilities}
         isOwner={isOwner}
+        isAdmin={isAdmin}
         active={area}
         onSelect={goToArea}
         mobileOpen={mobileNavOpen}
@@ -374,6 +395,8 @@ export function ExperienceShell() {
             <DivulgacaoArea />
           ) : area === 'assistente-ia' ? (
             <AssistenteIAArea />
+          ) : area === 'logs' ? (
+            <LogsArea />
           ) : area === 'config' ? (
             <ConfigArea />
           ) : area !== 'hoje' ? (

@@ -15,10 +15,12 @@ test("processo scheduler registra todos os jobs recorrentes esperados", async ()
     "runScheduledAgentFollowupsTick",
     "runReminderWhatsappAlertTick",
     "runVisitWhatsappAlertTick",
+    "runGoogleCalendarSyncTick",
     "prepareOverageBilling",
     "reconcilePendingBillingActions",
     "expireDueUnitReservations",
     "purgeExpiredWebhookLogs",
+    "purgeResolvedSystemLogs",
     // Sem retenção, os índices de dedupe das filas crescem para sempre e a
     // ingestão degrada de forma permanente.
     "purgeResolvedQueueRows",

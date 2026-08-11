@@ -17,8 +17,37 @@ import {
   resetAgentConversation,
   resetReply,
 } from "../services/agentConversationReset";
+import { getAgentAutonomy, setAgentAutonomy } from "../services/agentPreferences";
+import { recordSystemError } from "../services/systemErrorLogs";
 
 export const agentRouter = express.Router();
+
+agentRouter.get("/api/agent/preferences", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    res.json(await getAgentAutonomy(brokerId, userId));
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Não foi possível carregar o modo do agente." });
+  }
+});
+
+agentRouter.put("/api/agent/preferences", requireUser, async (req, res) => {
+  try {
+    const userId = (req as any).userId as string;
+    const brokerId = await getBrokerId(userId);
+    if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
+    const autonomy = req.body?.autonomy as Autonomy;
+    if (!["piloto", "copiloto", "manual"].includes(autonomy)) {
+      return res.status(400).json({ error: "Modo de autonomia inválido." });
+    }
+    await setAgentAutonomy(brokerId, userId, autonomy);
+    res.json({ autonomy, migrationReady: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Não foi possível salvar o modo do agente." });
+  }
+});
 
 const futureDateTime = z.string().datetime({ offset: true }).refine(
   (value) => new Date(value).getTime() > Date.now(),
@@ -123,7 +152,7 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
     const brokerId = await getBrokerId(userId);
     if (!brokerId) return res.status(403).json({ error: "Corretor não encontrado." });
 
-    const { message, persona, autonomy, history, imageUrls } = req.body || {};
+    const { message, persona, history, imageUrls } = req.body || {};
     if (!message || !String(message).trim()) return res.status(400).json({ error: "Mensagem vazia." });
 
     // Comando local e deterministico: nunca envia @reset ao modelo. O mesmo
@@ -160,6 +189,10 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
     const effectiveCapabilities = entitlement.isAdmin
       ? getDefaultAccountCapabilities(effectivePersona)
       : entitlement.enabled;
+    // O modo efetivo vem sempre do banco. Aceitar `autonomy` enviado pelo
+    // navegador permitiria forçar Piloto mesmo quando o usuário salvou
+    // Copiloto ou Manual.
+    const preference = await getAgentAutonomy(brokerId, userId);
 
     const result = await runAgent({
       brokerId,
@@ -167,10 +200,11 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
       message: String(message).slice(0, 1000),
       persona: effectivePersona,
       capabilities: effectiveCapabilities,
-      // Falha segura: valor ausente/inválido nunca habilita execução automática.
-      autonomy: (["piloto", "copiloto", "manual"].includes(autonomy) ? autonomy : "copiloto") as Autonomy,
+      // Falha segura: sem a migration, o resolvedor devolve Copiloto.
+      autonomy: preference.migrationReady ? preference.autonomy : "copiloto",
       history: cleanHistory,
       imageUrls: cleanImageUrls,
+      channel: "painel_interno",
     });
 
     logTurn(brokerId, userId, "user", String(message).slice(0, 1000)).catch(() => {});
@@ -179,6 +213,18 @@ agentRouter.post("/api/agent/command", requireUser, async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error("Erro POST /api/agent/command:", err);
+    const userId = (req as any).userId as string;
+    const brokerId = userId ? await getBrokerId(userId).catch(() => null) : null;
+    if (brokerId) await recordSystemError({
+      brokerId,
+      userId,
+      channel: "painel_interno",
+      category: "execution_error",
+      requestedAction: req.body?.message,
+      stage: "rota_agent_command",
+      publicMessage: "Não foi possível processar o comando.",
+      technicalMessage: err?.stack || err?.message || err,
+    });
     res.status(500).json({ error: err.message });
   }
 });
@@ -204,7 +250,7 @@ agentRouter.post("/api/agent/execute", requireUser, async (req, res) => {
     // confirmação", mesmo precisando. Achado lendo o código, não relatado
     // pelo usuário — não confirmado ao vivo ainda.
     const CONFIRMABLE_ACTIONS = [
-      "create_lead", "create_visit", "send_message", "broadcast_message", "create_property",
+      "create_lead", "move_lead_stage", "create_visit", "send_message", "broadcast_message", "create_property",
       "update_property", "cancel_visit", "update_visit", "end_rental_contract", "update_unit",
       "create_reminder", "schedule_followup",
     ];
