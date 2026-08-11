@@ -100,6 +100,8 @@ imóvel sem apagar registros anteriores.
 - `git push origin v2` dispara validação e deploy automaticamente.
 - O deploy inicia explicitamente a Machine singleton `scheduler`; manter
   `scheduler=1` sozinho não garante que os jobs estejam executando.
+- Falha temporária ao consultar o webhook no provedor é estado desconhecido,
+  não evidência de configuração incorreta nem motivo para desconectar o número.
 - A URL pública canônica da V2 é exclusivamente `PUBLIC_APP_URL`, versionada
   no `fly.toml`; não existe fallback para endereço externo em secret.
 - Toda mudança funcional atualiza `DOCUMENTACAO.md` e os cinco arquivos PMP.

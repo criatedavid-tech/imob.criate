@@ -10,6 +10,9 @@
   falhando se o singleton não existir.
 - O botão global **Atualizar** remonta a aba administrativa ativa; o WhatsApp
   Pai deixa de manter em tela um alerta antigo depois da autocorreção.
+- A UAZAPI apresentou leitura intermitente do endpoint de webhook. O painel
+  agora separa estado desconhecido de divergência confirmada e não recomenda
+  mais desligar/ligar o recebimento por uma falha temporária do provedor.
 
 ## Domínio próprio e OAuth Google (2026-08-11)
 

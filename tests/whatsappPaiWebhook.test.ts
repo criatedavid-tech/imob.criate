@@ -67,3 +67,14 @@ test("estado do webhook exige URL, enabled e conjunto exato de eventos", () => {
   assert.equal(isUazapiWebhookReady({ ...state, enabled: false }, expected, false), true);
   assert.equal(isUazapiWebhookReady({ ...state, events: ["messages"] }, expected), false);
 });
+
+test("painel diferencia desvio confirmado de falha temporária na leitura do provedor", async () => {
+  const routeSource = await readFile(new URL("../server/routes/admin.ts", import.meta.url), "utf8");
+  const componentSource = await readFile(new URL("../src/components/AdminWhatsappPai.tsx", import.meta.url), "utf8");
+
+  assert.match(routeSource, /webhookState\s*\? isUazapiWebhookReady\([\s\S]*?\)\s*:\s*null/);
+  assert.match(componentSource, /status\.webhookReady === true/);
+  assert.match(componentSource, /status\.webhookDesired && status\.webhookReady === false/);
+  assert.match(componentSource, /Não foi possível confirmar o webhook agora/);
+  assert.doesNotMatch(componentSource, /Desative e ative novamente/);
+});

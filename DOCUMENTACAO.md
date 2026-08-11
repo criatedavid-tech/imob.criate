@@ -265,6 +265,9 @@ durante a atualização; sem o start, sincronização de agenda, cobranças e o
 guardião dos webhooks ficam inativos embora `/api/health` continue respondendo.
 O botão **Atualizar** do Painel Admin também remonta a seção ativa, evitando
 mostrar estado antigo do WhatsApp Pai depois de uma autocorreção.
+Se a UAZAPI não responder temporariamente à consulta do webhook, a tela mostra
+estado não verificável em amarelo; somente um estado explícito divergente é
+tratado como falha. Nenhum desses casos exige desconectar o número.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** no app
 Fly `imobiflow-v2`, hoje exposto por `realestate.criate.online`, via GitHub

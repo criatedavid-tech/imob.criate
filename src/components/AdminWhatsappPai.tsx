@@ -12,7 +12,7 @@ interface Status {
   provisioningError?: string | null;
   webhookDesired?: boolean;
   webhookEnabled?: boolean | null;
-  webhookReady?: boolean;
+  webhookReady?: boolean | null;
 }
 
 const glassCard = 'rounded-2xl backdrop-blur-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_4px_16px_rgba(0,0,0,0.2)]';
@@ -200,10 +200,12 @@ export default function AdminWhatsappPai() {
               {status.profileName && <div>Perfil: <span className="text-[var(--text-mid)]">{status.profileName}</span></div>}
               {status.owner && <div>Número: <span className="text-[var(--text-mid)] font-mono">{status.owner}</span></div>}
             </div>
-            {status.webhookReady ? (
+            {status.webhookReady === true ? (
               <div className="text-[12px] text-emerald-300">Recebimento ativo para toda a plataforma.</div>
+            ) : status.webhookDesired && status.webhookReady === false ? (
+              <div className="text-[12px] text-red-300">Webhook fora do esperado. O sistema tentará corrigir automaticamente.</div>
             ) : status.webhookDesired ? (
-              <div className="text-[12px] text-red-300">Recebimento solicitado, mas o webhook não está saudável. Desative e ative novamente.</div>
+              <div className="text-[12px] text-amber-300">Recebimento solicitado. Não foi possível confirmar o webhook agora; o sistema verificará novamente automaticamente.</div>
             ) : (
               <div className="text-[12px] text-amber-300">Recebimento desativado. O número permanece conectado, sem processar mensagens.</div>
             )}

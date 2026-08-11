@@ -795,9 +795,11 @@ adminRouter.get("/api/admin/whatsapp-pai/status", async (req, res) => {
       webhookEnabled: webhookState?.enabled ?? null,
       webhookUrl: webhookState?.url ?? null,
       webhookEvents: webhookState?.events ?? null,
-      webhookReady: !!expectedWebhookUrl
-        && !!webhookState
-        && isUazapiWebhookReady(webhookState, expectedWebhookUrl),
+      webhookReady: !expectedWebhookUrl
+        ? false
+        : webhookState
+          ? isUazapiWebhookReady(webhookState, expectedWebhookUrl)
+          : null,
     });
   } catch (err: any) {
     console.error("Erro GET /api/admin/whatsapp-pai/status:", err);

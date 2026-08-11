@@ -380,6 +380,11 @@
   execução da Machine. O workflow agora falha se não encontrar o singleton e o
   inicia após cada publicação, evitando parar agenda, cobranças e autocura de
   webhooks.
+- **Saúde de webhook não transforma ausência de leitura em falha
+  (2026-08-11).** A UAZAPI pode indisponibilizar temporariamente o GET de
+  webhook. O status administrativo usa `null` para esse caso e só classifica
+  como divergente quando recebeu estado explícito incompatível; o guardião
+  continua responsável pela autocorreção.
 - **Redis protege a escala, não carrega a fila (2026-07-24).** Redis Upstash é
   usado para rate limit distribuído entre as três web. Inbox/outbox continuam
   duráveis no PostgreSQL. A conexão usa timeouts curtos e fail-open: uma falha
