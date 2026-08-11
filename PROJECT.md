@@ -30,8 +30,9 @@ imóvel sem apagar registros anteriores.
   tenant pelo telefone verificado e reutilizam o mesmo agente/permissões do
   painel. Documentos são contexto temporário de uso único; não viram anexos
   permanentes de um objeto de negócio sem uma ação explícita suportada.
-- V2: branch `v2`, produção `https://imobiflow-v2.fly.dev/app`, app Fly
-  `imobiflow-v2`.
+- V2: branch `v2`, produção `https://realestate.criate.online/app`, app Fly
+  `imobiflow-v2`. O hostname `https://imobiflow-v2.fly.dev` permanece ativo
+  como compatibilidade durante a transição, mas não é a origem canônica.
 - Baseline funcional auditado e publicado em 10/08/2026: commit `31c2b93`,
   GitHub Actions run `#139`, imagem Fly
   `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, região `gru`; três `web`, um

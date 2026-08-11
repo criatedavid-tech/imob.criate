@@ -26,7 +26,7 @@ kill_timeout = 30
 
 [env]
   NODE_ENV = "production"
-  PUBLIC_APP_URL = "https://imobiflow-v2.fly.dev"
+  PUBLIC_APP_URL = "https://realestate.criate.online"
   CLIENT_FINANCIAL_OPERATIONS_ENABLED = "true"
   CLIENT_FINANCIAL_SANDBOX_ONLY = "true"
   # Demais segredos vão via `fly secrets set` (nunca aqui).

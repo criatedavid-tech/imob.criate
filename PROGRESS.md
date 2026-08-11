@@ -1,5 +1,18 @@
 # Estado do projeto
 
+## Domínio próprio e OAuth Google (2026-08-11)
+
+- `realestate.criate.online` foi criado como CNAME isolado para o app Fly
+  `imobiflow-v2`; nenhum registro DNS preexistente da Criate foi alterado.
+- O certificado TLS está ativo e `/api/health`, `/sobre`, `/privacidade` e
+  `/termos` respondem HTTP 200 no novo domínio.
+- `criate.online` foi comprovado por TXT no Google Search Console. O cliente
+  OAuth preserva origem/callback `fly.dev` e adiciona origem/callback do domínio
+  próprio para uma migração sem interrupção.
+- As URLs públicas do Branding apontam ao domínio próprio e a reavaliação da
+  marca foi enviada ao Google. A origem canônica versionada passa a ser
+  `PUBLIC_APP_URL=https://realestate.criate.online`.
+
 ## Logs movidos para o Painel Admin (local, 2026-08-11)
 
 - A tela global de Logs deixou o menu operacional do `/app` e passou a ser uma

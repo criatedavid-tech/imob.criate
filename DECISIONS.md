@@ -364,6 +364,11 @@
 - **URL pública única e versionada (2026-07-21).** A V2 usa somente
   `PUBLIC_APP_URL`, definida no `fly.toml`. Links, redirects e webhooks não
   aceitam fallback para endereço externo armazenado em secret.
+- **Domínio próprio sem troca destrutiva (2026-08-11).** A origem canônica da
+  V2 passa a ser `https://realestate.criate.online`, em um CNAME isolado no DNS
+  da Criate. O hostname Fly permanece ativo durante a transição; Google OAuth
+  mantém as duas origens e callbacks autorizados, evitando interromper sessões
+  e integrações antigas.
 - **Scheduler dedicado antes de escalar a API (2026-07-22).** Os jobs
   periódicos saíram de `server.ts` e passaram a `scheduler-worker.ts`, com
   prevenção de sobreposição, recuperação após erro e drenagem no SIGTERM. O

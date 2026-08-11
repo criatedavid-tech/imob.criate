@@ -134,13 +134,11 @@ e os Termos em `/termos`. O HTML inicial de `/sobre` também contém o nome, a
 finalidade e o uso do Google Agenda sem depender da execução do React, para
 atender verificadores automáticos e navegadores sem JavaScript.
 
-**Pendência opcional de branding:** o fluxo já funciona em produção, mas o nome
-"ImobiFlow" só substituirá o domínio na tela de consentimento depois da
-verificação de marca. O Google exige que a página inicial esteja em um domínio
-próprio comprovado por DNS. `imobiflow-v2.fly.dev` é um subdomínio da Fly.io e
-não pode ser comprovado como propriedade da Criate. Para concluir o branding,
-configurar um domínio próprio no Fly, verificá-lo no Google Search Console e
-atualizar origem, callback e URLs do Branding antes de reenviar a verificação.
+**Branding e domínio próprio:** `criate.online` foi comprovado por DNS no Google
+Search Console e `https://realestate.criate.online` está ativo no Fly com TLS.
+O cliente OAuth mantém a origem/callback antigos e os novos durante a transição.
+As páginas públicas de apresentação, privacidade e termos já usam o domínio
+próprio, e a nova análise da marca foi solicitada ao Google em 11/08/2026.
 
 ### Piloto financeiro sandbox (preparado em 2026-08-10)
 
@@ -237,8 +235,9 @@ Ambientes que não devem ser confundidos:
 
 | Ambiente | Endereço | Papel |
 | --- | --- | --- |
-| V2 | `https://imobiflow-v2.fly.dev/app` | produto que substituirá a V1 |
-| Dashboard 1.0 dentro da V2 | `https://imobiflow-v2.fly.dev/` | interface legada ainda roteada e suportada |
+| V2 | `https://realestate.criate.online/app` | produto que substituirá a V1; origem canônica |
+| Hostname Fly da V2 | `https://imobiflow-v2.fly.dev/` | compatibilidade temporária para links e assinaturas antigas |
+| Dashboard 1.0 dentro da V2 | `https://realestate.criate.online/` | interface legada ainda roteada e suportada |
 | V1 | `https://imobiflow.fly.dev/` | aplicação anterior; não alterar durante trabalhos na V2 |
 
 A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
@@ -260,8 +259,9 @@ standby parada. A segunda worker fornece failover de host, não throughput
 adicional enquanto parada. Redis Upstash e Sentry estão ativos. O painel Admin
 confirma saúde de filas, N8N e Redis e oferece intervenções idempotentes.
 
-Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** em
-`imobiflow-v2.fly.dev` via GitHub Actions (`.github/workflows/deploy-v2.yml`,
+Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** no app
+Fly `imobiflow-v2`, hoje exposto por `realestate.criate.online`, via GitHub
+Actions (`.github/workflows/deploy-v2.yml`,
 gatilho `push`, secret `FLY_API_TOKEN_V2` — separado do `FLY_API_TOKEN` da
 v1). Não existe mais um passo manual de deploy nem uma revisão entre commit
 e publicação: `npx tsc --noEmit`/`npm run build`/`git diff --check` precisam
@@ -1951,8 +1951,9 @@ Duas ações novas em `server/services/agent.ts`, complementares a
     `PUBLIC_APP_URL/api/agenda/google/callback` e secrets do Fly configurados.
     Google e iPhone foram validados nos dois sentidos. O projeto Google está
     **Em produção**, com público externo e escopo não confidencial; a liberação
-    geral está concluída. Resta somente a verificação opcional da marca, que
-    depende de um domínio próprio da Criate (ver seção "Google Agenda oficial").
+    geral está concluída. O domínio próprio foi configurado e comprovado em
+    11/08/2026, e a nova verificação da marca está em andamento no Google (ver
+    seção "Google Agenda oficial").
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo
