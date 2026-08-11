@@ -154,6 +154,39 @@ adminRouter.patch("/api/admin/brokers/:id/member-limit", async (req, res) => {
   }
 });
 
+// Ajusta a duração do período de experimentação de uma conta já criada —
+// POST /api/admin/trial-vouchers só define os dias na hora de gerar o
+// convite; esta rota cobre estender ou encurtar depois que a conta já
+// resgatou o voucher e está rodando. trial_days aqui é o total desde
+// trial_started_at (que nunca muda), não "dias a mais". Não mexe em
+// status: uma conta já inativa por expiração continua precisando do botão
+// "Ativar conta" separadamente depois de estender o prazo.
+adminRouter.patch("/api/admin/brokers/:id/trial-days", async (req, res) => {
+  if (!await requireAdmin(req, res)) return;
+  const trialDays = Number(req.body?.trial_days);
+  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 180) {
+    return res.status(400).json({ error: "trial_days precisa ser um número inteiro entre 1 e 180." });
+  }
+  try {
+    const { data: broker, error: fetchError } = await supabase
+      .from('imf_brokers').select('plan, trial_started_at').eq('id', req.params.id).single();
+    if (fetchError) throw fetchError;
+    if (broker.plan !== 'experimentacao') {
+      return res.status(400).json({ error: "Esta conta não está em experimentação." });
+    }
+    if (!broker.trial_started_at) {
+      return res.status(400).json({ error: "Conta sem data de início de experimentação registrada." });
+    }
+    const trialEndsAt = new Date(new Date(broker.trial_started_at).getTime() + trialDays * 24 * 60 * 60 * 1000);
+    const { data, error } = await supabase
+      .from('imf_brokers').update({ trial_ends_at: trialEndsAt.toISOString() }).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Detalhes de um corretor (imóveis, leads, assinaturas)
 adminRouter.get("/api/admin/brokers/:id", async (req, res) => {
   if (!await requireAdmin(req, res)) return;

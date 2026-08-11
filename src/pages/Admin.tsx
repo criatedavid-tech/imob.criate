@@ -110,6 +110,8 @@ export default function Admin() {
   const [applyingAdj, setApplyingAdj] = useState(false);
   const [memberLimitInput, setMemberLimitInput] = useState('');
   const [savingMemberLimit, setSavingMemberLimit] = useState(false);
+  const [trialDaysInput, setTrialDaysInput] = useState('');
+  const [savingTrialDays, setSavingTrialDays] = useState(false);
   const [capabilitySelection, setCapabilitySelection] = useState<AccountCapability[]>([]);
   const [savingCapabilities, setSavingCapabilities] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
@@ -220,6 +222,12 @@ export default function Admin() {
       setDetail(detailData);
       setCapabilitySelection(Array.isArray(detailData?.capabilities?.enabled) ? detailData.capabilities.enabled : []);
       setMemberLimitInput(String(detailData?.broker?.member_limit ?? 0));
+      const trialStartedAt = detailData?.broker?.trial_started_at;
+      const trialEndsAt = detailData?.broker?.trial_ends_at;
+      const currentTrialDays = trialStartedAt && trialEndsAt
+        ? Math.round((new Date(trialEndsAt).getTime() - new Date(trialStartedAt).getTime()) / 86_400_000)
+        : 14;
+      setTrialDaysInput(String(currentTrialDays));
       if (uRes.ok) setTicketUsage(await uRes.json());
     } catch (err: any) {
       if (requestId !== detailRequestIdRef.current) return;
@@ -290,6 +298,35 @@ export default function Admin() {
       setActionMsg({ type: 'error', text: err.message });
     } finally {
       setSavingMemberLimit(false);
+    }
+  }
+
+  // Espelha saveMemberLimit. trial_days é o total desde trial_started_at
+  // (que não muda) — não "quantos dias a mais". Não reativa a conta: se já
+  // expirou e está 'inativo', o admin ainda precisa clicar "Ativar conta".
+  async function saveTrialDays(id: string) {
+    const value = Number(trialDaysInput);
+    if (!Number.isInteger(value) || value < 1 || value > 180) {
+      setActionMsg({ type: 'error', text: 'Informe um número inteiro entre 1 e 180.' });
+      return;
+    }
+    if (!confirm(`Definir o período de experimentação para ${value} dias (contados a partir do início do teste)?`)) return;
+    setSavingTrialDays(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/admin/brokers/${id}/trial-days`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trial_days: value })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao salvar o período de experimentação.');
+      setDetail(d => d ? { ...d, broker: { ...d.broker, trial_ends_at: data.trial_ends_at } } : d);
+      setActionMsg({ type: 'success', text: 'Período de experimentação atualizado.' });
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message });
+    } finally {
+      setSavingTrialDays(false);
     }
   }
 
@@ -950,6 +987,38 @@ export default function Admin() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Duração do período de experimentação */}
+                      {detail.broker.plan === 'experimentacao' && (
+                        <div className={`${glassCard} p-4`}>
+                          <h4 className="text-[10px] font-bold text-[var(--text-low)] uppercase tracking-widest mb-2">
+                            Dias de experimentação
+                          </h4>
+                          <p className="text-[12px] text-[var(--text-low)] mb-3">
+                            Total de dias de teste, contados a partir de {fmtDate(detail.broker.trial_started_at)}.
+                            {detail.broker.trial_ends_at && (
+                              <> Expira {new Date(detail.broker.trial_ends_at) <= new Date() ? 'desde' : 'em'} {fmtDate(detail.broker.trial_ends_at)}.</>
+                            )}
+                          </p>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={180}
+                              value={trialDaysInput}
+                              onChange={(e) => setTrialDaysInput(e.target.value)}
+                              className="w-24 py-2 px-3 text-sm rounded-xl bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-hi)] text-center"
+                            />
+                            <button
+                              onClick={() => saveTrialDays(detail.broker.id)}
+                              disabled={savingTrialDays}
+                              className="flex-1 py-2 text-sm font-semibold rounded-xl bg-[var(--control-fill-hover)] border border-[var(--glass-border)] text-[var(--text-hi)] hover:bg-[var(--control-fill-hover)] transition-colors disabled:opacity-40"
+                            >
+                              {savingTrialDays ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar dias'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Provisionar WhatsApp */}
                       {!detail.broker.uazapi_instance_id && (
