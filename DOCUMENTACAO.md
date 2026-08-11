@@ -259,6 +259,13 @@ standby parada. A segunda worker fornece failover de host, não throughput
 adicional enquanto parada. Redis Upstash e Sentry estão ativos. O painel Admin
 confirma saúde de filas, N8N e Redis e oferece intervenções idempotentes.
 
+Após cada publicação, o workflow inicia explicitamente a Machine singleton do
+`scheduler`. O Fly pode manter `scheduler=1` e ainda deixar essa Machine parada
+durante a atualização; sem o start, sincronização de agenda, cobranças e o
+guardião dos webhooks ficam inativos embora `/api/health` continue respondendo.
+O botão **Atualizar** do Painel Admin também remonta a seção ativa, evitando
+mostrar estado antigo do WhatsApp Pai depois de uma autocorreção.
+
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** no app
 Fly `imobiflow-v2`, hoje exposto por `realestate.criate.online`, via GitHub
 Actions (`.github/workflows/deploy-v2.yml`,

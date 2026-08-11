@@ -96,3 +96,18 @@ jobs:
           fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}
+
+      # `flyctl deploy` ou a escala podem atualizar a Machine singleton do
+      # scheduler e deixá-la parada. A contagem correta não garante que ela
+      # esteja em execução; sem este start explícito param cobranças, agenda e
+      # autocura dos webhooks mesmo com a API saudável.
+      - name: Ensure scheduler is running
+        run: |
+          scheduler_id="$(flyctl machine list --app imobiflow-v2 --json | python3 -c 'import json, sys; machines = json.load(sys.stdin); print(next((m["id"] for m in machines if m.get("config", {}).get("metadata", {}).get("fly_process_group") == "scheduler"), ""))')"
+          if [ -z "$scheduler_id" ]; then
+            echo "::error::Nenhuma Machine scheduler foi encontrada após o deploy."
+            exit 1
+          fi
+          flyctl machine start "$scheduler_id" --app imobiflow-v2
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_V2 }}

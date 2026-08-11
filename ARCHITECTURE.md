@@ -183,6 +183,9 @@ limit já foram separados.
   para compatibilidade de links e assinaturas antigas.
 - Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
   automático pelo GitHub Actions.
+- Depois da escala, o workflow localiza e inicia explicitamente a única Machine
+  `scheduler`, pois o Fly pode atualizá-la e deixá-la parada mesmo mantendo a
+  contagem correta.
 
 ## Limites ainda não comprovados
 

@@ -375,6 +375,11 @@
   Fly mantém `scheduler=1`. Em 27/07/2026 há 11 jobs, três `web`, Redis
   compartilhado e um worker ativo; o `worker` continua escalável de forma
   independente conforme backlog medido.
+- **Scheduler iniciado explicitamente após deploy (2026-08-11).**
+  `scale count scheduler=1` preserva a cardinalidade, mas não o estado de
+  execução da Machine. O workflow agora falha se não encontrar o singleton e o
+  inicia após cada publicação, evitando parar agenda, cobranças e autocura de
+  webhooks.
 - **Redis protege a escala, não carrega a fila (2026-07-24).** Redis Upstash é
   usado para rate limit distribuído entre as três web. Inbox/outbox continuam
   duráveis no PostgreSQL. A conexão usa timeouts curtos e fail-open: uma falha

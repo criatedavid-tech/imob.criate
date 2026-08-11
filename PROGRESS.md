@@ -1,5 +1,16 @@
 # Estado do projeto
 
+## Scheduler e alerta obsoleto do WhatsApp Pai (2026-08-11)
+
+- O deploy `v266` atualizou a Machine singleton do scheduler, mas a deixou
+  parada. A API seguia saudável enquanto os 20 jobs recorrentes não rodavam.
+- A Machine foi iniciada e o guardião reafirmou 11 webhooks no domínio novo,
+  inclusive `https://realestate.criate.online/api/wpp-pai/inbound`.
+- O workflow agora encontra e inicia explicitamente o scheduler após a escala,
+  falhando se o singleton não existir.
+- O botão global **Atualizar** remonta a aba administrativa ativa; o WhatsApp
+  Pai deixa de manter em tela um alerta antigo depois da autocorreção.
+
 ## Domínio próprio e OAuth Google (2026-08-11)
 
 - `realestate.criate.online` foi criado como CNAME isolado para o app Fly

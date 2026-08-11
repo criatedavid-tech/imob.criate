@@ -117,6 +117,7 @@ export default function Admin() {
   const [savingCapabilities, setSavingCapabilities] = useState(false);
   const [totalBrokers, setTotalBrokers] = useState(0);
   const [view, setView] = useState<'contas' | 'vouchers' | 'saude' | 'logs' | 'whatsapp-pai'>('contas');
+  const [refreshKey, setRefreshKey] = useState(0);
   const [hasMoreBrokers, setHasMoreBrokers] = useState(false);
   const [loadingMoreBrokers, setLoadingMoreBrokers] = useState(false);
   const detailRequestIdRef = useRef(0);
@@ -151,6 +152,11 @@ export default function Admin() {
       setLoading(false);
       setLoadingMoreBrokers(false);
     }
+  }
+
+  function refreshPanel() {
+    setRefreshKey((current) => current + 1);
+    void load();
   }
 
   async function updateStatus(id: string, status: Broker['status']) {
@@ -465,7 +471,7 @@ export default function Admin() {
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <button type="button" aria-label="Atualizar painel" title="Atualizar" onClick={() => load()} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
+          <button type="button" aria-label="Atualizar painel" title="Atualizar" onClick={refreshPanel} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
             <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Atualizar</span>
           </button>
           <button type="button" aria-label="Voltar ao app" title="Voltar ao app" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-xs text-[var(--text-low)] hover:text-[var(--text-hi)] transition-colors px-2 sm:px-3 py-1.5 rounded-lg hover:bg-[var(--control-fill-hover)]">
@@ -495,19 +501,19 @@ export default function Admin() {
 
         {view === 'vouchers' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
-            <AdminTrialVouchers />
+            <AdminTrialVouchers key={`vouchers-${refreshKey}`} />
           </Suspense>
         ) : view === 'saude' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
-            <AdminHealth />
+            <AdminHealth key={`saude-${refreshKey}`} />
           </Suspense>
         ) : view === 'logs' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
-            <AdminSystemLogs />
+            <AdminSystemLogs key={`logs-${refreshKey}`} />
           </Suspense>
         ) : view === 'whatsapp-pai' ? (
           <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="animate-spin w-6 h-6 text-[var(--text-low)]" /></div>}>
-            <AdminWhatsappPai />
+            <AdminWhatsappPai key={`whatsapp-pai-${refreshKey}`} />
           </Suspense>
         ) : loading ? (
           <div className="flex justify-center py-20">
