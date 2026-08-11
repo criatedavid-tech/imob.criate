@@ -89,7 +89,8 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<BusyAction>('');
   const [error, setError] = useState('');
-  const [showLegacy, setShowLegacy] = useState(false);
+  const [googleMethod, setGoogleMethod] = useState<'readonly' | 'bidirectional'>('readonly');
+  const [iphoneMethod, setIphoneMethod] = useState<'readonly' | 'bidirectional'>('readonly');
 
   const load = useCallback(async () => {
     setError('');
@@ -198,92 +199,157 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <section className="rounded-3xl border border-blue-400/20 bg-gradient-to-br from-blue-500/[0.10] to-transparent p-4 sm:p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300"><Cloud size={19} /></div>
-                    <div>
-                      <h4 className="text-[14px] font-black text-[var(--text-hi)]">Google Agenda — bidirecional</h4>
-                      <p className="mt-1 max-w-lg text-[11px] leading-relaxed text-[var(--text-low)]">O ImobiFlow cria uma agenda Google separada. Eventos feitos nela pelo computador ou pelo iPhone entram no ImobiFlow.</p>
-                    </div>
+                <div className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300"><Cloud size={19} /></div>
+                  <div>
+                    <h4 className="text-[14px] font-black text-[var(--text-hi)]">Google Agenda</h4>
+                    <p className="mt-1 max-w-lg text-[11px] leading-relaxed text-[var(--text-low)]">Escolha entre apenas acompanhar os compromissos ou permitir alterações nos dois sistemas.</p>
                   </div>
-                  {google?.configured ? (
-                    <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${google.status === 'active' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/20 bg-amber-500/10 text-amber-200'}`}><ShieldCheck size={12} /> {google.status === 'active' ? 'Conectado' : 'Precisa de atenção'}</span>
-                  ) : null}
                 </div>
-                {!google?.available ? (
-                  <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-4 py-3 text-[11px] text-amber-100/80">A integração aguarda as credenciais OAuth do Google no servidor.</div>
-                ) : google.configured ? (
-                  <div className="mt-4 flex flex-col gap-3 border-t border-white/[0.06] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-[10px] text-[var(--text-low)]">{whenLabel(google.last_synced_at)}{google.last_error ? <span className="mt-1 block text-amber-200/80">{google.last_error}</span> : null}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {google.status === 'reauthorize' && <button type="button" onClick={connectGoogle} disabled={!!busy} className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-200">Reconectar</button>}
-                      <button type="button" onClick={syncGoogle} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-50">{busy === 'google-sync' ? <Loader2 className="animate-spin" size={13} /> : <RefreshCw size={13} />} Sincronizar agora</button>
-                      <button type="button" onClick={deleteGoogle} disabled={!!busy} aria-label="Desconectar Google" className="rounded-xl p-2 text-red-300/70 hover:bg-red-500/10 hover:text-red-200"><Trash2 size={15} /></button>
-                    </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2" role="tablist" aria-label="Forma de sincronização do Google Agenda">
+                  <button type="button" role="tab" aria-selected={googleMethod === 'readonly'} onClick={() => setGoogleMethod('readonly')} className={`relative rounded-2xl border p-4 text-left transition ${googleMethod === 'readonly' ? 'border-emerald-400/35 bg-emerald-500/[0.12] shadow-[0_0_0_1px_rgba(52,211,153,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
+                    <span className="absolute right-3 top-3 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-200">Recomendado</span>
+                    <CalendarSync size={18} className="mb-3 text-emerald-300" />
+                    <p className="pr-20 text-[12px] font-black text-[var(--text-hi)]">Somente leitura</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no Google tudo o que foi agendado no ImobiFlow. Configuração simples, sem autorizar alterações.</p>
+                  </button>
+                  <button type="button" role="tab" aria-selected={googleMethod === 'bidirectional'} onClick={() => setGoogleMethod('bidirectional')} className={`rounded-2xl border p-4 text-left transition ${googleMethod === 'bidirectional' ? 'border-blue-400/35 bg-blue-500/[0.12] shadow-[0_0_0_1px_rgba(96,165,250,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
+                    <Cloud size={18} className="mb-3 text-blue-300" />
+                    <div className="flex items-center gap-2"><p className="text-[12px] font-black text-[var(--text-hi)]">Bidirecional</p><span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-blue-200">Avançado</span></div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Eventos criados ou alterados no calendário ImobiFlow do Google também entram no sistema.</p>
+                  </button>
+                </div>
+
+                {googleMethod === 'readonly' ? (
+                  <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/15 bg-black/[0.08] p-4" role="tabpanel">
+                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> O Google exibirá a agenda do ImobiFlow, mas as alterações feitas no Google não retornarão ao sistema.</div>
+                    {feed?.configured && feed.subscription_url ? (
+                      <>
+                        <CredentialRow label="Link privado da agenda" value={feed.subscription_url} />
+                        <div className="rounded-2xl border border-[var(--hairline)] bg-black/[0.08] p-4">
+                          <p className="text-[11px] font-bold text-[var(--text-hi)]">Como adicionar no Google Agenda</p>
+                          <ol className="mt-2 space-y-1 text-[10px] leading-relaxed text-[var(--text-low)]">
+                            <li>1. Abra o Google Agenda pelo computador.</li>
+                            <li>2. Em “Outros calendários”, clique no sinal <b>+</b>.</li>
+                            <li>3. Selecione <b>Do URL</b> e cole o link privado acima.</li>
+                            <li>4. Clique em <b>Adicionar agenda</b>. A primeira atualização pode levar alguns minutos.</li>
+                          </ol>
+                        </div>
+                        <div className="flex justify-end"><button type="button" onClick={() => generateFeed(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={12} /> Trocar link privado</button></div>
+                      </>
+                    ) : (
+                      <div>
+                        <p className="mb-3 text-[10px] leading-relaxed text-[var(--text-low)]">Gere um link privado e adicione-o em “Outros calendários” no Google. Não será necessário autorizar sua conta.</p>
+                        <button type="button" onClick={() => generateFeed(false)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2.5 text-[11px] font-bold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-50">{busy === 'feed' ? <Loader2 className="animate-spin" size={13} /> : <CalendarSync size={13} />} Gerar link somente leitura</button>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <button type="button" onClick={connectGoogle} disabled={!!busy} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-400/25 bg-blue-600/80 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-blue-600 disabled:opacity-50">{busy === 'google-connect' ? <Loader2 className="animate-spin" size={15} /> : <ExternalLink size={15} />} Conectar Google Agenda</button>
+                  <div className="mt-4 space-y-4 rounded-2xl border border-blue-400/15 bg-black/[0.08] p-4" role="tabpanel">
+                    <div className="rounded-xl border border-blue-400/15 bg-blue-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-blue-100/80"><b>Sincronização completa.</b> O Google solicitará sua autorização e o ImobiFlow criará uma agenda separada, sem acesso aos seus outros calendários.</div>
+                    {!google?.available ? (
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-4 py-3 text-[11px] text-amber-100/80">A integração aguarda as credenciais OAuth do Google no servidor.</div>
+                    ) : google.configured ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-[10px] text-[var(--text-low)]"><span className={`mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-bold ${google.status === 'active' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/20 bg-amber-500/10 text-amber-200'}`}><ShieldCheck size={12} /> {google.status === 'active' ? 'Conectado' : 'Precisa de atenção'}</span><span className="block">{whenLabel(google.last_synced_at)}</span>{google.last_error ? <span className="mt-1 block text-amber-200/80">{google.last_error}</span> : null}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {google.status === 'reauthorize' && <button type="button" onClick={connectGoogle} disabled={!!busy} className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-200">Reconectar</button>}
+                          <button type="button" onClick={syncGoogle} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-[11px] font-bold text-blue-200 hover:bg-blue-500/20 disabled:opacity-50">{busy === 'google-sync' ? <Loader2 className="animate-spin" size={13} /> : <RefreshCw size={13} />} Sincronizar agora</button>
+                          <button type="button" onClick={deleteGoogle} disabled={!!busy} aria-label="Desconectar Google" className="rounded-xl p-2 text-red-300/70 hover:bg-red-500/10 hover:text-red-200"><Trash2 size={15} /></button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={connectGoogle} disabled={!!busy} className="inline-flex items-center gap-2 rounded-2xl border border-blue-400/25 bg-blue-600/80 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-blue-600 disabled:opacity-50">{busy === 'google-connect' ? <Loader2 className="animate-spin" size={15} /> : <ExternalLink size={15} />} Conectar Google Agenda</button>
+                    )}
+                  </div>
                 )}
               </section>
 
               <section className="rounded-3xl border border-sky-400/20 bg-gradient-to-br from-sky-500/[0.10] to-transparent p-4 sm:p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300"><Smartphone size={19} /></div>
-                    <div>
-                      <h4 className="text-[14px] font-black text-[var(--text-hi)]">Calendário do iPhone — bidirecional</h4>
-                      <p className="mt-1 max-w-lg text-[11px] leading-relaxed text-[var(--text-low)]">Adicione uma conta CalDAV “ImobiFlow”. Eventos criados nessa agenda do iPhone aparecem aqui, sem informar sua senha da Apple.</p>
-                    </div>
+                <div className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300"><Smartphone size={19} /></div>
+                  <div>
+                    <h4 className="text-[14px] font-black text-[var(--text-hi)]">Calendário do iPhone</h4>
+                    <p className="mt-1 max-w-lg text-[11px] leading-relaxed text-[var(--text-low)]">Escolha como deseja conectar. A opção somente leitura é a mais simples e recomendada para acompanhar a agenda.</p>
                   </div>
-                  {iphone?.configured && <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200"><ShieldCheck size={12} /> Ativo</span>}
                 </div>
 
-                {!iphone?.configured ? (
-                  <button type="button" onClick={() => createIphone(false)} disabled={!!busy} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-600/70 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-sky-600 disabled:opacity-50">{busy === 'iphone-create' ? <Loader2 className="animate-spin" size={15} /> : <KeyRound size={15} />} Gerar acesso para iPhone</button>
-                ) : (
-                  <div className="mt-4 space-y-4 border-t border-white/[0.06] pt-4">
-                    {iphone.password_visible_once && iphone.password ? (
-                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-4 py-3 text-[10px] leading-relaxed text-amber-100/80"><b>Salve a senha agora.</b> Por segurança ela é exibida uma única vez. Se perder, gere outra.</div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2" role="tablist" aria-label="Forma de sincronização do iPhone">
+                  <button type="button" role="tab" aria-selected={iphoneMethod === 'readonly'} onClick={() => setIphoneMethod('readonly')} className={`relative rounded-2xl border p-4 text-left transition ${iphoneMethod === 'readonly' ? 'border-emerald-400/35 bg-emerald-500/[0.12] shadow-[0_0_0_1px_rgba(52,211,153,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
+                    <span className="absolute right-3 top-3 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-200">Recomendado</span>
+                    <CalendarSync size={18} className="mb-3 text-emerald-300" />
+                    <p className="pr-20 text-[12px] font-black text-[var(--text-hi)]">Somente leitura</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no iPhone tudo o que foi agendado no ImobiFlow. Configuração rápida, sem usuário ou senha.</p>
+                  </button>
+                  <button type="button" role="tab" aria-selected={iphoneMethod === 'bidirectional'} onClick={() => setIphoneMethod('bidirectional')} className={`rounded-2xl border p-4 text-left transition ${iphoneMethod === 'bidirectional' ? 'border-sky-400/35 bg-sky-500/[0.12] shadow-[0_0_0_1px_rgba(56,189,248,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
+                    <Smartphone size={18} className="mb-3 text-sky-300" />
+                    <div className="flex items-center gap-2"><p className="text-[12px] font-black text-[var(--text-hi)]">Bidirecional</p><span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-200">Avançado</span></div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja a agenda e também envie ao ImobiFlow os eventos criados no calendário do iPhone.</p>
+                  </button>
+                </div>
+
+                {iphoneMethod === 'readonly' ? (
+                  <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/15 bg-black/[0.08] p-4" role="tabpanel">
+                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> Os compromissos do ImobiFlow aparecem no iPhone, mas alterações feitas pelo telefone não retornam ao sistema.</div>
+                    {feed?.configured && feed.subscription_url ? (
+                      <>
+                        <CredentialRow label="Link privado da agenda" value={feed.subscription_url} />
+                        <div className="rounded-2xl border border-[var(--hairline)] bg-black/[0.08] p-4">
+                          <p className="text-[11px] font-bold text-[var(--text-hi)]">Como adicionar no iPhone</p>
+                          <ol className="mt-2 space-y-1 text-[10px] leading-relaxed text-[var(--text-low)]">
+                            <li>1. Ajustes → Apps → Calendário → Contas do Calendário.</li>
+                            <li>2. Adicionar Conta → Outra → Adicionar Calendário Assinado.</li>
+                            <li>3. Cole o link privado acima no campo Servidor e toque em Seguinte.</li>
+                            <li>4. Use a descrição <b>ImobiFlow</b> e toque em Salvar.</li>
+                          </ol>
+                        </div>
+                        <div className="flex justify-end"><button type="button" onClick={() => generateFeed(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={12} /> Trocar link privado</button></div>
+                      </>
                     ) : (
-                      <div className="text-[10px] text-[var(--text-low)]">A senha não fica disponível para consulta. Use “Gerar nova senha” se precisar configurar outro aparelho.</div>
+                      <div>
+                        <p className="mb-3 text-[10px] leading-relaxed text-[var(--text-low)]">Gere um link privado e adicione-o como calendário assinado no iPhone. Você não precisará criar senha.</p>
+                        <button type="button" onClick={() => generateFeed(false)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2.5 text-[11px] font-bold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-50">{busy === 'feed' ? <Loader2 className="animate-spin" size={13} /> : <CalendarSync size={13} />} Gerar link somente leitura</button>
+                      </div>
                     )}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <CredentialRow label="Servidor" value={iphone.server || ''} />
-                      <CredentialRow label="Usuário" value={iphoneUsername} />
-                    </div>
-                    <CredentialRow label="URL da conta" value={iphone.account_url || ''} />
-                    {iphone.password && <CredentialRow label="Senha" value={iphone.password} secret />}
-                    <div className="rounded-2xl border border-[var(--hairline)] bg-black/[0.08] p-4">
-                      <p className="text-[11px] font-bold text-[var(--text-hi)]">No iPhone</p>
-                      <ol className="mt-2 space-y-1 text-[10px] leading-relaxed text-[var(--text-low)]">
-                        <li>1. Ajustes → Apps → Calendário → Contas do Calendário.</li>
-                        <li>2. Adicionar Conta → Outra → Adicionar Conta CalDAV.</li>
-                        <li>3. Preencha servidor, usuário, senha e descrição “ImobiFlow”.</li>
-                        <li>4. Em Avançado: ative SSL, porta <b>443</b> e use a URL da conta acima.</li>
-                        <li>5. Ao criar um evento, selecione o calendário <b>ImobiFlow</b>.</li>
-                      </ol>
-                    </div>
-                    <div className="flex flex-wrap justify-between gap-2">
-                      <button type="button" onClick={() => createIphone(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={13} /> Gerar nova senha</button>
-                      <button type="button" onClick={deleteIphone} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-red-300/70 hover:bg-red-500/10 hover:text-red-200"><Trash2 size={13} /> Desativar iPhone</button>
-                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4 rounded-2xl border border-sky-400/15 bg-black/[0.08] p-4" role="tabpanel">
+                    <div className="rounded-xl border border-sky-400/15 bg-sky-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-sky-100/80"><b>Sincronização completa.</b> Esta opção cria uma conta CalDAV própria do ImobiFlow e exige os passos avançados abaixo. Sua senha da Apple nunca é solicitada.</div>
+                    {!iphone?.configured ? (
+                      <button type="button" onClick={() => createIphone(false)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-600/70 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-sky-600 disabled:opacity-50">{busy === 'iphone-create' ? <Loader2 className="animate-spin" size={15} /> : <KeyRound size={15} />} Iniciar configuração bidirecional</button>
+                    ) : (
+                      <>
+                        <div className="flex justify-end"><span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200"><ShieldCheck size={12} /> Acesso ativo</span></div>
+                        {iphone.password_visible_once && iphone.password ? (
+                          <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-4 py-3 text-[10px] leading-relaxed text-amber-100/80"><b>Salve a senha agora.</b> Por segurança ela é exibida uma única vez. Se perder, gere outra.</div>
+                        ) : (
+                          <div className="text-[10px] text-[var(--text-low)]">A senha não fica disponível para consulta. Use “Gerar nova senha” se precisar configurar outro aparelho.</div>
+                        )}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <CredentialRow label="Servidor" value={iphone.server || ''} />
+                          <CredentialRow label="Usuário" value={iphoneUsername} />
+                        </div>
+                        <CredentialRow label="URL da conta" value={iphone.account_url || ''} />
+                        {iphone.password && <CredentialRow label="Senha" value={iphone.password} secret />}
+                        <div className="rounded-2xl border border-[var(--hairline)] bg-black/[0.08] p-4">
+                          <p className="text-[11px] font-bold text-[var(--text-hi)]">Configuração avançada no iPhone</p>
+                          <ol className="mt-2 space-y-1 text-[10px] leading-relaxed text-[var(--text-low)]">
+                            <li>1. Ajustes → Apps → Calendário → Contas do Calendário.</li>
+                            <li>2. Adicionar Conta → Outra → Adicionar Conta CalDAV.</li>
+                            <li>3. Preencha servidor, usuário, senha e descrição “ImobiFlow”.</li>
+                            <li>4. Em Avançado: ative SSL, porta <b>443</b> e use a URL da conta acima.</li>
+                            <li>5. Ao criar um evento, selecione o calendário <b>ImobiFlow</b>.</li>
+                          </ol>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <button type="button" onClick={() => createIphone(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={13} /> Gerar nova senha</button>
+                          <button type="button" onClick={deleteIphone} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-red-300/70 hover:bg-red-500/10 hover:text-red-200"><Trash2 size={13} /> Desativar acesso</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
-              </section>
-
-              <section className="rounded-2xl border border-[var(--hairline)] bg-[var(--control-fill)]">
-                <button type="button" onClick={() => setShowLegacy((value) => !value)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-                  <div><p className="text-[12px] font-bold text-[var(--text-mid)]">Assinatura simples (.ics)</p><p className="mt-0.5 text-[10px] text-[var(--text-low)]">Opção antiga, compatível e somente leitura.</p></div>
-                  <span className="text-[10px] font-bold text-blue-300">{showLegacy ? 'Ocultar' : 'Mostrar'}</span>
-                </button>
-                {showLegacy && <div className="space-y-3 border-t border-[var(--hairline)] p-4">
-                  <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.06] px-3 py-2 text-[10px] text-amber-100/70">A assinatura é somente leitura: eventos do telefone não entram no ImobiFlow por este link.</div>
-                  {feed?.configured && feed.subscription_url ? (
-                    <><CredentialRow label="Endereço privado" value={feed.subscription_url} /><div className="flex justify-end"><button type="button" onClick={() => generateFeed(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={12} /> Trocar link</button></div></>
-                  ) : (
-                    <button type="button" onClick={() => generateFeed(false)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl border border-[var(--hairline-strong)] px-3 py-2 text-[11px] font-bold text-[var(--text-mid)]"><CalendarSync size={13} /> Gerar link somente leitura</button>
-                  )}
-                </div>}
               </section>
 
               <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-emerald-100/70"><ShieldCheck className="mr-1 inline" size={12} /> Os horários continuam usando a conversão já validada. Google e iPhone recebem datas ISO preservando o fuso de São Paulo.</div>

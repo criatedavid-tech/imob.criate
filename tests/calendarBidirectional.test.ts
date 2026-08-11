@@ -97,8 +97,12 @@ test('backend e migration mantêm credenciais fora do navegador e sincronizaçã
   assert.match(migration, /imf_mark_calendar_event_deleted/);
   assert.match(migration, /imf_claim_agenda_calendar_sync/);
   assert.match(scheduler, /task: runGoogleCalendarSyncTick/);
-  assert.match(modal, /Google Agenda — bidirecional/);
-  assert.match(modal, /Calendário do iPhone — bidirecional/);
-  assert.match(modal, /A assinatura é somente leitura/);
+  assert.match(modal, /Google Agenda/);
+  assert.match(modal, /Calendário do iPhone/);
+  assert.match(modal, /Somente leitura/);
+  assert.match(modal, /Bidirecional/);
+  assert.match(modal, /Recomendado/);
+  assert.match(modal, /Adicionar Conta CalDAV/);
+  assert.match(modal, /Do URL/);
   assert.match(env, /GOOGLE_CALENDAR_CLIENT_SECRET/);
 });
