@@ -102,6 +102,16 @@ condicionada a `status = used` e `broker_id IS NULL`; não há migration adicion
 Essas estruturas dependem da migration
 `20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
 
+### Recuperação da interface após deploy (2026-08-11)
+
+Uma aba que permanece aberta durante um deploy pode conservar o JavaScript da
+versão anterior e tentar carregar depois um chunk que já não existe. Assets
+ausentes em `/assets/*` agora devolvem 404 explícito e nunca o `index.html` da
+SPA. O cliente compara o entrypoint ao voltar de uma aba suspensa e atualiza a
+página quando encontra uma versão nova. Falhas de importação dinâmica também
+fazem uma única recarga automática por minuto; outros erros de renderização
+caem numa tela recuperável em vez de deixar apenas o fundo preto.
+
 ### Google Agenda oficial (2026-08-11)
 
 Os secrets `GOOGLE_CALENDAR_CLIENT_ID` e `GOOGLE_CALENDAR_CLIENT_SECRET` do
@@ -109,6 +119,16 @@ projeto oficial `absolute-point-505213-v3` foram instalados no Fly sem registrar
 seus valores no repositório. As máquinas do `imobiflow-v2` reiniciaram
 saudáveis. O projeto incorreto `scenic-oxygen-505212-k1` foi encerrado na conta
 David e está programado pelo Google para exclusão após 10/09/2026.
+
+O OAuth oficial utiliza exclusivamente o escopo mínimo
+`calendar.app.created`: cria uma agenda secundária do ImobiFlow e não acessa a
+agenda principal do usuário. O cliente Web e o callback de produção estão
+corretos. Para a publicação externa, a aplicação disponibiliza a página pública
+`/sobre`, a Política de Privacidade em `/privacidade` com divulgação específica
+do uso de dados das APIs do Google e os Termos em `/termos`. No Google Auth
+Platform ainda é necessário declarar o escopo em **Acesso a dados**, preencher
+essas três URLs no **Branding**, mudar o público de **Testando** para
+**Em produção** e concluir a verificação indicada pelo próprio console.
 
 ### Piloto financeiro sandbox (preparado em 2026-08-10)
 
@@ -1893,7 +1913,7 @@ Duas ações novas em `server/services/agent.ts`, complementares a
   valida formato e hash, aplica rate limit, retorna somente visitas e limita a
   janela a um ano anterior e três anos futuros. Migration:
   `20260810c_agenda_calendar_feed.sql`.
-- **Agenda bidirecional (implementada em 11/08/2026, ativação pendente):**
+- **Agenda bidirecional (implementada e homologada em 11/08/2026):**
   - **Google Agenda:** OAuth de servidor com acesso offline e escopo mínimo
     `calendar.app.created`. O ImobiFlow cria uma agenda secundária isolada, sem
     ler a agenda pessoal do usuário. Tokens são cifrados por AES-256-GCM. Um
@@ -1914,11 +1934,12 @@ Duas ações novas em `server/services/agent.ts`, complementares a
     somente eventos `event_type='visita'`, janela de um ano anterior a três
     anos futuros e limite de 5.000 itens. O fuso `America/Sao_Paulo` homologado
     em 10/08/2026 não foi alterado.
-  - **Ativação:** `20260811a_agenda_bidirectional_sync.sql` aplicada e
-    verificada em 11/08/2026; falta habilitar Google Calendar API, configurar
-    cliente OAuth Web com redirect
-    `PUBLIC_APP_URL/api/agenda/google/callback`; definir
-    `GOOGLE_CALENDAR_CLIENT_ID` e `GOOGLE_CALENDAR_CLIENT_SECRET`.
+  - **Ativação técnica:** `20260811a_agenda_bidirectional_sync.sql` aplicada e
+    verificada em 11/08/2026; Google Calendar API, cliente OAuth Web, callback
+    `PUBLIC_APP_URL/api/agenda/google/callback` e secrets do Fly configurados.
+    Google e iPhone foram validados nos dois sentidos. O projeto Google ainda
+    está em modo **Testando**; a liberação geral depende da declaração do
+    escopo, Branding público e verificação/publicação no Google Auth Platform.
 - Nova coluna `imf_agenda.event_type` (`'visita'|'lembrete'`, `DEFAULT
   'visita'`, migration `20260721c_agenda_event_type.sql`, aplicada e
   verificada) separa lembrete de visita real no banco. Sem isso, todo

@@ -14,6 +14,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Termos = lazy(() => import('./pages/Termos'));
 const Privacidade = lazy(() => import('./pages/Privacidade'));
+const Sobre = lazy(() => import('./pages/Sobre'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Experiencia = lazy(() => import('./pages/Experiencia'));
 const Vitrine = lazy(() => import('./pages/Vitrine'));
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/termos" element={<Termos />} />
           <Route path="/privacidade" element={<Privacidade />} />
+          <Route path="/sobre" element={<Sobre />} />
           <Route path="/p/:slug" element={<PropertyLanding />} />
           <Route path="/vitrine/:brokerId" element={<Vitrine />} />
           <Route path="/lancamentos-vitrine/:brokerId" element={<VitrineLancamentos />} />

@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 process.env.SUPABASE_URL ||= "https://exemplo.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "chave-de-teste";
 const { injectPageMeta } = await import("../server/services/publicPageMeta");
+const {
+  extractEntryModulePath,
+  isStaleAssetError,
+  shouldAttemptStaleAssetRecovery,
+} = await import("../src/lib/appRecovery");
 
 const CASCA = `<!doctype html><html lang="en"><head><meta charset="UTF-8" /><title>Criate</title></head><body><div id="root"></div></body></html>`;
 
@@ -125,6 +130,31 @@ test("o HTML da vitrine nunca pode ser cacheado pelo navegador", () => {
     !/max-age=[1-9]/.test(rota),
     "nenhum max-age positivo no HTML da vitrine",
   );
+});
+
+test("asset removido depois do deploy nunca recebe o HTML da SPA", () => {
+  const asset404 = fonteDoServidor.indexOf('app.use("/assets"');
+  const spaFallback = fonteDoServidor.indexOf('app.get("*"');
+  assert.ok(asset404 > 0, "faltou o 404 dedicado de assets");
+  assert.ok(asset404 < spaFallback, "o 404 de assets precisa vir antes do fallback da SPA");
+  assert.match(fonteDoServidor.slice(asset404, spaFallback), /status\(404\)/);
+  assert.match(fonteDoServidor.slice(asset404, spaFallback), /Cache-Control", "no-store"/);
+});
+
+test("cliente reconhece versão antiga e evita loop de recarga", () => {
+  assert.equal(isStaleAssetError(new Error("Failed to fetch dynamically imported module: /assets/Agenda-old.js")), true);
+  assert.equal(isStaleAssetError(new Error("erro comum de formulário")), false);
+  assert.equal(shouldAttemptStaleAssetRecovery("ChunkLoadError", 0, 100_000), true);
+  assert.equal(shouldAttemptStaleAssetRecovery("ChunkLoadError", 80_000, 100_000), false);
+  assert.equal(shouldAttemptStaleAssetRecovery("ChunkLoadError", 20_000, 100_000), true);
+});
+
+test("comparador encontra o entrypoint com hash no HTML novo", () => {
+  assert.equal(
+    extractEntryModulePath('<script type="module" crossorigin src="/assets/index-abc123.js"></script>'),
+    "/assets/index-abc123.js",
+  );
+  assert.equal(extractEntryModulePath('<script src="/legacy.js"></script>'), null);
 });
 
 // ─── Dado embutido no HTML ──────────────────────────────────────────────────

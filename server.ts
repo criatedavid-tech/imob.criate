@@ -215,6 +215,15 @@ async function startServer() {
         }
       },
     }));
+    // Um asset com hash deixa de existir depois de um novo deploy. Ele nunca
+    // pode cair no fallback da SPA e receber index.html com status 200: o
+    // navegador espera JavaScript/CSS, rejeita o MIME text/html e o React
+    // desmonta a tela. O 404 explícito permite ao cliente reconhecer a versão
+    // antiga e fazer uma única recarga de recuperação.
+    app.use("/assets", (_req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(404).type("text/plain").send("Asset not found");
+    });
     // Rota de API inexistente devolve JSON 404 em vez do HTML da SPA. Sem
     // isso, um GET /api/errado respondia 200 + index.html: erro de front e
     // varredura de bot viravam "sucesso" nas métricas, cada um custando uma
