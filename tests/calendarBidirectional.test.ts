@@ -103,10 +103,11 @@ test('OAuth usa state forte, acesso offline e escopo restrito à agenda criada p
   assert.equal(url.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.app.created');
 });
 
-test('backend e migration mantêm credenciais fora do navegador e sincronização no scheduler', async () => {
-  const [route, migration, scheduler, modal, env] = await Promise.all([
+test('backend e migrations mantêm credenciais fora do navegador e sincronização no scheduler', async () => {
+  const [route, migration, sourceMigration, scheduler, modal, env] = await Promise.all([
     read('../server/routes/agenda.ts'),
     read('../supabase/migrations/20260811a_agenda_bidirectional_sync.sql'),
+    read('../supabase/migrations/20260811c_agenda_calendar_sources.sql'),
     read('../scheduler-worker.ts'),
     read('../src/components/CalendarSyncModal.tsx'),
     read('../.env.example'),
@@ -123,6 +124,8 @@ test('backend e migration mantêm credenciais fora do navegador e sincronizaçã
   assert.match(migration, /REVOKE ALL ON TABLE public\.imf_agenda_calendar_connections FROM PUBLIC, anon, authenticated/);
   assert.match(migration, /imf_mark_calendar_event_deleted/);
   assert.match(migration, /imf_claim_agenda_calendar_sync/);
+  assert.match(sourceMigration, /DROP CONSTRAINT IF EXISTS imf_agenda_source_check/);
+  assert.match(sourceMigration, /'manual', 'ia', 'calendar_google', 'calendar_iphone'/);
   assert.match(scheduler, /task: runGoogleCalendarSyncTick/);
   assert.match(modal, /Google Agenda/);
   assert.match(modal, /Calendário do iPhone/);
