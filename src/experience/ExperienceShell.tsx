@@ -32,7 +32,6 @@ const RelatoriosArea = lazy(() => import('./RelatoriosArea').then((m) => ({ defa
 const DivulgacaoArea = lazy(() => import('./DivulgacaoArea').then((m) => ({ default: m.DivulgacaoArea })));
 const ConfigArea = lazy(() => import('./ConfigArea').then((m) => ({ default: m.ConfigArea })));
 const AssistenteIAArea = lazy(() => import('./AssistenteIAArea').then((m) => ({ default: m.AssistenteIAArea })));
-const LogsArea = lazy(() => import('./LogsArea').then((m) => ({ default: m.LogsArea })));
 
 const PERSONAS: Persona[] = ['corretor', 'imobiliaria', 'incorporadora'];
 const AUTONOMY_LABEL: Record<Autonomy, string> = {
@@ -253,7 +252,6 @@ export function ExperienceShell() {
       <ManualRail
         capabilities={capabilities}
         isOwner={isOwner}
-        isAdmin={isAdmin}
         active={area}
         onSelect={goToArea}
         mobileOpen={mobileNavOpen}
@@ -395,8 +393,6 @@ export function ExperienceShell() {
             <DivulgacaoArea />
           ) : area === 'assistente-ia' ? (
             <AssistenteIAArea />
-          ) : area === 'logs' ? (
-            <LogsArea />
           ) : area === 'config' ? (
             <ConfigArea />
           ) : area !== 'hoje' ? (

@@ -71,12 +71,27 @@ ação solicitada, etapa, mensagem pública, detalhe técnico e estado operacion
 Textos passam por sanitização de tokens, chaves, senhas, e-mail, telefone e CPF;
 o navegador nunca acessa a tabela diretamente (RLS + service role).
 
-A área **Logs** do `/app` e as rotas `/api/system-logs` são globais e exclusivas
-do administrador da plataforma (`imf_brokers.is_admin`). Titulares comuns e
-membros não veem o item e recebem 403 se tentarem chamar a API. O administrador
-pode filtrar, investigar e mudar cada ocorrência entre **Pendente**, **Em
-análise** e **Resolvido**. Somente logs resolvidos há mais de 180 dias entram na
-retenção automática.
+A área **Logs** fica no **Painel Admin** (`/admin`), ao lado de Saúde do sistema,
+e as rotas `/api/system-logs` são globais e exclusivas do administrador da
+plataforma (`imf_brokers.is_admin`). Ela não aparece mais no menu operacional do
+`/app`. Titulares comuns e membros recebem 403 se tentarem chamar a API. O
+administrador pode filtrar, investigar e mudar cada ocorrência entre
+**Pendente**, **Em análise** e **Resolvido**. Somente logs resolvidos há mais de
+180 dias entram na retenção automática.
+
+### Revogação administrativa de vouchers
+
+Na aba **Vouchers** do `/admin`, convites ativos exibem **Revogar voucher** e
+deixam de funcionar imediatamente após a confirmação. Um voucher já utilizado,
+enquanto a conta ainda estiver no plano `experimentacao`, exibe **Revogar
+acesso**: a operação preserva os dados, marca o voucher como revogado e muda a
+conta vinculada para `inativo`, encerrando o acesso à plataforma. A pessoa ainda
+pode entrar no fluxo de contratação de um plano.
+
+A operação é atômica pela RPC `imf_revoke_trial_voucher`, bloqueia voucher e
+conta durante a alteração, exige administrador global também dentro do banco e
+não afeta contas que já migraram para um plano diferente. Depende da migration
+`20260811c_trial_voucher_revocation.sql`.
 
 Essas estruturas dependem da migration
 `20260811b_agent_autonomy_media_batches_and_system_logs.sql`.
@@ -2333,6 +2348,7 @@ Migrations mais recentes confirmadas manualmente no histórico:
 | `20260810a_agent_conversation_reset.sql` | aplicada e verificada em 10/08/2026 | reset transacional do histórico/contexto pessoal do Assistente IA |
 | `20260810c_agenda_calendar_feed.sql` | pronta para aplicação | link privado e revogável de assinatura da Agenda no Google/iPhone |
 | `20260811a_agenda_bidirectional_sync.sql` | aplicada e verificada em 11/08/2026 | conexões Google OAuth/CalDAV, vínculos idempotentes, states OAuth, lápides de exclusão e lease de sincronização |
+| `20260811c_trial_voucher_revocation.sql` | pronta para aplicação | revoga convite ativo ou encerra atomicamente o acesso concedido por voucher utilizado ainda em experimentação |
 | `20260810d_property_keys_hardening.sql` | aplicada e verificada em 10/08/2026 | RLS, revogação do acesso direto e integridade dos novos registros de retirada/devolução |
 
 A verificação de `20260716d` confirmou coluna, índice e trigger presentes e

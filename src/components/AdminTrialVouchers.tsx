@@ -17,7 +17,7 @@ type Voucher = {
   created_at: string;
   used_at: string | null;
   cancelled_at: string | null;
-  used_by_account?: { name: string; email: string } | null;
+  used_by_account?: { name: string; email: string; plan: string; status: string } | null;
 };
 
 type CreatedVoucher = Voucher & { code: string; url: string };
@@ -53,7 +53,7 @@ export default function AdminTrialVouchers() {
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [created, setCreated] = useState<CreatedVoucher | null>(null);
   const [copied, setCopied] = useState<'code' | 'url' | null>(null);
@@ -134,26 +134,30 @@ export default function AdminTrialVouchers() {
     }
   }
 
-  async function cancelVoucher(voucher: Voucher) {
-    if (!confirm(`Cancelar o voucher ${voucher.code_hint}? O link deixará de funcionar imediatamente.`)) return;
-    setCancellingId(voucher.id);
+  async function revokeVoucher(voucher: Voucher) {
+    const used = voucher.status === 'used';
+    const warning = used
+      ? `Revogar o acesso concedido pelo voucher ${voucher.code_hint}?\n\nA conta ${voucher.used_by_account?.name || 'vinculada'} perderá o acesso à plataforma imediatamente. Os dados serão preservados e a conta poderá contratar um plano posteriormente.`
+      : `Revogar o voucher ${voucher.code_hint}? O link deixará de funcionar imediatamente.`;
+    if (!confirm(warning)) return;
+    setRevokingId(voucher.id);
     setMessage(null);
     try {
-      const response = await fetch(`/api/admin/trial-vouchers/${voucher.id}/cancel`, {
+      const response = await fetch(`/api/admin/trial-vouchers/${voucher.id}/revoke`, {
         method: 'PATCH',
         headers,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Não foi possível cancelar o voucher.');
+      if (!response.ok) throw new Error(data.error || 'Não foi possível revogar o voucher.');
       setVouchers((current) => current.map((item) => item.id === voucher.id
         ? { ...item, status: 'cancelled', cancelled_at: data.cancelled_at }
         : item));
       if (created?.id === voucher.id) setCreated(null);
-      setMessage({ type: 'success', text: 'Voucher cancelado.' });
+      setMessage({ type: 'success', text: data.revoked_access ? 'Voucher e acesso de experimentação revogados.' : 'Voucher revogado.' });
     } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Não foi possível cancelar o voucher.' });
+      setMessage({ type: 'error', text: err?.message || 'Não foi possível revogar o voucher.' });
     } finally {
-      setCancellingId(null);
+      setRevokingId(null);
     }
   }
 
@@ -245,8 +249,13 @@ export default function AdminTrialVouchers() {
         ) : (
           <div className="divide-y divide-[var(--hairline)]">
             {vouchers.map((voucher) => {
-              const status = STATUS[voucher.status];
+              const baseStatus = STATUS[voucher.status];
+              const status = voucher.status === 'cancelled' && voucher.used_at
+                ? { ...baseStatus, label: 'Acesso revogado' }
+                : baseStatus;
               const account = ACCOUNT_TYPES.find((item) => item.value === voucher.account_type);
+              const canRevoke = voucher.status === 'active'
+                || (voucher.status === 'used' && voucher.used_by_account?.plan === 'experimentacao');
               return (
                 <div key={voucher.id} className="p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3">
                   <div className="min-w-0 flex-1">
@@ -261,10 +270,10 @@ export default function AdminTrialVouchers() {
                     </p>
                     {voucher.used_by_account && <p className="text-xs text-blue-300/80 mt-1">Usado por {voucher.used_by_account.name} ({voucher.used_by_account.email}) em {formatDate(voucher.used_at)}</p>}
                   </div>
-                  {voucher.status === 'active' && (
-                    <button type="button" onClick={() => cancelVoucher(voucher)} disabled={cancellingId === voucher.id} className="self-start md:self-auto h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-red-300 bg-red-500/10 border border-red-400/20 disabled:opacity-50">
-                      {cancellingId === voucher.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
-                      Cancelar
+                  {canRevoke && (
+                    <button type="button" onClick={() => revokeVoucher(voucher)} disabled={revokingId === voucher.id} className="self-start md:self-auto h-9 px-3 rounded-lg inline-flex items-center gap-2 text-xs font-bold text-red-300 bg-red-500/10 border border-red-400/20 disabled:opacity-50">
+                      {revokingId === voucher.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                      {voucher.status === 'used' ? 'Revogar acesso' : 'Revogar voucher'}
                     </button>
                   )}
                 </div>

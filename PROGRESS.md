@@ -1,5 +1,25 @@
 # Estado do projeto
 
+## Logs movidos para o Painel Admin (local, 2026-08-11)
+
+- A tela global de Logs deixou o menu operacional do `/app` e passou a ser uma
+  aba do `/admin`, junto de Contas, Vouchers, Saúde do sistema e WhatsApp Pai.
+- O bloqueio do backend continua exigindo `imf_brokers.is_admin`; a mudança é
+  de organização da experiência e não amplia permissões.
+- A navegação administrativa ganhou quebra responsiva para acomodar as cinco
+  seções no celular. Não há migration.
+
+## Revogação administrativa de vouchers (local, 2026-08-11)
+
+- Voucher ativo pode ser revogado e o link deixa de funcionar imediatamente.
+- Voucher utilizado pode ter o acesso concedido revogado enquanto a conta ainda
+  estiver em `experimentacao`; os dados são preservados e a conta fica
+  `inativo`, podendo seguir para contratação.
+- A RPC transacional `imf_revoke_trial_voucher` trava voucher e conta, registra
+  administrador/data da revogação e recusa afetar uma conta que já trocou de
+  plano.
+- Requer a migration `20260811c_trial_voucher_revocation.sql`.
+
 ## Resumo de conversa pelo WhatsApp Pai (local, 2026-08-11)
 
 - Nova ação estrita e não mutável `summarize_conversation` no agente interno,

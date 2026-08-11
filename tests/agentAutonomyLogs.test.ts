@@ -27,17 +27,22 @@ test("logs operacionais removem credenciais e dados pessoais comuns", () => {
   assert.match(clean, /PROTEGIDO/);
 });
 
-test("tela e API de logs sao exclusivas do admin do sistema", async () => {
-  const [route, shell, rail] = await Promise.all([
+test("tela e API de logs ficam exclusivamente no painel admin", async () => {
+  const [route, admin, shell, rail, engine] = await Promise.all([
     read("../server/routes/systemLogs.ts"),
+    read("../src/pages/Admin.tsx"),
     read("../src/experience/ExperienceShell.tsx"),
     read("../src/experience/ManualRail.tsx"),
+    read("../src/experience/engine.ts"),
   ]);
   assert.match(route, /select\("is_admin"\)/);
   assert.match(route, /!broker\?\.is_admin/);
   assert.doesNotMatch(route, /isBrokerOwner/);
-  assert.match(shell, /<LogsArea/);
-  assert.match(rail, /if \(a\.key === 'logs'\) return isAdmin/);
+  assert.match(admin, /AdminSystemLogs/);
+  assert.match(admin, /\['logs', 'Logs'\]/);
+  assert.doesNotMatch(shell, /LogsArea/);
+  assert.doesNotMatch(rail, /logs:/);
+  assert.doesNotMatch(engine, /key: 'logs'/);
 });
 
 test("WhatsApp Pai respeita a preferencia e auto-confirma somente no piloto", async () => {

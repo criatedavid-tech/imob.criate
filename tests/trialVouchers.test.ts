@@ -135,6 +135,7 @@ test("rotas administrativas de voucher exigem admin e nunca listam codigo bruto"
     'post("/api/admin/trial-vouchers"',
     'get("/api/admin/trial-vouchers"',
     'patch("/api/admin/trial-vouchers/:id/cancel"',
+    'patch("/api/admin/trial-vouchers/:id/revoke"',
   ]) {
     const start = admin.indexOf(marker);
     assert.ok(start >= 0, marker);
@@ -147,6 +148,24 @@ test("rotas administrativas de voucher exigem admin e nunca listam codigo bruto"
   const listRoute = admin.slice(listStart, listEnd);
   assert.doesNotMatch(listRoute, /select\([^)]*code_hash/);
   assert.doesNotMatch(listRoute, /row\.code_hash/);
+});
+
+test("admin revoga convite ou acesso de experimentacao de forma atomica", async () => {
+  const [migration, route, ui] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260811c_trial_voucher_revocation.sql", import.meta.url), "utf8"),
+    readFile(new URL("../server/routes/admin.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/AdminTrialVouchers.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.imf_revoke_trial_voucher/);
+  assert.match(migration, /FOR UPDATE/);
+  assert.match(migration, /v_voucher\.status NOT IN \('active', 'used'\)/);
+  assert.match(migration, /v_broker\.plan IS DISTINCT FROM 'experimentacao'/);
+  assert.match(migration, /UPDATE public\.imf_brokers[\s\S]*status = 'inativo'/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.imf_revoke_trial_voucher/);
+  assert.match(route, /rpc\("imf_revoke_trial_voucher"/);
+  assert.match(route, /invalidateAccountAccessCache\(\)/);
+  assert.match(ui, /Revogar acesso/);
+  assert.match(ui, /Revogar voucher/);
 });
 
 test("cadastro com voucher usa RPC e remove usuario se o resgate falhar", async () => {
