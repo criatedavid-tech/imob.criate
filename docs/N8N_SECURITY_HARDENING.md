@@ -22,9 +22,13 @@ endurecido pela API oficial do N8N:
 - `event_id` segue para criação/edição/remoção de agenda e resposta WhatsApp;
 - ferramentas de agenda renomeadas para coincidir com o prompt;
 - `pinData` de produção removido;
+- exposição do workflow como ferramenta MCP desativada, pois este fluxo é uma
+  entrada privada do WhatsApp Pai e não uma ferramenta pública de agentes;
 - webhook sem credencial testado e rejeitado com HTTP 403;
 - os quatro nós de leitura/modelo mais sensíveis usam três tentativas com
   intervalo de dois segundos;
+- sete pontos críticos do atendimento usam saída de erro dedicada para
+  `POST /api/system-logs/n8n`, autenticada pela credencial interna;
 - o backend impede reenvio do mesmo balão por `event_id` e registra falhas de
   integração na tela administrativa de Logs.
 
@@ -33,6 +37,11 @@ Validação local do mesmo pacote: 224 testes, TypeScript e build aprovados.
 Pendência operacional: revogar e emitir novamente a chave da API pública do
 N8N que foi compartilhada durante a manutenção. Nunca registrar a nova chave
 no repositório, documentação ou chat.
+
+Observação de auditoria: em 12/08/2026, o endpoint global `POST /api/v1/audit`
+do próprio servidor N8N respondeu com timeout/HTTP 502. Isso não desativou nem
+alterou o workflow; a validação estrutural específica do fluxo foi concluída
+pela API e deve ser repetida depois da manutenção do servidor N8N.
 
 ## Estado anterior confirmado em 27/07/2026
 
