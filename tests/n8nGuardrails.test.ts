@@ -139,6 +139,14 @@ test("dispatcher envia autenticação e IDs duráveis ao n8n", async () => {
   assert.match(source, /event_id: row\.id/);
 });
 
+test("resposta do n8n usa event_id como chave idempotente por balão", async () => {
+  const source = await readFile(new URL("../server/routes/conversations.ts", import.meta.url), "utf8");
+  assert.match(source, /`n8n:\$\{input\.event_id\}:\$\{index\}`/);
+  assert.match(source, /\.in\("provider_message_id", providerIds\)/);
+  assert.match(source, /providerMessageId,/);
+  assert.match(source, /idempotente: reutilizados > 0/);
+});
+
 test("saúde distingue token dedicado do fallback temporário do n8n", async () => {
   const config = await readFile(new URL("../server/config.ts", import.meta.url), "utf8");
   const health = await readFile(new URL("../server/services/systemHealth.ts", import.meta.url), "utf8");

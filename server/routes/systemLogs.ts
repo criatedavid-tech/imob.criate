@@ -1,11 +1,23 @@
 import express from "express";
 import { requireUser, getBrokerId } from "../middleware/auth";
 import { supabase } from "../supabase";
+import { requireInternalToken } from "../middleware/internalAuth";
+import { n8nInternalLimiter } from "../middleware/rateLimits";
+import {
+  recordSystemError,
+  type SystemErrorCategory,
+  type SystemErrorChannel,
+} from "../services/systemErrorLogs";
 
 export const systemLogsRouter = express.Router();
 
 const VALID_STATUS = new Set(["pendente", "em_analise", "resolvido"]);
 const VALID_CHANNEL = new Set(["whatsapp_pai", "painel_interno", "integracao", "worker", "sistema"]);
+const VALID_CATEGORY = new Set([
+  "execution_error", "integration_failure", "agent_unhandled",
+  "tool_failure", "validation_error", "queue_failure",
+]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function requireSystemAdmin(req: express.Request, res: express.Response) {
   const userId = (req as any).userId as string;
@@ -24,6 +36,37 @@ async function requireSystemAdmin(req: express.Request, res: express.Response) {
   }
   return { userId, brokerId };
 }
+
+// Entrada exclusiva para a observabilidade do workflow N8N. O endpoint não
+// aceita status nem campos de resolução: o fluxo apenas cria um incidente e o
+// administrador decide seu tratamento no painel. recordSystemError faz a
+// sanitização final de tokens, telefone, e-mail e documentos.
+systemLogsRouter.post("/api/system-logs/n8n", requireInternalToken, n8nInternalLimiter, async (req, res) => {
+  const brokerId = String(req.body?.broker_id || "").trim();
+  const channel = String(req.body?.channel || "integracao");
+  const category = String(req.body?.category || "execution_error");
+  const stage = String(req.body?.stage || "n8n_workflow").trim();
+  if (!UUID.test(brokerId)) return res.status(400).json({ error: "broker_id inválido." });
+  if (!VALID_CHANNEL.has(channel)) return res.status(400).json({ error: "Canal inválido." });
+  if (!VALID_CATEGORY.has(category)) return res.status(400).json({ error: "Categoria inválida." });
+  if (!stage || stage.length > 160) return res.status(400).json({ error: "Etapa inválida." });
+
+  await recordSystemError({
+    brokerId,
+    channel: channel as SystemErrorChannel,
+    category: category as SystemErrorCategory,
+    requestedAction: req.body?.requested_action || null,
+    stage,
+    publicMessage: req.body?.public_message || null,
+    technicalMessage: req.body?.technical_message || "Falha não detalhada pelo workflow.",
+    context: {
+      event_id: req.body?.event_id || null,
+      ticket_id: req.body?.ticket_id || null,
+      workflow_id: req.body?.workflow_id || null,
+    },
+  });
+  res.status(202).json({ ok: true });
+});
 
 systemLogsRouter.get("/api/system-logs", requireUser, async (req, res) => {
   try {

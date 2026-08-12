@@ -45,6 +45,14 @@ test("tela e API de logs ficam exclusivamente no painel admin", async () => {
   assert.doesNotMatch(engine, /key: 'logs'/);
 });
 
+test("workflow n8n registra falha somente pela rota interna sanitizada", async () => {
+  const route = await read("../server/routes/systemLogs.ts");
+  assert.match(route, /post\("\/api\/system-logs\/n8n", requireInternalToken, n8nInternalLimiter/);
+  assert.match(route, /recordSystemError\(\{/);
+  assert.match(route, /event_id: req\.body\?\.event_id \|\| null/);
+  assert.doesNotMatch(route, /technical_message:\s*req\.body\?\.technical_message[^\n]*\.insert/);
+});
+
 test("WhatsApp Pai respeita a preferencia e auto-confirma somente no piloto", async () => {
   const [queue, preferences, route] = await Promise.all([
     read("../server/services/whatsappPaiQueue.ts"),

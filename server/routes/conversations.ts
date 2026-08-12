@@ -21,6 +21,7 @@ import {
   parseN8nAiReply,
 } from "../security/n8nGuardrails";
 import { isOfficialWhatsappPaiPhone } from "../services/whatsappPaiIdentity";
+import { recordSystemError } from "../services/systemErrorLogs";
 
 // Resposta em balões: ver server/services/replyChunks.ts. Desligar volta ao
 // bloco único de antes.
@@ -99,21 +100,72 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInte
       return res.status(409).json({ error: "Ticket encerrado ou com atendimento humano ativo." });
     }
 
-    const instanceToken = await resolveOutboundInstanceToken(brokerId, customerPhone);
-    if (!instanceToken) {
-      return res.status(503).json({ error: "Instância WhatsApp não configurada pra este corretor ainda." });
-    }
-
     // A resposta sai em balões, como uma pessoa escreve. Ver replyChunks.ts.
     const bubbles = AI_REPLY_BUBBLES ? splitReplyIntoBubbles(text, AI_REPLY_MAX_BUBBLES) : [sanitizeReply(text)];
     if (!bubbles.length) return res.status(400).json({ error: "Resposta vazia." });
 
+    // O mesmo event_id pode reaparecer quando o N8N concluiu o envio mas a
+    // confirmação HTTP se perdeu no caminho. Cada balão recebe uma chave
+    // estável; os já persistidos são ignorados no retry. Isso elimina o caso
+    // comum de resposta duplicada sem misturar eventos de tickets distintos.
+    const providerIds = input.event_id
+      ? bubbles.map((_, index) => `n8n:${input.event_id}:${index}`)
+      : [];
+    const alreadyRecorded = new Set<string>();
+    if (providerIds.length) {
+      const { data, error } = await supabase
+        .from("imf_conversation_messages")
+        .select("provider_message_id")
+        .eq("broker_id", brokerId)
+        .eq("ticket_id", ticket.id)
+        .in("provider_message_id", providerIds);
+      if (error) throw error;
+      for (const row of data || []) {
+        if (row.provider_message_id) alreadyRecorded.add(row.provider_message_id);
+      }
+    }
+
+    if (providerIds.length && alreadyRecorded.size === bubbles.length) {
+      return res.json({ ok: true, baloes: bubbles.length, reutilizados: bubbles.length, idempotente: true });
+    }
+
+    const instanceToken = await resolveOutboundInstanceToken(brokerId, customerPhone);
+    if (!instanceToken) {
+      await recordSystemError({
+        brokerId,
+        channel: "integracao",
+        category: "integration_failure",
+        requestedAction: "enviar resposta automatica no WhatsApp",
+        stage: "n8n_ai_reply_resolve_instance",
+        publicMessage: "Instância WhatsApp não configurada.",
+        technicalMessage: "Nenhum token de instância foi resolvido para o ticket.",
+        context: { ticket_id: ticket.id, event_id: input.event_id || null },
+      });
+      return res.status(503).json({ error: "Instância WhatsApp não configurada pra este corretor ainda." });
+    }
+
     let enviados = 0;
+    let reutilizados = 0;
     for (const [index, bubble] of bubbles.entries()) {
-      if (index > 0) await delay(typingDelayMs(bubble));
+      const providerMessageId = providerIds[index] || null;
+      if (providerMessageId && alreadyRecorded.has(providerMessageId)) {
+        reutilizados++;
+        continue;
+      }
+      if (index > 0 && enviados > 0) await delay(typingDelayMs(bubble));
       const sent = await sendUazapiText(instanceToken, customerPhone, bubble);
       if (!sent.ok) {
         console.warn(`[WhatsApp] envio de resposta da IA falhou pro broker ${brokerId}: status=${sent.status}`);
+        await recordSystemError({
+          brokerId,
+          channel: "integracao",
+          category: "integration_failure",
+          requestedAction: "enviar resposta automatica no WhatsApp",
+          stage: "n8n_ai_reply_uazapi",
+          publicMessage: "Falha ao enviar a resposta automática.",
+          technicalMessage: `UAZAPI respondeu HTTP ${sent.status}.`,
+          context: { ticket_id: ticket.id, event_id: input.event_id || null, bubble_index: index },
+        });
         // Falhar no PRIMEIRO balão é seguro para o n8n tentar de novo: nada
         // saiu ainda. Falhar depois, não — repetir mandaria o primeiro balão
         // duas vezes para o cliente. Nesse caso reportamos sucesso parcial.
@@ -128,11 +180,20 @@ conversationsRouter.post("/api/wpp-shim/ai-reply", requireInternalToken, n8nInte
         direction: "out",
         senderType: "ai",
         body: bubble,
+        providerMessageId,
         initialStatus: "open",
       });
     }
 
-    res.json({ ok: true, baloes: enviados, parcial: enviados < bubbles.length });
+    const processados = enviados + reutilizados;
+    res.json({
+      ok: true,
+      baloes: processados,
+      enviados,
+      reutilizados,
+      idempotente: reutilizados > 0,
+      parcial: processados < bubbles.length,
+    });
   } catch (err: any) {
     if (err instanceof N8nInputValidationError) {
       return res.status(400).json({ error: err.message });

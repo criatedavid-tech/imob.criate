@@ -4,7 +4,37 @@ Este roteiro acompanha o backend preparado em 2026-07-22. Ele foi desenhado
 para ser aplicado sem alterar as features de interface que estao sendo
 trabalhadas em paralelo.
 
-## Estado confirmado em 27/07/2026
+## Estado confirmado em 12/08/2026
+
+O workflow de produção `Teste-v2 imob` (`AUhszL11lwYtzFQe`) foi auditado e
+endurecido pela API oficial do N8N:
+
+- webhook protegido por credencial Header Auth exclusiva;
+- `N8N_WEBHOOK_TOKEN` dedicado implantado no Fly, sem reutilizar o token da
+  API interna;
+- todos os 16 HTTP nodes usam a credencial protegida
+  `Real Estate - API Interna`; não há mais Bearer literal no workflow;
+- `Validar Evento` exige origem, corretor, ticket, evento, telefone e mensagem
+  no contrato esperado;
+- memória isolada por `broker_id:ticket_id`;
+- ramo de depuração `@teste` e o Supabase `Delete a row` removidos;
+- consulta de agenda usa `/api/agenda/n8n/context`, que anonimiza terceiros;
+- `event_id` segue para criação/edição/remoção de agenda e resposta WhatsApp;
+- ferramentas de agenda renomeadas para coincidir com o prompt;
+- `pinData` de produção removido;
+- webhook sem credencial testado e rejeitado com HTTP 403;
+- os quatro nós de leitura/modelo mais sensíveis usam três tentativas com
+  intervalo de dois segundos;
+- o backend impede reenvio do mesmo balão por `event_id` e registra falhas de
+  integração na tela administrativa de Logs.
+
+Validação local do mesmo pacote: 224 testes, TypeScript e build aprovados.
+
+Pendência operacional: revogar e emitir novamente a chave da API pública do
+N8N que foi compartilhada durante a manutenção. Nunca registrar a nova chave
+no repositório, documentação ou chat.
+
+## Estado anterior confirmado em 27/07/2026
 
 - O backend publicado envia autenticação ao webhook do N8N e expõe
   `event_id`, `ticket_id`, catálogo limitado e guardrails de agenda.
@@ -20,9 +50,8 @@ trabalhadas em paralelo.
 - A migration `20260722a_n8n_agenda_guardrails.sql` está versionada; sua
   aplicação no banco deve ser confirmada manualmente.
 
-Assim, os itens abaixo continuam sendo um roteiro de auditoria/aplicação
-manual. Não interpretar a presença do código no backend como prova de que o
-workflow do N8N já foi endurecido.
+Os itens abaixo permanecem como histórico do roteiro aplicado. Para o estado
+atual de produção, prevalece a seção de 12/08/2026 acima.
 
 ## Riscos encontrados no export
 
@@ -193,9 +222,10 @@ Sem isso, aumentar workers pode acelerar respostas duplicadas.
 8. Confirmar handover humano durante a geracao: `/ai-reply` deve retornar 409
    e a IA nao deve enviar a mensagem atrasada.
 
-## Pendencias para escala
+## Pendências para escala
 
-- recibo idempotente de `event_id` cobrindo resposta e tools;
+- deduplicação transacional de `event_id` em todas as tools mutantes; a resposta
+  WhatsApp já é idempotente por balão;
 - busca paginada/semantica de imoveis em vez de catalogo de ate 30 itens;
 - mover o modelo para o proxy restrito do backend ou aplicar rate limit de IA
   equivalente no n8n;
