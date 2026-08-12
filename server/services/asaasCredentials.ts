@@ -63,7 +63,7 @@ function buildOwnCreds(apiKey: string, baseUrl: string): AsaasCreds {
     baseUrl,
     headers: {
       "Content-Type": "application/json",
-      "User-Agent": "ImobiFlow/2.0 (Node.js; client-financial)",
+      "User-Agent": "RealEstate/2.0 (Node.js; client-financial)",
       access_token: apiKey,
     },
     ownKey: true,
@@ -82,7 +82,7 @@ const CLIENT_PAYMENT_WEBHOOK_EVENTS = [
 ];
 
 // Garante que a mesma conta Asaas que criou a cobrança também notificará o
-// ImobiFlow. A operação é idempotente: reutiliza o webhook da URL canônica e
+// Real Estate. A operação é idempotente: reutiliza o webhook da URL canônica e
 // preserva eventos extras já configurados nessa integração.
 export async function ensureClientAsaasPaymentWebhook(creds: AsaasCreds): Promise<void> {
   if (ASAAS_WEBHOOK_TOKEN.length < 32) {
@@ -105,7 +105,7 @@ export async function ensureClientAsaasPaymentWebhook(creds: AsaasCreds): Promis
   const existing = (Array.isArray(list?.data) ? list.data : []).find((item: any) => item?.url === url);
   const events = [...new Set([...(Array.isArray(existing?.events) ? existing.events : []), ...CLIENT_PAYMENT_WEBHOOK_EVENTS])];
   const payload = {
-    name: "ImobiFlow - pagamentos de clientes",
+    name: "Real Estate - pagamentos de clientes",
     url,
     enabled: true,
     interrupted: false,
@@ -130,7 +130,7 @@ export async function ensureClientAsaasPaymentWebhook(creds: AsaasCreds): Promis
 // Credenciais Asaas para cobranças DO CLIENTE da imobiliária/incorporadora
 // (aluguel e sinal PIX de reserva). Exige a conta própria do cliente. Nunca
 // existe fallback para a conta global da Criate, que é exclusiva da assinatura
-// SaaS do ImobiFlow (billing.ts).
+// SaaS do Real Estate (billing.ts).
 export async function resolveAsaasCredentials(brokerId: string): Promise<AsaasCreds> {
   const { data, error } = await supabase
     .from("imf_brokers")

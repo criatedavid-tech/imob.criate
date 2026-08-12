@@ -139,6 +139,14 @@ test("dispatcher envia autenticação e IDs duráveis ao n8n", async () => {
   assert.match(source, /event_id: row\.id/);
 });
 
+test("saúde distingue token dedicado do fallback temporário do n8n", async () => {
+  const config = await readFile(new URL("../server/config.ts", import.meta.url), "utf8");
+  const health = await readFile(new URL("../server/services/systemHealth.ts", import.meta.url), "utf8");
+  assert.match(config, /N8N_WEBHOOK_TOKEN_DEDICATED = !!process\.env\.N8N_WEBHOOK_TOKEN\?\.trim\(\)/);
+  assert.match(config, /process\.env\.N8N_WEBHOOK_TOKEN\?\.trim\(\) \|\| INTERNAL_PROXY_TOKEN/);
+  assert.match(health, /n8n_dedicated_auth: N8N_WEBHOOK_TOKEN_DEDICATED/);
+});
+
 test("agenda expõe contexto anonimizado separado dos dados do cliente", async () => {
   const source = await readFile(new URL("../server/routes/agenda.ts", import.meta.url), "utf8");
   const contextStart = source.indexOf("'/api/agenda/n8n/context'");

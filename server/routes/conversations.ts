@@ -315,7 +315,7 @@ conversationsRouter.get("/api/conversas/:ticketId/messages", requireUser, async 
 // ─── Conversas (escrita) — Fase 6 ───────────────────────────────────────────
 // Corretor responde direto pela tela nova. Isso É o handover humano — não
 // precisa mais do truque do ZWSP pra adivinhar quem mandou, porque o
-// ImobiFlow sabe com certeza: quem chama esta rota é o corretor autenticado.
+// Real Estate sabe com certeza: quem chama esta rota é o corretor autenticado.
 conversationsRouter.post("/api/conversas/:ticketId/reply", requireUser, async (req, res) => {
   try {
     const userId = (req as any).userId as string;

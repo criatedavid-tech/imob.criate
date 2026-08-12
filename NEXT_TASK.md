@@ -1,13 +1,35 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Fechamento auditado em 12/08/2026
+
+- O Grupo 1 da marca foi concluído localmente e está no gate final antes da
+  publicação em lote.
+- `npm audit` encontrou `nanoid` 3.3.16 transitivo de PostCSS/Vite; o lockfile
+  foi atualizado de forma compatível para 3.3.18 e a nova auditoria retornou
+  zero vulnerabilidades.
+- O CI já usa Node 20 e não precisa de alteração.
+- Produção possui Redis, Sentry, Google Calendar e URL do N8N configurados. O
+  secret dedicado `N8N_WEBHOOK_TOKEN` ainda não existe; o fallback no token
+  interno foi preservado para não interromper o agente. O painel Admin agora
+  sinaliza esse estado como atenção, em vez de apresentá-lo como totalmente
+  protegido.
+- A aplicação das migrations `20260722a_n8n_agenda_guardrails.sql` e
+  `20260724_scale_hot_path_indexes.sql` continua dependendo de confirmação no
+  Supabase; a presença dos arquivos no Git não é prova de aplicação.
+
 ## Renomear ImobiFlow → Real Estate: o que falta
 
 Decisão em `DECISIONS.md` (2026-08-11). Já feito: `<title>` e `description` de
-`index.html` + a asserção em `tests/calendarBidirectional.test.ts`. Restam **89
-ocorrências em 34 arquivos**, divididas por risco. Conferir com:
-`grep -rc "ImobiFlow" src/ server/ index.html | grep -v ":0$"`.
+`index.html` + a asserção em `tests/calendarBidirectional.test.ts`.
 
-### Grupo 1 — seguro trocar a qualquer momento (texto sem estado externo)
+O **Grupo 1 foi concluído localmente em 12/08/2026**: rótulos visuais,
+mensagens, telemetria, metadados públicos seguros e comentários usam agora
+**Real Estate**. A razão social foi preservada. O cabeçalho legado
+`X-ImobiFlow-Event-Id` ficou deliberadamente intacto até a auditoria do
+workflow N8N, pois pode participar da deduplicação externa. Os grupos 2 e 3
+também permanecem intactos.
+
+### Grupo 1 — concluído localmente (texto sem estado externo)
 
 Nada aqui é lido por sistema de terceiro nem já está gravado no dispositivo de
 ninguém; é rótulo visual, mensagem ou comentário.
@@ -32,7 +54,7 @@ ninguém; é rótulo visual, mensagem ou comentário.
   `services/uazapi.ts`, `services/rentalBilling.ts`,
   `middleware/clientFinancialOperations.ts`.
 
-**Exceção dentro do grupo**: `services/inboundWebhookQueue.ts` envia o
+**Exceção preservada**: `services/inboundWebhookQueue.ts` envia o
 cabeçalho `X-ImobiFlow-Event-Id` para o n8n. Antes de renomear, confirmar se
 algum workflow do n8n lê esse nome — se ler, o fluxo quebra silenciosamente.
 

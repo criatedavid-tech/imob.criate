@@ -145,7 +145,7 @@ export function injectPageMeta(html: string, meta: PublicPageMeta): string {
     `<meta name="description" content="${descricao}" />`,
     `<link rel="canonical" href="${url}" />`,
     `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="ImobiFlow" />`,
+    `<meta property="og:site_name" content="Real Estate" />`,
     `<meta property="og:title" content="${titulo}" />`,
     `<meta property="og:description" content="${descricao}" />`,
     `<meta property="og:url" content="${url}" />`,

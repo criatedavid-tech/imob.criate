@@ -284,7 +284,7 @@ authRouter.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
     const platformToken = await getUazapiPlatformToken().catch(() => null);
     if (platformToken && phone) {
       const wppText =
-        `🏠 *ImobiFlow*\n\n` +
+        `🏠 *Real Estate*\n\n` +
         `Você solicitou a recuperação de senha.\n\n` +
         `Clique no link abaixo para criar uma nova senha ` +
         `*(válido por 15 minutos)*:\n\n` +

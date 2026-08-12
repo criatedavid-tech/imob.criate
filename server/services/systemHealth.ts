@@ -1,5 +1,10 @@
 import { supabase } from "../supabase";
-import { PUBLIC_APP_URL, SENTRY_DSN, N8N_WEBHOOK_URL } from "../config";
+import {
+  PUBLIC_APP_URL,
+  SENTRY_DSN,
+  N8N_WEBHOOK_URL,
+  N8N_WEBHOOK_TOKEN_DEDICATED,
+} from "../config";
 import { checkRedis } from "../lib/infra";
 
 // ─── Saúde do sistema (painel do admin) ─────────────────────────────────────
@@ -130,6 +135,9 @@ export async function getSystemHealth() {
       redis_error: redis.error,
       sentry_configured: !!SENTRY_DSN,
       n8n_webhook_configured: !!N8N_WEBHOOK_URL,
+      // O fallback mantém compatibilidade, mas não representa o hardening
+      // concluído: o mesmo token ainda autentica a API interna e o webhook.
+      n8n_dedicated_auth: N8N_WEBHOOK_TOKEN_DEDICATED,
     },
   };
 }

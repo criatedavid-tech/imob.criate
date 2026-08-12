@@ -2354,12 +2354,14 @@ e uma standby parada. Ver `SCALABILITY_TEST_PLAN.md` antes de alterar escala.
   `WEBHOOK_QUEUE_MAX_ATTEMPTS`, `WEBHOOK_WORKER_POLL_MS`;
 - operação: `REDIS_URL`, `SENTRY_DSN`, `NODE_ENV`.
 
-Em 27/07/2026, os nomes de secrets do Fly confirmaram Supabase, UAZAPI, Asaas,
+Em 12/08/2026, os nomes de secrets do Fly confirmaram Supabase, UAZAPI, Asaas,
 N8N, proxy LLM, criptografia, `REDIS_URL` e `SENTRY_DSN`. Não havia
 `N8N_AGENT_MODEL` nem `N8N_WEBHOOK_TOKEN`; o agente N8N usa o modelo padrão do
 código e o token da entrada do webhook usa o fallback temporário
-`INTERNAL_PROXY_TOKEN`. A origem pública permanece somente no
-`PUBLIC_APP_URL` versionado. O valor do DSN nunca deve ser documentado.
+`INTERNAL_PROXY_TOKEN`. A tela Admin de saúde passa a mostrar esse estado como
+**ativo com token compartilhado**, até o hardening operacional do workflow ser
+concluído. A origem pública permanece somente no `PUBLIC_APP_URL` versionado.
+O valor do DSN nunca deve ser documentado.
 
 `server/config.ts` aceita a URL Supabase pública como fallback conhecido, mas
 recusa iniciar sem `SUPABASE_SERVICE_ROLE_KEY`. Não criar fallback `VITE_*`

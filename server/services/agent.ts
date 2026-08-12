@@ -613,7 +613,7 @@ function buildSystemPrompt(persona: string, capabilities: readonly AccountCapabi
   extraActions.push(`${++actionNum}. "create_reminder" — criar um LEMBRETE pra você mesmo na Agenda, sem mandar nada ao cliente agora. Use quando o pedido for "me lembra de...", "me avisa em X pra...", NUNCA quando pedirem pra ENVIAR algo (isso é "schedule_followup" ou "send_message"). Precisa de name (o contato a lembrar) e QUANDO — escolha UM dos dois jeitos, o que combinar com o que o corretor disse: (a) prazo relativo ("em 2 dias", "48h", "5 minutos") → delay_value (só o número) + delay_unit ("minutos"|"horas"|"dias" — resolva "dois dias" → delay_value "2" + delay_unit "dias"; "48h" → delay_value "48" + delay_unit "horas"; "5 minutos" → delay_value "5" + delay_unit "minutos". NUNCA confunda minutos com horas); (b) horário do relógio ou data específica ("às 16h", "amanhã às 9h", "sexta de manhã") → date (YYYY-MM-DD, resolvendo dia relativo a partir da data de hoje, igual "create_visit") + time (HH:MM). Se o pedido tem uma HORA DO RELÓGIO, use sempre (b) — NUNCA converta hora do relógio num prazo relativo chutado (é assim que "às 16:00" virava agendado pra outro horário qualquer). phone é opcional, inclua se for mencionado. note é opcional: o que exatamente lembrar, além do padrão "fazer follow-up" (ex.: "ligar perguntando sobre o sinal").`);
   extraActions.push(`${++actionNum}. "schedule_followup" — agendar o ENVIO REAL de uma mensagem de WhatsApp pra daqui a um tempo ou pra um horário específico — diferente de "send_message", que manda AGORA. Use quando o pedido for "manda/envia em X (ou às X) um follow-up/mensagem pro Y" — a mensagem sai sozinha na hora certa, sem você precisar pedir de novo. Precisa de name, phone (obrigatório, pra onde vai a mensagem), QUANDO (mesma escolha e mesma regra de "create_reminder" acima: delay_value+delay_unit pra prazo relativo, ou date+time pra horário do relógio/data específica — nunca inventar um prazo quando o pedido deu uma hora), e message (o texto que você mesmo compõe agora — mesma regra de "send_message": nunca narre a própria ação, som natural, direto ao ponto). Se o corretor só disser "manda um follow-up" sem detalhar o conteúdo, componha uma mensagem curta e genérica de follow-up pra esse contato.`);
 
-  return `Você é a assistente de IA do ImobiFlow para uma conta imobiliária autenticada. Você fala português do Brasil, de forma curta, direta e cordial — como um colega de trabalho competente, nunca robótica.
+  return `Você é a assistente de IA do Real Estate para uma conta imobiliária autenticada. Você fala português do Brasil, de forma curta, direta e cordial — como um colega de trabalho competente, nunca robótica.
 
 Hoje é ${hoje} (data ISO: ${isoHoje}).
 
@@ -749,7 +749,7 @@ export async function executeAction(brokerId: string, userId: string, action: Ag
   // de /api/agent/execute, onde a permissão pode ter mudado entre a proposta
   // e a confirmação.
   if (!(await isActionAllowed(userId, brokerId, action.type))) {
-    throw new Error("Você não tem permissão pra fazer essa ação no ImobiFlow.");
+    throw new Error("Você não tem permissão pra fazer essa ação no Real Estate.");
   }
   const owner = await isBrokerOwner(userId, brokerId);
 
@@ -1189,7 +1189,7 @@ async function callOpenRouter(apiKey: string, systemPrompt: string, contextMessa
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": PUBLIC_APP_URL,
-      "X-Title": "ImobiFlow",
+      "X-Title": "Real Estate",
     },
     body: JSON.stringify({
       // Teste 2026-07-23: trocado de "openai/gpt-4o-mini" pra "xiaomi/mimo-v2.5"
@@ -1315,28 +1315,28 @@ export async function runAgent(opts: {
   }
   if (action.type === "query_agenda") {
     if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
-      return { reply: "Você não tem permissão para consultar a agenda no ImobiFlow." };
+      return { reply: "Você não tem permissão para consultar a agenda no Real Estate." };
     }
     const realReply = await queryAgendaRange(opts.brokerId, opts.userId, action.date_from, action.date_to);
     return { reply: realReply };
   }
   if (action.type === "query_leads") {
     if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
-      return { reply: "Você não tem permissão para consultar leads no ImobiFlow." };
+      return { reply: "Você não tem permissão para consultar leads no Real Estate." };
     }
     const realReply = await queryLeadsSummary(opts.brokerId, opts.userId, action.date_from, action.date_to, action.filter);
     return { reply: realReply };
   }
   if (action.type === "query_report") {
     if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
-      return { reply: "Você não tem permissão para consultar relatórios no ImobiFlow." };
+      return { reply: "Você não tem permissão para consultar relatórios no Real Estate." };
     }
     const realReply = await queryReportSummary(opts.brokerId, opts.userId, action.period);
     return { reply: realReply };
   }
   if (action.type === "summarize_conversation") {
     if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
-      return { reply: "Você não tem permissão para consultar conversas no ImobiFlow." };
+      return { reply: "Você não tem permissão para consultar conversas no Real Estate." };
     }
     try {
       const realReply = await summarizeConversationWithFollowup({
@@ -1367,7 +1367,7 @@ export async function runAgent(opts: {
   // UX ruim de mostrar "vou fazer X, confirma?" pra só negar na hora do
   // /api/agent/execute (que tem o gate hard de verdade, ver executeAction).
   if (!(await isActionAllowed(opts.userId, opts.brokerId, action.type))) {
-    return { reply: "Você não tem permissão para fazer essa ação no ImobiFlow. Fale com quem administra sua equipe se precisar de acesso." };
+    return { reply: "Você não tem permissão para fazer essa ação no Real Estate. Fale com quem administra sua equipe se precisar de acesso." };
   }
 
   // Defesa contra prompt injection continua nos schemas, no contexto isolado,

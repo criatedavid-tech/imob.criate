@@ -12,7 +12,7 @@ function withoutQueryOrFragment(url: string | undefined): string | undefined {
 /**
  * Última barreira contra vazamento de dados no error tracking.
  *
- * O ImobiFlow processa mensagens, documentos, telefones e tokens. Para
+ * O Real Estate processa mensagens, documentos, telefones e tokens. Para
  * diagnosticar uma falha precisamos do stack trace e da rota, não do payload
  * do cliente. A função fica isolada da inicialização da infraestrutura para ser
  * testada sem conectar Redis, Supabase ou Sentry.

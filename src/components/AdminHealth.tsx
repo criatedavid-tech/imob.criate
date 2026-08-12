@@ -19,7 +19,15 @@ interface Health {
   dead_letters: { id: string; broker_id: string; event_type: string; attempts: number; last_error: string | null; created_at: string }[];
   rejected_webhooks_24h: number;
   runtime: { uptime_seconds: number; rss_mb: number; heap_used_mb: number; node_version: string };
-  config: { public_app_url: string; redis_configured: boolean; redis_connected: boolean; redis_error: string | null; sentry_configured: boolean; n8n_webhook_configured: boolean };
+  config: {
+    public_app_url: string;
+    redis_configured: boolean;
+    redis_connected: boolean;
+    redis_error: string | null;
+    sentry_configured: boolean;
+    n8n_webhook_configured: boolean;
+    n8n_dedicated_auth: boolean;
+  };
 }
 interface BrokerRow {
   broker_id: string; name: string; status: string | null; instance_id: string | null;
@@ -105,8 +113,9 @@ export default function AdminHealth() {
     return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-white/40" /></div>;
   }
 
+  const configNeedsAttention = health.config.n8n_webhook_configured && !health.config.n8n_dedicated_auth;
   const worst: Level = health.queues.some((q) => q.level === 'critico') ? 'critico'
-    : health.queues.some((q) => q.level === 'atencao') ? 'atencao' : 'ok';
+    : health.queues.some((q) => q.level === 'atencao') || configNeedsAttention ? 'atencao' : 'ok';
 
   return (
     <div className="space-y-6">
@@ -204,13 +213,26 @@ export default function AdminHealth() {
               {[
                 { ok: health.config.redis_configured && health.config.redis_connected, label: 'Redis' },
                 { ok: health.config.sentry_configured, label: 'Sentry' },
-                { ok: health.config.n8n_webhook_configured, label: 'n8n' },
-              ].map(({ ok, label }) => (
-                <span key={label} className={`text-[10px] font-bold px-2 py-1 rounded-full ${ok ? 'text-emerald-300 bg-emerald-500/15' : 'text-white/45 bg-white/[0.06]'}`}>
-                  {label}: {ok ? 'ativo' : 'não configurado'}
+                {
+                  ok: health.config.n8n_webhook_configured && health.config.n8n_dedicated_auth,
+                  warning: health.config.n8n_webhook_configured && !health.config.n8n_dedicated_auth,
+                  label: 'n8n',
+                },
+              ].map(({ ok, warning, label }) => (
+                <span key={label} className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                  ok ? 'text-emerald-300 bg-emerald-500/15'
+                    : warning ? 'text-amber-300 bg-amber-500/15'
+                      : 'text-white/45 bg-white/[0.06]'
+                }`}>
+                  {label}: {ok ? 'ativo' : warning ? 'ativo com token compartilhado' : 'não configurado'}
                 </span>
               ))}
             </div>
+            {configNeedsAttention && (
+              <div className="col-span-2 text-[12px] text-amber-300">
+                n8n usa o token interno como fallback. Configure um N8N_WEBHOOK_TOKEN dedicado e Header Auth no workflow.
+              </div>
+            )}
             {health.config.redis_configured && !health.config.redis_connected && (
               <div className="col-span-2 text-[12px] text-red-300">
                 Redis configurado mas SEM conexão{health.config.redis_error ? `: ${health.config.redis_error}` : '.'}

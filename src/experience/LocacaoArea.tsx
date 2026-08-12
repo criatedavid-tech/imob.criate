@@ -1987,8 +1987,8 @@ export function LocacaoArea() {
                         {CLIENT_FINANCIAL_OPERATIONS_ENABLED && billingAccountConfigured === null
                           ? 'Verificando a integração de cobrança...'
                           : CLIENT_FINANCIAL_OPERATIONS_ENABLED
-                            ? 'Nenhuma conta própria conectada. Registre e receba o pagamento fora do ImobiFlow.'
-                            : 'Pagamentos e cobranças são realizados fora do ImobiFlow.'}
+                            ? 'Nenhuma conta própria conectada. Registre e receba o pagamento fora do Real Estate.'
+                            : 'Pagamentos e cobranças são realizados fora do Real Estate.'}
                       </p>
                     )}
 

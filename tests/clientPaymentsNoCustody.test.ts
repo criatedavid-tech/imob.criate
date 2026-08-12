@@ -78,7 +78,7 @@ test("teste de WhatsApp da locação é explícito, limitado e não gera cobran�
 
   assert.match(testRoute, /rentalTestDispatchLimiter/);
   assert.match(testRoute, /\.eq\("broker_id", brokerId\)/);
-  assert.match(testRoute, /\[TESTE ImobiFlow\]/);
+  assert.match(testRoute, /\[TESTE Real Estate\]/);
   assert.match(testRoute, /sendUazapiText/);
   assert.doesNotMatch(testRoute, /generateRentCharge|imf_rental_payments/);
   assert.match(limits, /rentalTestDispatchLimiter/);
@@ -109,7 +109,7 @@ test("piloto financeiro do deploy V2 fica habilitado somente em sandbox", async 
   assert.match(credentials, /data\.asaas_env !== "sandbox"/);
   assert.match(credentials, /CLIENT_ASAAS_SANDBOX_REQUIRED/);
   assert.match(credentials, /https:\/\/api-sandbox\.asaas\.com\/v3/);
-  assert.match(credentials, /"User-Agent": "ImobiFlow\/2\.0/);
+  assert.match(credentials, /"User-Agent": "RealEstate\/2\.0/);
   assert.match(brokers, /CLIENT_FINANCIAL_SANDBOX_ONLY && env !== "sandbox"/);
   assert.match(autopilot, /assertClientAsaasEnvironmentAllowed\(contract\.broker_id\)/);
 });

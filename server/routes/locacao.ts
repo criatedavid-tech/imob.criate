@@ -1211,7 +1211,7 @@ locacaoRouter.post(
       }
 
       const firstName = String(contract.tenant_name || "").trim().split(/\s+/)[0] || "inquilino";
-      const message = `[TESTE ImobiFlow]\nOlá, ${firstName}! Esta é uma mensagem de teste do canal de locação. Nenhuma cobrança foi gerada.`;
+      const message = `[TESTE Real Estate]\nOlá, ${firstName}! Esta é uma mensagem de teste do canal de locação. Nenhuma cobrança foi gerada.`;
       const sent = await sendUazapiText(instanceToken, phone, message);
       if (!sent.ok) {
         console.warn(`[Locação] teste de disparo falhou (contrato ${contract.id}, HTTP ${sent.status})`);

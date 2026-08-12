@@ -60,7 +60,7 @@ async function callOpenRouter(
       Authorization: `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
       "HTTP-Referer": PUBLIC_APP_URL,
-      "X-Title": "ImobiFlow",
+      "X-Title": "Real Estate",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash-lite",
