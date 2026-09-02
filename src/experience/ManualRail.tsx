@@ -143,8 +143,7 @@ export function ManualRail({
       <aside className="cr-rail hidden md:flex w-[112px] shrink-0 h-full flex-col items-center py-6 gap-1.5 overflow-y-auto
         backdrop-blur-2xl border-r"
         style={{ borderColor: 'var(--hairline)' }}>
-        <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-5 shrink-0 border p-2"
-          style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
+        <div className="cr-glass-accent relative w-11 h-11 rounded-2xl flex items-center justify-center mb-5 shrink-0 p-2">
           <img src="/pantus-icon-white.png" alt="PANTUS" className="w-full h-full object-contain" />
         </div>
 

@@ -415,17 +415,16 @@ export function ExperienceShell() {
           onClick={() => setChatOpen(true)}
           aria-label="Falar com a IA"
           className={cn(
-            'absolute z-30 rounded-full flex items-center justify-center border hover:scale-105 active:scale-95 transition-transform',
+            'cr-glass-accent absolute z-30 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-transform',
             area === 'conversas' && conversationThreadOpen
               ? 'bottom-24 right-3 w-11 h-11 md:bottom-6 md:right-6 md:w-14 md:h-14'
               : 'bottom-6 right-6 w-14 h-14',
           )}
-          style={{
-            background: 'var(--accent-gradient)',
-            color: 'var(--on-accent)',
-            borderColor: 'var(--glass-border-strong)',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 12px 32px -6px var(--accent-glow)',
-          }}
+          // Ícone branco (não --on-accent): sobre o gradiente sólido antigo o
+          // azul-escuro contrastava, mas o vidro é translúcido e deixa passar o
+          // conteúdo escuro por trás — branco é o que continua legível, igual
+          // ao ícone da marca no rail, que usa o mesmo tint.
+          style={{ color: '#FFFFFF' }}
         >
           <Sparkles className="w-6 h-6" />
         </button>
