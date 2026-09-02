@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, ArrowUp, Loader2, Check, X, ArrowLeft, Paperclip, SquarePen, Mic, Square } from 'lucide-react';
+import { ArrowUp, Loader2, Check, X, ArrowLeft, Paperclip, SquarePen, Mic, Square } from 'lucide-react';
 import { authService } from '../services/auth';
 import { PERSONA_LABEL } from './engine';
 import type { Autonomy, Persona } from './types';
@@ -343,9 +343,11 @@ export function CommandBar({
         >
           <ArrowLeft className="w-4.5 h-4.5" />
         </button>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
-          bg-gradient-to-br from-violet-400/40 to-indigo-500/40 border border-[var(--glass-border)]">
-          <Sparkles className="w-4 h-4 text-violet-100" />
+        {/* Mesma marca e mesmo vidro do rail e do botão flutuante: o agente É o
+            PANTUS. Antes era um gradiente violeta com glifo genérico — fora da
+            paleta azul/ciano da marca. */}
+        <div className="cr-glass-accent relative w-8 h-8 rounded-xl flex items-center justify-center shrink-0 p-1.5">
+          <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-full h-full object-contain" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-bold text-[var(--text-hi)] leading-tight">Assistente IA</p>
@@ -367,9 +369,11 @@ export function CommandBar({
         {turns.length === 0 && !busy && !loadingHistory && (
           <div className="h-full flex items-center justify-center text-center px-6">
             <div>
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4
+              {/* Estado vazio: mesma marca, mas em recipiente neutro — aqui é
+                  ilustração de apoio, não o avatar do agente. */}
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 p-3
                 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
-                <Sparkles className="w-5 h-5 text-violet-200" />
+                <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-full h-full object-contain opacity-70" />
               </div>
               <p className="text-[14px] text-[var(--text-low)] max-w-xs mx-auto">
                 Pergunte qualquer coisa ou peça pra eu fazer algo — ex: <em>"cadastra a Maria 62999998888 no apê centro"</em> ou <em>"quantos leads eu tenho?"</em>
