@@ -69,7 +69,7 @@ export default function MagicWandTextarea({
             title="Melhorar texto com IA ✨"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all
               ${isEnhancing || !safeValue.trim()
-                ? 'bg-white/5 text-white/20 cursor-not-allowed border border-white/10'
+                ? 'bg-[var(--surface-glass)] text-[var(--text-low)] cursor-not-allowed border border-[var(--hairline)]'
                 : 'bg-violet-500/30 hover:bg-violet-500/50 text-violet-200 border border-violet-400/40 hover:scale-105 active:scale-95'
               }`}
           >
@@ -90,7 +90,7 @@ export default function MagicWandTextarea({
             onClick={handleEnhance}
             disabled={isEnhancing}
             className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold
-              bg-white/10 border border-white/15 text-white/70 hover:bg-white/20 hover:text-white transition-all"
+              bg-[var(--control-fill)] border border-[var(--glass-border)] text-[var(--text-mid)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)] transition-all"
           >
             {isEnhancing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
             Tentar novamente
@@ -107,11 +107,11 @@ export default function MagicWandTextarea({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
             className="rounded-2xl overflow-hidden
-              backdrop-blur-2xl bg-white/10 border border-white/20
+              backdrop-blur-2xl bg-[var(--control-fill)] border border-[var(--glass-border-strong)]
               shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_32px_rgba(0,0,0,0.3)]"
           >
             {/* Header do painel */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--hairline)]">
               <div className="flex items-center gap-2 text-violet-300">
                 <Sparkles size={14} />
                 <span className="text-xs font-bold uppercase tracking-wider">Sugestão da IA</span>
@@ -119,7 +119,7 @@ export default function MagicWandTextarea({
               <button
                 type="button"
                 onClick={() => setSuggestedText(null)}
-                className="w-6 h-6 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-[var(--text-low)] hover:text-[var(--text-hi)] hover:bg-[var(--control-fill)] transition-all"
               >
                 <X size={14} />
               </button>
@@ -127,24 +127,24 @@ export default function MagicWandTextarea({
 
             {/* Texto sugerido */}
             <div className="px-5 py-4 max-h-48 overflow-y-auto">
-              <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">{suggestedText}</p>
+              <p className="text-sm text-[var(--text-hi)] leading-relaxed whitespace-pre-wrap">{suggestedText}</p>
             </div>
 
             {/* Ações */}
-            <div className="flex border-t border-white/10">
+            <div className="flex border-t border-[var(--hairline)]">
               <button
                 type="button"
                 onClick={() => { onApply(suggestedText); setSuggestedText(null); }}
                 className="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold text-emerald-300
-                  hover:bg-emerald-500/15 transition-colors border-r border-white/10"
+                  hover:bg-emerald-500/15 transition-colors border-r border-[var(--hairline)]"
               >
                 <Check size={14} /> Aplicar
               </button>
               <button
                 type="button"
                 onClick={() => setSuggestedText(null)}
-                className="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold text-white/50
-                  hover:bg-white/10 transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold text-[var(--text-mid)]
+                  hover:bg-[var(--control-fill)] transition-colors"
               >
                 <X size={14} /> Descartar
               </button>
