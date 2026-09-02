@@ -1,16 +1,16 @@
-# ImobiFlow V2
+# PANTUS Real Estate
 
 SaaS B2B brasileiro para corretores autônomos, imobiliárias e incorporadoras.
 O produto reúne carteira, vitrines públicas, CRM, conversas de WhatsApp,
 agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente IA
-para a operação diária.
+para a operação diária. Nome interno do repositório e das tabelas continua
+`ImobiFlow`/`imf_` — ver [nota sobre nomes](#nome-interno-vs-nome-comercial).
 
-> Baseline funcional auditado e publicado em 10/08/2026: branch `v2`, commit
-> `31c2b93`, GitHub Actions run `#139` e imagem Fly
-> `deployment-01KZNWFBXDY55ZP94QF33TJV3K`, em
-> `https://imobiflow-v2.fly.dev`. A migration do pacote `@reset` foi aplicada
-> e verificada antes do deploy. A V1 (`main` e app `imobiflow`) está congelada
-> e não recebe alterações.
+> **V2 é o único produto.** A V1 (branch `main`, app Fly `imobiflow`) foi
+> decomissionada em 02/09/2026 — app destruída, código legado removido. Este
+> repositório (branch `v2`, app Fly `imobiflow-v2`) é o único checkout válido;
+> `C:\Users\Criate\imob.criate` é um clone antigo do `main` e não deve ser
+> usado. Detalhe em [`DECISIONS.md`](./DECISIONS.md).
 
 ## Arquitetura em produção
 
@@ -29,17 +29,13 @@ para a operação diária.
 | Assinatura SaaS | Asaas; operações financeiras de clientes ficam desativadas por padrão |
 | Deploy | GitHub Actions para Fly.io, região `gru` |
 
-Topologia Fly confirmada no baseline funcional da release `v185`:
-
-- `web`: 3 Machines `shared-cpu-1x`, 1 GB, todas iniciadas e saudáveis;
-- `worker`: quantidade configurada 2, sendo 1 ativa e 1 standby parada;
-- `scheduler`: 1 Machine singleton, 512 MB, iniciada;
-- serviço HTTP somente no grupo `web`, porta interna 3000;
-- `min_machines_running=2`, auto-stop desligado, concorrência soft 80/hard 150;
-- Redis conectado; Sentry ativo para erros, sem PII e sem tracing.
-
-Essa topologia melhora disponibilidade, mas não constitui prova de capacidade
-para 100 ou mais corretores simultâneos. Os gates estão em
+Topologia Fly em regime normal: grupo `web` com 3 Machines
+`shared-cpu-1x`/1 GB (`min_machines_running=2`, concorrência soft 80/hard
+150), 1 Machine `scheduler` singleton com `scheduler-worker.ts` (20 jobs
+periódicos) e o grupo `worker` com 2 Machines (1 ativa, 1 standby) rodando
+`webhook-worker.ts`. Redis conectado; Sentry ativo para erros, sem PII e sem
+tracing. Essa topologia melhora disponibilidade, mas não constitui prova de
+capacidade para 100+ corretores simultâneos — os gates estão em
 [`SCALABILITY_TEST_PLAN.md`](./SCALABILITY_TEST_PLAN.md).
 
 ## Produto e personas
@@ -47,55 +43,50 @@ para 100 ou mais corretores simultâneos. Os gates estão em
 As três personas usam a mesma experiência em `/app`, com permissões distintas
 para titular e membros:
 
-- **Corretor:** Hoje, Conversas, Assistente IA, Carteira, Negócios, Agenda,
+- **Corretor:** Hoje, Conversas, Assistente IA, Carteira, CRM, Agenda,
   Contatos, Lembretes, Divulgação, Relatórios e Config;
-- **Imobiliária:** acrescenta Locação, Financeiro e Equipe;
-- **Incorporadora:** acrescenta Lançamentos, Financeiro e Equipe.
+- **Imobiliária:** acrescenta Locação, Financeiro, Equipe e Desempenho;
+- **Incorporadora:** acrescenta Lançamentos, Financeiro, Equipe e Desempenho.
 
 `account_type` é o tipo principal, não um bloqueio definitivo. O backend também
 resolve as capabilities `rentals`, `developments`, `finance` e `team`, que podem
 ser combinadas por conta no painel Admin. Sem override, os três perfis mantêm
-exatamente os módulos listados acima. A migration
-`20260803_account_capability_overrides.sql` foi aplicada em produção em
-03/08/2026; instalações novas precisam aplicá-la manualmente antes de salvar
-combinações. Esconder o menu não substitui a autorização das rotas no servidor.
+exatamente os módulos listados acima. Esconder o menu não substitui a
+autorização das rotas no servidor.
 
-No cadastro, essas personas aparecem como três cards de plano. Hoje os três
-usam o mesmo preço mensal retornado por `GET /api/config/plan`; o seletor anual
-é apenas informativo e não muda a cobrança. Imobiliária e incorporadora exibem
-o add-on já existente de WhatsApp próprio por membro.
+No cadastro, essas personas aparecem como três cards de plano com o mesmo
+preço mensal retornado por `GET /api/config/plan`; o seletor anual é apenas
+informativo e não muda a cobrança. Imobiliária e incorporadora exibem o add-on
+de WhatsApp próprio por membro. Vouchers de experimentação usam cotas
+separadas para total de corretores convidados e convidados com WhatsApp
+próprio.
 
-Vouchers de experimentação usam cotas separadas para total de corretores
-convidados e convidados com WhatsApp próprio. A migration
-`supabase/migrations/20260804b_trial_voucher_whatsapp.sql` foi aplicada e o
-código correspondente foi publicado em 04/08/2026 no commit `d0a5ac2`.
-
-O Asaas cobra a assinatura do ImobiFlow. Cobrança de aluguel, reserva e outros
-pagamentos de clientes fica desligada por padrão em ambientes genéricos. Na
-V2, o piloto é habilitado somente com `CLIENT_FINANCIAL_SANDBOX_ONLY=true`, que
-recusa chaves de produção.
-Mesmo na ativação explícita, essas cobranças exigem a integração
-própria da conta cliente: não existe fallback para a conta Asaas global da
-Criate, custódia de valores ou repasse financeiro pelo ImobiFlow.
+O Asaas cobra a assinatura do PANTUS Real Estate. Cobrança de aluguel, reserva
+e outros pagamentos de clientes fica desligada por padrão em ambientes
+genéricos; na V2, o piloto é habilitado somente com
+`CLIENT_FINANCIAL_SANDBOX_ONLY=true`, que recusa chaves de produção. Mesmo na
+ativação explícita, essas cobranças exigem a integração própria da conta
+cliente: não existe fallback para a conta Asaas global da Criate, custódia de
+valores ou repasse financeiro pelo PANTUS Real Estate.
 
 O módulo de Locação mantém contrato, garantia, encargos e reajuste e permite
 registrar competências e pagamentos realizados externamente. Esse lançamento
 manual pode receber boleto PDF privado, ser enviado por WhatsApp e ter baixa
 **Pago/Não pago**. Quando a conta usa Asaas, webhook e conciliação periódica
-confirmam o pagamento automaticamente. Em nenhum modo o ImobiFlow recebe ou
-repassa o dinheiro: ele gera/importa a cobrança e acompanha o status.
-Depois que existe histórico financeiro, o contrato só pode ser encerrado, não
-apagado.
+confirmam o pagamento automaticamente. Em nenhum modo o PANTUS Real Estate
+recebe ou repassa o dinheiro: ele gera/importa a cobrança e acompanha o
+status. Depois que existe histórico financeiro, o contrato só pode ser
+encerrado, não apagado.
 
 Inquilinos são cadastrados uma única vez e podem ser vinculados a contratos
 sucessivos. O perfil atual pode ser atualizado sem reescrever a fotografia
 cadastral já preservada nos contratos; a interface mostra o histórico por
 inquilino e por imóvel. Vínculos de outra conta são rejeitados no backend e no
 banco. Em **Locação → Inquilinos**, a situação financeira consolidada informa
-**Adimplente**, **Inadimplente** ou **Sem cobrança**. O cartão do contrato repete
-o indicador e, quando há atraso, mostra quantidade de pendências e saldo
-vencido. Cobrança futura não conta como inadimplência; acordo só deixa de ser
-dívida após a confirmação do pagamento.
+**Adimplente**, **Inadimplente** ou **Sem cobrança**. O cartão do contrato
+repete o indicador e, quando há atraso, mostra quantidade de pendências e
+saldo vencido. Cobrança futura não conta como inadimplência; acordo só deixa
+de ser dívida após a confirmação do pagamento.
 
 ## Dois agentes, três canais
 
@@ -104,13 +95,17 @@ dívida após a confirmação do pagamento.
    confirmação humana, inclusive no modo piloto.
 2. O **WhatsApp Pai** é outra entrada da mesma Assistente IA interna. Resolve o
    usuário pelo telefone verificado, compartilha histórico/permissões com o
-   painel e nunca deve aparecer em Conversas ou chegar ao Hunter.
+   painel e nunca deve aparecer em Conversas ou chegar ao cliente final.
 3. O **agente de atendimento do WhatsApp** roda no N8N e conversa com clientes
    finais. O backend expõe catálogo/configuração sob autenticação interna e
    envia `event_id` estável para deduplicação.
 
 Dados de clientes, descrições, CRM e mensagens são tratados como conteúdo não
 confiável. A saída estruturada do agente interno passa por schema Zod estrito.
+Toda ação mutante e toda consulta estruturada (`AGENT_ACTION_PERMISSION` em
+`server/services/agent.ts`) passa pelo mesmo mapa de permissões granulares
+(`imf_member_permissions`) antes de executar, nos dois canais — o mesmo gate
+que já vale para as rotas do painel.
 
 ## Mensagens e mídia
 
@@ -131,7 +126,7 @@ WhatsApp. O botão **Nova conversa** usa a mesma operação transacional.
 imob.criate/
 ├── server.ts                       # bootstrap HTTP/Express e SPA
 ├── webhook-worker.ts               # worker de inbox/outbox
-├── scheduler-worker.ts             # 17 jobs periódicos singleton
+├── scheduler-worker.ts             # 20 jobs periódicos singleton
 ├── server/
 │   ├── config.ts                   # configuração centralizada
 │   ├── lib/                        # Redis, Sentry e infraestrutura comum
@@ -140,7 +135,7 @@ imob.criate/
 │   ├── security/                   # guardrails do agente
 │   └── services/                   # domínio e integrações
 ├── src/
-│   ├── experience/                 # cockpit V2 e áreas operacionais
+│   ├── experience/                 # cockpit V2 (única interface do produto)
 │   ├── components/
 │   ├── pages/                      # auth, admin e páginas públicas
 │   └── lib/
@@ -188,6 +183,15 @@ não o caminho normal do projeto. Migrations nunca são aplicadas pelo deploy.
 - Sentry está ativo com `sendDefaultPii: false`, sem corpos, cabeçalhos,
   cookies, query strings, IP, dados de usuário ou variáveis locais;
 - migrations são manuais e devem ser verificadas antes de código dependente.
+
+## Nome interno vs. nome comercial
+
+O nome comercial exibido ao usuário é **PANTUS Real Estate** (decidido em
+02/09/2026, ver [`DECISIONS.md`](./DECISIONS.md)). O nome interno/técnico
+continua `ImobiFlow` de propósito — repositório GitHub, prefixo `imf_` de
+todas as tabelas, app Fly `imobiflow-v2` — trocar isso seria uma migration de
+alto risco sem ganho de produto. As duas coisas convivem: código e infra
+falam `ImobiFlow`, tela e mensagem ao usuário falam `PANTUS Real Estate`.
 
 ## Fontes de verdade
 

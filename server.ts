@@ -15,7 +15,6 @@ import {
 import { authRouter } from "./server/routes/auth";
 import { brokersRouter } from "./server/routes/brokers";
 import { propertiesRouter } from "./server/routes/properties";
-import { corretoraRouter } from "./server/routes/corretora";
 import { aiRouter } from "./server/routes/ai";
 import { dashboardRouter } from "./server/routes/dashboard";
 import { leadsRouter } from "./server/routes/leads";
@@ -158,7 +157,6 @@ async function startServer() {
   app.use(authRouter);
   app.use(brokersRouter);
   app.use(propertiesRouter);
-  app.use(corretoraRouter);
   app.use(aiRouter);
   app.use(dashboardRouter);
   app.use(leadsRouter);

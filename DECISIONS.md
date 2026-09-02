@@ -260,10 +260,24 @@
 
 ## Projeto e entrega
 
-- **V2 é o único produto ativo.** Branch `v2` e app Fly `imobiflow-v2`; V1/main
-  permanece congelada como rollback.
+- **V2 é o único produto ativo.** Branch `v2` e app Fly `imobiflow-v2`.
+  **V1 foi decomissionada em 2026-09-02** (decisão explícita do usuário: "é
+  legada, pode remover"), revertendo a postura anterior de mantê-la congelada
+  como rollback. App Fly `imobiflow` (2 machines, sem volume — dado vive no
+  Supabase compartilhado, nada foi perdido) destruída via `flyctl apps
+  destroy`. No código: `src/pages/Dashboard.tsx` (a UI antiga, servida em
+  `/`), `src/components/CorretoraSettings.tsx`, `src/components/AISettings.tsx`,
+  `src/components/FollowUpSettings.tsx` e `server/routes/corretora.ts`
+  removidos — confirmado com `knip` que nada disso era usado pela V2 (`/app`);
+  os componentes com nome parecido que a V2 usa (`AssistenteIAArea.tsx` etc.)
+  são reimplementações próprias, independentes. `/` agora só redireciona para
+  `/app`. `AgendaCalendar.tsx`, `MagicWandTextarea.tsx`, `PropertyForm.tsx`
+  e `dashboardRouter` (`/api/dashboard/metrics`) **não foram tocados** —
+  compartilhados com a V2, confirmado antes de qualquer remoção.
 - **Checkout canônico único.** Claude e Codex trabalham somente em
-  `work/imob.criate-phase3`; `C:\Users\Criate\imob.criate` está congelado.
+  `work/imob.criate-phase3`. `C:\Users\Criate\imob.criate` (clone local do
+  branch `main`, mesmo repositório GitHub) e o branch `main` em si **ainda
+  não foram apagados** — perguntar ao usuário antes, é uma decisão à parte.
 - **PMP v2.0.** `PROJECT.md`, `ARCHITECTURE.md`, `PROGRESS.md`, `DECISIONS.md` e
   `NEXT_TASK.md` formam a memória curta; `DOCUMENTACAO.md` mantém o detalhe.
 - **Deploy automático.** Push em `v2` valida com `npm ci`, testes automatizados,

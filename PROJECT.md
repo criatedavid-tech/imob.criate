@@ -39,8 +39,8 @@ imóvel sem apagar registros anteriores.
   `scheduler` e um `worker` ativo com uma segunda Machine em standby. Redis e
   Sentry estão ativos; a captura do Sentry exclui PII, corpo, cabeçalhos,
   cookies e parâmetros de URL.
-- V1: branch `main`, `https://imobiflow.fly.dev`; congelada como rollback e
-  nunca deve ser alterada.
+- V1 (branch `main`, app Fly `imobiflow`) foi decomissionada em 2026-09-02 —
+  app destruída, código legado removido do `v2`. Ver `DECISIONS.md`.
 - Tipos de conta: corretor, imobiliária e incorporadora; titular e membros têm
   permissões diferentes.
 - `account_type` é o tipo principal. Desde 03/08/2026, as funções especializadas

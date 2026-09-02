@@ -338,9 +338,8 @@ Supabase
 | `server/middleware/auth.ts` | JWT, tenant e distinção titular/membro |
 | `server/routes/` | endpoints separados por domínio |
 | `server/services/` | billing, WhatsApp, IA, reservas, jobs e integrações |
-| `src/App.tsx` | rotas públicas, privadas, Dashboard 1.0 e cockpit V2 |
+| `src/App.tsx` | rotas públicas, privadas e cockpit V2 (`/` só redireciona pra `/app`) |
 | `src/experience/` | shell e áreas manuais da experiência V2 |
-| `src/pages/Dashboard.tsx` | Dashboard 1.0; continua vivo na rota `/` |
 | `supabase/migrations/` | evolução versionada do schema compartilhado |
 | `fly.toml` / `Dockerfile` | execução e publicação da V2 no Fly |
 

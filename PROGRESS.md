@@ -1,5 +1,32 @@
 # Estado do projeto
 
+## V1 decomissionada — app Fly e código legado removidos (2026-09-02)
+
+- Decisão explícita do usuário: V1 é legada, remover da Fly e do código. Ver
+  `DECISIONS.md` (seção "Projeto e entrega") para o registro completo.
+- App Fly `imobiflow` (separada de `imobiflow-v2`, 2 machines rodando desde
+  maio/junho, último deploy 07/07/2026, sem volume) destruída via `flyctl
+  apps destroy imobiflow`. Nenhum dado foi perdido — a app não tinha volume
+  próprio, só falava com o Supabase compartilhado (o mesmo que a V2 usa).
+- No código (branch `v2`): removidos `src/pages/Dashboard.tsx` (UI antiga,
+  servida em `/`), `src/components/CorretoraSettings.tsx`,
+  `src/components/AISettings.tsx`, `src/components/FollowUpSettings.tsx` e
+  `server/routes/corretora.ts` (rota morta — nem estava montada corretamente
+  de um jeito que a V2 usasse). `/` agora redireciona para `/app`.
+- Verificado com `knip` antes e depois de cada remoção que nada disso era
+  usado pela V2 — vários componentes do Dashboard antigo (`AgendaCalendar`,
+  `MagicWandTextarea`, `PropertyForm`) são compartilhados com a V2 e **não**
+  foram tocados. `AssistenteIAArea.tsx` (V2) já tinha sua própria
+  reimplementação independente do que `AISettings`/`FollowUpSettings`
+  faziam — o comentário no código que dizia "componente legado... segue
+  existindo pro Dashboard 1.0" foi atualizado.
+- Suíte integral (224 testes), TypeScript, Knip e build aprovados em
+  02/09/2026; `/` testado ao vivo no dev server local (redireciona pra
+  `/app`, que por sua vez manda pra `/login` sem sessão).
+- **Não decidido ainda**: o clone local congelado `C:\Users\Criate\imob.criate`
+  (branch `main` do mesmo repositório GitHub) não foi apagado — é uma
+  decisão à parte, perguntar ao usuário.
+
 ## Nome comercial definitivo "PANTUS Real Estate" + favicon (2026-09-02)
 
 - Decisão completa em `DECISIONS.md` (entrada do topo). O nome provisório

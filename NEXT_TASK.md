@@ -1,5 +1,14 @@
 # Próximas tarefas — ImobiFlow V2
 
+## V1 decomissionada (2026-09-02) — CONCLUÍDO
+
+App Fly `imobiflow` destruída e código legado (`Dashboard.tsx`,
+`CorretoraSettings.tsx`, `AISettings.tsx`, `FollowUpSettings.tsx`,
+`server/routes/corretora.ts`) removido. Detalhe completo em `PROGRESS.md` e
+`DECISIONS.md`. **Pendente, decisão à parte**: apagar ou não o clone local
+`C:\Users\Criate\imob.criate` e o branch `main` no GitHub (mesmo repo) — não
+apagados ainda, perguntar ao usuário.
+
 ## Fechamento auditado em 12/08/2026
 
 - O Grupo 1 da marca foi concluído localmente e está no gate final antes da

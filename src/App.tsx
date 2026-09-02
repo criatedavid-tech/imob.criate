@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { authService } from './services/auth';
 
 const TermsGate = lazy(() => import('./components/TermsGate'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PropertyLanding = lazy(() => import('./pages/PropertyLanding'));
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
@@ -105,15 +104,13 @@ export default function App() {
             authService.isLoggedIn() ? <Admin /> : <Navigate to="/login" />
           } />
 
-          {/* Dashboard Protegido (exige login + assinatura ativa) */}
-          <Route path="/" element={
-            <PrivateRoute>
-              <Dashboard />
-            </PrivateRoute>
-          } />
+          {/* V1 (Dashboard.tsx) foi removida em 2026-09-02 — a app Fly separada
+              "imobiflow" também foi destruída. "/" agora só redireciona para
+              a experiência atual; a trava de login/assinatura vive em /app. */}
+          <Route path="/" element={<Navigate to="/app" replace />} />
 
           {/* Rota curinga */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
       </Suspense>
     </BrowserRouter>

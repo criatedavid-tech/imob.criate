@@ -161,8 +161,9 @@ export function AssistenteIAArea() {
 // ─── Follow-Up Inteligente ────────────────────────────────────────────────
 // Reescrito no design system do /app (GlassCard, fieldCls, botão azul) pra
 // ficar uniforme com a Personalidade da IA acima. O componente legado
-// src/components/FollowUpSettings.tsx segue existindo pro Dashboard 1.0 (/),
-// que usa o design antigo de forma consistente — não mexer lá.
+// src/components/FollowUpSettings.tsx (versão do Dashboard 1.0) foi removido
+// em 2026-09-02 junto com o resto da V1 — este arquivo já era a reimplementação
+// independente, nada muda aqui.
 
 type MsgKey = `message_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 type DelayKey = `delay_minutes_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
