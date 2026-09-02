@@ -420,13 +420,12 @@ export function ExperienceShell() {
               ? 'bottom-24 right-3 w-11 h-11 md:bottom-6 md:right-6 md:w-14 md:h-14'
               : 'bottom-6 right-6 w-14 h-14',
           )}
-          // Ícone branco (não --on-accent): sobre o gradiente sólido antigo o
-          // azul-escuro contrastava, mas o vidro é translúcido e deixa passar o
-          // conteúdo escuro por trás — branco é o que continua legível, igual
-          // ao ícone da marca no rail, que usa o mesmo tint.
-          style={{ color: '#FFFFFF' }}
         >
-          <Sparkles className="w-6 h-6" />
+          {/* A mesma marca do rail: o agente É o PANTUS, não um ícone genérico.
+              Tamanho em fração (50%) porque o botão muda de 44px para 56px
+              entre mobile e desktop — assim a proporção não quebra em nenhum
+              dos dois. */}
+          <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-1/2 h-1/2 object-contain" />
         </button>
       )}
 
