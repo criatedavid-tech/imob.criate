@@ -48,7 +48,7 @@ async function enhanceWithOpenRouter(apiKey: string, text: string): Promise<stri
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": PUBLIC_APP_URL,
-      "X-Title": "Real Estate",
+      "X-Title": "PANTUS Real Estate",
     },
     body: JSON.stringify({
       model: "openai/gpt-4o-mini",

@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { CLIENT_FINANCIAL_OPERATIONS_ENABLED } from "../config";
 
 // Trava de produto para cobranças dos clientes da imobiliária/incorporadora.
-// Mantém leitura de histórico e billing da assinatura do Real Estate intactos.
+// Mantém leitura de histórico e billing da assinatura do PANTUS Real Estate intactos.
 export function requireClientFinancialOperations(
   _req: Request,
   res: Response,
@@ -10,7 +10,7 @@ export function requireClientFinancialOperations(
 ) {
   if (!CLIENT_FINANCIAL_OPERATIONS_ENABLED) {
     return res.status(403).json({
-      error: "As cobranças de clientes estão desativadas. Registre o pagamento fora do Real Estate.",
+      error: "As cobranças de clientes estão desativadas. Registre o pagamento fora do PANTUS Real Estate.",
       code: "CLIENT_FINANCIAL_OPERATIONS_DISABLED",
     });
   }

@@ -1,5 +1,29 @@
 # Estado do projeto
 
+## Nome comercial definitivo "PANTUS Real Estate" + favicon (2026-09-02)
+
+- Decisão completa em `DECISIONS.md` (entrada do topo). O nome provisório
+  "Real Estate" (11/08) vira **PANTUS Real Estate** — "PANTUS" é a marca,
+  "Real Estate" continua junto como categoria.
+- Aplicado localmente: `<title>`/`description` de `index.html`;
+  `public/favicon.svg` (ícone recortado/vetorizado a partir da imagem que o
+  usuário enviou por WhatsApp — não é o vetor original do designer; branco
+  sobre degradê azul, mesmo estilo do mockup de ícone de app que ele mandou);
+  as 51 ocorrências de "Real Estate" já espalhadas no código pelo Grupo 1 do
+  Codex (12/08) viraram "PANTUS Real Estate" por localizar-e-substituir
+  direto — eram sempre nome de marca em comentário/mensagem/telemetria, nunca
+  termo genérico (projeto 100% PT-BR).
+- Dois assets crus salvos e ainda não conectados em nenhuma tela:
+  `public/pantus-icon-black.png`, `public/pantus-logo-full-black.png` — o app
+  não tem componente de header/logo hoje, só texto.
+- Grupo 2/3 (Termos/Privacidade, páginas revisadas pelo Google, nome da
+  agenda no Google/CalDAV, `imf_`, app Fly `imobiflow-v2`, razão social)
+  continuam intocados — ver `NEXT_TASK.md`. Quando forem feitos, o alvo passa
+  a ser "PANTUS Real Estate".
+- Suíte integral (224 testes), TypeScript, Knip, build e `git diff --check`
+  aprovados em 02/09/2026, mais checagem visual ao vivo no dev server local
+  (título e favicon renderizando corretamente).
+
 ## Scheduler e alerta obsoleto do WhatsApp Pai (2026-08-11)
 
 - O deploy `v266` atualizou a Machine singleton do scheduler, mas a deixou

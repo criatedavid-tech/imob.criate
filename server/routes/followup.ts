@@ -135,7 +135,7 @@ followupRouter.post('/api/followup/inbound', requireInternalToken, n8nInternalLi
                         incomingTicketId !== conv.source_ticket_id;
 
     // O identificador recebido pode ser o ID legado do provedor. O ticket
-    // nativo do Real Estate sempre usa UUID próprio: ele permanece enquanto o
+    // nativo do PANTUS Real Estate sempre usa UUID próprio: ele permanece enquanto o
     // atendimento está pending/open e muda depois que o anterior é encerrado.
     const nativeTicket = await ensureConversationTicket({
       brokerId: broker.id,

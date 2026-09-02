@@ -147,8 +147,8 @@ test('backend e migrations mantêm credenciais fora do navegador e sincronizaç�
   assert.match(indexHtml, /<html lang="pt-BR">/);
   // O Google confere se a home identifica o app com o MESMO nome da tela de
   // consentimento OAuth. As credenciais do projeto Google Cloud ainda não
-  // existem (ver PROGRESS.md), então a tela será criada já como "Real Estate";
+  // existem (ver PROGRESS.md), então a tela será criada já como "PANTUS Real Estate";
   // se este título mudar de novo, o nome no Console tem que mudar junto.
-  assert.match(indexHtml, /<title>Real Estate \| Plataforma imobiliária com IA<\/title>/);
+  assert.match(indexHtml, /<title>PANTUS Real Estate \| Plataforma imobiliária com IA<\/title>/);
   assert.match(env, /GOOGLE_CALENDAR_CLIENT_SECRET/);
 });

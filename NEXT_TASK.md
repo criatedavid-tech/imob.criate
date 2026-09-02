@@ -17,14 +17,16 @@
   `20260724_scale_hot_path_indexes.sql` continua dependendo de confirmação no
   Supabase; a presença dos arquivos no Git não é prova de aplicação.
 
-## Renomear ImobiFlow → Real Estate: o que falta
+## Renomear ImobiFlow → PANTUS Real Estate: o que falta
 
-Decisão em `DECISIONS.md` (2026-08-11). Já feito: `<title>` e `description` de
-`index.html` + a asserção em `tests/calendarBidirectional.test.ts`.
+Decisão original em `DECISIONS.md` (2026-08-11); nome final e logo definidos
+em 2026-09-02 (ver entrada correspondente no topo de `DECISIONS.md`). Já
+feito: `<title>` e `description` de `index.html`, favicon (`public/favicon.svg`)
++ a asserção em `tests/calendarBidirectional.test.ts`.
 
 O **Grupo 1 foi concluído localmente em 12/08/2026**: rótulos visuais,
 mensagens, telemetria, metadados públicos seguros e comentários usam agora
-**Real Estate**. A razão social foi preservada. O cabeçalho legado
+**PANTUS Real Estate**. A razão social foi preservada. O cabeçalho legado
 `X-ImobiFlow-Event-Id` ficou deliberadamente intacto até a auditoria do
 workflow N8N, pois pode participar da deduplicação externa. Os grupos 2 e 3
 também permanecem intactos.
@@ -65,7 +67,7 @@ algum workflow do n8n lê esse nome — se ler, o fluxo quebra silenciosamente.
   técnica.
 - **Páginas revisadas pelo Google** (`src/pages/Sobre.tsx`,
   `server/services/publicAboutPage.ts`): só depois que a tela de consentimento
-  OAuth existir como "Real Estate". Nome divergente é motivo comum de recusa.
+  OAuth existir como "PANTUS Real Estate". Nome divergente é motivo comum de recusa.
 - **Nome da agenda no Google** (`services/googleCalendarSync.ts`, `summary:
   'ImobiFlow'`): renomear afeta só agendas NOVAS. As já criadas continuam
   "ImobiFlow" no Google Agenda do cliente. Para uniformizar seria preciso um

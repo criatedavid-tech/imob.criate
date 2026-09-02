@@ -59,7 +59,7 @@ export const PLAN_OVERAGE_PRICE      = Number(process.env.PLAN_OVERAGE_PRICE    
 export const MEMBER_WHATSAPP_SLOT_PRICE = Number(process.env.MEMBER_WHATSAPP_SLOT_PRICE || "29.90");
 export const MEMBER_WHATSAPP_SLOT_MAX   = Number(process.env.MEMBER_WHATSAPP_SLOT_MAX   || "20");
 // Operações financeiras dos CLIENTES (aluguel e sinal de reserva) ficam
-// desligadas por padrão. A assinatura do próprio Real Estate não usa esta flag.
+// desligadas por padrão. A assinatura do próprio PANTUS Real Estate não usa esta flag.
 export const CLIENT_FINANCIAL_OPERATIONS_ENABLED =
   process.env.CLIENT_FINANCIAL_OPERATIONS_ENABLED === "true";
 // Enquanto o produto financeiro estiver em validação, somente credenciais
@@ -74,7 +74,7 @@ export const INTERNAL_PROXY_TOKEN = process.env.INTERNAL_PROXY_TOKEN || "";
 // Janela curta de rotação sem downtime. Configure com o token antigo,
 // troque a credencial do n8n para INTERNAL_PROXY_TOKEN e remova em seguida.
 export const INTERNAL_PROXY_TOKEN_PREVIOUS = process.env.INTERNAL_PROXY_TOKEN_PREVIOUS || "";
-// Autentica Real Estate -> webhook do n8n. Enquanto a credencial dedicada ainda
+// Autentica PANTUS Real Estate -> webhook do n8n. Enquanto a credencial dedicada ainda
 // não foi criada, o token interno existente mantém compatibilidade. O header
 // só passa a ser exigido quando o Webhook node for configurado com Header Auth.
 export const N8N_WEBHOOK_TOKEN_DEDICATED = !!process.env.N8N_WEBHOOK_TOKEN?.trim();

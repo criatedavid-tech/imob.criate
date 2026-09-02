@@ -9,7 +9,7 @@ export default function Copyright({ variant = 'dark', short = false, className =
 
   return (
     <p title={`${RAZAO_SOCIAL}. Todos os direitos reservados.`} className={`text-center text-[11px] ${color} ${className}`}>
-      {short ? `© ${year} Real Estate` : `© ${year} Real Estate · ${RAZAO_SOCIAL}. Todos os direitos reservados.`}
+      {short ? `© ${year} PANTUS Real Estate` : `© ${year} PANTUS Real Estate · ${RAZAO_SOCIAL}. Todos os direitos reservados.`}
     </p>
   );
 }

@@ -87,7 +87,7 @@ const BASE64_MEDIA_PAYLOAD = /^[a-zA-Z0-9+/]+={0,2}$/;
 
 // O URL presente no webhook aponta para um arquivo criptografado do WhatsApp.
 // A UAZAPI faz a descriptografia no endpoint oficial /message/download e
-// devolve o conteúdo em base64, sem que o Real Estate precise persistir um link
+// devolve o conteúdo em base64, sem que o PANTUS Real Estate precise persistir um link
 // público temporário ou manipular mediaKey/directPath.
 export async function downloadUazapiMedia(
   instanceToken: string,

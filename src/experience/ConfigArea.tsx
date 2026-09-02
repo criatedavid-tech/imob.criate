@@ -916,7 +916,7 @@ function AsaasKeyCard({ fieldCls }: { fieldCls: string }) {
         <h3 className="text-[13px] font-semibold text-[var(--text-low)] tracking-wide uppercase">Conta de cobrança (Asaas)</h3>
       </div>
       <p className="text-[12px] text-[var(--text-low)] mb-4">
-        Integração opcional com a conta Asaas da própria empresa. Os valores são recebidos diretamente nessa conta; o Real Estate apenas gera e acompanha o status. Sem integração própria, novas cobranças ficam bloqueadas.
+        Integração opcional com a conta Asaas da própria empresa. Os valores são recebidos diretamente nessa conta; o PANTUS Real Estate apenas gera e acompanha o status. Sem integração própria, novas cobranças ficam bloqueadas.
       </p>
 
       {status?.sandbox_only && (

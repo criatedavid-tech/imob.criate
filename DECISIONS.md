@@ -1,5 +1,37 @@
 # Decisões vigentes
 
+## Nome final vira "PANTUS Real Estate" + logo aplicada (2026-09-02)
+
+- Complementa a decisão anterior (11/08, logo abaixo): "Real Estate" era um
+  nome provisório sem marca própria. O nome comercial definitivo passa a ser
+  **PANTUS Real Estate** — "PANTUS" é a marca, "Real Estate" continua junto
+  como categoria (não "PANTUS" sozinho). As duas palavras aparecem sempre
+  juntas, nesta ordem.
+- Logo fornecida pelo usuário (arquivo mestre em
+  `C:\Users\Criate\Desktop\WhatsApp Image 2026-09-02 at 15.55.18.jpeg`):
+  símbolo em forma de duas curvas sobrepostas (tipo "olho"/onda) + wordmark
+  "PANTUS". Não veio como vetor original (SVG/AI) — o ícone foi recortado e
+  vetorizado a partir dessa imagem (fundo transparente, contorno preservado).
+  Se o usuário conseguir o arquivo vetorial original do designer depois, vale
+  substituir os assets abaixo pelos caminhos exatos.
+- **Já aplicado**: `public/favicon.svg` (ícone branco sobre fundo em degradê
+  azul, no mesmo estilo do mockup de ícone de app enviado pelo usuário,
+  substituindo o glifo de casa genérico anterior). Todas as 51 ocorrências
+  que já diziam "Real Estate" no código (Grupo 1 da decisão de 11/08, já
+  aplicado pelo Codex em 12/08) viraram "PANTUS Real Estate" por
+  localizar-e-substituir direto — eram sempre nome de marca nos comentários,
+  mensagens ao usuário e `X-Title`/`og:site_name`, nunca o termo genérico em
+  inglês (projeto é 100% PT-BR), então não havia risco de falso positivo.
+  Também dois assets crus, ainda não conectados em nenhuma tela:
+  `public/pantus-icon-black.png` (ícone isolado, fundo transparente, pra uso
+  sobre fundo claro) e `public/pantus-logo-full-black.png` (ícone + wordmark).
+- **Ainda não aplicado**: nenhum componente de UI usa uma imagem de logo hoje
+  (o app só mostra o nome como texto — verificado, não existe componente de
+  header/logo). Onde exibir a marca gráfica (tela de login, sidebar, etc.)
+  fica pra quando for pedido explicitamente.
+- **Grupo 2 e 3** (ver `NEXT_TASK.md`) continuam intocados; quando forem
+  feitos, o alvo passa a ser "PANTUS Real Estate", não mais só "Real Estate".
+
 ## Marca do produto passa a ser "Real Estate" (2026-08-11)
 
 - O produto passa a se chamar **Real Estate**, acompanhando o domínio próprio
@@ -20,8 +52,9 @@
   jurídica e continua nos Termos, na Privacidade e no rodapé.
 - **Ordem obrigatória para o bloco do Google**: as credenciais OAuth do
   projeto Google Cloud ainda não existem. A tela de consentimento deve ser
-  criada já como "Real Estate"; só depois as páginas públicas (`Sobre`,
-  `publicAboutPage`) mudam de nome, para os dois baterem na revisão.
+  criada já como "PANTUS Real Estate" (nome final, ver decisão seguinte);
+  só depois as páginas públicas (`Sobre`, `publicAboutPage`) mudam de nome,
+  para os dois baterem na revisão.
 
 ## Assistente interno: autonomia real, mídia agrupada e rastreabilidade (2026-08-11)
 

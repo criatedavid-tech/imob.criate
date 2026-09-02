@@ -11,7 +11,7 @@ async function sendVerificationCode(phone: string, code: string): Promise<void> 
   if (!platformToken) {
     throw new Error("Envio de WhatsApp não configurado no servidor.");
   }
-  const text = `🏠 *Real Estate*\n\nSeu código de verificação do WhatsApp Pai é:\n\n*${code}*\n\nVálido por 10 minutos. Se não foi você, ignore esta mensagem.`;
+  const text = `🏠 *PANTUS Real Estate*\n\nSeu código de verificação do WhatsApp Pai é:\n\n*${code}*\n\nVálido por 10 minutos. Se não foi você, ignore esta mensagem.`;
   const sent = await sendUazapiText(platformToken, phone, text);
   if (!sent.ok) throw new Error("Falha ao enviar o código pelo WhatsApp. Tente novamente em instantes.");
 }

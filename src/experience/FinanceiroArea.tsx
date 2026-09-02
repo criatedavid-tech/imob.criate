@@ -47,7 +47,7 @@ const PAYMENT_LABEL: Record<string, { label: string; cls: string }> = {
 // Financeiro real: núcleo (Etapa 8 do UX_MASTERPLAN.md) — resumo agregando o
 // que já existe em Locação + Lançamentos, incluindo competências e pagamentos
 // externos declarados (ver server/routes/financeiro.ts). Não representa
-// conciliação bancária nem custódia pelo Real Estate.
+// conciliação bancária nem custódia pelo PANTUS Real Estate.
 // Carteira (imf_properties) fica de fora: o preço lá é texto livre, não um
 // número confiável de somar. Ainda fora: comissão com pagamento real e
 // informe de rendimentos do proprietário (dependem de um cadastro de

@@ -4,7 +4,7 @@ import { fetchWithTimeout } from "../lib/http";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Cobrança real de aluguel via Asaas — MESMO PADRÃO da assinatura do
-// Real Estate (ver server/services/billing.ts: asaasHeaders, POST /customers,
+// PANTUS Real Estate (ver server/services/billing.ts: asaasHeaders, POST /customers,
 // POST /payments). Aqui o cliente Asaas é o INQUILINO, não o corretor.
 //
 // Durante a validação, CLIENT_FINANCIAL_SANDBOX_ONLY impede que uma credencial
@@ -71,7 +71,7 @@ export async function generateRentCharge(contractId: string, referenceMonth: Dat
   // global da Criate é exclusiva da assinatura SaaS e nunca recebe aluguel.
   const creds = await resolveAsaasCredentials(contract.broker_id);
   // Falha antes de criar cliente/cobrança caso a confirmação assíncrona não
-  // possa voltar para o Real Estate. Assim o teste cobre emissão e conciliação.
+  // possa voltar para o PANTUS Real Estate. Assim o teste cobre emissão e conciliação.
   await ensureClientAsaasPaymentWebhook(creds);
 
   const refMonthStart = new Date(referenceMonth.getFullYear(), referenceMonth.getMonth(), 1);

@@ -78,7 +78,7 @@ test("teste de WhatsApp da locação é explícito, limitado e não gera cobran�
 
   assert.match(testRoute, /rentalTestDispatchLimiter/);
   assert.match(testRoute, /\.eq\("broker_id", brokerId\)/);
-  assert.match(testRoute, /\[TESTE Real Estate\]/);
+  assert.match(testRoute, /\[TESTE PANTUS Real Estate\]/);
   assert.match(testRoute, /sendUazapiText/);
   assert.doesNotMatch(testRoute, /generateRentCharge|imf_rental_payments/);
   assert.match(limits, /rentalTestDispatchLimiter/);

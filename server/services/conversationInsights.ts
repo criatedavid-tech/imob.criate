@@ -181,7 +181,7 @@ async function analyzeTranscript(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": PUBLIC_APP_URL,
-      "X-Title": "Real Estate",
+      "X-Title": "PANTUS Real Estate",
     },
     body: JSON.stringify({
       model: "xiaomi/mimo-v2.5",

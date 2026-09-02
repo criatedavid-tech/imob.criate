@@ -7,6 +7,13 @@
 > Entradas com data/release antiga registram a evolução histórica; quando
 > houver divergência, prevalecem o estado de produção abaixo e as seções
 > arquiteturais atuais.
+>
+> **"ImobiFlow" aqui é o nome interno/técnico** (repositório, prefixo `imf_`
+> das tabelas, app do Fly `imobiflow-v2`) e continua assim de propósito — ver
+> Grupo 3 em `NEXT_TASK.md`. O nome comercial exibido ao usuário é outro:
+> **PANTUS Real Estate** (decidido em `DECISIONS.md`, 2026-09-02). Este
+> documento não foi renomeado porque descreve a arquitetura interna, não a
+> marca.
 
 ### Assistente interno e WhatsApp Pai (estado local em 2026-08-11)
 

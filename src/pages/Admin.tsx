@@ -467,7 +467,7 @@ export default function Admin() {
           </div>
           <div>
             <h1 className="text-base font-black text-[var(--text-hi)]">Painel Admin</h1>
-            <p className="text-[10px] text-[var(--text-low)]">Real Estate</p>
+            <p className="text-[10px] text-[var(--text-low)]">PANTUS Real Estate</p>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">

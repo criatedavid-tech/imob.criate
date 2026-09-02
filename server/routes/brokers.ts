@@ -234,7 +234,7 @@ brokersRouter.get("/api/brokers/:id/agent", requireInternalToken, n8nInternalLim
   }
 });
 
-// ─── WhatsApp — conexão via QR code dentro do Real Estate ────────────────
+// ─── WhatsApp — conexão via QR code dentro do PANTUS Real Estate ────────────────
 // A instância UAZAPI já é criada no provisionamento (server/services/provisioning.ts);
 // aqui só expomos status/QR pra o corretor parear o número direto no imob.
 

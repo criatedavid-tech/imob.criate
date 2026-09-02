@@ -13,7 +13,7 @@ endurecido pela API oficial do N8N:
 - `N8N_WEBHOOK_TOKEN` dedicado implantado no Fly, sem reutilizar o token da
   API interna;
 - todos os 16 HTTP nodes usam a credencial protegida
-  `Real Estate - API Interna`; não há mais Bearer literal no workflow;
+  `PANTUS Real Estate - API Interna`; não há mais Bearer literal no workflow;
 - `Validar Evento` exige origem, corretor, ticket, evento, telefone e mensagem
   no contrato esperado;
 - memória isolada por `broker_id:ticket_id`;

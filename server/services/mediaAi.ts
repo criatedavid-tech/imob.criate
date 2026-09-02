@@ -60,7 +60,7 @@ async function callOpenRouter(
       Authorization: `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
       "HTTP-Referer": PUBLIC_APP_URL,
-      "X-Title": "Real Estate",
+      "X-Title": "PANTUS Real Estate",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash-lite",

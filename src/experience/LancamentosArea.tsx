@@ -1214,7 +1214,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
                 <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">CPF/CNPJ do comprador</label>
                 <input value={buyerDocument} onChange={(e) => setBuyerDocument(maskCpfCnpj(e.target.value))}
                   inputMode="numeric" maxLength={18} placeholder="000.000.000-00" className={numInputClass} />
-                <p className="text-[9px] text-[var(--text-low)] mt-1">O documento completo vai direto para a Asaas e não fica salvo no Real Estate.</p>
+                <p className="text-[9px] text-[var(--text-low)] mt-1">O documento completo vai direto para a Asaas e não fica salvo no PANTUS Real Estate.</p>
               </div>
               <div>
                 <label className="text-xs font-semibold text-[var(--text-low)] uppercase tracking-wider mb-1.5 block">Valor do sinal</label>
@@ -1228,7 +1228,7 @@ function UnitActionModal({ unit, developmentTipo, developmentSubtipo, onClose, o
           )}
           {CLIENT_FINANCIAL_OPERATIONS_ENABLED && financialAccess && !paymentIntegrationConfigured && (
             <p className="text-[11px] text-[var(--text-low)] rounded-xl border border-[var(--hairline)] bg-[var(--control-fill)] px-3 py-2.5">
-              Nenhuma conta própria conectada. O Real Estate não receberá o sinal; a reserva sem cobrança continua disponível.
+              Nenhuma conta própria conectada. O PANTUS Real Estate não receberá o sinal; a reserva sem cobrança continua disponível.
             </p>
           )}
         </div>
