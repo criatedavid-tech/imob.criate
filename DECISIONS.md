@@ -1,5 +1,48 @@
 # Decisões vigentes
 
+## Hardening pós-auditoria AppSec (2026-09-02)
+
+Auditoria completa de segurança (controle de acesso, IDOR, segredos, XSS,
+OWASP Top 10, dependências, infra). **Nenhuma vulnerabilidade crítica ou alta
+com exploração confirmada** — o isolamento por `broker_id`, as 25 rotas
+administrativas, as permissões granulares de equipe e os tickets de conversa
+foram verificados linha a linha e estão corretos. Corrigido nesta rodada:
+
+- **`qs` 6.15.3 → 6.16.0** via `overrides` no `package.json`. Duas CVEs de DoS
+  (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g) atingiam o parser de query string
+  usado em **toda** requisição. `express@4.22.2` e `body-parser@1.20.6` fixam
+  `~6.15.1`, que exclui de propósito o 6.16.0 — daí o `overrides`, já que a
+  alternativa que o `npm audit fix` enxerga é subir para Express 5 (breaking).
+  `npm audit` saiu de 4 achados para **0**. Testado: query aninhada, profunda,
+  o payload adversarial do próprio advisory e 1000 parâmetros — todos íntegros.
+- **Container não roda mais como root** (`USER node` + `chown` no Dockerfile).
+  Verificado antes que o app é stateless em disco (nenhum `writeFile`/`mkdir`
+  em `server/`), então acesso de leitura em `/app` basta.
+- **`permissions: contents: read`** explícito no workflow do GitHub Actions —
+  nenhum job escreve no repositório; sem a linha o `GITHUB_TOKEN` herdava o
+  padrão da organização.
+- **`@vitejs/plugin-react` e `@tailwindcss/vite` movidos para
+  `devDependencies`** (são toolchain de build). `vite` **fica** em
+  `dependencies` de propósito: `server.ts:4` tem `import ... from "vite"` no
+  topo, avaliado mesmo em produção. Tirou o `browserslist` (High) da superfície
+  de produção do scanner.
+- **`LLM_PROXY_ENC_KEY` valida formato no boot** (64 hex = 32 bytes) quando
+  presente. **Deliberadamente não** falha se estiver ausente: `encryptKey`/
+  `decryptKey` já recusam a operação com erro explícito, e derrubar a
+  plataforma inteira por causa de uma integração opcional trocaria um problema
+  pequeno por indisponibilidade total. Chave de produção conferida via
+  `flyctl ssh` (formato válido) antes de ligar o check, pra não quebrar deploy.
+
+**Não corrigido, com motivo**: CSP segue em `report-only` (ligar exige janela
+de observação do `/api/csp-report`, como o próprio comentário no `server.ts` já
+planeja); escopo de Contatos/Locação por conta inteira é decisão de produto
+pendente, não bug; cobertura parcial de RLS é defesa em profundidade (o
+frontend nunca fala com o Supabase direto — só a `service_role` no backend
+acessa o banco); imagem base Node 20 aguarda confirmação da janela de suporte.
+
+Relatório completo entregue ao usuário fora do repositório (contém mapa de
+superfície de ataque; não versionado de propósito).
+
 ## Nome final vira "PANTUS Real Estate" + logo aplicada (2026-09-02)
 
 - Complementa a decisão anterior (11/08, logo abaixo): "Real Estate" era um

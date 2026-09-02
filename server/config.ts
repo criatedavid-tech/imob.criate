@@ -80,6 +80,22 @@ export const INTERNAL_PROXY_TOKEN_PREVIOUS = process.env.INTERNAL_PROXY_TOKEN_PR
 export const N8N_WEBHOOK_TOKEN_DEDICATED = !!process.env.N8N_WEBHOOK_TOKEN?.trim();
 export const N8N_WEBHOOK_TOKEN    = process.env.N8N_WEBHOOK_TOKEN?.trim() || INTERNAL_PROXY_TOKEN;
 export const LLM_PROXY_ENC_KEY    = process.env.LLM_PROXY_ENC_KEY    || "";
+
+// Ausente = a criptografia por corretor fica desligada e encryptKey/decryptKey
+// (server/lib/crypto.ts) recusam a operação com erro explícito — o resto da
+// plataforma segue de pé de propósito, porque é uma integração opcional.
+// PRESENTE MAS MALFORMADA é outra história: AES-256 exige exatamente 32 bytes,
+// então uma chave truncada/com typo só estouraria na primeira ação do usuário
+// que salvasse uma credencial. Falhar aqui torna o erro de configuração óbvio
+// no deploy, não em produção com o corretor na tela.
+if (LLM_PROXY_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(LLM_PROXY_ENC_KEY)) {
+  console.error(
+    "\n[FATAL] LLM_PROXY_ENC_KEY inválida.\n" +
+    "Esperado: 64 caracteres hexadecimais (32 bytes, AES-256).\n" +
+    "Gere com: openssl rand -hex 32\n"
+  );
+  process.exit(1);
+}
 // Fallback: chave da empresa usada enquanto o corretor não configurou a própria.
 export const OPENROUTER_API_KEY   = process.env.OPENROUTER_API_KEY   || "";
 // Modelo do Agente de Atendimento no WhatsApp (fluxo n8n "Teste-v2 imob").

@@ -1,5 +1,22 @@
 # Estado do projeto
 
+## Auditoria AppSec + hardening aplicado (2026-09-02)
+
+- Auditoria completa: controle de acesso/IDOR, autorização, segredos, XSS,
+  OWASP Top 10, dependências e infraestrutura. Nenhuma vulnerabilidade
+  crítica/alta com exploração confirmada. Registro da decisão e do que ficou
+  de fora (com motivo) em `DECISIONS.md`.
+- Corrigido: `qs` 6.15.3 → 6.16.0 via `overrides` (2 CVEs de DoS no parser de
+  query string de toda requisição); `USER node` no Dockerfile (container
+  deixou de rodar como root); `permissions: contents: read` no workflow;
+  `@vitejs/plugin-react`/`@tailwindcss/vite` para `devDependencies`;
+  validação de formato da `LLM_PROXY_ENC_KEY` no boot.
+- `npm audit`: 4 achados (1 High, 3 Moderate) → **0**.
+- Verificado: tsc, 224/224 testes, knip, build, e smoke test real de parsing
+  de query string (aninhada, profunda, payload adversarial do advisory, 1000
+  parâmetros) — nenhuma regressão. Chave de produção conferida via `flyctl
+  ssh` antes de ativar o check de formato.
+
 ## V1 decomissionada — app Fly e código legado removidos (2026-09-02)
 
 - Decisão explícita do usuário: V1 é legada, remover da Fly e do código. Ver

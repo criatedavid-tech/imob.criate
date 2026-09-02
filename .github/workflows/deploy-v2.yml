@@ -21,6 +21,12 @@ on:
   push:
     branches: [v2]
 
+# Menor privilégio para o GITHUB_TOKEN: nenhum job aqui escreve no repositório
+# (só faz checkout e publica no Fly com um secret próprio). Sem esta linha o
+# token herda o padrão da organização, que pode ser read-write.
+permissions:
+  contents: read
+
 jobs:
   validate:
     name: Validate V2
