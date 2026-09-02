@@ -144,7 +144,7 @@ export function ManualRail({
         backdrop-blur-2xl border-r"
         style={{ borderColor: 'var(--hairline)' }}>
         <div className="cr-glass-accent relative w-11 h-11 rounded-2xl flex items-center justify-center mb-5 shrink-0 p-2">
-          <img src="/pantus-icon-white.png" alt="PANTUS" className="w-full h-full object-contain" />
+          <span role="img" aria-label="PANTUS" className="cr-brand-mark w-full h-full" />
         </div>
 
         {areas.map((a) => {
@@ -190,7 +190,7 @@ export function ManualRail({
               <div className="flex items-center gap-2 mb-6 px-2 pt-1">
                 <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border p-1.5"
                   style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
-                  <img src="/pantus-icon-white.png" alt="PANTUS" className="w-full h-full object-contain" />
+                  <span role="img" aria-label="PANTUS" className="cr-brand-mark w-full h-full" />
                 </div>
                 <span className="font-bold text-base cr-text-hi">PANTUS Real Estate</span>
               </div>

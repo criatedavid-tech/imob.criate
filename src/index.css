@@ -119,8 +119,12 @@
   --glass-shadow:  0 24px 60px rgba(0,0,0,.5);
   /* Tint de vidro dos elementos de acento (.cr-glass-accent) — o gradiente de
      acento com alfa: translúcido o bastante pra refratar, opaco o bastante
-     pro ícone branco por cima continuar legível. */
+     pro ícone por cima continuar legível. */
   --accent-glass-tint: linear-gradient(135deg, rgba(59,158,255,.55) 0%, rgba(82,231,232,.42) 100%);
+  /* Cor da marca PANTUS (.cr-brand-mark). No Noite ela é branca sobre o vidro
+     azul; no Dia o fundo é claro e o branco sumia — lá ela vira o mesmo
+     quase-preto do texto (--text-hi do tema claro). */
+  --brand-mark: #FFFFFF;
   --dur-slow:      360ms;
   --ease-spring:   cubic-bezier(.34,1.56,.64,1);
 
@@ -148,9 +152,12 @@
   --accent-2-soft:rgba(18,166,188,.12);
   --accent-gradient: linear-gradient(135deg,#2E8BFF 0%,#41D3DB 100%);
   --accent-glow:  rgba(46,139,255,.35);
-  /* Modo Dia: o fundo atrás é claro, então o tint precisa de mais corpo pra o
-     ícone branco não sumir — mais alfa que no Noite, mesmo desenho. */
+  /* Modo Dia: o fundo atrás é claro, então o tint precisa de mais corpo —
+     mais alfa que no Noite, mesmo desenho. */
   --accent-glass-tint: linear-gradient(135deg, rgba(46,139,255,.72) 0%, rgba(65,211,219,.60) 100%);
+  /* Marca em quase-preto no Dia (mesmo valor do --text-hi claro): sobre o
+     vidro azul-claro o branco ficava sem contraste. */
+  --brand-mark: #141C2E;
 
   --brass:        #C9974A;
   --brass-strong: #B8863A;
@@ -324,6 +331,18 @@ html.theme-transition * {
   background:linear-gradient(120deg, rgba(255,255,255,.38), transparent 46%); }
 /* O ícone fica acima do sheen — o vidro é fundo, não filtro da marca. */
 .cr-glass-accent > *{ position:relative; z-index:1; }
+
+/* Marca PANTUS pintada por máscara, não por <img> colorida: o mesmo arquivo
+   serve os dois temas e a cor vira token (--brand-mark), que o modo Dia troca
+   pra quase-preto. Com <img> seria preciso um segundo arquivo ou um filtro
+   invert. O PNG tem alfa, então funciona como máscara direto. É buscado como
+   imagem — a CSP cobre por img-src 'self', que já existe. */
+.cr-brand-mark{
+  display:block;
+  background-color:var(--brand-mark);
+  -webkit-mask:url("/pantus-icon-white.png") center / contain no-repeat;
+  mask:url("/pantus-icon-white.png") center / contain no-repeat;
+}
 
 /* ── Acessibilidade ─────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

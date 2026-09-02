@@ -425,7 +425,7 @@ export function ExperienceShell() {
               Tamanho em fração (50%) porque o botão muda de 44px para 56px
               entre mobile e desktop — assim a proporção não quebra em nenhum
               dos dois. */}
-          <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-1/2 h-1/2 object-contain" />
+          <span aria-hidden="true" className="cr-brand-mark w-1/2 h-1/2" />
         </button>
       )}
 

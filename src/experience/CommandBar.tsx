@@ -347,7 +347,7 @@ export function CommandBar({
             PANTUS. Antes era um gradiente violeta com glifo genérico — fora da
             paleta azul/ciano da marca. */}
         <div className="cr-glass-accent relative w-8 h-8 rounded-xl flex items-center justify-center shrink-0 p-1.5">
-          <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-full h-full object-contain" />
+          <span aria-hidden="true" className="cr-brand-mark w-full h-full" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-bold text-[var(--text-hi)] leading-tight">Assistente IA</p>
@@ -373,7 +373,7 @@ export function CommandBar({
                   ilustração de apoio, não o avatar do agente. */}
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 p-3
                 bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
-                <img src="/pantus-icon-white.png" alt="" aria-hidden="true" className="w-full h-full object-contain opacity-70" />
+                <span aria-hidden="true" className="cr-brand-mark w-full h-full opacity-70" />
               </div>
               <p className="text-[14px] text-[var(--text-low)] max-w-xs mx-auto">
                 Pergunte qualquer coisa ou peça pra eu fazer algo — ex: <em>"cadastra a Maria 62999998888 no apê centro"</em> ou <em>"quantos leads eu tenho?"</em>
