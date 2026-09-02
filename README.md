@@ -6,11 +6,12 @@ agenda, contatos, equipe, locação, lançamentos, relatórios e uma Assistente 
 para a operação diária. Nome interno do repositório e das tabelas continua
 `ImobiFlow`/`imf_` — ver [nota sobre nomes](#nome-interno-vs-nome-comercial).
 
-> **V2 é o único produto.** A V1 (branch `main`, app Fly `imobiflow`) foi
-> decomissionada em 02/09/2026 — app destruída, código legado removido. Este
-> repositório (branch `v2`, app Fly `imobiflow-v2`) é o único checkout válido;
-> `C:\Users\Criate\imob.criate` é um clone antigo do `main` e não deve ser
-> usado. Detalhe em [`DECISIONS.md`](./DECISIONS.md).
+> **V2 é o único produto.** A V1 foi decomissionada em 02/09/2026: app Fly
+> `imobiflow` destruída, código legado removido, clone local
+> `C:\Users\Criate\imob.criate` apagado e o branch `main` excluído do GitHub
+> (branch padrão do repositório agora é `v2`). Este repositório (branch `v2`,
+> app Fly `imobiflow-v2`) é o único checkout que existe. Detalhe em
+> [`DECISIONS.md`](./DECISIONS.md).
 
 ## Arquitetura em produção
 

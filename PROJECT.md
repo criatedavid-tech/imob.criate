@@ -71,8 +71,9 @@ imóvel sem apagar registros anteriores.
 - Remoto: `criatedavid-tech/imob.criate`.
 - Checkout canônico compartilhado por Claude e Codex:
   `C:\Users\Criate\Documents\Codex\2026-07-13\project-imobiflow-produto-visao-md\work\imob.criate-phase3`.
-- O checkout antigo `C:\Users\Criate\imob.criate` está congelado e não deve ser
-  usado.
+- O checkout antigo `C:\Users\Criate\imob.criate` (branch `main`) foi apagado
+  do disco em 02/09/2026, junto com o branch `main` remoto — o branch padrão
+  do repositório agora é `v2`.
 
 ## Stack
 

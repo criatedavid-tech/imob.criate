@@ -275,9 +275,14 @@
   e `dashboardRouter` (`/api/dashboard/metrics`) **não foram tocados** —
   compartilhados com a V2, confirmado antes de qualquer remoção.
 - **Checkout canônico único.** Claude e Codex trabalham somente em
-  `work/imob.criate-phase3`. `C:\Users\Criate\imob.criate` (clone local do
-  branch `main`, mesmo repositório GitHub) e o branch `main` em si **ainda
-  não foram apagados** — perguntar ao usuário antes, é uma decisão à parte.
+  `work/imob.criate-phase3`. Em 02/09/2026, com autorização explícita do
+  usuário: `C:\Users\Criate\imob.criate` (clone local do branch `main`,
+  mesmo repositório GitHub) foi apagado do disco (sem perda — 2 stashes
+  conferidos antes, eram só diff de `package-lock.json` de uma sincronização
+  antiga, e nenhum branch local tinha commit não enviado ao GitHub); o
+  branch `main` remoto foi apagado (`gh api ... DELETE .../git/refs/heads/main`)
+  depois de trocar o branch padrão do repositório para `v2`
+  (`gh repo edit --default-branch v2`).
 - **PMP v2.0.** `PROJECT.md`, `ARCHITECTURE.md`, `PROGRESS.md`, `DECISIONS.md` e
   `NEXT_TASK.md` formam a memória curta; `DOCUMENTACAO.md` mantém o detalhe.
 - **Deploy automático.** Push em `v2` valida com `npm ci`, testes automatizados,

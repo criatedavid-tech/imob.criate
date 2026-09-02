@@ -4,10 +4,10 @@
 
 App Fly `imobiflow` destruída e código legado (`Dashboard.tsx`,
 `CorretoraSettings.tsx`, `AISettings.tsx`, `FollowUpSettings.tsx`,
-`server/routes/corretora.ts`) removido. Detalhe completo em `PROGRESS.md` e
-`DECISIONS.md`. **Pendente, decisão à parte**: apagar ou não o clone local
-`C:\Users\Criate\imob.criate` e o branch `main` no GitHub (mesmo repo) — não
-apagados ainda, perguntar ao usuário.
+`server/routes/corretora.ts`) removido. Clone local
+`C:\Users\Criate\imob.criate` e branch `main` no GitHub também apagados
+(autorização do usuário, mesmo dia) — branch padrão do repo agora é `v2`.
+Detalhe completo em `PROGRESS.md` e `DECISIONS.md`. Nada pendente.
 
 ## Fechamento auditado em 12/08/2026
 

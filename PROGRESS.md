@@ -23,9 +23,13 @@
 - Suíte integral (224 testes), TypeScript, Knip e build aprovados em
   02/09/2026; `/` testado ao vivo no dev server local (redireciona pra
   `/app`, que por sua vez manda pra `/login` sem sessão).
-- **Não decidido ainda**: o clone local congelado `C:\Users\Criate\imob.criate`
-  (branch `main` do mesmo repositório GitHub) não foi apagado — é uma
-  decisão à parte, perguntar ao usuário.
+- **Concluído no mesmo dia, com autorização do usuário**: o clone local
+  congelado `C:\Users\Criate\imob.criate` foi apagado do disco (2 stashes
+  presentes eram só diff de `package-lock.json` de uma sincronização antiga,
+  nenhum branch local tinha commit não enviado ao GitHub — conferido antes de
+  apagar). O branch `main` remoto (mesmo repositório GitHub) também foi
+  apagado, depois de trocar o branch padrão do repositório para `v2`
+  (não dava pra apagar o branch default direto).
 
 ## Nome comercial definitivo "PANTUS Real Estate" + favicon (2026-09-02)
 
