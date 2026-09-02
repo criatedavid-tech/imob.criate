@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Home, Sparkles, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
+  Home, MessageCircle, Building2, LayoutGrid, Calendar, KeyRound,
   Layers, Wallet, Users, Megaphone, BarChart3, Settings, Contact, Bot, Bell,
   TrendingUp,
 } from 'lucide-react';
@@ -140,12 +140,12 @@ export function ManualRail({
   return (
     <>
       {/* Desktop — rail fixo lateral */}
-      <aside className="cr-rail hidden md:flex w-[92px] shrink-0 h-full flex-col items-center py-5 gap-1 overflow-y-auto
+      <aside className="cr-rail hidden md:flex w-[112px] shrink-0 h-full flex-col items-center py-6 gap-1.5 overflow-y-auto
         backdrop-blur-2xl border-r"
         style={{ borderColor: 'var(--hairline)' }}>
-        <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-4 shrink-0 border"
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-5 shrink-0 border p-2"
           style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
-          <Sparkles className="w-5 h-5" />
+          <img src="/pantus-icon-white.png" alt="PANTUS" className="w-full h-full object-contain" />
         </div>
 
         {areas.map((a) => {
@@ -155,7 +155,7 @@ export function ManualRail({
               key={a.key}
               onClick={() => onSelect(a.key)}
               className={cn(
-                'relative isolate w-[72px] py-2.5 rounded-2xl flex flex-col items-center gap-1 transition-colors shrink-0 border border-transparent',
+                'relative isolate w-[92px] py-3 rounded-2xl flex flex-col items-center gap-1.5 transition-colors shrink-0 border border-transparent',
                 isActive ? 'cr-text-hi [&_svg]:text-[var(--brass)]' : 'cr-text-low hover:text-[var(--text-mid)] hover:bg-[var(--accent-soft)]',
               )}
             >
@@ -167,7 +167,7 @@ export function ManualRail({
                 />
               )}
               <RailIcon icon={ICONS[a.key]} badge={badgeFor(a.key)} />
-              <span className="text-[10px] font-medium leading-none">{a.label}</span>
+              <span className="text-[11px] font-medium leading-none">{a.label}</span>
             </button>
           );
         })}
@@ -189,11 +189,11 @@ export function ManualRail({
               style={{ background: 'var(--bg-elevated)', borderColor: 'var(--hairline-strong)', boxShadow: 'var(--glass-shadow)' }}
             >
               <div className="flex items-center gap-2 mb-6 px-2 pt-1">
-                <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border"
+                <div className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border p-1.5"
                   style={{ background: 'var(--accent-gradient)', borderColor: 'var(--glass-border-strong)', color: 'var(--on-accent)' }}>
-                  <Sparkles className="w-4 h-4" />
+                  <img src="/pantus-icon-white.png" alt="PANTUS" className="w-full h-full object-contain" />
                 </div>
-                <span className="font-bold text-lg cr-text-hi">Criate</span>
+                <span className="font-bold text-base cr-text-hi">PANTUS Real Estate</span>
               </div>
 
               <div className="flex flex-col gap-1">
