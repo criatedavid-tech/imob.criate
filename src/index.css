@@ -121,10 +121,10 @@
      acento com alfa: translúcido o bastante pra refratar, opaco o bastante
      pro ícone por cima continuar legível. */
   --accent-glass-tint: linear-gradient(135deg, rgba(59,158,255,.55) 0%, rgba(82,231,232,.42) 100%);
-  /* Cor da marca PANTUS (.cr-brand-mark). No Noite ela é branca sobre o vidro
-     azul; no Dia o fundo é claro e o branco sumia — lá ela vira o mesmo
-     quase-preto do texto (--text-hi do tema claro). */
+  /* Cor da marca PANTUS (.cr-brand-mark) — branca nos dois temas. */
   --brand-mark: #FFFFFF;
+  /* Borda do vidro de acento: no Noite acompanha a borda de vidro padrão. */
+  --accent-glass-border: var(--glass-border-strong);
   --dur-slow:      360ms;
   --ease-spring:   cubic-bezier(.34,1.56,.64,1);
 
@@ -152,12 +152,17 @@
   --accent-2-soft:rgba(18,166,188,.12);
   --accent-gradient: linear-gradient(135deg,#2E8BFF 0%,#41D3DB 100%);
   --accent-glow:  rgba(46,139,255,.35);
-  /* Modo Dia: o fundo atrás é claro, então o tint precisa de mais corpo —
-     mais alfa que no Noite, mesmo desenho. */
-  --accent-glass-tint: linear-gradient(135deg, rgba(46,139,255,.72) 0%, rgba(65,211,219,.60) 100%);
-  /* Marca em quase-preto no Dia (mesmo valor do --text-hi claro): sobre o
-     vidro azul-claro o branco ficava sem contraste. */
-  --brand-mark: #141C2E;
+  /* Modo Dia: o selo da marca inverte — fundo escuro com o olho branco por
+     cima, em vez de vidro azul. Sobre a página clara é o que dá contraste de
+     verdade (o azul-claro com marca branca sumia, e a marca escura sobre azul
+     também não firmou). Continua sendo vidro: alfa alto pra ler como preto,
+     mas ainda translúcido, então o blur segue refratando o que passa atrás.
+     Tons da casa (--bg-base / --text-hi), não preto puro. */
+  --accent-glass-tint: linear-gradient(135deg, rgba(7,11,20,.90) 0%, rgba(20,28,46,.82) 100%);
+  --brand-mark: #FFFFFF;
+  /* A borda de vidro do tema claro é escura (rgba(30,50,90,.22)) e sumiria
+     contra o selo preto — aqui ela vira clara. */
+  --accent-glass-border: rgba(255,255,255,.22);
 
   --brass:        #C9974A;
   --brass-strong: #B8863A;
@@ -320,7 +325,7 @@ html.theme-transition * {
    precisa ser posicionado (`relative` ou `absolute`) para o ::before ancorar. */
 .cr-glass-accent{
   overflow:hidden;
-  border:1px solid var(--glass-border-strong);
+  border:1px solid var(--accent-glass-border);
   background:var(--accent-glass-tint);
   -webkit-backdrop-filter:blur(10px) saturate(1.6) brightness(1.06);
   backdrop-filter:blur(10px) saturate(1.6) brightness(1.06);
