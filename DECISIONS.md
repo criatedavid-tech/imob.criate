@@ -1,5 +1,40 @@
 # Decisões vigentes
 
+## CSP passa a bloquear de verdade (2026-09-02)
+
+`reportOnly: false`. Antes a política existia mas não bloqueava nada, então
+**três lacunas estavam escondidas** — report-only não reprova, só relata, e
+ninguém tinha exercitado o app contra a política enforced. Todas foram achadas
+rodando o app em modo produção local com a CSP ligada:
+
+1. **`media-src` não existia.** Os `<audio>` de Conversas e do Assistente
+   (`ConversasArea.tsx`, `CommandBar.tsx`) tocam de `getPublicUrl` do Storage
+   do Supabase. Sem a diretiva, caíam em `default-src 'self'` e o áudio das
+   conversas seria bloqueado. Corrigido: `mediaSrc: ['self', SUPABASE_URL]`.
+2. **`frame-src` não tinha `'self'`.** A prévia da vitrine
+   (`DivulgacaoArea.tsx`) é um iframe de `${window.location.origin}/vitrine/:id`
+   — mesma origem, mas `frame-src`, quando declarada, não herda de
+   `default-src`. Corrigido.
+3. **O `<script>` inline do SSR seria bloqueado.** `/p/:slug` injeta
+   `window.__IMOVEL__` no HTML pra a página pintar sem esperar a API — é a
+   página que vai em todo link compartilhado no WhatsApp. Conteúdo é dinâmico
+   (não permite hash fixo), então foi implementado **nonce por requisição**
+   (`res.locals.cspNonce`, gerado antes do helmet e repassado a
+   `injectAboveFold`). Mantém `script-src` estrito, sem `'unsafe-inline'`.
+
+`picsum.photos` foi **removido** de `img-src`: grep confirmou que não é usado
+em lugar nenhum do app — só existia na própria política.
+
+**Verificação com dado real de produção** (não presumida): das 12 propriedades
+existentes, 48 imagens vêm do Storage do Supabase (permitido) e 6 são
+`data:image/...` (permitido, `data:` está na política). Nenhuma imagem de
+origem externa — a CSP não quebra nada do que já está cadastrado.
+
+Homologado em modo produção local: `/p/:slug` (script inline executa, nonce do
+header bate com o da tag), `/app` inteiro e o chat do Assistente — **zero
+violações** no `report-uri` do servidor vindas do app. As únicas violações
+registradas foram de uma imagem picsum semeada pelo próprio teste.
+
 ## Hardening pós-auditoria AppSec (2026-09-02)
 
 Auditoria completa de segurança (controle de acesso, IDOR, segredos, XSS,

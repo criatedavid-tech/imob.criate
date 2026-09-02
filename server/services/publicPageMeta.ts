@@ -194,7 +194,7 @@ export function injectPageMeta(html: string, meta: PublicPageMeta): string {
  * Só o que aparece acima da dobra, com estilo embutido — não depende do CSS
  * do app, que carrega depois.
  */
-export function injectAboveFold(html: string, meta: PublicPageMeta): string {
+export function injectAboveFold(html: string, meta: PublicPageMeta, nonce?: string): string {
   const titulo = escapeAttr(meta.titulo);
   const fundo = meta.imagemHero
     ? `background-image:linear-gradient(180deg,rgba(15,17,19,.42),rgba(15,17,19,.05) 34%,rgba(15,17,19,.8)),url('${escapeAttr(meta.imagemHero)}');background-size:cover;background-position:center`
@@ -210,8 +210,13 @@ export function injectAboveFold(html: string, meta: PublicPageMeta): string {
   // O imóvel viaja no próprio HTML: a página monta sem chamar a API. Tira uma
   // ida à rede do caminho, e tira a vitrine de baixo do limitador por IP —
   // que é o que apareceu como único ponto de saturação no teste de carga.
+  // O nonce vem da CSP por requisição (server.ts). Sem ele o navegador BLOQUEIA
+  // este script — script-src é 'self' estrito, sem 'unsafe-inline'. Confirmado
+  // em teste com a CSP ligada: sem nonce o console acusa
+  // "Executing inline script violates ... 'script-src self'".
+  const nonceAttr = nonce ? ` nonce="${escapeAttr(nonce)}"` : "";
   const dados = meta.imovel
-    ? `<script>window.__IMOVEL__=${serializeForScript(meta.imovel)}</script>`
+    ? `<script${nonceAttr}>window.__IMOVEL__=${serializeForScript(meta.imovel)}</script>`
     : "";
 
   return html.replace(

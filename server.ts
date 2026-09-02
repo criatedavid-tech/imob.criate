@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import helmet from "helmet";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { SUPABASE_URL } from "./server/config";
@@ -72,29 +73,46 @@ async function startServer() {
   );
 
   // Headers de segurança HTTP (HSTS, X-Frame-Options, nosniff, etc.)
-  // CSP em modo REPORT-ONLY (não bloqueia nada ainda, só reporta em
-  // /api/csp-report) — o SPA nunca foi validado ao vivo contra uma CSP real
-  // nesta sessão (sem acesso a browser confiável pra QA completo). Política
-  // mapeada por leitura direta do código: sem <script>/<style> inline no HTML
-  // de produção (dist/index.html), sem dangerouslySetInnerHTML; origens
-  // externas reais confirmadas via grep — Google Fonts (index.css),
-  // iframe do Google Maps (PropertyLanding.tsx), imagens do Storage do
-  // Supabase + picsum.photos (placeholder). style-src mantém 'unsafe-inline'
-  // de propósito (JSX style={{}} é comum no código; script-src NÃO tem
-  // unsafe-inline/eval, que é onde está o valor real de defesa contra XSS).
-  // Depois de um período sem violação real em /api/csp-report, trocar
-  // reportOnly:true → false pra passar a bloquear de verdade.
+  // CSP AGORA BLOQUEIA (reportOnly: false, 2026-09-02). Antes era só relatório.
+  // Antes de ligar, cada origem externa foi levantada no código e duas lacunas
+  // que quebrariam o app foram corrigidas — as duas passavam despercebidas em
+  // report-only justamente porque report-only não bloqueia nada:
+  //   1. media-src não existia. Os <audio> de Conversas e do Assistente
+  //      (ConversasArea.tsx, CommandBar.tsx) tocam de `getPublicUrl` do Storage
+  //      do Supabase; sem a diretiva eles caíam em default-src 'self' e o áudio
+  //      das conversas seria bloqueado.
+  //   2. frame-src não tinha 'self'. A prévia da vitrine (DivulgacaoArea.tsx)
+  //      é um iframe de `${window.location.origin}/vitrine/:id` — mesma origem,
+  //      mas frame-src não herda de default-src quando declarada.
+  // Verificado por grep que NÃO há: fetch/XHR para origem externa, Web Worker,
+  // Sentry no front, EventSource/WebSocket (o WS de HMR é só dev), blob: ou
+  // createObjectURL. style-src mantém 'unsafe-inline' de propósito (JSX
+  // style={{}} é comum aqui); script-src NÃO tem unsafe-inline/eval, que é
+  // onde mora o valor real contra XSS.
+  // Nonce por requisição: a vitrine de imóvel (/p/:slug) injeta o imóvel no
+  // próprio HTML como <script> inline (server/services/publicPageMeta.ts) pra
+  // a página pintar sem esperar a API. Conteúdo dinâmico não permite hash
+  // fixo, então cada resposta ganha um nonce e só o script com aquele nonce
+  // executa — mantendo script-src estrito, sem 'unsafe-inline'.
+  app.use((_req, res, next) => {
+    res.locals.cspNonce = randomBytes(16).toString("base64");
+    next();
+  });
+
   app.use(helmet({
     contentSecurityPolicy: {
-      reportOnly: true,
+      reportOnly: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as any).locals.cspNonce}'`],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://picsum.photos", SUPABASE_URL],
+        // picsum saiu: não é usado em lugar nenhum do app (só existia aqui).
+        // As fotos reais vêm do Storage do Supabase.
+        imgSrc: ["'self'", "data:", SUPABASE_URL],
+        mediaSrc: ["'self'", SUPABASE_URL],
         connectSrc: ["'self'"],
-        frameSrc: ["https://maps.google.com", "https://www.google.com"],
+        frameSrc: ["'self'", "https://maps.google.com", "https://www.google.com"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         frameAncestors: ["'self'"],
@@ -249,7 +267,7 @@ async function startServer() {
         // quebrava tudo.
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
-        return res.send(injectAboveFold(injectPageMeta(html, meta), meta));
+        return res.send(injectAboveFold(injectPageMeta(html, meta), meta, res.locals.cspNonce));
       } catch {
         // Qualquer falha aqui cai no fallback normal da SPA: a página abre
         // igual a antes, só sem a prévia enriquecida.
