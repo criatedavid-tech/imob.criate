@@ -5,6 +5,7 @@ process.env.SUPABASE_URL ||= "https://exemplo.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "chave-de-teste";
 const { injectPageMeta } = await import("../server/services/publicPageMeta");
 const { injectPublicAboutPage } = await import("../server/services/publicAboutPage");
+const { injectPublicPrivacyPage } = await import("../server/services/publicPrivacyPage");
 const {
   extractEntryModulePath,
   isStaleAssetError,
@@ -21,6 +22,23 @@ test("página pública explica o ImobiFlow e o uso do Google Agenda sem depender
   assert.match(html, /somente os eventos dessa\s+agenda criada pelo próprio aplicativo/i);
   assert.match(html, /href="\/privacidade"/);
   assert.match(html, /href="\/termos"/);
+  assert.ok(html.includes('<div id="root">'), "o React precisa conservar seu container");
+});
+
+test("página de privacidade detalha coleta e uso de dados sem depender de JavaScript", () => {
+  const html = injectPublicPrivacyPage(CASCA);
+  assert.match(html, /Política de Privacidade/);
+  assert.match(html, /Criate Tecnologia em Marketing e Vendas LTDA/);
+  assert.match(html, /54\.236\.008\/0001-80/);
+  assert.match(html, /criateoficial@gmail\.com/);
+  // Foco do que o Google verifica: coleta de dados (geral) e o uso
+  // específico da Google Calendar API sob a Limited Use policy.
+  assert.match(html, /Quais dados coletamos/);
+  assert.match(html, /calendar\.app\.created/);
+  assert.match(html, /Google API Services User Data Policy/);
+  assert.match(html, /Limited Use/);
+  assert.match(html, /não solicita acesso à agenda principal|não concede acesso à agenda principal/);
+  assert.match(html, /Direitos do titular/);
   assert.ok(html.includes('<div id="root">'), "o React precisa conservar seu container");
 });
 

@@ -42,6 +42,7 @@ import { whatsappPaiSettingsRouter } from "./server/routes/whatsappPaiSettings";
 import { whatsappPaiRouter } from "./server/routes/whatsappPai";
 import { systemLogsRouter } from "./server/routes/systemLogs";
 import { injectPublicAboutPage } from "./server/services/publicAboutPage";
+import { injectPublicPrivacyPage } from "./server/services/publicPrivacyPage";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -285,6 +286,21 @@ async function startServer() {
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Content-Type", "text/html; charset=UTF-8");
         return res.send(injectPublicAboutPage(html));
+      } catch {
+        return next();
+      }
+    });
+
+    // Mesmo motivo do /sobre acima: o Google sinalizou em 11/08/2026 que
+    // /privacidade "não tem conteúdo suficiente" — o crawler de verificação
+    // via texto puro só via a casca vazia da SPA, nunca o texto real da
+    // política. Ver server/services/publicPrivacyPage.ts.
+    app.get("/privacidade", async (_req, res, next) => {
+      try {
+        const html = await readFile(path.join(distPath, "index.html"), "utf8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Content-Type", "text/html; charset=UTF-8");
+        return res.send(injectPublicPrivacyPage(html));
       } catch {
         return next();
       }

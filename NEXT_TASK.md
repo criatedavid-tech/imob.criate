@@ -1,5 +1,58 @@
 # Próximas tarefas — ImobiFlow V2
 
+## Google OAuth (Calendar) — nome atualizado; 1 de 2 problemas de verificação corrigido (2026-09-03)
+
+Contexto: o título da aba do navegador virou só "PANTUS" (pedido do
+usuário). Investigando o impacto, achamos que o Google Calendar OAuth já
+está ativo em produção há ~3 semanas (`GOOGLE_CALENDAR_CLIENT_ID`/
+`SECRET` deployados desde ~11-12/08) e que o "Nome do app" configurado na
+tela de consentimento (Google Cloud Console → projeto `ImobiFlow`
+`absolute-point-505213-v3` → Google Auth Platform → Branding) ainda
+estava como "ImobiFlow" — dessincronizado até de "Real Estate", a
+reavaliação de marca enviada em 11/08 (ver `PROGRESS.md`).
+
+**Feito em 03/09/2026** (o usuário navegou a UI, eu li os prints e
+confirmei cada campo antes do clique): "Nome do app" trocado de
+"ImobiFlow" para "PANTUS" e salvo.
+
+**Descoberto ao salvar — painel "Problemas de verificação de branding"**
+(3 itens da tentativa de verificação anterior):
+1. A página `https://realestate.criate.online/privacidade` não detalha
+   o suficiente a coleta/uso de dados, segundo o Google — **corrigido em
+   03/09/2026**. Causa raiz real: `/privacidade` é uma rota React pura
+   (SPA), sem SSR — o HTML inicial era só `<div id="root"></div>` vazio,
+   e o crawler de verificação do Google lê HTML puro sem garantir
+   execução de JavaScript, então nunca via as 18 seções da política real
+   (que já era completa e correta, só invisível pra ele). Mesmo padrão
+   já usado em `/sobre`: novo `server/services/publicPrivacyPage.ts`
+   injeta um resumo real (dados coletados, seção dedicada ao Google
+   Agenda com a citação da Limited Use policy, retenção, direitos do
+   titular) direto no HTML inicial da rota; quando o bundle carrega, o
+   React substitui normalmente pela política completa — nada muda pra
+   quem visita com JavaScript. `/termos` tem o mesmo problema estrutural
+   (SPA sem conteúdo no HTML puro) mas não foi tratado ainda — não fazia
+   parte do pedido desta rodada.
+2. A página inicial não explica a finalidade do app — **ainda pendente,
+   mas com uma dúvida em aberto**: o campo "Página inicial do
+   aplicativo" aponta pra `/sobre`, que desde 11/08 já tem o mesmo tipo
+   de injeção server-side (`publicAboutPage.ts`) explicando claramente o
+   propósito do app. Não está claro se esse item da lista é uma
+   constatação ainda válida ou um resíduo da tentativa de verificação de
+   11/08 (antes daquele fix, ou antes de qualquer fix — não dá pra saber
+   sem reenviar pro Google e ver se o aviso desaparece).
+3. Nome do app não batia com a home — já resolvido pelo item acima
+   (a lista referenciava a tentativa anterior, anterior à troca de nome).
+
+Ainda não reenviamos para nova verificação ("Corrigi os problemas" /
+"Continuar") — os itens 1 e 3 já têm conteúdo real no HTML agora; o
+item 2 precisa de mais investigação antes (ver dúvida acima). Ainda
+faltam também: renomear "ImobiFlow" para
+"PANTUS" no texto de `CalendarSyncModal.tsx` e no `summary: 'ImobiFlow'`
+de `googleCalendarSync.ts` (nome literal da agenda criada na conta
+Google/iPhone do cliente) — mas só depois que o nome novo estiver
+aprovado pelo Google, senão o app fica pedindo pra o cliente confiar em
+"PANTUS" enquanto o Google só reconhece "ImobiFlow" pra aquele escopo.
+
 ## V1 decomissionada (2026-09-02) — CONCLUÍDO
 
 App Fly `imobiflow` destruída e código legado (`Dashboard.tsx`,
