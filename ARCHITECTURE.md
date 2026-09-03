@@ -178,9 +178,10 @@ limit já foram separados.
   erro sanitizados: sem PII, corpo, cabeçalhos, cookies, query string, IP,
   contexto de usuário, variáveis locais ou breadcrumbs de console; tracing
   permanece desativado.
-- `PUBLIC_APP_URL=https://realestate.criate.online` é a origem canônica. O
-  hostname `imobiflow-v2.fly.dev` continua atendendo temporariamente apenas
-  para compatibilidade de links e assinaturas antigas.
+- `PUBLIC_APP_URL=https://pantus.criate.online` é a origem canônica (trocada
+  de `realestate.criate.online` em 03/09/2026, acompanhando o rebrand
+  PANTUS). Os hostnames `realestate.criate.online` e `imobiflow-v2.fly.dev`
+  continuam atendendo para compatibilidade de links e assinaturas antigas.
 - Push em `v2` executa testes, TypeScript, Knip e build antes do deploy
   automático pelo GitHub Actions.
 - Depois da escala, o workflow localiza e inicia explicitamente a única Machine

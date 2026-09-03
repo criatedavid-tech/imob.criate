@@ -242,9 +242,9 @@ Ambientes que não devem ser confundidos:
 
 | Ambiente | Endereço | Papel |
 | --- | --- | --- |
-| V2 | `https://realestate.criate.online/app` | produto que substituirá a V1; origem canônica |
-| Hostname Fly da V2 | `https://imobiflow-v2.fly.dev/` | compatibilidade temporária para links e assinaturas antigas |
-| Dashboard 1.0 dentro da V2 | `https://realestate.criate.online/` | interface legada ainda roteada e suportada |
+| V2 | `https://pantus.criate.online/app` | origem canônica (trocada de `realestate.criate.online` em 03/09/2026, rebrand PANTUS) |
+| `realestate.criate.online` e Hostname Fly da V2 (`imobiflow-v2.fly.dev/`) | — | compatibilidade temporária para links e assinaturas antigas |
+| Dashboard 1.0 dentro da V2 | `https://pantus.criate.online/` | interface legada ainda roteada e suportada |
 | V1 | `https://imobiflow.fly.dev/` | aplicação anterior; não alterar durante trabalhos na V2 |
 
 A branch de trabalho e publicação da V2 é `v2`. A branch `main` e o app Fly
@@ -277,7 +277,9 @@ estado não verificável em amarelo; somente um estado explícito divergente é
 tratado como falha. Nenhum desses casos exige desconectar o número.
 
 Desde 20/07/2026, **todo `git push origin v2` publica automaticamente** no app
-Fly `imobiflow-v2`, hoje exposto por `realestate.criate.online`, via GitHub
+Fly `imobiflow-v2`, hoje exposto por `pantus.criate.online` (origem canônica
+desde 03/09/2026; `realestate.criate.online` continua ativo por
+compatibilidade), via GitHub
 Actions (`.github/workflows/deploy-v2.yml`,
 gatilho `push`, secret `FLY_API_TOKEN_V2` — separado do `FLY_API_TOKEN` da
 v1). Não existe mais um passo manual de deploy nem uma revisão entre commit
