@@ -14,9 +14,9 @@ const {
 
 const CASCA = `<!doctype html><html lang="en"><head><meta charset="UTF-8" /><title>Criate</title></head><body><div id="root"></div></body></html>`;
 
-test("página pública explica o ImobiFlow e o uso do Google Agenda sem depender de JavaScript", () => {
+test("página pública explica o PANTUS e o uso do Google Agenda sem depender de JavaScript", () => {
   const html = injectPublicAboutPage(CASCA);
-  assert.match(html, /<strong>ImobiFlow<\/strong>/);
+  assert.match(html, /<strong>PANTUS<\/strong>/);
   assert.match(html, /plataforma imobiliária com inteligência artificial/i);
   assert.match(html, /Google Agenda/);
   assert.match(html, /somente os eventos dessa\s+agenda criada pelo próprio aplicativo/i);

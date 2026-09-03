@@ -20,7 +20,7 @@ export default function Sobre() {
               <Home className="h-5 w-5" />
             </span>
             <span>
-              <strong className="block text-lg">ImobiFlow</strong>
+              <strong className="block text-lg">PANTUS</strong>
               <span className="text-xs text-[var(--text-low)]">Tecnologia para o mercado imobiliário</span>
             </span>
           </Link>
@@ -39,7 +39,7 @@ export default function Sobre() {
               Operação imobiliária organizada do atendimento à locação.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--text-mid)]">
-              O ImobiFlow é uma plataforma da Criate Tecnologia em Marketing e Vendas LTDA para corretores,
+              O PANTUS é uma plataforma da Criate Tecnologia em Marketing e Vendas LTDA para corretores,
               imobiliárias e incorporadoras administrarem imóveis, clientes, agendas e rotinas comerciais.
             </p>
             <ul className="mt-7 grid gap-3 sm:grid-cols-2">
@@ -55,11 +55,11 @@ export default function Sobre() {
             <CalendarSync className="h-8 w-8 text-sky-300" />
             <h2 className="mt-5 text-xl font-black text-[var(--text-hi)]">Integração com o Google Agenda</h2>
             <p className="mt-3 text-sm leading-6">
-              A conexão é opcional e cria uma agenda secundária chamada ImobiFlow. A plataforma pode criar,
+              A conexão é opcional e cria uma agenda secundária chamada PANTUS. A plataforma pode criar,
               consultar, alterar e excluir somente os eventos dessa agenda criada pelo próprio aplicativo.
             </p>
             <p className="mt-3 text-sm leading-6">
-              O ImobiFlow não solicita acesso à agenda principal nem aos demais calendários pessoais do usuário.
+              O PANTUS não solicita acesso à agenda principal nem aos demais calendários pessoais do usuário.
               A integração pode ser desconectada a qualquer momento dentro da Agenda.
             </p>
             <div className="mt-6 flex items-start gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">

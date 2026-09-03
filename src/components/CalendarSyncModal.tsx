@@ -186,7 +186,7 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-blue-400/25 bg-blue-500/12 text-blue-300"><CalendarSync size={20} /></div>
             <div>
               <h3 className="text-lg font-black text-[var(--text-hi)]">Sincronização da Agenda</h3>
-              <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-[var(--text-low)]">Crie ou altere compromissos no ImobiFlow, Google Agenda ou iPhone e mantenha tudo organizado.</p>
+              <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-[var(--text-low)]">Crie ou altere compromissos no PANTUS, Google Agenda ou iPhone e mantenha tudo organizado.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-xl p-2 text-[var(--text-low)] hover:bg-[var(--control-fill-hover)] hover:text-[var(--text-hi)]"><X size={18} /></button>
@@ -212,18 +212,18 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
                     <span className="absolute right-3 top-3 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-200">Recomendado</span>
                     <CalendarSync size={18} className="mb-3 text-emerald-300" />
                     <p className="pr-20 text-[12px] font-black text-[var(--text-hi)]">Somente leitura</p>
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no Google tudo o que foi agendado no ImobiFlow. Configuração simples, sem autorizar alterações.</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no Google tudo o que foi agendado no PANTUS. Configuração simples, sem autorizar alterações.</p>
                   </button>
                   <button type="button" role="tab" aria-selected={googleMethod === 'bidirectional'} onClick={() => setGoogleMethod('bidirectional')} className={`rounded-2xl border p-4 text-left transition ${googleMethod === 'bidirectional' ? 'border-blue-400/35 bg-blue-500/[0.12] shadow-[0_0_0_1px_rgba(96,165,250,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
                     <Cloud size={18} className="mb-3 text-blue-300" />
                     <div className="flex items-center gap-2"><p className="text-[12px] font-black text-[var(--text-hi)]">Bidirecional</p><span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-blue-200">Avançado</span></div>
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Eventos criados ou alterados no calendário ImobiFlow do Google também entram no sistema.</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Eventos criados ou alterados no calendário PANTUS do Google também entram no sistema.</p>
                   </button>
                 </div>
 
                 {googleMethod === 'readonly' ? (
                   <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/15 bg-black/[0.08] p-4" role="tabpanel">
-                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> O Google exibirá a agenda do ImobiFlow, mas as alterações feitas no Google não retornarão ao sistema.</div>
+                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> O Google exibirá a agenda do PANTUS, mas as alterações feitas no Google não retornarão ao sistema.</div>
                     {feed?.configured && feed.subscription_url ? (
                       <>
                         <CredentialRow label="Link privado da agenda" value={feed.subscription_url} />
@@ -247,7 +247,7 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : (
                   <div className="mt-4 space-y-4 rounded-2xl border border-blue-400/15 bg-black/[0.08] p-4" role="tabpanel">
-                    <div className="rounded-xl border border-blue-400/15 bg-blue-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-blue-100/80"><b>Sincronização completa.</b> O Google solicitará sua autorização e o ImobiFlow criará uma agenda separada, sem acesso aos seus outros calendários.</div>
+                    <div className="rounded-xl border border-blue-400/15 bg-blue-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-blue-100/80"><b>Sincronização completa.</b> O Google solicitará sua autorização e o PANTUS criará uma agenda separada, sem acesso aos seus outros calendários.</div>
                     {!google?.available ? (
                       <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-4 py-3 text-[11px] text-amber-100/80">A integração aguarda as credenciais OAuth do Google no servidor.</div>
                     ) : google.configured ? (
@@ -280,18 +280,18 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
                     <span className="absolute right-3 top-3 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-200">Recomendado</span>
                     <CalendarSync size={18} className="mb-3 text-emerald-300" />
                     <p className="pr-20 text-[12px] font-black text-[var(--text-hi)]">Somente leitura</p>
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no iPhone tudo o que foi agendado no ImobiFlow. Configuração rápida, sem usuário ou senha.</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja no iPhone tudo o que foi agendado no PANTUS. Configuração rápida, sem usuário ou senha.</p>
                   </button>
                   <button type="button" role="tab" aria-selected={iphoneMethod === 'bidirectional'} onClick={() => setIphoneMethod('bidirectional')} className={`rounded-2xl border p-4 text-left transition ${iphoneMethod === 'bidirectional' ? 'border-sky-400/35 bg-sky-500/[0.12] shadow-[0_0_0_1px_rgba(56,189,248,0.08)]' : 'border-[var(--hairline-strong)] bg-black/[0.06] hover:bg-white/[0.04]'}`}>
                     <Smartphone size={18} className="mb-3 text-sky-300" />
                     <div className="flex items-center gap-2"><p className="text-[12px] font-black text-[var(--text-hi)]">Bidirecional</p><span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-200">Avançado</span></div>
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja a agenda e também envie ao ImobiFlow os eventos criados no calendário do iPhone.</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-low)]">Veja a agenda e também envie ao PANTUS os eventos criados no calendário do iPhone.</p>
                   </button>
                 </div>
 
                 {iphoneMethod === 'readonly' ? (
                   <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/15 bg-black/[0.08] p-4" role="tabpanel">
-                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> Os compromissos do ImobiFlow aparecem no iPhone, mas alterações feitas pelo telefone não retornam ao sistema.</div>
+                    <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/[0.07] px-3 py-2 text-[10px] leading-relaxed text-emerald-100/80"><b>Ideal para acompanhamento.</b> Os compromissos do PANTUS aparecem no iPhone, mas alterações feitas pelo telefone não retornam ao sistema.</div>
                     {feed?.configured && feed.subscription_url ? (
                       <>
                         <CredentialRow label="Link privado da agenda" value={feed.subscription_url} />
@@ -301,7 +301,7 @@ export function CalendarSyncModal({ onClose }: { onClose: () => void }) {
                             <li>1. Ajustes → Apps → Calendário → Contas do Calendário.</li>
                             <li>2. Adicionar Conta → Outra → Adicionar Calendário Assinado.</li>
                             <li>3. Cole o link privado acima no campo Servidor e toque em Seguinte.</li>
-                            <li>4. Use a descrição <b>ImobiFlow</b> e toque em Salvar.</li>
+                            <li>4. Use a descrição <b>PANTUS</b> e toque em Salvar.</li>
                           </ol>
                         </div>
                         <div className="flex justify-end"><button type="button" onClick={() => generateFeed(true)} disabled={!!busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold text-[var(--text-low)] hover:bg-[var(--control-fill-hover)]"><RefreshCw size={12} /> Trocar link privado</button></div>

@@ -7,7 +7,7 @@
 const PUBLIC_ABOUT_MARKUP = `
   <main id="public-about-static">
     <header>
-      <strong>ImobiFlow</strong>
+      <strong>PANTUS</strong>
       <nav aria-label="Links institucionais">
         <a href="/privacidade">Política de Privacidade</a>
         <a href="/termos">Termos de Uso</a>
@@ -15,21 +15,21 @@ const PUBLIC_ABOUT_MARKUP = `
       </nav>
     </header>
     <section>
-      <h1>ImobiFlow — plataforma imobiliária com inteligência artificial</h1>
+      <h1>PANTUS — plataforma imobiliária com inteligência artificial</h1>
       <p>
-        O ImobiFlow é uma plataforma da Criate Tecnologia em Marketing e Vendas LTDA
+        O PANTUS é uma plataforma da Criate Tecnologia em Marketing e Vendas LTDA
         para corretores, imobiliárias e incorporadoras organizarem imóveis, clientes,
         conversas, agenda de visitas, locações, cobranças e equipes.
       </p>
       <h2>Integração opcional com o Google Agenda</h2>
       <p>
-        Com autorização do usuário, o ImobiFlow cria uma agenda secundária chamada
-        ImobiFlow e pode consultar, criar, alterar e excluir somente os eventos dessa
+        Com autorização do usuário, o PANTUS cria uma agenda secundária chamada
+        PANTUS e pode consultar, criar, alterar e excluir somente os eventos dessa
         agenda criada pelo próprio aplicativo. O sistema não solicita acesso à agenda
         principal nem aos outros calendários pessoais do usuário.
       </p>
       <p>
-        A conexão pode ser desfeita a qualquer momento na tela Agenda do ImobiFlow ou
+        A conexão pode ser desfeita a qualquer momento na tela Agenda do PANTUS ou
         nas permissões da Conta Google.
       </p>
     </section>

@@ -141,16 +141,18 @@ test('backend e migrations mantêm credenciais fora do navegador e sincronizaç�
   assert.match(privacy, /Google API Services User Data Policy/);
   assert.match(privacy, /calendar\.app\.created/);
   assert.match(privacy, /não\s+são utilizados para publicidade, venda de dados ou treinamento/);
-  assert.match(about, /agenda secundária chamada ImobiFlow/);
+  assert.match(about, /agenda secundária chamada PANTUS/);
   assert.match(about, /não solicita acesso à agenda principal/);
   assert.match(app, /path="\/sobre"/);
   assert.match(indexHtml, /<html lang="pt-BR">/);
   // O Google confere se a home identifica o app com o MESMO nome da tela de
-  // consentimento OAuth. As credenciais do projeto Google Cloud ainda não
-  // existem (ver PROGRESS.md); o título virou só "PANTUS" em 03/09/2026
-  // (pedido do usuário, aba do navegador cortada), então a tela também
-  // precisa ser criada como "PANTUS" — se este título mudar de novo, o
-  // nome no Console tem que mudar junto.
+  // consentimento OAuth. As credenciais do projeto Google Cloud JÁ existem e
+  // estao ativas em producao desde ~11-12/08 (checado direto no Fly em
+  // 03/09/2026 -- a suposicao anterior de que ainda faltavam era estava
+  // errada). O nome da tela de consentimento (Google Cloud Console ->
+  // Branding, projeto ImobiFlow) foi trocado pra "PANTUS" em 03/09/2026,
+  // acompanhando o titulo da aba; se este titulo mudar de novo, o nome no
+  // Console tem que mudar junto.
   assert.match(indexHtml, /<title>PANTUS<\/title>/);
   assert.match(env, /GOOGLE_CALENDAR_CLIENT_SECRET/);
 });

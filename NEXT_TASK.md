@@ -44,14 +44,55 @@ confirmei cada campo antes do clique): "Nome do app" trocado de
    (a lista referenciava a tentativa anterior, anterior à troca de nome).
 
 Ainda não reenviamos para nova verificação ("Corrigi os problemas" /
-"Continuar") — os itens 1 e 3 já têm conteúdo real no HTML agora; o
-item 2 precisa de mais investigação antes (ver dúvida acima). Ainda
-faltam também: renomear "ImobiFlow" para
-"PANTUS" no texto de `CalendarSyncModal.tsx` e no `summary: 'ImobiFlow'`
-de `googleCalendarSync.ts` (nome literal da agenda criada na conta
-Google/iPhone do cliente) — mas só depois que o nome novo estiver
-aprovado pelo Google, senão o app fica pedindo pra o cliente confiar em
-"PANTUS" enquanto o Google só reconhece "ImobiFlow" pra aquele escopo.
+"Continuar") — quem decide isso é o usuário, na própria tela.
+
+**Atualização 03/09/2026 (mesmo dia, autorização explícita do usuário
+"pode trocar"):** a espera por aprovação do Google foi superada — o
+usuário pediu pra trocar "ImobiFlow" → "PANTUS" no conteúdo real antes
+de qualquer verificação nova, não depois. Feito:
+
+- `src/pages/Sobre.tsx` (home real, renderizada por React) e
+  `server/services/publicAboutPage.ts` (versão estática sem JS, servida
+  em `/sobre`) — as duas agora dizem "PANTUS".
+- `src/components/CalendarSyncModal.tsx` — 9 das 12 ocorrências trocadas
+  (header do modal, descrições e chamadas dos fluxos de Google/iPhone).
+- `server/services/googleCalendarSync.ts` — `summary`/`description` da
+  agenda secundária criada no Google (agora nasce como "PANTUS" pra
+  conexões novas), texto de erro, título do compromisso sem nome e
+  `<title>` da página de conclusão do OAuth.
+
+**Deixado como "ImobiFlow" de propósito, com risco real documentado**
+(não é esquecimento — reavaliar só com decisão explícita):
+- `server/services/caldavServer.ts` (`CALDAV_REALM = 'ImobiFlow Calendar'`
+  + `displayname` nas respostas WebDAV) — o realm vai no cabeçalho
+  `WWW-Authenticate`; iPhones já pareados indexam a credencial salva por
+  esse texto exato, então trocar pode fazer o aparelho pedir senha de
+  novo pra quem já configurou CalDAV.
+- `server/services/calendarFeed.ts` (`X-WR-CALNAME` do feed ICS) — nome
+  já sincronizado em contas Google/iPhone existentes; só afetaria
+  assinaturas novas mesmo se trocado, mas não tem necessidade urgente.
+- `server/services/inboundWebhookQueue.ts` (cabeçalho
+  `X-ImobiFlow-Event-Id` enviado ao n8n) — precisa ser conferido do lado
+  do n8n antes de qualquer troca (mesma ressalva já registrada em
+  `DECISIONS.md` desde 11/08).
+- `src/pages/Privacidade.tsx`, `src/pages/Termos.tsx` e
+  `server/services/publicPrivacyPage.ts` — citam "ImobiFlow" em contexto
+  legal (`Termos.tsx` chega a DEFINIR o termo "Plataforma" a partir da
+  marca "ImobiFlow"). Isso não é um find-replace cosmético — é decisão de
+  produto/jurídica sobre qual nome vale nos documentos vinculados ao
+  CNPJ, então fica intocado até uma decisão explícita.
+- As 3 ocorrências de `CalendarSyncModal.tsx` que restaram (linhas do
+  fluxo CalDAV do iPhone) foram deixadas de propósito, coerentes com o
+  `caldavServer.ts` acima — inclusive uma delas ("selecione o calendário
+  ImobiFlow") precisa bater exatamente com o nome literal que o iPhone
+  mostra no seletor.
+
+Verificado local (`NODE_ENV=production` + curl real, sem navegador): `/sobre`
+mostra só "PANTUS" (0 "ImobiFlow"), `/privacidade` manteve as 4
+ocorrências do texto legal intactas. 228/228 testes (2 assertions
+atualizadas: `tests/publicPageMeta.test.ts` e
+`tests/calendarBidirectional.test.ts`), tsc, knip, build e
+`git diff --check` limpos.
 
 ## V1 decomissionada (2026-09-02) — CONCLUÍDO
 

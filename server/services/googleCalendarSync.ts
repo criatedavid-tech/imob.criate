@@ -132,13 +132,13 @@ async function createAppCalendar(accessToken: string): Promise<string> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      summary: 'ImobiFlow',
-      description: 'Agenda bidirecional gerenciada pelo ImobiFlow.',
+      summary: 'PANTUS',
+      description: 'Agenda bidirecional gerenciada pelo PANTUS.',
       timeZone: 'America/Sao_Paulo',
     }),
   });
   const body = await readJson(response);
-  if (!response.ok || !body.id) throw new Error(googleErrorMessage(body, 'Não foi possível criar a agenda ImobiFlow no Google.'));
+  if (!response.ok || !body.id) throw new Error(googleErrorMessage(body, 'Não foi possível criar a agenda PANTUS no Google.'));
   return String(body.id);
 }
 
@@ -305,7 +305,7 @@ export function agendaToGoogleEvent(appointment: LocalAppointment, connectionId:
   const duration = Math.max(5, Math.min(24 * 60, Number(appointment.duration_minutes) || 60));
   const end = new Date(start.getTime() + duration * 60_000);
   return {
-    summary: appointment.title?.trim() || appointment.client_name?.trim() || 'Compromisso ImobiFlow',
+    summary: appointment.title?.trim() || appointment.client_name?.trim() || 'Compromisso PANTUS',
     description: appointment.notes || '',
     location: appointment.imf_properties?.title || '',
     start: { dateTime: start.toISOString(), timeZone: 'America/Sao_Paulo' },
@@ -594,7 +594,7 @@ export async function disconnectGoogleCalendar(connection: CalendarConnection): 
 
 export function googleOAuthCompletionHtml(ok: boolean, message = ''): string {
   const query = new URLSearchParams({ ok: ok ? '1' : '0', message: message.slice(0, 180) });
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ImobiFlow</title></head><body><p>${ok ? 'Google Agenda conectado. Esta janela pode ser fechada.' : 'Não foi possível conectar o Google Agenda.'}</p><script src="/calendar-oauth-complete.js?${query.toString()}"></script></body></html>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PANTUS</title></head><body><p>${ok ? 'Google Agenda conectado. Esta janela pode ser fechada.' : 'Não foi possível conectar o Google Agenda.'}</p><script src="/calendar-oauth-complete.js?${query.toString()}"></script></body></html>`;
 }
 
 export const calendarOAuthClientScript = `(() => {\n  const p = new URLSearchParams(document.currentScript.src.split('?')[1] || '');\n  const payload = { type: 'imobiflow:calendar-oauth', ok: p.get('ok') === '1', message: p.get('message') || '' };\n  if (window.opener && window.opener !== window) { window.opener.postMessage(payload, ${JSON.stringify(new URL(PUBLIC_APP_URL).origin)}); window.close(); }\n})();`;
