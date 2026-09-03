@@ -120,7 +120,10 @@
   /* Tint de vidro dos elementos de acento (.cr-glass-accent) — o gradiente de
      acento com alfa: translúcido o bastante pra refratar, opaco o bastante
      pro ícone por cima continuar legível. */
-  --accent-glass-tint: linear-gradient(135deg, rgba(59,158,255,.55) 0%, rgba(82,231,232,.42) 100%);
+  --accent-glass-tint: linear-gradient(135deg, rgba(59,158,255,.58) 0%, rgba(35,174,196,.46) 100%);
+  --accent-glass-solid: linear-gradient(135deg, #3B9EFF 0%, #23AEC4 100%);
+  --accent-glass-glow: rgba(59,158,255,.32);
+  --accent-glass-quiet-glow: rgba(59,158,255,.24);
   /* Cor da marca PANTUS (.cr-brand-mark) — branca nos dois temas. */
   --brand-mark: #FFFFFF;
   /* Borda do vidro de acento: no Noite acompanha a borda de vidro padrão. */
@@ -152,17 +155,16 @@
   --accent-2-soft:rgba(18,166,188,.12);
   --accent-gradient: linear-gradient(135deg,#2E8BFF 0%,#41D3DB 100%);
   --accent-glow:  rgba(46,139,255,.35);
-  /* Modo Dia: o selo da marca inverte — fundo escuro com o olho branco por
-     cima, em vez de vidro azul. Sobre a página clara é o que dá contraste de
-     verdade (o azul-claro com marca branca sumia, e a marca escura sobre azul
-     também não firmou). Continua sendo vidro: alfa alto pra ler como preto,
-     mas ainda translúcido, então o blur segue refratando o que passa atrás.
-     Tons da casa (--bg-base / --text-hi), não preto puro. */
-  --accent-glass-tint: linear-gradient(135deg, rgba(7,11,20,.90) 0%, rgba(20,28,46,.82) 100%);
+  /* Modo Dia: azul profundo da própria família cromática do produto. O selo
+     continua denso o bastante para o olho branco, mas deixa de parecer uma
+     ilha preta sobre a interface clara. Os alfas altos preservam contraste e
+     ainda permitem que o vidro refrate o fundo. */
+  --accent-glass-tint: linear-gradient(135deg, rgba(21,91,196,.94) 0%, rgba(15,76,129,.90) 100%);
+  --accent-glass-solid: linear-gradient(135deg, #155BC4 0%, #0F4C81 100%);
+  --accent-glass-glow: rgba(30,111,224,.20);
+  --accent-glass-quiet-glow: rgba(30,111,224,.15);
   --brand-mark: #FFFFFF;
-  /* A borda de vidro do tema claro é escura (rgba(30,50,90,.22)) e sumiria
-     contra o selo preto — aqui ela vira clara. */
-  --accent-glass-border: rgba(255,255,255,.22);
+  --accent-glass-border: rgba(255,255,255,.30);
 
   --brass:        #C9974A;
   --brass-strong: #B8863A;
@@ -329,19 +331,19 @@ html.theme-transition * {
   background:var(--accent-glass-tint);
   -webkit-backdrop-filter:blur(10px) saturate(1.6) brightness(1.06);
   backdrop-filter:blur(10px) saturate(1.6) brightness(1.06);
-  box-shadow:0 8px 22px -6px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.42),
+  box-shadow:0 8px 22px -6px var(--accent-glass-glow), inset 0 1px 0 rgba(255,255,255,.42),
     inset -3px 0 10px -4px rgba(82,231,232,.28), inset 3px 0 10px -4px rgba(59,158,255,.24);
 }
 .cr-glass-accent::before{ content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   background:linear-gradient(120deg, rgba(255,255,255,.38), transparent 46%); }
 /* O ícone fica acima do sheen — o vidro é fundo, não filtro da marca. */
 .cr-glass-accent > *{ position:relative; z-index:1; }
+.cr-glass-accent-quiet{ --accent-glass-glow:var(--accent-glass-quiet-glow); }
 
 /* Marca PANTUS pintada por máscara, não por <img> colorida: o mesmo arquivo
-   serve os dois temas e a cor vira token (--brand-mark), que o modo Dia troca
-   pra quase-preto. Com <img> seria preciso um segundo arquivo ou um filtro
-   invert. O PNG tem alfa, então funciona como máscara direto. É buscado como
-   imagem — a CSP cobre por img-src 'self', que já existe. */
+   serve os dois temas e a cor fica centralizada no token (--brand-mark). O PNG
+   tem alfa, então funciona como máscara direto. É buscado como imagem — a CSP
+   cobre por img-src 'self', que já existe. */
 .cr-brand-mark{
   display:block;
   background-color:var(--brand-mark);
@@ -361,7 +363,7 @@ html.theme-transition * {
   :root[data-theme="light"] { --card-fill: #FFFFFF; --card-fill-hover: #F3F6FC; --scrim-glass: rgba(255,255,255,.94); }
   /* Marca e botão da IA voltam ao gradiente sólido, sem blur: quem pede menos
      translucidez não deveria receber o vidro só porque é a marca. */
-  :root, :root[data-theme="light"] { --accent-glass-tint: var(--accent-gradient); }
+  :root, :root[data-theme="light"] { --accent-glass-tint: var(--accent-glass-solid); }
   .cr-glass-accent{ -webkit-backdrop-filter:none; backdrop-filter:none; }
   .cr-glass-accent::before{ display:none; }
 }

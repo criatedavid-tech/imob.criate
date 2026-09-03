@@ -369,11 +369,10 @@ export function CommandBar({
         {turns.length === 0 && !busy && !loadingHistory && (
           <div className="h-full flex items-center justify-center text-center px-6">
             <div>
-              {/* Estado vazio: mesma marca, mas em recipiente neutro — aqui é
-                  ilustração de apoio, não o avatar do agente. */}
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 p-3
-                bg-[var(--control-fill)] border border-[var(--hairline-strong)]">
-                <span aria-hidden="true" className="cr-brand-mark w-full h-full opacity-70" />
+              {/* O estado vazio usa o mesmo selo do cabeçalho: além de reforçar
+                  a identidade do agente, mantém o olho legível no modo Dia. */}
+              <div className="cr-glass-accent cr-glass-accent-quiet relative w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 p-3">
+                <span aria-hidden="true" className="cr-brand-mark w-full h-full" />
               </div>
               <p className="text-[14px] text-[var(--text-low)] max-w-xs mx-auto">
                 Pergunte qualquer coisa ou peça pra eu fazer algo — ex: <em>"cadastra a Maria 62999998888 no apê centro"</em> ou <em>"quantos leads eu tenho?"</em>
